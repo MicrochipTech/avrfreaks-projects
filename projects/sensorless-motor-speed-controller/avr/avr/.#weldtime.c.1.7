@@ -1,0 +1,469 @@
+/* copyright
+   * (c) 2004 Stephen Humble stephenhumble at telstra.com
+   *
+   *  This file is part of robotx see http://Robotx.sourceforge.net
+   *  dual sensorless motor driver firmware.
+   *
+   *  This is free software; you can redistribute it and/or modify
+   *  it under the terms of the GNU General Public License as published by
+   *  the Free Software Foundation; either version 2 of the License, or
+   *  (at your option) any later version.
+*/
+
+#ifdef WELDING
+/* this file contains initialisation and procedures specific to a
+   spot welding system designed specifically to weld 1.6mm diameter 
+   stainless 19%cr,10%ni,2%mo wire chain links together.
+   The links are 8mm inner diameter, and 11.2mm outer 
+   ,It uses an approximatley 150amp rectified 50hz sine wave (mig welder) 
+   with an appropriate welding jig
+   And receives 3 inputs
+   1 toggle input from a foot switch to control the start of the weld.
+   an ADC input which measures voltage drop across a current shunt
+   to check the welding current.
+   an adc input which measures voltage across the chain link being welded.
+   and one output which controls a relay which switches the current on and off.
+   to control the weld heating pulse time.
+
+   serial protocol commands are all decimal format as this is intended as a 
+   low speed human readable and configurable standalone unit
+*/
+
+#include <avr/io.h>
+#include ATMEGA
+#include <inttypes.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <math.h>
+#include <avr/timer.h>
+#include <avr/interrupt.h>
+#include <avr/signal.h>
+#include "common.h"
+#include "adc.h"
+#include "avr.h"
+
+
+#define SWITCH_DDR DDRD
+#define SWITCH_PIN PIND
+#define SWITCH_PORT PORTD
+#define SWITCH_BIT 3
+
+#define RELAY_DDR DDRC
+#define RELAY_PIN PINC
+#define RELAY_PORT PORTC
+#define RELAY_BIT 0
+
+#define SWON bit_is_set(SWITCH_PIN,SWITCH_BIT)
+#define SWOFF bit_is_clear(SWITCH_PIN,SWITCH_BIT)
+
+#define WELDOFF RELAY_PORT|=_BV(RELAY_BIT)
+#define WELDON RELAY_PORT&=~_BV(RELAY_BIT)
+
+// This is the resistivity per meter of the 1.6mm diameter ss wire
+float resistivity;
+float MASS;
+#define JGC .5
+// length of a loop of ss wire.
+float looplength;
+float temper;
+
+float RShunt;
+#define MaxTime 1
+#define Power
+#define LinkLength
+#define LinkOhmPermm
+
+static uint8_t bit=0;
+uint32_t WELDTIME;
+uint16_t weld_count;
+
+uint8_t posi;  // position of our toggle foot switch
+
+float power;
+float zeroi;  // work out the present zero current ADC value for later
+float zerov;  // work out the present zero voltage ADC value for later
+
+uint32_t aci;  // calculate average zero current value
+uint32_t acin;
+
+uint32_t acv;  // calculate average zero voltage value
+uint32_t acvn;
+
+float za;
+float zb;
+
+float amass;
+float bmass;
+
+float la;
+float lb;
+float apart;
+float bpart;
+float tempa;   // room temperature
+float tempb;
+uint32_t ltime;  // calculate average zero current value
+
+float rl;
+uint16_t samples;
+
+// this is only called after we are sure everything is safe to begin
+// weld timer routines
+void startup()
+{
+   puts("Weld");
+   put_cr();
+   syncwait();
+   capture_reset();
+   //   puts(ltoa(0xabc45678,&buf,16));
+   //   char *test="123456";
+   //   char *tp=test;
+   //   ltoa( strtoul(test,&tp,16), &buf ,10);
+   //   puts( &buf);
+   //   put_cr();
+   //   puts(ltoa(0x00000000,&buf,64));
+   init_servo();    // Dual RC servo driver
+   init_weld();
+   init_adc();
+   return;
+}
+
+void weld_com( char **z)
+{
+   char *dummy;
+   char y=**z;
+   (*z)++;
+   switch (y)
+   {
+      case 'p':
+	 weld_print();
+	 break;
+      case 'a':
+	 posi=99;
+	 break;
+      case 'z':
+	 init_weld();
+	 break;
+      case 't':   // set final heating temperature
+	 if('='==(**z)){
+			  temper=strtol((*z)+1,0,10);
+		       }
+	 break;
+      case 'm':   // set wire mass in grams
+	 if('='==(**z)){
+			  MASS=strtod((*z)+1,&dummy);
+		       }
+	 break;
+      case 'l':   // set battery voltage recharge alert level
+	 if('='==(**z)){
+			  looplength=strtod((*z)+1,&dummy);
+		       }
+	 break;
+      case 's':   // set battery voltage recharge alert level
+	 if('='==(**z)){
+			  RShunt=strtod((*z)+1,&dummy);
+		       }
+	 break;
+      case 'T':   // set maximum weld time
+	 if('='==(**z)){
+			  WELDTIME=strtol((*z)+1,0,10);
+		       }
+	 break;
+      case 'r':   // set battery voltage recharge alert level
+	 if('='==(**z)){
+			  resistivity=strtod((*z)+1,&dummy);
+		       }
+	 break;
+	 (*z)++;
+	 return;
+   }
+}
+
+
+uint32_t timer;
+void setzero()
+{
+   timer=TCNT1+(((uint32_t)mainclock)<<16);
+   // mainclock;
+   return;
+}
+
+uint32_t getus()
+{
+   uint32_t now=TCNT1+(((uint32_t)mainclock)<<16);
+   return ((now-timer)/MCLOCK);
+}
+
+void weld_print()
+{
+   puts("ti=");
+   put_i32(WELDTIME);
+   puts("tn=");
+   put_i32(getus());
+   puts(" wc=");
+   put_i16(weld_count);
+   puts(" len=");
+   puts(dtostrf(looplength,7,3,buf));
+   puts(" tmp=");
+   syncwait();
+   puts(  dtostrf(temper,7,3,buf));
+   puts(" MAS=");
+   puts(   dtostrf(MASS,7,3,buf));
+   puts(" res=");
+   puts(dtostrf(resistivity,5,3,buf));
+   puts(" RSh=");
+   puts(dtostrf(RShunt,5,4,buf));
+   put_cr();
+   return;
+}
+
+float sr;
+#define PERIOD ((64*256)/MCLOCK)
+void init_weld()
+{
+   weld_count=0;
+   temper=1300;
+   RShunt= .0056;
+   MASS= .384;
+   resistivity=0.34;
+   weld_count=0;
+   looplength=.0304;
+   WELDTIME=650000;
+   za=0;
+   zb=0;
+   SWITCH_DDR&=~_BV(SWITCH_BIT);
+   SWITCH_PORT|=_BV(SWITCH_BIT);
+   RELAY_DDR|=_BV(RELAY_BIT);
+   WELDON;
+   //TCCR2= T2_CK64;  // normal mode no output
+   //TIMSK|=_BV(TOIE2);  // enable timer 2 overflow interrupt enable
+   uint32_t wait;
+   uint8_t steps;
+
+   tempa=25;   // room temperature
+   tempb=tempa;
+   la=.005;
+   lb=.0254;
+   apart=.15;
+   bpart=.85;
+   sr=resistivity*looplength;
+   return;
+}
+
+// this is the welding timer loop
+/*
+   SIGNAL (SIG_OVERFLOW2)
+   {
+   static uint32_t timer=0;
+   static uint8_t posi;
+   static enum{  WON,WOFF  }state=WON;
+   if(state==WON){
+   timer+=PERIOD;
+   if(timer>WELDTIME){
+   state=WOFF;
+   WELDOFF;
+   timer=0;
+   }
+   }
+   if(state==WOFF)
+   {
+   // prevent another weld for 1 second after the last one
+   if(timer<1000000)
+   {
+   timer+=PERIOD;
+   }else
+   {
+   if( posi!=SWON) {
+   weld_count++;
+   posi=SWON;
+   WELDON;
+   state=WON;
+   timer=0;
+   }
+   }
+   }
+   }
+*/
+
+
+/* this is the heat controlled welding timer loop
+   * the inputs are the 2 adc samples 
+   * the circuits are both reasonably linear in responce
+   * and have an offset so the equation a+bx is a suitable repersentation 
+   * we know the shunt resistance
+   * analogue sample rate needs to be at ~1000hz to accuratly
+   * determine the real time power accumulation
+*/
+#define VFAC .002
+#define IFAC .04
+/*
+   if(getus()>200000)
+   {   // allow 200 ms for relay to open.
+   aci+=is;  // calculate off state average zero current value
+   acin++;
+   if(aci>5000){  // prevent averaging accumulator from overflowing
+   aci>>=1;
+   acin>>=1;
+   }
+   acv+=vs;  // calculate off state average zero current value
+   acvn++;
+   if(acvn>5000){  // prevent averaging accumulator from overflowing
+   acv>>=1;
+   acvn>>=1;
+   }
+   }
+*/
+
+void weldlink(uint16_t vs,uint16_t is)
+{
+   static enum{  WON,WOFF,WX  }state=WON;
+   static uint8_t calls=0;
+   float v=(vs-is)*0.005;
+   float i=(is*0.005)/RShunt;
+   float rz=v/i;
+
+/* first up process the voltage samples to determine the current through vs */
+   //   puts(ltoa(vs,&buf,64));
+   //   puts(ltoa(is,&buf,64));
+   //   put_cr();
+   //   float current=(float)vs/1;
+   if(state==WON|| state ==WX)
+   {
+      if(calls++ > 3)
+      {
+
+	 if(vs>200){  //capture((uint16_t)rz);
+		      capture(vs-is,is);
+		   }
+	 calls=0;
+      }
+   }
+
+   if(state==WON)
+   {
+      // determine the resistance configuration of the link being welded
+      // measure the current and voltage across the link - wait for the relay to
+      // cut in by starting the measurment only when current is flowing.
+/*
+	 if(calls++ > 2){
+	 capture(rz*1000);
+	 calls=0;
+	 }
+*/
+      if(samples<20){
+		       if( i>20){
+				   rl+=rz;
+				   samples++;
+				}
+		    }
+      else
+	 if(samples ==20)
+	 {
+	    rl/=samples;
+	    samples++;
+	    // here we do the calculation of the length of
+	    // a and b ie la and lb
+	    //  we measured the welding resistance and know the theoretical resistance
+	    // of the ss wire per meter and the overall length of the wire loop
+	    // now so we can work out the placement of the electrodes on the wire loop
+	    // using a 6 step successive approximation
+	    char lp=0;
+	    apart=0.2;
+	    bpart=1-apart;
+
+	    float zm=0.2;
+/*
+	       for(lp=0;lp<6;lp++)
+	       {
+	       zm/=2;
+	       la=looplength*apart;
+	       lb=looplength*bpart;
+	       za = (resistivity + (resistivity * tempa * 0.005)) * la;
+	       zb = (resistivity + (resistivity * tempb * 0.005)) * lb;
+	       float ztotal = 1 / ((1 / za) + (1 / zb));
+	       if(ztotal<rl){
+	       apart+=zm;
+	       }else
+	       {
+	       apart-=zm;
+	       }
+	       bpart=1-apart;
+	       }
+*/
+	    // from this we know the mass and resistance of each current path
+	    amass = apart * MASS;
+	    bmass = bpart * MASS;
+	 }
+      // these calculations are performed in real time and summ up the
+      // heating of each path of the chain link
+      // we measure the energy in real time and distribuit it based on
+      // expected current flow through each part of the loop
+      // we divide up the actual current flow based on predicted resistance ratios
+      // of each path
+      float ia=(i*za)/(za+zb);
+      float ib=(i*zb)/(za+zb);
+      // we stop the current flow when the desired temperature is reached.
+      //za = (resistivity + (resistivity * tempa * 0.005)) * la;
+      //zb = (resistivity + (resistivity * tempb * 0.005)) * lb;
+      //float stime=getus()-ltime;
+      //ltime=getus();
+      //float ea = ia*v * stime;
+      //float eb = ib*v * stime;
+      // float powb = (volt * volt / zb) * stime;
+      //tempa = tempa + ((ea / amass) / JGC);
+      //tempb = tempb + ((eb / bmass) / JGC);
+/*
+	 if(tempa > temper)  {   // final temperature reached
+	 state=WX;
+	 WELDOFF;
+	 setzero();
+	 // in here we can display the welding parameters for the last weld
+	 }
+*/
+      if(getus()>WELDTIME){   // prevent weld going over 1 second
+			     state=WX;
+			     WELDOFF;
+			     return;
+			  }
+
+   }
+   if(state==WX)
+   {
+      if(getus()>(WELDTIME+1000000)){   // prevent weld going over 1 second
+				       state=WOFF;
+				       setzero();
+				    }
+   }
+   if(state==WOFF)
+   {
+      // prevent another weld for 1 second after the last one
+      if(getus()>1000000)
+      {
+	 if( posi!=SWON )   // foot toggle has changed
+	 {
+	    weld_count++;  // remember number of welds we have done
+	    posi=SWON;
+	    WELDON;
+	    state=WON;
+	    setzero();
+	    zeroi=aci/acin;  // work out the present zero current ADC value for later
+	    zerov=acv/acvn;  // work out the present zero voltage ADC value for later
+	 }
+      }
+   }
+}
+#endif
+/*
+   puts(" weld ");
+   put_i16(weld_count);
+   puts(" z^=0.");
+   put_i16(rl*1000);
+   puts(" time=");
+   put_i16(getus()/1000);
+   puts("ms");
+   put_cr();
+*/
+/*
+   puts("timeout");
+   put_cr();
+*/
+
