@@ -1,0 +1,1370 @@
+    1 00000000                                  ;****************************************************************************
+    2 00000000                                  ;
+    3 00000000                                  ;****************************************************************************
+    4 00000000                                  ;
+    5 00000000         ;       File :  TVIDEO.ASM
+    6 00000000                                  ;
+    7 00000000         ;       Description :4Mhz 3-Resistor NTSC Video Terminal
+    8 00000000                                  ;
+    9 00000000         ;       Author :Rafael Alcocer
+   10 00000000                                  ;			ralcocer@ralcocer.cjb.net
+   11 00000000                                  ;			http://ralcocer-avr-projects.netfirms.com
+   12 00000000                                  ;			*********************************************************
+   13 00000000                                  ;			based on the original 16Mhz version
+   14 00000000                                  ;                       by Alberto Ricci bitti
+   15 00000000                                  ;			I want to thak Dick cappels (http://projects.cappels.org)
+   16 00000000                                  ;			for checking my code and his advice
+   17 00000000                                  ;			*********************************************************
+   18 00000000                                  ;			The code is an RS232 Video Terminal using a AVR 8515
+   19 00000000                                  ;			as the core. The video and sync is software generated and
+   20 00000000                                  ;			only 3 resistors are needed as hadware.
+   21 00000000                                  ;			The Timer part of the software is the heart of the program
+   22 00000000                                  ;		 	as all timing and video generation takes place here.
+   23 00000000                                  ;			The Video RAM starts at $0100 and it's 256 bytes long.
+   24 00000000                                  ;
+   25 00000000                                  ; 			The video line are as follows:
+   26 00000000                                  ;			line1=	$00 
+   27 00000000                                  ;			line2=	$40 
+   28 00000000                                  ;			line3=	$80  
+   29 00000000                                  ;			line4=	$C0
+   30 00000000                                  ;	  		Each line is 64 pixels long and can be addressed with the 
+   31 00000000                                  ;			putchar routine 
+   32 00000000                                  ;
+   33 00000000                                  ;			Tmp1 = Screen address from 0 to 8
+   34 00000000                                  ;			Tmp2 = Character - SP = Chr_0, ! = Chr_1
+   35 00000000                                  ; 			all ascii characters are mapped starting at $20
+   36 00000000                                  ;
+   37 00000000                                  ;			XL = Line Position 1 to 4
+   38 00000000                                  ;			The ROM generator routine takes care of interpreting 
+   39 00000000                                  ;			the input from the terminal and send it to the monitor
+   40 00000000                                  ; 			In prectice you could do 4 lines of 64 pixels which can 
+   41 00000000                                  ;			be addresed individualy or read from memory.
+   42 00000000                                  ;			************************************************************
+   43 00000000                                  ;			*	NOTE:					   	   *
+   44 00000000                                  ;			* At present there is a problem with the dysplay of line4  *
+   45 00000000                                  ;			************************************************************
+   46 00000000                                  ;	 
+   47 00000000                                  ;			The UART section waits for a character from the keyboard
+   48 00000000                                  ;			then it interprets the number and the ROM generator finds the
+   49 00000000                                  ; 			right character to write to the screen.
+   50 00000000                                  ;			All the character were generated using the program 
+   51 00000000                                  ;			specialchar.exe you can draw the characters and 
+   52 00000000                                  ;   			it will give you the array to put in the data area.
+   53 00000000                                  ;
+   54 00000000         ;       Date :  23 Oct, 2004 @07:09 PM
+   55 00000000                                  ;
+   56 00000000         ;       Notes : With RS232  I/O
+   57 00000000                                  ;
+   58 00000000                                  ; 	---bit 7 port C------/\/\/\------+1K Ohms	Sync Out					  1200		 |
+   59 00000000                                  ;       ---bit 4 port B------/\/\/\------+------ 220 Ohms video out
+   60 00000000                                  ;						   		  
+   61 00000000                                  ;       ---GND---------------/\/\/\------+100 Ohms 
+   62 00000000                                  ;
+   63 00000000                         
+   64 00000000                                  ;****************************************************************************
+   65 00000000                         
+   66 00000000                                  ; 	For the latest version of the software go to:
+   67 00000000                                  ;	http://ralcocer.netfirms.com and go to the Downloads section.
+   68 00000000                         
+   69 00000000                         
+   70 00000000                                  ;****************************************************************************
+Error   Syntax in Line 71 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   71 00000000                         .include "8515def.inc"
+   72 00000000                         
+Error   Syntax in Line 73 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   73 00000000                         .cseg	
+   74 00000000                         
+   75 00000000                         
+Error   Syntax in Line 76 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   76 00000000                         .def    RowsModFour=	r16
+Error   Syntax in Line 77 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   77 00000000                         .def	RowsDivFour=	r17
+   78 00000000                         
+Error   Syntax in Line 79 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   79 00000000                         .def    Tmp1 =          r18    		   
+Error   Syntax in Line 80 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   80 00000000                         .def    Tmp2 =          r19     	 
+Error   Syntax in Line 81 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   81 00000000                         .def	Tmp3=		r20
+Error   Syntax in Line 82 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   82 00000000                         .def	SaveStatus=	r21
+Error   Syntax in Line 83 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   83 00000000                         .def 	Param1 = 	R22   		;RS232 
+Error   Syntax in Line 84 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   84 00000000                         .def	counter=	r23
+Error   Syntax in Line 85 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   85 00000000                         .def 	temp=		r24
+Error   Syntax in Line 86 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   86 00000000                         .equ    CSyncBit =      4       	; Composite Sync Level pin
+Error   Syntax in Line 87 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   87 00000000                         .equ    VideoBit =      7       	; Video Level pin
+   88 00000000                         
+Error   Syntax in Line 89 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   89 00000000                         .equ    CSyncPort =     PORTB 		;B4 Port pin on which composit sync
+   90 00000000                                  ; is placed
+Error   Syntax in Line 91 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   91 00000000                         .equ    VideoPort =     PORTC		;C7 Port pin on which video 
+   92 00000000                                  ;data is  placed
+   93 00000000                         
+Error   Syntax in Line 94 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   94 00000000                         .equ    StartRetrace =	 (262/4)-1	;Counter value at wich retrace starts
+Error   Syntax in Line 95 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   95 00000000                         .equ    StopRetrace = 	(262/4)   	;Maximum counter value
+   96 00000000                         
+Error   Syntax in Line 97 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   97 00000000                         .equ    FirstLine = 	 25        		; first visible line,  				     		 
+   98 00000000                         
+Error   Syntax in Line 99 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+   99 00000000                         .equ    LastLine= 	FirstLine +   128    ; line AFTER last line.
+Error   Syntax in Line 100 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  100 00000000                         .equ	line1 =		$00
+Error   Syntax in Line 101 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  101 00000000                         .equ	line2 = 	$40  
+Error   Syntax in Line 102 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  102 00000000                         .equ	line3 =		$80 
+Error   Syntax in Line 103 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  103 00000000                         .equ	line4 =		$C0
+Error   Syntax in Line 104 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  104 00000000                         .equ	arraystart =	$00
+Error   Syntax in Line 105 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  105 00000000                         .equ	arrayend =	$01
+Error   Syntax in Line 106 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  106 00000000                         .equ 	clock=		4000000
+Error   Syntax in Line 107 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  107 00000000                         .equ baud=		9600
+Error   Syntax in Line 108 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  108 00000000                         .equ baudrate =		(clock/(16*baud))-1
+  109 00000000                         
+Error   Syntax in Line 110 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  110 00000000                         .equ 	LF=$0A 				;Line Feed
+Error   Syntax in Line 111 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  111 00000000                         .equ 	CR=$0D 				;Carriage Return
+Error   Syntax in Line 112 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  112 00000000                         .equ	Vram=256			;Video Ram.  
+  113 00000000                                  ;****************************************************************************
+  114 00000000 0CC0                    rjmp	reset				; Reset 			
+  115 00000002 24C0                    rjmp	start				;External Int 1
+  116 00000004 23C0                    rjmp	start				;External Int 1
+  117 00000006 22C0                    rjmp	start				;T/C1  Capapture Event	
+  118 00000008 21C0                    rjmp	start				;T/C1  CampareA
+  119 0000000A 20C0                    rjmp	start				;T/C1  CampareB
+  120 0000000C 1FC0                    rjmp	start				;T/C1 Overflow
+  121 0000000E 35C0                    rjmp	VideoTimerRoutine		;T/C0 Overflow
+  122 00000010 1DC0                    rjmp	start				;SPI Trasfer Complete
+  123 00000012 1CC0                    rjmp	start				;UART RX
+  124 00000014 1BC0                    rjmp	start				;UART Data reg Empty
+  125 00000016 1AC0                    rjmp	start				;UART TXinterrupt 
+  126 00000018 19C0                    rjmp	start				;Analog Comparator interrupt 
+  127 0000001A                         
+  128 0000001A                         
+  129 0000001A                         
+  130 0000001A         reset:          
+  131 0000001A                         
+  132 0000001A                         
+Error   Invalid Register in Line 133 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 133 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  133 0000001A 0000                    ldi	tmp3,high(ramend)		;Stack Pointer
+Error   Bad syntax or LABEL in Line 134 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 134 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 134 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  134 0000001C 00BA                    out 	sph,tmp3
+Error   Invalid Register in Line 135 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 135 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  135 0000001E 0000                    ldi	tmp3,low(ramend)
+Error   Bad syntax or LABEL in Line 136 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 136 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 136 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  136 00000020 00BA                    out	spl,tmp3
+  137 00000022                         
+  138 00000022                         
+  139 00000022         VideoEnable:    
+Error   Invalid Register in Line 140 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 140 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  140 00000022 0000                    ldi     Tmp1, 0b11111111		; 
+Error   Bad syntax or LABEL in Line 141 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 141 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 141 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  141 00000024 00BA                    out     DDRC, Tmp1			;Set port C Video  bit to output
+Error   Invalid Register in Line 142 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 142 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  142 00000026 0000                    ldi     Tmp1, 0b00010000		; 
+Error   Bad syntax or LABEL in Line 143 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 143 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 143 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  143 00000028 00BA                    out     DDRB, Tmp1			;Set port B Sync bit to output
+  144 0000002A                         
+Error   Bad syntax or LABEL in Line 145 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 145 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 145 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 145 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  145 0000002A 009A                    sbi     CSyncPort,CSyncBit      	; Set sync on, 
+Error   Bad syntax or LABEL in Line 146 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 146 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 146 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 146 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  146 0000002C 0098                    cbi     VideoPort,VideoBit		;Set video off
+  147 0000002E                         
+Error   Invalid Register in Line 148 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 148 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  148 0000002E 0000                    ldi     Tmp1, 1                 	; Don't use timer prescaler
+Error   Bad syntax or LABEL in Line 149 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 149 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 149 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  149 00000030 00BA                    out     TCCR0, Tmp1             	; 
+Error   Invalid Register in Line 150 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 150 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  150 00000032 0000                    ldi     Tmp1, 32                	; Enable sleep idle mode
+Error   Bad syntax or LABEL in Line 151 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 151 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 151 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  151 00000034 00BA                    out     MCUCR, Tmp1
+Error   Invalid Register in Line 152 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 152 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  152 00000036 0000                    ldi     Tmp1, 2                 	; Enable timer interrupt
+Error   Bad syntax or LABEL in Line 153 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 153 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 153 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  153 00000038 00BA                    out     TIMSK, Tmp1
+  154 0000003A                                  ;////////////////////////////////////////////////////////
+  155 0000003A                                  ;Clear Video Ram
+  156 0000003A                                  ;		Fill Video RAM array with $00.to prevent any stray pixels
+  157 0000003A                         
+Error   Invalid Register in Line 158 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 158 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  158 0000003A 0000                    ldi	tmp1,VRAM		
+Error   Invalid Register in Line 159 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 159 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  159 0000003C 0000                    ldi	XL,arraystart
+Error   Invalid Register in Line 160 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 160 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  160 0000003E 0000                    ldi	XH,arrayend
+Error   Invalid Register in Line 161 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 161 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  161 00000040 0000                    ldi	tmp2,0
+  162 00000042         filla:          
+Error   Invalid Register in Line 163 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  163 00000042 0D92                    st	X+,tmp2
+Error   Invalid Register in Line 164 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  164 00000044 0A96                    dec	tmp1
+  165 00000046 E9F7                    brne	filla
+  166 00000048                         
+  167 00000048                                  ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+  168 00000048                                  ;Load Message
+  169 00000048                         
+  170 00000048                                  ;         ldi Tmp1,vram
+  171 00000048                                  ;         ldi XL,low($00+256 )
+  172 00000048                                  ;        ldi XH,high($01+256 )
+  173 00000048                                  ;         ldi ZL,low(MSG1 * 2)
+  174 00000048                                  ;         ldi ZH,high(MSG1 * 2)
+  175 00000048         ;Fill:          
+  176 00000048                                  ;         lpm 
+  177 00000048                                  ;         st X+,R0
+  178 00000048                                  ;         adiw ZL,1
+  179 00000048                                  ;        dec Tmp1
+  180 00000048                                  ;         brne Fill 
+  181 00000048                         
+  182 00000048                                  ;////////////////////////////////////////////////
+  183 00000048                         
+  184 00000048 7894                    sei 
+  185 0000004A F6D0                    rcall	SetupUart				; Setup the serial port.
+  186 0000004C                         
+  187 0000004C                         
+  188 0000004C                         
+  189 0000004C                                  ;**************************************
+  190 0000004C         start:          
+  191 0000004C                         
+  192 0000004C         Monitor:        
+Error   Invalid Register in Line 193 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 193 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  193 0000004C 0000                    ldi		ZL,low(Greeting*2)		; Send startup msg.
+Error   Invalid Register in Line 194 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 194 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  194 0000004E 0000                    ldi		ZH,high(Greeting*2)
+  195 00000050 E4D0                    rcall		TX_Str
+  196 00000052 EBD0                    rcall		CRLF					; CR/LF.
+  197 00000054                         
+  198 00000054         prompt1:        
+Error   Invalid Register in Line 199 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 199 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  199 00000054 0000                    ldi		ZL,low(Prompt*2)		; OK> prompt.
+Error   Invalid Register in Line 200 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 200 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  200 00000056 0000                    ldi		ZH,high(Prompt*2)
+  201 00000058 E0D0                    rcall		TX_Str
+  202 0000005A                         
+  203 0000005A                         
+  204 0000005A         MKbloop:        
+  205 0000005A                         
+  206 0000005A DBD0                    rcall    	Uart_RX        			; Get a character.
+Error   Invalid Register in Line 207 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  207 0000005C 0F92                    push    	Param1
+  208 0000005E D5D0                    rcall    	Uart_TX
+Error   Invalid Register in Line 209 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  209 00000060 0F92                    pop    		Param1
+Error   Invalid Register in Line 210 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  210 00000062 0F92                    push    	Param1
+Error   Invalid Register in Line 211 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 211 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  211 00000064 002E                    mov    		tmp2,Param1
+Error   Invalid Register in Line 212 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 212 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  212 00000066 0000                    subi    	tmp2, $20 
+Error   Invalid Register in Line 213 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  213 00000068 0F92                    push    	tmp1
+  214 0000006A                         
+  215 0000006A EBD0                    rcall    	PutChr
+Error   Invalid Register in Line 216 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  216 0000006C 0F92                    pop    		tmp1
+  217 0000006E                         
+Error   Invalid Register in Line 218 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  218 0000006E 0396                    inc 		tmp1; Increment screen position
+  219 00000070                                  ;*************************************
+  220 00000070                         
+  221 00000070                         
+  222 00000070                                  ;***********************************
+  223 00000070                         
+  224 00000070                         
+Error   Invalid Register in Line 225 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 225 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  225 00000070 0000                    cpi    Param1,'V'    		; Do Video ?
+  226 00000072                         
+  227 00000072 01F4                    brne    MkbZ        			; Branch to next test if not 'V'.
+  228 00000074                         
+  229 00000074                         
+  230 00000074                         
+  231 00000074         MkbZ:           
+  232 00000074                         
+  233 00000074                                  ;ldi	ZL,low(A_Huh*2)		; Huh ?
+  234 00000074                                  ;ldi	ZH,high(A_Huh*2)
+  235 00000074                                  ;rcall	TX_Str
+  236 00000074                                  ;rcall	CRLF	
+  237 00000074                                  ;rcall 	prompt1
+  238 00000074                         
+Error   Invalid Register in Line 239 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  239 00000074 0F92                    pop    Param1 	
+  240 00000076                                  ; Next line.
+  241 00000076 F1CF                    rjmp	Mkbloop
+  242 00000078 E9CF                    rjmp start
+  243 0000007A                         
+  244 0000007A                         
+  245 0000007A                         
+  246 0000007A         video:          
+  247 0000007A                         
+  248 0000007A                                  ;****************************************************************************
+  249 0000007A                                  ;									     *
+  250 0000007A                                  ;       The video timer routine,is called four times during a video line.    *
+  251 0000007A                                  ;       The position records which of the 4 interrupt stages we are in.      *
+  252 0000007A                                  ;                                                                            *
+  253 0000007A                                  ;									     *
+  254 0000007A                                  ;       At the third stage, we go in sleep mode, in order to have constant   *
+  255 0000007A                                  ;	servicing for the fourth, crucial interrupt where we output          *
+  256 0000007A                                  ;	 the sync waveform.                                                  *
+  257 0000007A                                  ;       								     *
+  258 0000007A                                  ;****************************************************************************
+  259 0000007A                         
+  260 0000007A         VideoTimerRoutine:
+Error   Invalid Register in Line 261 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 261 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 261 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  261 0000007A 00B2                    in      SaveStatus,SREG         ; save Status
+Error   Invalid Register in Line 262 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  262 0000007C 0F92                    push    Tmp1                    ; save work registers
+Error   Invalid Register in Line 263 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  263 0000007E 0F92                    push    Tmp2
+  264 00000080 05C0                    rjmp    Newline                 ; do a new line
+  265 00000082                         
+  266 00000082         Timer_Exit:     
+Error   Bad syntax or LABEL in Line 267 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 267 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 267 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 267 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  267 00000082 0098                    cbi     VideoPort,VideoBit      ; make sure video is off
+Error   Invalid Register in Line 268 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  268 00000084 0F92                    pop     Tmp2                    ; restore registers
+Error   Invalid Register in Line 269 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  269 00000086 0F92                    pop     Tmp1
+Error   Bad syntax or LABEL in Line 270 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 270 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 270 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  270 00000088 00BA                    out     SREG, SaveStatus        ; restore status and exit
+  271 0000008A 1895                    reti
+  272 0000008C                         
+  273 0000008C         Newline:        
+Error   Invalid Register in Line 274 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 274 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 274 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  274 0000008C 00B2                    in      Tmp1, CSyncPort         ; Read previous CSync level
+Error   Invalid Register in Line 275 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 275 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  275 0000008E 0000                    ldi     Tmp2, 1 << CSyncBit     ; Load mask for toggle csync bit
+Error   Invalid Register in Line 276 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 276 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  276 00000090 0026                    eor     Tmp1, Tmp2              ; 
+Error   Bad syntax or LABEL in Line 277 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 277 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 277 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  277 00000092 00BA                    out     CSyncPort, Tmp1         ; Toggle CSync output 
+Error   Invalid Register in Line 278 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  278 00000094 0396                    inc     RowsModFour 
+  279 00000096                                  ; Increment row counters  
+Error   Invalid Register in Line 280 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 280 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  280 00000096 0000                    cpi     RowsModFour, 4          ; If RowsModFour == 4 
+  281 00000098 09F4                    brne    _1                      ; 
+Error   Invalid Register in Line 282 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  282 0000009A 0396                    inc     RowsDivFour             ; Then increment RowsDivFour 
+Error   Invalid Register in Line 283 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 283 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  283 0000009C 0000    _1:             andi    RowsModFour, 3          ; (range 0..3) 
+  284 0000009E                                  ;
+  285 0000009E                                  ;At the last line the sync pulse is stretched 
+  286 0000009E                                  ;to half a line
+  287 0000009E         checklastline:  
+Error   Invalid Register in Line 288 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 288 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  288 0000009E 0000                    cpi     RowsDivFour, StopRetrace; If at last line 
+  289 000000A0 D8F4                    brsh    EndLine                 ;Sync pulse stops at 1/2 line 
+  290 000000A2                         
+  291 000000A2 0000                    nop                             ; To make it a 4us pulse 
+Error   Invalid Register in Line 292 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 292 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  292 000000A4 0000                    ldi     Tmp2, 1 << CSyncBit     ; Get mask for csync toggle 
+  293 000000A6                         
+  294 000000A6         Verticalretrace:
+Error   Invalid Register in Line 295 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 295 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  295 000000A6 0000                    ldi     Tmp1, StartRetrace      ; Check if start of vertical retrace pulse
+Error   Invalid Register in Line 296 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 296 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  296 000000A8 0000                    cpi     RowsModFour, 0          ; 0= Vertical Retrace
+Error   Invalid Register in Line 297 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 297 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  297 000000AA 0006                    cpc     RowsDivFour, Tmp1       ;
+  298 000000AC 11F4                    brne    HSyncEnd                ; if so leave CSync low 
+Error   Invalid Register in Line 299 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 299 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  299 000000AE 0000                    ldi     Tmp2, 0                 ; 
+Error   Invalid Register in Line 300 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  300 000000B0 0396                    inc counter 
+  301 000000B2         HSyncEnd:                ;Horizontal Sync
+Error   Invalid Register in Line 302 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 302 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 302 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  302 000000B2 00B2                    in      Tmp1, CSyncPort         ; 
+Error   Invalid Register in Line 303 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 303 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  303 000000B4 0026                    eor     Tmp1, Tmp2              ; Toggle CSync output
+Error   Bad syntax or LABEL in Line 304 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 304 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 304 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  304 000000B6 00BA                    out     CSyncPort, Tmp1
+  305 000000B8                                  ; This is the color burst space
+  306 000000B8         housekeeping:            ; actually got a bit of spare time
+  307 000000B8                         
+  308 000000B8                         
+Error   Invalid Register in Line 309 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 309 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  309 000000B8 0000                    cpi     RowsDivFour, LastLine/4 ; Exit now if not on the displayable
+  310 000000BA 18F7                    brsh    Timer_Exit              ; part of the screen
+Error   Invalid Register in Line 311 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 311 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  311 000000BC 0000                    cpi     RowsDivFour, FirstLine/4-1
+  312 000000BE                         
+  313 000000BE 09F0                    breq    DoScreen
+  314 000000C0                         
+  315 000000C0 13C0                    rjmp    BuildScreen             ; Go to display building section
+  316 000000C2                         
+  317 000000C2                                  ;
+  318 000000C2                                  ;****************************************************************************
+  319 000000C2                                  ;  Called 4 lines before the display start. If it is selected, it puts the
+  320 000000C2                                  ;  MCU in a "sleep loop" until the display generation has finished, so
+  321 000000C2                                  ;  that multi cycle instructions don't make the screen wobble.
+  322 000000C2                                  ;
+  323 000000C2                                  ;****************************************************************************
+  324 000000C2                         
+  325 000000C2         DoScreen:       
+Error   Invalid Register in Line 326 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 326 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  326 000000C2 002A                    or      RowsModFour,RowsModFour ; check actual first line when == 
+  327 000000C4                                  ; first line of the dysplay
+  328 000000C4 F1F6                    brne    Timer_Exit              ; if not, it is blank.
+Error   Invalid Register in Line 329 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  329 000000C6 0F92                    push    SaveStatus              ; save the status register
+  330 000000C8 7894                    sei                             ; have a little loop and a reentrant
+  331 000000CA                                  ;********************************      ; interrupt
+  332 000000CA                         
+  333 000000CA         DoLine:         
+  334 000000CA 8895                    sleep                           ; wait for interrupt getting ready 
+  335 000000CC                                  ; for the 4th interrupt
+  336 000000CC                                  ;*********************************
+  337 000000CC                         
+Error   Invalid Register in Line 338 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 338 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  338 000000CC 0000                    cpi     RowsDivFour,LastLine/4  ; wait for the screen to end
+  339 000000CE E8F3                    brlo    DoLine                  ; while <= last line
+  340 000000D0 E1F3                    breq    DoLine
+  341 000000D2 F894                    cli                             ; int off again
+Error   Invalid Register in Line 342 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  342 000000D4 0F92                    pop     SaveStatus              ; restore status register
+  343 000000D6 D5CF                    rjmp    Timer_Exit              ; and continue as if nothing happened
+  344 000000D8                         
+  345 000000D8                                  ;****************************************************************************
+  346 000000D8                                  ;       The last (e.g. 262th line), extend the pulse for half a line
+  347 000000D8                         
+  348 000000D8         EndLine:        
+  349 000000D8                                  ;**************************************************************************************
+  350 000000D8                                  ; this is a good time to make slow (1/60 sec.) housekeepings,
+  351 000000D8                                  ; or to do things that are made once every screen picture (frame!)
+  352 000000D8                                  ;Vertival Retrace
+  353 000000D8                                  ;
+  354 000000D8                                  ;********************************************************************************************
+  355 000000D8                         
+Error   Invalid Register in Line 356 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  356 000000D8 0026                    clr     RowsDivFour             ; Reset row counters
+Error   Invalid Register in Line 357 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  357 000000DA 0026                    clr     RowsModFour
+Error   Invalid Register in Line 358 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  358 000000DC 0026                    clr counter;************************************************
+  359 000000DE         WaitMidline:             ; Wait for Half-Line position
+Error   Invalid Register in Line 360 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 360 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 360 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  360 000000DE 00B2                    in      Tmp1, TCNT0
+Error   Invalid Register in Line 361 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 361 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  361 000000E0 0000                    cpi     Tmp1, 128
+  362 000000E2 E8F3                    brlo    WaitMidline
+  363 000000E4                         
+Error   Bad syntax or LABEL in Line 364 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 364 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 364 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 364 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  364 000000E4 009A                    sbi     CSyncPort, CSyncBit     ;  end of composite sync
+  365 000000E6 CDCF                    rjmp    Timer_Exit
+  366 000000E8                         
+  367 000000E8                                  ;
+  368 000000E8                         
+  369 000000E8                                  ;
+  370 000000E8                                  ;****************************************************************************
+  371 000000E8                                  ;                         Preamble 
+  372 000000E8                                  ;****************************************************************************
+  373 000000E8         BuildScreen:    
+  374 000000E8                         
+Error   Invalid Register in Line 375 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  375 000000E8 0F92                    push    XL                      
+Error   Invalid Register in Line 376 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  376 000000EA 0F92                    push    XH                      
+  377 000000EC 1F92                    push    r1                      
+  378 000000EE                         
+  379 000000EE                                  ;************************************
+  380 000000EE                         
+Error   Invalid Register in Line 381 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 381 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  381 000000EE 002E                    mov     XL,RowsDivFour          ; XL is SL/4 -> (SL+128)/4  Scan Lines
+Error   Invalid Register in Line 382 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 382 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  382 000000F0 0000                    subi    XL,FirstLine/4          ; XL in range 0..31
+Error   Invalid Register in Line 383 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 383 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  383 000000F2 000E                    add     XL,XL                   ; Make XL 0..248 (lower 3 bits zero)
+Error   Invalid Register in Line 384 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 384 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  384 000000F4 000E                    add     XL,XL                   ; which means it points to the start
+Error   Invalid Register in Line 385 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 385 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  385 000000F6 000E                    add     XL,XL                   ; of a Video line.
+  386 000000F8                                  ;************************************
+Error   Invalid Register in Line 387 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 387 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  387 000000F8 0000                    ldi     XH,$01                  ; XHXL points to Video RAM
+  388 000000FA                         
+  389 000000FA                                  ;****************************************************************************
+  390 000000FA                                  ;          Wait for horizontal position, then generate video
+  391 000000FA                                  ;****************************************************************************
+  392 000000FA                         
+  393 000000FA         WaitVisiblePortion:
+  394 000000FA                         
+Error   Invalid Register in Line 395 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 395 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 395 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  395 000000FA 00B2                    in      Tmp1, TCNT0             ; wait for start of Horizontal visible 
+Error   Invalid Register in Line 396 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 396 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  396 000000FC 0000                    cpi     Tmp1,  74               ; area decreasing this moves display left
+  397 000000FE E8F3                    brlo    WaitVisiblePortion      ; Increasing moves right
+  398 00000100                                  ;***************************************************************************
+  399 00000100                                  ;	 Each 8 bytes (64 pixels) forms a line.
+  400 00000100                                  ; 	Enter this routine with the X register pointing to the 
+  401 00000100                                  ; 	start of the video line.
+  402 00000100                                  ;       Output the video data to the video port. Assumes VideoPort pin is #7
+  403 00000100                                  ;***************************************************************************
+  404 00000100                         
+  405 00000100         B1:             
+  406 00000100 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 407 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 407 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  407 00000102 10B8                    out VideoPort, r1 
+  408 00000104 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 409 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 409 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  409 00000106 10B8                    out VideoPort, r1
+  410 00000108 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 411 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 411 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  411 0000010A 10B8                    out VideoPort, r1
+  412 0000010C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 413 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 413 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  413 0000010E 10B8                    out VideoPort, r1
+  414 00000110 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 415 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 415 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  415 00000112 10B8                    out VideoPort, r1
+  416 00000114 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 417 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 417 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  417 00000116 10B8                    out VideoPort, r1
+  418 00000118 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 419 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 419 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  419 0000011A 10B8                    out VideoPort,r1
+  420 0000011C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 421 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 421 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  421 0000011E 10B8                    out VideoPort,r1		                   
+  422 00000120         B2:             
+  423 00000120 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 424 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 424 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  424 00000122 10B8                    out VideoPort, r1
+  425 00000124 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 426 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 426 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  426 00000126 10B8                    out VideoPort,r1
+  427 00000128 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 428 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 428 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  428 0000012A 10B8                    out VideoPort, r1
+  429 0000012C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 430 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 430 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  430 0000012E 10B8                    out VideoPort, r1
+  431 00000130 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 432 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 432 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  432 00000132 10B8                    out VideoPort, r1
+  433 00000134 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 434 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 434 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  434 00000136 10B8                    out VideoPort, r1
+  435 00000138 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 436 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 436 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  436 0000013A 10B8                    out VideoPort,r1
+  437 0000013C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 438 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 438 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  438 0000013E 10B8                    out VideoPort,r1		                   
+  439 00000140         B3:             
+  440 00000140 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 441 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 441 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  441 00000142 10B8                    out VideoPort, r1 
+  442 00000144 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 443 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 443 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  443 00000146 10B8                    out VideoPort,r1
+  444 00000148 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 445 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 445 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  445 0000014A 10B8                    out VideoPort, r1
+  446 0000014C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 447 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 447 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  447 0000014E 10B8                    out VideoPort, r1
+  448 00000150 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 449 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 449 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  449 00000152 10B8                    out VideoPort, r1
+  450 00000154 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 451 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 451 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  451 00000156 10B8                    out VideoPort, r1
+  452 00000158 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 453 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 453 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  453 0000015A 10B8                    out VideoPort,r1
+  454 0000015C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 455 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 455 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  455 0000015E 10B8                    out VideoPort,r1		                   
+  456 00000160         B4:             
+  457 00000160 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 458 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 458 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  458 00000162 10B8                    out VideoPort, r1 
+  459 00000164 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 460 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 460 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  460 00000166 10B8                    out VideoPort,r1
+  461 00000168 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 462 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 462 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  462 0000016A 10B8                    out VideoPort, r1
+  463 0000016C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 464 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 464 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  464 0000016E 10B8                    out VideoPort, r1
+  465 00000170 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 466 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 466 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  466 00000172 10B8                    out VideoPort, r1
+  467 00000174 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 468 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 468 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  468 00000176 10B8                    out VideoPort, r1
+  469 00000178 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 470 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 470 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  470 0000017A 10B8                    out VideoPort,r1
+  471 0000017C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 472 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 472 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  472 0000017E 10B8                    out VideoPort,r1
+  473 00000180         B5:             
+  474 00000180 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 475 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 475 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  475 00000182 10B8                    out VideoPort, r1 
+  476 00000184 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 477 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 477 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  477 00000186 10B8                    out VideoPort,r1
+  478 00000188 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 479 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 479 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  479 0000018A 10B8                    out VideoPort, r1
+  480 0000018C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 481 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 481 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  481 0000018E 10B8                    out VideoPort, r1
+  482 00000190 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 483 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 483 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  483 00000192 10B8                    out VideoPort, r1
+  484 00000194 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 485 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 485 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  485 00000196 10B8                    out VideoPort, r1
+  486 00000198 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 487 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 487 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  487 0000019A 10B8                    out VideoPort,r1
+  488 0000019C 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 489 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 489 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  489 0000019E 10B8                    out VideoPort,r1
+  490 000001A0         B6:             
+  491 000001A0 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 492 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 492 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  492 000001A2 10B8                    out VideoPort, r1 
+  493 000001A4 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 494 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 494 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  494 000001A6 10B8                    out VideoPort,r1
+  495 000001A8 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 496 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 496 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  496 000001AA 10B8                    out VideoPort, r1
+  497 000001AC 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 498 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 498 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  498 000001AE 10B8                    out VideoPort, r1
+  499 000001B0 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 500 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 500 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  500 000001B2 10B8                    out VideoPort, r1
+  501 000001B4 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 502 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 502 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  502 000001B6 10B8                    out VideoPort, r1
+  503 000001B8 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 504 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 504 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  504 000001BA 10B8                    out VideoPort,r1
+  505 000001BC 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 506 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 506 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  506 000001BE 10B8                    out VideoPort,r1
+  507 000001C0         B7:             
+  508 000001C0 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 509 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 509 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  509 000001C2 10B8                    out VideoPort, r1 
+  510 000001C4 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 511 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 511 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  511 000001C6 10B8                    out VideoPort,r1
+  512 000001C8 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 513 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 513 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  513 000001CA 10B8                    out VideoPort, r1
+  514 000001CC 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 515 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 515 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  515 000001CE 10B8                    out VideoPort, r1
+  516 000001D0 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 517 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 517 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  517 000001D2 10B8                    out VideoPort, r1
+  518 000001D4 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 519 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 519 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  519 000001D6 10B8                    out VideoPort, r1
+  520 000001D8 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 521 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 521 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  521 000001DA 10B8                    out VideoPort,r1
+  522 000001DC 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 523 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 523 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  523 000001DE 10B8                    out VideoPort,r1
+  524 000001E0         B8:             
+  525 000001E0 1D90                    ld  r1,x+            
+Error   Bad syntax or LABEL in Line 526 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 526 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  526 000001E2 10B8                    out VideoPort, r1 
+  527 000001E4 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 528 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 528 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  528 000001E6 10B8                    out VideoPort,r1
+  529 000001E8 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 530 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 530 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  530 000001EA 10B8                    out VideoPort, r1
+  531 000001EC 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 532 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 532 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  532 000001EE 10B8                    out VideoPort, r1
+  533 000001F0 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 534 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 534 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  534 000001F2 10B8                    out VideoPort, r1
+  535 000001F4 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 536 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 536 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  536 000001F6 10B8                    out VideoPort, r1
+  537 000001F8 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 538 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 538 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  538 000001FA 10B8                    out VideoPort,r1
+  539 000001FC 111C                    rol  r1
+Error   Bad syntax or LABEL in Line 540 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 540 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  540 000001FE 10B8                    out VideoPort,r1
+  541 00000200                         
+  542 00000200                         
+  543 00000200                         
+  544 00000200                                  ;*********************************************************
+  545 00000200         endvideo:       
+  546 00000200                         
+Error   Bad syntax or LABEL in Line 547 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 547 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 547 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 547 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  547 00000200 0098                    cbi	videoport,videobit             ; This forces the video to Black,                     
+  548 00000202                         
+  549 00000202                                  ;****************************************************************************
+  550 00000202                         
+  551 00000202 1F90                    pop     r1
+Error   Invalid Register in Line 552 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  552 00000204 0F92                    pop     XH
+Error   Invalid Register in Line 553 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  553 00000206 0F92                    pop     XL
+  554 00000208                         
+  555 00000208 3CCF                    rjmp    Timer_Exit        ;return and wait for next interrupt       
+  556 0000020A                         
+  557 0000020A                         
+  558 0000020A                         
+  559 0000020A                         
+  560 0000020A                                  ; **************
+  561 0000020A                                  ; Some messages.
+  562 0000020A                                  ; **************
+  563 0000020A                         
+  564 0000020A         Prompt:         
+Error   Syntax in Line 565 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  565 0000020A                         .db	"Ok> ",0,0
+  566 0000020A         Greeting:       
+Error   Syntax in Line 567 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  567 0000020A                         .db	"Rafael Alcocer AVR Video Display 10/23/2004",0x0d,0x0d,0x0a,0x07,0
+  568 0000020A         VidMsg:         
+Error   Syntax in Line 569 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  569 0000020A                         .db	"Starting Video Generator ",0
+  570 0000020A         A_Huh:          
+Error   Syntax in Line 571 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  571 0000020A                         .db	" Huh ?",0,0
+  572 0000020A                         
+  573 0000020A                         
+  574 0000020A                                  ; ********************************************
+  575 0000020A                                  ; Send the byte in Param1 out the serial port.
+  576 0000020A                                  ; ********************************************
+  577 0000020A                                  ;
+  578 0000020A         Uart_TX:        
+  579 0000020A                         
+Error   Bad syntax or LABEL in Line 580 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 580 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 580 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 580 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  580 0000020A 009B                    sbis	USR,UDRE		; Check if TX empty.
+  581 0000020C FECF                    rjmp	Uart_TX          	;  ready to TX.
+Error   Bad syntax or LABEL in Line 582 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 582 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 582 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  582 0000020E 00BA                    out	UDR,Param1		; Send the byte.
+  583 00000210 0895                    ret
+  584 00000212                         
+  585 00000212                                  ; ***********************************************************
+  586 00000212                                  ; Receive a byte from the Uart if available, waits till ok.
+  587 00000212                                  ; Return it in Param1.
+  588 00000212                                  ; ***********************************************************
+  589 00000212                                  ;
+  590 00000212         Uart_RX:        
+Error   Bad syntax or LABEL in Line 591 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 591 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 591 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 591 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  591 00000212 009B                    sbis	USR,RXC		; Check ready flag.
+  592 00000214 FECF                    rjmp	Uart_RX		; Loop till available.
+Error   Invalid Register in Line 593 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 593 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 593 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  593 00000216 00B2                    in	Param1,UDR	; Get character.
+  594 00000218 0895                    ret
+  595 0000021A                         
+  596 0000021A                         
+  597 0000021A                         
+  598 0000021A                         
+  599 0000021A                                  ; ****************************************************
+  600 0000021A                                  ; Send a string from ROM to Uart. Terminated with $00.
+  601 0000021A                                  ; Start address in Z ie. R30/31. ZL and ZH.
+  602 0000021A                                  ; ****************************************************
+  603 0000021A                         
+  604 0000021A         TX_Str:         
+  605 0000021A C895                    lpm				; Load byte into R0.
+  606 0000021C 0028                    or		R0,R0		; Check if EOT, null.
+  607 0000021E 21F0                    breq	TX_StrE
+Error   Invalid Register in Line 608 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  608 00000220 002E                    mov		Param1,R0	; Not a null so send.
+  609 00000222 F3DF                    rcall	Uart_TX
+Error   Invalid Register in Line 610 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg Must be r24,r26,r28,r30 in Line 610 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  610 00000224 0000                    adiw	ZL,$01			; Next byte.
+  611 00000226 F9CF                    rjmp	TX_Str			; Keep going....
+  612 00000228                         
+  613 00000228                         
+  614 00000228         TX_StrE:        
+  615 00000228 0895                    ret
+  616 0000022A                         
+  617 0000022A                                  ; ***************************
+  618 0000022A                                  ; CRLF - send CRLF out RS232.
+  619 0000022A                                  ; ***************************
+  620 0000022A                                  ;
+  621 0000022A         CRLF:           
+Error   Invalid Register in Line 622 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  622 0000022A 0F92                    push	Param1
+Error   Invalid Register in Line 623 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 623 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  623 0000022C 0000                    ldi	Param1,CR
+  624 0000022E EDDF                    rcall	Uart_TX
+Error   Invalid Register in Line 625 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 625 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  625 00000230 0000                    ldi	Param1,LF
+  626 00000232 EBDF                    rcall	Uart_TX
+Error   Invalid Register in Line 627 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  627 00000234 0F92                    pop	Param1
+  628 00000236 0895                    ret
+  629 00000238                         
+  630 00000238                                  ; *****************************************************
+  631 00000238                                  ; Set the hardware UART for non-interrupt TX/RX and
+  632 00000238                                  ; set baudrate to value in BAUDRATE,  
+  633 00000238                                  ; *****************************************************
+  634 00000238                                  ;
+  635 00000238         SetupUart:      
+Error   Invalid Register in Line 636 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 636 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  636 00000238 0000                    ldi	Tmp1,BAUDRATE
+Error   Bad syntax or LABEL in Line 637 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 637 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 637 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  637 0000023A 00BA                    out	UBRR,Tmp1
+Error   Invalid Register in Line 638 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 638 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  638 0000023C 0000                    ldi	Tmp1,$18	; TX/RX 8 bits, no irq.
+Error   Bad syntax or LABEL in Line 639 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 639 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 639 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  639 0000023E 00BA                    out	UCR,Tmp1	
+  640 00000240 0895                    ret
+  641 00000242                                  ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+  642 00000242                         
+  643 00000242                                  ; ****************************
+  644 00000242                                  ; Character Generator ROM!
+  645 00000242                                  ; ****************************
+  646 00000242                                  ; Starting Address of each Video line
+  647 00000242                                  ;	line1=	$00.
+  648 00000242                                  ;	line2=	$40  
+  649 00000242                                  ;	line3=	$80 
+  650 00000242                                  ;	line4=	$C0
+  651 00000242                         
+  652 00000242                                  ;	Tmp1 = 	Screen address from 0 to 8
+  653 00000242                                  ;	Tmp2 = 	Character - 0 = Chr_0, 1 = Chr_1
+  654 00000242                         
+  655 00000242                                  ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+  656 00000242         PutChr:         
+  657 00000242                         
+  658 00000242                         
+Error   Invalid Register in Line 659 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 659 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  659 00000242 0000                    ldi	XL,line2
+Error   Invalid Register in Line 660 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 660 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  660 00000244 0000                    ldi 	XH,$01 
+  661 00000246                         
+Error   Invalid Register in Line 662 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 662 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  662 00000246 002A                    or 	Tmp1,Tmp1       ;  Address is zero so don't add anything.
+  663 00000248 19F0                    breq 	PutChrX         
+  664 0000024A                                  ;
+  665 0000024A         PutChr5a:       
+Error   Invalid Register in Line 666 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg Must be r24,r26,r28,r30 in Line 666 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  666 0000024A 0000                    adiw 	XL,1            
+Error   Invalid Register in Line 667 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  667 0000024C 0A96                    dec 	Tmp1            
+  668 0000024E E9F7                    brne 	PutChr5a        
+  669 00000250                                  ;************************************************************
+  670 00000250                                  ; Enter here with X already set to the right address in Vram.
+  671 00000250                                  ;************************************************************
+  672 00000250                                  ;
+  673 00000250         PutChrX:        
+Error   Invalid Register in Line 674 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 674 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  674 00000250 0000                    ldi 	ZL,low(Chr_0*2)  
+Error   Invalid Register in Line 675 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 675 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  675 00000252 0000                    ldi 	ZH,high(Chr_0*2) 
+Error   Invalid Register in Line 676 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg Must be r24,r26,r28,r30 in Line 676 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  676 00000254 0000                    sbiw 	ZL,8
+Error   Invalid Register in Line 677 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  677 00000256 0396                    inc 	Tmp2
+Error   Invalid Register in Line 678 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 678 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  678 00000258 0000                    ldi 	Tmp3,11
+  679 0000025A                         
+  680 0000025A                                  ; Tmp2 now 1 based not 0 (Tmp2 * 6)
+  681 0000025A                         
+  682 0000025A         PutChr1:        
+Error   Invalid Register in Line 683 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg Must be r24,r26,r28,r30 in Line 683 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  683 0000025A 0000                    adiw 	ZL, 8             
+Error   Invalid Register in Line 684 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  684 0000025C 0A96                    dec 	Tmp3             
+Error   Invalid Register in Line 685 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  685 0000025E 0A96                    dec 	Tmp2             
+  686 00000260 E1F7                    brne 	PutChr1          
+  687 00000262                         
+  688 00000262         PutChr9:        
+Error   Invalid Register in Line 689 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  689 00000262 0A96                    dec 	Tmp3             
+  690 00000264 F1F7                    brne 	PutChr9          
+  691 00000266                         
+  692 00000266                         
+  693 00000266         PutChr2:        
+Error   Invalid Register in Line 694 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 694 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  694 00000266 0000                    ldi 	Tmp2,8           	; 8 / n Number of rows to fill.
+  695 00000268         PutChr3:        
+  696 00000268 C895                    lpm                  	; Get character from program memory.
+  697 0000026A 0D92                    st 	x+ ,R0            	; Save to video memory.
+Error   Invalid Register in Line 698 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg Must be r24,r26,r28,r30 in Line 698 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  698 0000026C 0000                    adiw 	ZL,1 
+Error   Invalid Register in Line 699 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg Must be r24,r26,r28,r30 in Line 699 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  699 0000026E 0000                    adiw 	XL,7           	; Point to next video row.
+Error   Invalid Register in Line 700 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  700 00000270 0A96                    dec 	Tmp2
+  701 00000272 D1F7                    brne 	PutChr3         	; Loop for 8 rows.
+  702 00000274                         
+  703 00000274                         
+  704 00000274                                  ;*************************
+  705 00000274         exit:           
+  706 00000274 0895                    ret
+  707 00000276                                  ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+  708 00000276                         
+  709 00000276                         
+  710 00000276                         
+  711 00000276                         
+  712 00000276                         
+  713 00000276                         
+  714 00000276                                  ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+  715 00000276                         
+  716 00000276         Chr_0:          
+Error   Syntax in Line 717 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  717 00000276                         .db 	$00, $00, $00, $00, $00, $00, $00, $00 
+Error   Syntax in Line 718 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  718 00000276                         .db    	$04, $04, $04, $04, $00, $00, $04, $00 
+Error   Syntax in Line 719 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  719 00000276                         .db    	$0A, $0A, $0A, $00, $00, $00, $00, $00 
+Error   Syntax in Line 720 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  720 00000276                         .db    	$0A, $0A, $1F, $0A, $1F, $0A, $0A, $00 
+Error   Syntax in Line 721 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  721 00000276                         .db    	$04, $0F, $14, $0E, $05, $1E, $04, $00 
+Error   Syntax in Line 722 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  722 00000276                         .db    	$18, $19, $02, $04, $08, $13, $03, $00 
+Error   Syntax in Line 723 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  723 00000276                         .db    	$0C, $12, $14, $08, $15, $12, $0D, $00 
+Error   Syntax in Line 724 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  724 00000276                         .db    	$0C, $04, $08, $00, $00, $00, $00, $00 
+  725 00000276                         
+Error   Syntax in Line 726 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  726 00000276                         .db	$02, $04, $08, $08, $08, $04, $02, $00 
+Error   Syntax in Line 727 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  727 00000276                         .db    	$08, $04, $02, $02, $02, $04, $08, $00 
+Error   Syntax in Line 728 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  728 00000276                         .db    	$00, $04, $15, $0E, $15, $04, $00, $00 
+Error   Syntax in Line 729 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  729 00000276                         .db    	$00, $04, $04, $1F, $04, $04, $00, $00 
+Error   Syntax in Line 730 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  730 00000276                         .db    	$00, $00, $00, $00, $0C, $04, $08, $00 
+Error   Syntax in Line 731 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  731 00000276                         .db    	$00, $00, $00, $1F, $00, $00, $00, $00 
+Error   Syntax in Line 732 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  732 00000276                         .db    	$00, $00, $00, $00, $00, $0C, $0C, $00 
+Error   Syntax in Line 733 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  733 00000276                         .db   $00, $01, $02, $04, $08, $10, $00, $00 
+  734 00000276                         
+  735 00000276                         
+Error   Syntax in Line 736 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  736 00000276                         .db  $0E, $11, $13, $15, $19, $11, $0E, $00 ;0
+Error   Syntax in Line 737 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  737 00000276                         .db  $04, $0C, $04, $04, $04, $04, $0E, $00 ;1
+Error   Syntax in Line 738 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  738 00000276                         .db  $0E, $11, $01, $02, $04, $08, $1F, $00 ;2
+Error   Syntax in Line 739 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  739 00000276                         .db  $1F, $02, $04, $02, $01, $11, $0E, $00 ;3
+Error   Syntax in Line 740 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  740 00000276                         .db  $02, $06, $0A, $12, $1F, $02, $02, $00 
+Error   Syntax in Line 741 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  741 00000276                         .db  $1F, $10, $1E, $01, $01, $11, $0E, $00 
+Error   Syntax in Line 742 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  742 00000276                         .db  $06, $08, $10, $1E, $11, $11, $0E, $00 
+Error   Syntax in Line 743 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  743 00000276                         .db  $1F, $01, $02, $04, $08, $08, $08, $00 
+  744 00000276                         
+Error   Syntax in Line 745 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  745 00000276                         .db  $0E, $11, $11, $0E, $11, $11, $0E, $00 
+Error   Syntax in Line 746 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  746 00000276                         .db  $0E, $11, $11, $0F, $01, $02, $0C, $00
+Error   Syntax in Line 747 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  747 00000276                         .db  $00, $0C, $0C, $00, $0C, $0C, $00, $00
+Error   Syntax in Line 748 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  748 00000276                         .db  $00, $0C, $0C, $00, $0C, $04, $08, $00
+Error   Syntax in Line 749 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  749 00000276                         .db  $02, $04, $08, $10, $08, $04, $02, $00
+Error   Syntax in Line 750 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  750 00000276                         .db  $00, $1F, $00, $1F, $00, $00, $00, $00
+Error   Syntax in Line 751 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  751 00000276                         .db  $08, $04, $02, $01, $02, $04, $08, $00
+Error   Syntax in Line 752 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  752 00000276                         .db  $0E, $11, $01, $02, $04, $00, $04, $00
+  753 00000276                         
+Error   Syntax in Line 754 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  754 00000276                         .db  $0E, $11, $01, $0D, $15, $15, $0E, $00
+Error   Syntax in Line 755 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  755 00000276                         .db    $0E, $11, $11, $11, $1F, $11, $11, $00 
+Error   Syntax in Line 756 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  756 00000276                         .db    $1E, $11, $11, $1E, $11, $11, $1E, $00 
+Error   Syntax in Line 757 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  757 00000276                         .db    $0E, $11, $10, $10, $10, $11, $0E, $00 
+Error   Syntax in Line 758 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  758 00000276                         .db    $1C, $12, $11, $11, $11, $12, $1C, $00 
+Error   Syntax in Line 759 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  759 00000276                         .db    $1F, $10, $10, $1E, $10, $10, $1F, $00 
+Error   Syntax in Line 760 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  760 00000276                         .db    $1F, $10, $10, $1E, $10, $10, $10, $00 
+Error   Syntax in Line 761 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  761 00000276                         .db    $0E, $11, $10, $17, $11, $11, $0F, $00 
+  762 00000276                         
+Error   Syntax in Line 763 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  763 00000276                         .db  $11, $11, $11, $1F, $11, $11, $11, $00 
+Error   Syntax in Line 764 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  764 00000276                         .db     $0E, $04, $04, $04, $04, $04, $0E, $00 
+Error   Syntax in Line 765 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  765 00000276                         .db     $07, $02, $02, $02, $02, $12, $0C, $00 
+Error   Syntax in Line 766 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  766 00000276                         .db     $11, $12, $14, $18, $14, $12, $11, $00 
+Error   Syntax in Line 767 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  767 00000276                         .db     $10, $10, $10, $10, $10, $10, $1F, $00 
+Error   Syntax in Line 768 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  768 00000276                         .db     $11, $1B, $15, $15, $11, $11, $11, $00 
+Error   Syntax in Line 769 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  769 00000276                         .db     $11, $11, $19, $15, $13, $11, $11, $00 
+Error   Syntax in Line 770 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  770 00000276                         .db     $0E, $11, $11, $11, $11, $11, $11, $0E 
+  771 00000276                         
+Error   Syntax in Line 772 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  772 00000276                         .db  $1E, $11, $11, $1E, $10, $10, $10, $00 
+Error   Syntax in Line 773 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  773 00000276                         .db    $0E, $11, $11, $11, $15, $12, $0D, $00 
+Error   Syntax in Line 774 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  774 00000276                         .db    $1E, $11, $11, $1E, $14, $12, $11, $00
+Error   Syntax in Line 775 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  775 00000276                         .db    $0F, $10, $10, $0E, $01, $01, $1E, $00
+Error   Syntax in Line 776 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  776 00000276                         .db    $1F, $04, $04, $04, $04, $04, $04, $00
+Error   Syntax in Line 777 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  777 00000276                         .db    $11, $11, $11, $11, $11, $11, $0E, $00
+Error   Syntax in Line 778 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  778 00000276                         .db    $11, $11, $11, $11, $11, $0A, $04, $00
+Error   Syntax in Line 779 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  779 00000276                         .db    $11, $11, $11, $15, $15, $15, $0A, $00
+  780 00000276                         
+  781 00000276                         
+Error   Syntax in Line 782 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  782 00000276                         .db  $11, $11, $0A, $04, $0A, $11, $11, $00 
+Error   Syntax in Line 783 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  783 00000276                         .db    $11, $11, $11, $0A, $04, $04, $04, $00 
+Error   Syntax in Line 784 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  784 00000276                         .db    $1F, $01, $02, $04, $08, $10, $1F, $00 
+Error   Syntax in Line 785 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  785 00000276                         .db    $0E, $08, $08, $08, $08, $08, $0E, $00 
+Error   Syntax in Line 786 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  786 00000276                         .db    $11, $0A, $1F, $04, $1F, $04, $04, $00 
+Error   Syntax in Line 787 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  787 00000276                         .db    $0E, $02, $02, $02, $02, $02, $0E, $00 
+Error   Syntax in Line 788 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  788 00000276                         .db    $04, $0A, $11, $00, $00, $00, $00, $00 
+Error   Syntax in Line 789 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  789 00000276                         .db    $00, $00, $00, $00, $00, $00, $1F, $00 
+  790 00000276                                  ;9
+Error   Syntax in Line 791 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  791 00000276                         .db  $08, $04, $02, $00, $00, $00, $00, $00 
+Error   Syntax in Line 792 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  792 00000276                         .db    $00, $00, $0E, $01, $0F, $11, $0F, $00 
+Error   Syntax in Line 793 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  793 00000276                         .db    $10, $10, $16, $19, $11, $11, $1E, $00 
+Error   Syntax in Line 794 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  794 00000276                         .db    $00, $00, $0E, $10, $10, $11, $0E, $00 
+Error   Syntax in Line 795 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  795 00000276                         .db    $01, $01, $0D, $13, $11, $11, $0F, $00 
+Error   Syntax in Line 796 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  796 00000276                         .db    $00, $00, $0E, $11, $1F, $10, $0E, $00 
+Error   Syntax in Line 797 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  797 00000276                         .db    $06, $09, $08, $1C, $08, $08, $08, $00 
+Error   Syntax in Line 798 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  798 00000276                         .db    $00, $0F, $11, $11, $0F, $01, $0E, $00 
+  799 00000276                         
+Error   Syntax in Line 800 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  800 00000276                         .db     $10, $10, $16, $19, $11, $11, $11, $00 
+Error   Syntax in Line 801 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  801 00000276                         .db     $04, $00, $0C, $04, $04, $04, $0E, $00 
+Error   Syntax in Line 802 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  802 00000276                         .db     $02, $00, $06, $02, $02, $12, $0C, $00 
+Error   Syntax in Line 803 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  803 00000276                         .db     $10, $10, $12, $14, $18, $14, $12, $00 
+Error   Syntax in Line 804 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  804 00000276                         .db     $0C, $04, $04, $04, $04, $04, $0E, $00 
+Error   Syntax in Line 805 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  805 00000276                         .db     $00, $00, $1A, $15, $15, $11, $11, $00 
+Error   Syntax in Line 806 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  806 00000276                         .db     $00, $00, $16, $19, $11, $11, $11, $00 
+Error   Syntax in Line 807 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  807 00000276                         .db     $00, $00, $0E, $11, $11, $11, $0E, $00
+  808 00000276                         
+Error   Syntax in Line 809 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  809 00000276                         .db     $00, $00, $1E, $11, $1E, $10, $10, $00 
+Error   Syntax in Line 810 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  810 00000276                         .db     $00, $00, $0D, $13, $0F, $01, $01, $00 
+Error   Syntax in Line 811 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  811 00000276                         .db     $00, $00, $16, $19, $10, $10, $10, $00 
+Error   Syntax in Line 812 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  812 00000276                         .db     $00, $00, $0E, $10, $0E, $01, $1E, $00 
+Error   Syntax in Line 813 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  813 00000276                         .db     $08, $08, $1C, $08, $08, $09, $06, $00 
+Error   Syntax in Line 814 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  814 00000276                         .db     $00, $00, $11, $11, $11, $13, $0D, $00 
+Error   Syntax in Line 815 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  815 00000276                         .db     $00, $00, $11, $11, $11, $0A, $04, $00 
+Error   Syntax in Line 816 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  816 00000276                         .db     $00, $00, $11, $11, $15, $15, $0A, $00 
+  817 00000276                         
+Error   Syntax in Line 818 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  818 00000276                         .db     $00, $00, $11, $0A, $04, $0A, $11, $00 
+Error   Syntax in Line 819 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  819 00000276                         .db     $00, $00, $11, $11, $0F, $01, $0E, $00 
+Error   Syntax in Line 820 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  820 00000276                         .db     $00, $00, $1F, $02, $04, $08, $1F, $00 
+Error   Syntax in Line 821 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  821 00000276                         .db     $02, $04, $04, $08, $04, $04, $02, $00 
+Error   Syntax in Line 822 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  822 00000276                         .db     $04, $04, $04, $04, $04, $04, $04, $00 
+Error   Syntax in Line 823 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  823 00000276                         .db     $08, $04, $04, $02, $04, $04, $08, $00 
+Error   Syntax in Line 824 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  824 00000276                         .db     $04, $02, $1F, $02, $04, $00, $00, $00 
+Error   Syntax in Line 825 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  825 00000276                         .db     $04, $08, $1F, $08, $04, $00, $00, $00 
+  826 00000276                         
+  827 00000276                                  ;///////////////////////////////////////////////////////////////////////////////////
+  828 00000276                         
+  829 00000276                         
+  830 00000276                                  ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+  831 00000276                                  ;Analog to Digital converter
+  832 00000276                         
+Error   Invalid Register in Line 833 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 833 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  833 00000276 0000    adc:            ldi     ZL, 0     ;Clear counter
+Error   Invalid Register in Line 834 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg must be R16 to R31 in Line 834 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  834 00000278 0000                    ldi     ZH, 0     ;/
+Error   Bad syntax or LABEL in Line 835 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 835 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  835 0000027A 0098                    cbi     DDRB, 0   ;Start to charge
+Error   Bad syntax or LABEL in Line 836 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 836 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  836 0000027C 009A                    sbi     PORTB, 0  ;/
+  837 0000027E         wait:           
+Error   Invalid Register in Line 838 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Reg Must be r24,r26,r28,r30 in Line 838 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  838 0000027E 0000                    adiw    ZL, 1     ;Wait for Vc reaches Vi
+Error   Bad syntax or LABEL in Line 839 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 839 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Bad syntax or LABEL in Line 839 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 839 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  839 00000280 009B                    sbis    ACSR, ACO ;
+Error   Bad syntax or LABEL in Line 840 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 840 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  840 00000282 BECE                    rjmp    PC-2      ;/
+Error   Bad syntax or LABEL in Line 841 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 841 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  841 00000284 0098                    cbi     PORTB, 0  ;Discharge capacitor
+Error   Bad syntax or LABEL in Line 842 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   bad expression in Line 842 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  842 00000286 009A                    sbi     DDRB, 0   ;/
+Error   Invalid Register in Line 843 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 843 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  843 00000288 002E                    mov		Param1,Zl	; Not a null so send.
+  844 0000028A BFDF                    rcall	Uart_TX 
+Error   Invalid Register in Line 845 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+Error   Invalid Register in Line 845 File C:\AVR\DEVELOP\VIDEO\TVIDEO.ASM
+  845 0000028C 002E                    mov tmp1,param1
+  846 0000028E D9DF                    rcall putchr;******************************************
+  847 00000290 0895                    ret               ;Z = result
+  848 00000292                         
+  849 00000292                         
+  850 00000292                                  ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+850 Lines Compiled Errors=518  Warnings=0
+Bytes = 658
