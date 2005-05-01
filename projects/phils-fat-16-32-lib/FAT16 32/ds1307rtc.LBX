@@ -1,0 +1,148 @@
+Comment = Compiled LIB file, no comment included
+
+Copyright = Phil
+Comment = Based On Ds1307clock.lib
+Comment = Reference Material
+Comment = Dallas Semiconductor
+Comment = Ds1307 / Ds1308
+Comment = 64 X 8 Serial Real Time Clock
+Comment = Avr Application Note Avr204
+Libversion = 1.01
+Date = 2 Mar 2005
+Statement = Use At Own Risk.
+History = Changed lower case External to Uppercase
+History = No Known Bugs.
+.equ Ds1307w = &B11010000                                   'ds1307 write address
+.equ Ds1307r = &B11010001                                   'ds1307 read address
+[getdatetime]
+'***************************************************************
+'get date & time from the DS1307
+'***************************************************************
+'get date & time from the DS1307 & convert it to binary & stick it in the
+'global variables _sec, _min, _hour, _day, _month. _year
+'This routine is called automaticly whenever the "Date$" or "Time$" is read. (I guess, because it is not documented)
+'This routine must be called maunally, just prior to, whenever a other time & date routines are used,
+'eg "SysSecElapsed" & "SysSec()"
+$EXTERNAL _i2c , _i2c_read , Pbcd2bin8
+Getdatetime:
+Call _i2c_start                                             'generate a start
+.OBJ ED10
+Call _i2c_write                                             'Send address, First byte Rxed is handled in slave Rx mode
+.OBJ E010
+Call _i2c_write                                             'send address offset to seconds (0)
+Call _i2c_start                                             'generate a start, again
+.OBJ ED11
+Call _i2c_write                                             'Send address
+Loadadr _sec , X
+Call _i2c_read_more                                         'get seconds
+rcall Pbcd2bin8                                             'convert from Packed BCD to BIN
+.OBJ 930D
+Call _i2c_read_more                                         'get minutes
+rcall Pbcd2bin8                                             'convert from Packed BCD to BIN
+.OBJ 930D
+Call _i2c_read_more                                         'get hours
+rcall Pbcd2bin8                                             'convert from Packed BCD to BIN
+.OBJ 930D
+Call _i2c_read_more                                         'get day & dump it
+Call _i2c_read_more                                         'get date
+rcall Pbcd2bin8                                             'convert from Packed BCD to BIN
+.OBJ 930D
+Call _i2c_read_more                                         'get month
+rcall Pbcd2bin8                                             'convert from Packed BCD to BIN
+.OBJ 930D
+Call _i2c_read_last                                         'get year. Last byte to xfer
+rcall Pbcd2bin8                                             'convert from Packed BCD to BIN
+.OBJ 930C
+.OBJ 9508
+[end]
+[setdate]
+'***************************************************************
+'Set date in the DS1307
+'***************************************************************
+'Convert global variables _day, _month. _year to BCD
+'& stick it in the DS1307
+'This routine is called automaticly whenever the "Date$" is set. (I guess, because it is not documented)
+$EXTERNAL _i2c , Bin82pbcd
+Setdate:
+Call _i2c_start                                             'generate a start
+.OBJ ED10
+Call _i2c_write                                             'Send address, First byte Rxed is handled in slave Rx mode
+.OBJ E014
+Call _i2c_write                                             'send start address
+Loadadr _day , X
+.OBJ 911D
+rcall Bin82pbcd                                             'convert it from BIN to packed BCD
+Call _i2c_write                                             'set the date
+.OBJ 911D
+rcall Bin82pbcd                                             'convert it from BIN to packed BCD
+Call _i2c_write                                             'set the month
+.OBJ 911D
+rcall Bin82pbcd                                             'convert it from BIN to packed BCD
+Call _i2c_write                                             'set the year
+Call _i2c_stop                                              'send stop
+.OBJ 9508
+[end]
+[settime]
+'***************************************************************
+'Set time in the DS1307
+'***************************************************************
+'Convert global variables _day, _month. _year to BCD
+'& stick it in the DS1307
+'This routine is called automaticly whenever the "Time$" is set. (I guess, because it is not documented)
+$EXTERNAL _i2c , Bin82pbcd
+Settime:
+Call _i2c_start                                             'generate a start
+.OBJ ED10
+Call _i2c_write                                             'Send address, First byte Rxed is handled in slave Rx mode
+.OBJ E010
+Call _i2c_write                                             'send start address
+Loadadr _sec , X
+.OBJ 911D
+rcall Bin82pbcd                                             'convert it from BIN to packed BCD
+Call _i2c_write                                             'set the seconds
+.OBJ 911D
+rcall Bin82pbcd                                             'convert it from BIN to packed BCD
+Call _i2c_write                                             'set the minutes
+.OBJ 911D
+rcall Bin82pbcd                                             'convert it from BIN to packed BCD
+Call _i2c_write                                             'set the hours
+Call _i2c_stop                                              'send stop
+.OBJ 9508
+[end]
+[pbcd2bin8]
+'***************************************************************
+'Packed BCD to 8 Bit Binary conversion
+'***************************************************************
+'Modified from application note AVR204
+'Input. Packed BCD number is passed in r17
+'Output. 8 bit binary number is passed back in r16
+Pbcd2bin8:
+.OBJ 2F01
+.OBJ 700F
+Pbcd2bin8_0:
+.OBJ 5110
+brcs Pbcd2bin8_1                                            'if carry not set
+.OBJ 5F06
+rjmp Pbcd2bin8_0                                            'loop again
+Pbcd2bin8_1:
+.OBJ 9508
+[end]
+[bin82pbcd]
+'***************************************************************
+'8 Bit Binary to Packed BCD conversion
+'***************************************************************
+'Modified from application note AVR204
+'Input. 8 bit binary number is passed in r17
+'Output. Packed BCD number is passed back in r17
+Bin82pbcd:
+.OBJ 2700
+Bin82pbcd_1:
+.OBJ 501A
+brcs Bin82pbcd_2                                            'abort if carry set
+.OBJ 5F00
+rjmp Bin82pbcd_1                                            'loop again
+Bin82pbcd_2:
+.OBJ 5F16
+.OBJ F10
+.OBJ 9508
+[end]

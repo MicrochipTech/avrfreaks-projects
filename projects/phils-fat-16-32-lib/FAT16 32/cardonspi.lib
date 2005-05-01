@@ -1,0 +1,397 @@
+Copyright = Phil
+Comment = Reference Material
+Comment = Sandisk Multimediacard / Rs -multimediacard Product Manual
+Comment = I Have Tried To Keep The Names Of Registers And Fields The Same As The Reference Material
+Comment = Driver For Sd / Mmc Card Connected Hardware Spi Interface
+
+Libversion = 0.11
+Date = 4 March 2005
+Statement = Use At Own Risk.
+History = No Known Bugs
+
+'commands (with host transmission bit set)
+.equ Go_to_idle = &H40
+.equ Send_op_cond = &H41
+.equ Set_blocklen = &H50
+.equ Read_single_block = &H51
+.equ Read_multiple_block = &H52
+.equ Write_block = &H58
+.equ Write_multiple_block = &H59
+.equ Stop_transmission = &H4C
+.equ Send_cid = &H4A
+.equ Send_status = &H4D
+'tokens
+.equ Multi_block_rd_token = &HFE
+.equ Multi_block_wr_start_token = &HFC
+.equ Multi_block_wr_stop_token = &HFD
+'bits
+.equ Card_transmission_bit = 7
+'error codes
+.equ Time_out_err = 1                                       'Time Out
+.equ Response_err = 3                                       'Response indicates an error
+
+[initdrive]
+'***************************************************************
+'INI SD / MMC card in spi mode
+'***************************************************************
+$EXTERNAL Txrxspi , Txrxspi_wait4resp , Chk4error
+Initdrive:
+* Sbi Spidd , Sdmmccs                                    'make SD / MMC Chip Select = output
+* Sbi Spiport , Sdmmccs                                  'make CS = high
+ldi r20, 10                                                 '80 clocks
+Initloop:
+rcall txrxspi255
+dec r20
+brne Initloop
+* Cbi Spiport , Sdmmccs                                   'make SD / MMC Chip Select active
+ldi r21, 100                                                'retry counter
+Go_to_idle_retry:
+dec r21                                                     'decr retry counter
+breq Chk4error_error_time                                   'if we have run out of retrys, then timeout
+ldi r23, Go_to_idle
+rcall Txrxspi                                               'send command
+rcall Txrxspi0                                              'send argument = 0 hi
+rcall Txrxspi0                                              'send argument = 0
+rcall Txrxspi0                                              'send argument = 0
+rcall Txrxspi0                                              'send argument = 0 lo
+ldi r23, &H95                                               'checksum for command & argument that was just sent
+rcall Txrxspi_wait4resp                                     'send checksum & wait for valid response
+breq Go_to_idle_retry                                       'if no valid response, then retry
+cpi r23, 1                                                  'was response 1 ?
+brne Go_to_idle_retry                                        'If not, retry
+Go_to_idle_end:
+ldi r21, 255                                                'retry counter
+Send_op_cond_retry:
+* Sbi Spiport , Sdmmccs                                'make SD / MMC Chip Select not active
+rcall Txrxspi255                                            'send 255 without chip select to flush card buffer
+*BASIC:WAITMS 100
+* Cbi Spiport , Sdmmccs                                'make SD / MMC Chip Select active
+dec r21                                                     'decr retry counter
+breq Chk4error_error_time                                   'if we have run out of retrys, then timeout
+ldi r23, Send_op_cond
+rcall Txrxspi                                               'send command
+rcall Txrxspi0                                              'send argument = 0 hi
+rcall Txrxspi0                                              'send argument = 0
+rcall Txrxspi0                                              'send argument = 0
+ldi r23, 0
+rcall Txrxspi_wait4resp                                     'send argument = 0 lo and wait for valid response
+breq Send_op_cond_retry                                     'if Z flag set, then no valid response received. Try again
+cpi r23, 1                                                  'was response 1 = in idle state?
+breq Send_op_cond_retry                                     'then resend command & retry
+tst r23                                                     'was the reponse 0 (no errors) ?
+brne Chk4error_error_resp                                   'if not then something is wrong
+* Sbi Spiport , Sdmmccs                                'make SD / MMC Chip Select not active
+rcall Txrxspi255                                            'send 255 without chip select to flush card buffer
+ret
+[end]
+
+[chk4error]
+'***************************************************************
+'Check4error
+'***************************************************************
+'checks the Z flag in sreg, which indicates a timeout
+'also checks r23 for zero, which indicates wheather a valid response was received.
+Chk4error:
+brne Chk4error_no_timeout                                   'if no valid reponse,
+rjmp Chk4error_error_time                                   'then timeout
+Chk4error_no_timeout:
+tst r23                                                     'If the response was not 0
+brne Chk4error_error_resp                                   'then there is an error
+ret                                                         'reponse was 0 and no timeout
+Chk4error_error_time:
+ldi r23, time_out_err                                       'Time Out error
+rjmp Chk4error_error
+Chk4error_error_resp:
+ldi r23, Response_err                                       'Response error
+Chk4error_error:
+* Sbi Spiport , Sdmmccs                                   'make SD / MMC Chip Select not active
+sts {errorcode}, r23
+jmp errorhandle                                             'fatal error. never to return
+[end]
+
+[read_sec]
+'***************************************************************
+'issue Read Sector command to card
+'***************************************************************
+'Sub Read_sec(lbasector As Long , Byval Sec2xfer As Byte)
+'lbasector= Y+2,Y+3 Sec2xfer=Y+0,Y+1
+'entry point if registers need to be loaded by soft stack
+Read_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec2xfer
+ld r24, X                                                   'r24 contains Sec2xfer
+ldd Xl, Y+2
+ldd Xh, Y+3                                                 'X register pair points to lbasector
+ld r16, X+                                                  'r16 contains bits 0 - 7 of LBA & post incr
+ld r17, X+                                                  'r17 contains bits 8 - 15 of LBA & post incr
+ld r18, X+                                                  'r18 contains bits 16 - 23 of LBA & post incr
+ld r19, X                                                   'r19 contains bits 24 to 31 of LBA only 27 is used
+'entry point if registers pre loaded
+'r24 = sectors to transfer, r16 to r19 = lbasector
+[Readsec]
+$EXTERNAL Lba2add , Txrxspi , Txrxspi_wait4resp , Chk4error
+Readsec:
+rcall Txrxspi255                                            'send 255 without chip select to flush card buffer
+* Cbi Spiport , Sdmmccs                                   'make SD / MMC Chip Select active
+rcall Lba2add                                               'convert LBA to address
+ldi r23, Read_multiple_block
+rcall Txrxspi
+mov r23, r19                                                'send address hi
+rcall Txrxspi
+mov r23, r18
+rcall Txrxspi
+mov r23, r17
+rcall Txrxspi
+mov r23, r16
+rcall Txrxspi_wait4resp                                     'send address lo & wait for response
+rcall Chk4error                                             'check for any error
+ret
+[end]
+
+[get_sec]
+'***************************************************************
+'Get da Sector Data from the card and Stick it in da RAM
+'***************************************************************
+'Sub Get_sec(buffer() , Byval Sec_expected As Byte )
+'buffer()= Y+2,Y+3 Sec_expected=Y+0,Y+1
+'entry point if registers need to be loaded by soft stack
+Get_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec_expected
+ld r24, X                                                   'r24 contains Sec_expected
+ldd Xl, Y+2                                                 'X register pair points to buffer
+ldd Xh, Y+3
+'entry point if registers pre loaded
+'r24 = Sector Counter (Sec_expected)
+'Xl & Xh = (X register pair) points to buffer
+[Getsec]
+$EXTERNAL Txrxspi_wait4token , Txrxspi , Txrxspi_wait4resp , Chk4error
+Getsec:
+rcall Txrxspi_wait4token                                    'wait for data token
+ldi r25, 0                                                  'word counter
+Getsec_loop:
+cpi r25, &HFF                                               'have we got 2 bytes to go?
+brne Getsec_loop1                                          'if not, keep looping
+dec r24                                                     'decr sec_expected
+brne Getsec_loop1                                          'have we finished?
+ldi r23, Stop_transmission                                  'if so, then stop txing
+rcall Txrxspi                                               'get a byte in r23
+st X+, r23                                                  'store to buffer
+rjmp Getsec_loop2
+Getsec_loop1:
+rcall Txrxspi255                                            'get a byte in r23
+st X+, r23                                                  'store to buffer
+Getsec_loop2:
+rcall Txrxspi255
+st X+, r23                                                  'again. 2 bytes = 1 word
+inc r25                                                     'incr word counter
+brne getsec_loop                                           'have we finished transfering 1 block
+rcall Txrxspi255                                            'get crc16 hi & dump it
+rcall Txrxspi255                                            'get crc16 lo & dump it
+tst r24                                                     'is sector counter = 0
+brne Getsec                                               'if not finished, get some more data
+rcall Txrxspi_wait4resp                                     'wait for valid response
+rcall Chk4error                                             'check for any error
+* sbi Spiport, Sdmmccs                                        'make SD / MMC Chip Select not active
+ret
+[end]
+
+[txrxspi_wait4token]
+'***************************************************************
+'Tx & Rx wait for token
+'***************************************************************
+$EXTERNAL Txrxspi
+Txrxspi_wait4token:
+ldi r20, 255                                                'loop counter
+ldi r21, 255
+Txrxspi_wait4token1:
+rcall Txrxspi255
+cpi r23, Multi_block_rd_token                               'was it a data token
+breq Txrxspi_wait4token_end                                 'if data token received, good then end
+dec r20                                                     'otherwise decr loop counter
+brne Txrxspi_wait4token1                                    'untill we have run out of retrys
+dec r21
+brne Txrxspi_wait4token1
+rjmp Chk4error_error_time                                   'then timeout
+Txrxspi_wait4token_end:
+ret
+[end]
+
+[write_sec]
+'***************************************************************
+'issue Write Sector command to drive
+'***************************************************************
+'Sub Write_sec(lbasector As Long , Byval Sec2xfer As Byte)
+'lbasector= Y+2,Y+3 Sec2xfer=Y+0,Y+1
+'entry point if registers need to be loaded by soft stack
+Write_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec2xfer
+ld r24, X                                                   'r24 contains Sec2xfer
+ldd Xl, Y+2
+ldd Xh, Y+3                                                 'X register pair points to lbasector
+ld r16, X+                                                  'r16 contains bits 0 - 7 of LBA & post incr
+ld r17, X+                                                  'r17 contains bits 8 - 15 of LBA & post incr
+ld r18, X+                                                  'r18 contains bits 16 - 23 of LBA & post incr
+ld r19, X                                                   'r19 contains bits 24 to 31 of LBA only 27 is used
+'entry point if registers pre loaded
+'r24 = sectors to transfer, r16 to r19 = lbasector
+[Writesec]
+$EXTERNAL Txrxspi , Txrxspi_wait4resp , Chk4error
+Writesec:
+rcall Txrxspi255                                            'send 255 without chip select to flush card buffer
+* Cbi Spiport , Sdmmccs                                   'make SD / MMC Chip Select active
+rcall Lba2add                                               'convert LBA to address
+ldi r23, Write_multiple_block
+rcall Txrxspi
+mov r23, r19                                                'send address hi
+rcall Txrxspi
+mov r23, r18
+rcall Txrxspi
+mov r23, r17
+rcall Txrxspi
+mov r23, r16
+rcall Txrxspi_wait4resp                                     'send address lo & wait for response
+rcall Chk4error                                             'check for any error
+ret
+[end]
+
+[put_sec]
+'***************************************************************
+'Put da Sector Data from the RAM and Stick it in da ATA
+'***************************************************************
+'Sub Put_sec(buffer() , Byval Sec_expected As Byte )
+'buffer()= Y+2,Y+3 Sec_expected=Y+0,Y+1
+'entry point if registers need to be loaded by soft stack
+Put_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec_expected
+ld r24, X                                                   'r24 contains Sec_expected
+ldd Xl, Y+2                                                 'X register pair points to buffer
+ldd Xh, Y+3
+'entry point if registers pre loaded
+'r24 = Sector Counter (Sec_expected)
+'Xl & Xh = (X register pair) points to buffer
+[Putsec]
+$EXTERNAL Txrxspi , Txrxspi_wait4resp , Chk4error
+Putsec:
+ldi r23, Multi_block_wr_start_token
+rcall Txrxspi                                               'send Multiple_block_start_token
+ldi r25, 0                                                  'word counter
+Putsec_loop:
+ld r23, X+                                                  'get a byte
+rcall Txrxspi                                               'and put it into card
+ld r23, X+                                                  'get a byte 2 bytes = 1 word
+rcall Txrxspi                                               'and put it into card
+inc r25                                                     'incr word counter
+brne Putsec_loop
+rcall Txrxspi255                                            'send dummy CRC16 hi
+ldi r23, &HFF
+rcall Txrxspi_wait4resp                                     'send dummy CRC16 lo & wait for response
+rcall Chk4error                                             'check for any error
+Putsec_wait4_not_busy:                                     'wait for busy to clear
+rcall Txrxspi255
+tst r23                                                     'if data = 0, then card is still busy
+breq Putsec_wait4_not_busy
+dec r24                                                     'decr sector counter
+brne Putsec                                               'If not finished, put some more data
+rcall Txrxspi255                                            'Nwr delay
+ldi r23, Multi_block_wr_stop_token
+rcall Txrxspi                                               'send multi write stop token
+rcall Txrxspi255                                            'Nbr delay
+Putsec_wait4_not_busy1:                                    'wait for busy to clear
+rcall Txrxspi255
+tst r23                                                     'if data = 0, then card is still busy
+breq Putsec_wait4_not_busy1
+ldi r23, Send_status
+rcall Txrxspi_wait4resp                                     'send command & wait for response
+rcall Chk4error                                             'check for any error
+clz                                                         'make sure Z flag in clear, as there has been no timeout.
+rcall Txrxspi255                                            'get 2nd half of response
+rcall Chk4error                                             'check for any error, as Send_status has a R2 response
+* Sbi Spiport , Sdmmccs                                   'make SD / MMC Chip Select not active
+ret
+[end]
+
+[lba2add]
+'***************************************************************
+'Logical Block Addressing (LBA) to Address
+'***************************************************************
+'LBA passed in r16-19, address passed back in r16-r19
+'Thanks Josef
+Lba2add:
+mov r19, r18                                                'LBA byte3 to LBA byte4
+mov r18, r17                                                'LBA byte2 to LBA byte3
+mov r17, r16                                                'LBA byte1 to LBA byte2
+ldi r16, 0                                                  'LBA byte0 =0. Multiply LBA by 256
+lsl r17                                                     'shift left LBA byte1
+rol r18                                                     'rotate left thru LBA byte2
+rol r19                                                     'rotate left thru LBA byte3. Multiply by a further 2
+'Multiply by 512 to convert Logical Block Addressing (512 bytes per block) to Memory Address
+ret
+[end]
+
+[identify_device]
+'***************************************************************
+'Identify Device
+'***************************************************************
+'issues an identify device command, and sticks the data in the buffer, pointed to by X
+$EXTERNAL Txrxspi , Txrxspi_wait4resp , Chk4error
+Identify_device:
+rcall Txrxspi255                                            'send 255 without chip select to flush card buffer
+* cbi Spiport, Sdmmccs                                   'make SD / MMC Chip Select active
+ldi r23, Send_cid
+rcall Txrxspi                                               'send command
+rcall Txrxspi0                                              'send argument = 0 hi
+rcall Txrxspi0                                              'send argument = 0
+rcall Txrxspi0                                              'send argument = 0
+ldi r23, 0
+rcall Txrxspi_wait4resp                                     'send argument = 0 lo & wait for response
+rcall Chk4error                                             'check for any error
+ldi r21, 16                                                 '16 bytes
+Iddeviceloop:
+rcall Txrxspi255                                            'get a byte in r23
+st X+, r23                                                  'store to buffer
+dec r21                                                     'decr byte counter
+brne Iddeviceloop                                           'done ?
+rcall Txrxspi255                                            'get crc16 hi & dump it
+rcall Txrxspi255                                            'get crc16 lo & dump it
+* Sbi Spiport , Sdmmccs                                   'make SD / MMC Chip Select not active
+ret
+[end]
+
+[txrxspi]
+'***************************************************************
+'Tx & Rx SPI via r23
+'***************************************************************
+Txrxspi0:
+clr r23                                                     'r23 = 0
+rjmp Txrxspi                                                'send it, & rx response in r23
+Txrxspi255:
+ldi r23, &HFF                                               '&HFF to r23
+Txrxspi:                                                    'send a byte passed in r23 to spi, and rx back in r23
+* Out Spdr , R23                                          'r23 to spdr
+Txrxspiwait:
+* Sbis Spsr , Spif                                        'Wait For Spif To Be Set = Transmission Complete
+rjmp Txrxspiwait
+* In R23 , Spdr                                           'get response in r23
+ret
+[end]
+
+[txrxspi_wait4resp]
+'***************************************************************
+'Tx & Rx wait for response
+'***************************************************************
+$EXTERNAL Txrxspi
+Txrxspi_wait4resp:
+ldi r20, 255                                                'loop counter
+Txrxspi_wait4resp_loop:
+rcall Txrxspi                                               'send byte via spi
+clz                                                         'make sure Z flag in clear
+sbrs r23, Card_transmission_bit                             'card transmission bit clear,
+ret                                                         'then return with a valid response
+ldi r23, &HFF                                               'otherwise, &HFF to r23
+dec r20                                                     'decr loop counter
+brne Txrxspi_wait4resp_loop                                 'try again
+ret                                                         'returns with Z flag in sreg set if no valid response
+[end]

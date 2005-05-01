@@ -1,0 +1,4111 @@
+Comment = Compiled LIB file, no comment included
+
+Copyright = Phil
+Comment = Reference Material
+Comment = Microsoft FAT32 File System Specification
+Comment = I Have Tried To Keep The Names Of Registers And Fields The Same As The Reference Material
+Comment = No commercial use
+Comment = next_file keeps looping (lockup) if root directory is empty. add test for empty dir.
+Comment = Append_file sometimes adds an exta cluster ??
+Comment = to do. Tidy up code.
+Comment = TO DO. Append a new cluster if directory cluster is full when creating a file
+Libversion = 0.02
+Date = 29 Apr 2005
+Statement = Use At Own Risk.
+History = BETA.
+'fat status bits
+.equ Filebuffermodifiedflag = 7                             '1 = File buffer is modified
+.equ Randommode = 6                                         '1 = Random mode
+.equ Fatbuffermodifiedflag = 5                              '1 = FAT buffer is modified
+.equ Fatis16 = 4                                            '1 = fat is FAT16, 0 = FAT is FAT32
+.equ Bytesperbyte = 1
+.equ Bytesperword = 2
+.equ Bytesperlong = 4
+.equ Bytespersec = 512
+.equ Bytespersec_lo = Bytespersec And &HFF
+.equ Bytespersec_hi =(bytespersec And &HFF00) / &H100
+.equ Bytesperdirentry = 32
+.equ Signature = &HAA55
+.equ Signature_lo = Signature And &HFF
+.equ Signature_hi =(signature And &HFF00) / &H100
+'dir_attrb bits
+.equ Attrib_read_onlybit = 0
+.equ Attrib_hiddenbit = 1
+.equ Attrib_systembit = 2
+.equ Attrib_volume_idbit = 3
+.equ Attrib_directorybit = 4
+.equ Attrib_archivebit = 5
+'dir_attrb bytes
+.equ Attrib_read_only = &H01
+.equ Attrib_hidden = &H02
+.equ Attrib_system = &H04
+.equ Attrib_volume_id = &H08
+.equ Attrib_directory = &H10
+.equ Attrib_archive = &H20
+.equ Attrib_long_name = &H0F
+'file status or dir status bits
+.equ Endoffileflag = 7                                      '1 = end of file
+'error codes
+'0 = no error
+'1 to 20 reserved for fatal ata driver or card driver
+'21 to 40 reserved for fatal fat driver
+'41 to 60 reserved for non fatal fat driver
+'Fatal errors
+.equ Sig_chk_err = 21                                       'Failed Master Boot Record, or Bios Parameter Block, or FSI signature check
+.equ Fatis12_err = 22                                       'Fat12 is not supported
+.equ Nxt_clus_eoc_err = 23                                  'Attempt to look for the next cluster while at end of cluster chain
+.equ Fill_buff_eof_err = 24                                 'Attempt to fill buffer while at end of file
+.equ Fat_chain_err = 25                                     'Next cluster contains an un allocated cluster.
+.equ Disk_full_err = 26                                     'Disk is full
+.equ Flush_empty_buff_err = 27                              'attempt to flush an empty buffer in random mode
+.equ Append_no_eoc_err = 28                                 'append did not find an end of cluster chain
+.equ Bytes_per_sec_err = 29                                 'Bios Paramter Block Bytes per Sector not equal to 512
+.equ No_fat_loaded_err = 30                                 'attempt to force a fresh fat buffer, while fat bufer is modified
+.equ Open_file_err = 31                                     'attempt to open a volume ID or a long file name
+'non fatal errors
+.equ Del_dir_wrng = 41                                      'cannot delete directory
+.equ Open_path_wrng = 42                                    'Open_path unable to open the whole path
+.equ Open_path_fnd_file_wrng = 43                           'Open_path found a file rather than a directory
+.equ Open_path_fnd_dir_wrng = 44                            'Open_path found a directory rather than a file
+.equ Create_path_wrng = 45                                  'Create_path created a file, that must be closed
+.equ Path_str_wrng = 46                                     'Path string is empty
+.equ File_str_empty = 47                                    'File string is empty
+[Open_path]
+'***************************************************************
+'Open Path
+'***************************************************************
+'path is converted to upper case, and any white space is trimmed off.
+'If the first character is \ (backslash) then the root directory is implied.
+'If the character after the name = \ then a directory is implied.
+'\foo\ = root\FOO directory
+'\foo\foo.bar = root\FOO\FOO.BAR file
+'FOO.BAR = current directory FOO.BAR file
+'returns the remaining path if failed, so the remaing path can be created if needed,
+'direntry will contain the new dir entry.
+'Sub Open_path(path As String , Remain_path As String , Direntry As Word)
+$EXTERNAL Allocateframe, mem2mem, No_dir_loaded, Parse_path, Find_file, Read_dir_attr, Deallocateframe
+'MCS Routines
+$EXTERNAL _ucase, _trim, _MoveString
+Open_path:
+.OBJ E05D
+call Allocateframe                                         'create a 13 byte local variable (Currentpath)
+.OBJ E052
+call Allocateframe                                         'create a 2 byte local variable (Direntrycopy)
+.OBJ E052
+call Allocateframe                                         'create a 2 byte local variable (Currentpath_add)
+.OBJ 85AA
+.OBJ 85BB
+.OBJ 1FD
+call _ucase                                                'Make upper case
+.OBJ 85AA
+.OBJ 85BB
+.OBJ 1FD
+call _trim                                                 'Trim of any whitespace
+.OBJ 85EA
+.OBJ 85FB
+.OBJ 8100
+.OBJ 2300
+brne Openpathchkroot
+.OBJ 85A8
+.OBJ 85B9
+.OBJ 930C
+.OBJ E20E
+rjmp Openpathend                                            'and bug out
+Openpathchkroot:
+.OBJ 350C
+brne Openpathloop
+Loadadr Dirfirstcluster , Z
+Loadadr Bpb_rootclus , X
+.OBJ E054
+call mem2mem                                               'make Dirfirstcluster = Bpb_rootclus
+call No_dir_loaded                                         'make all dir variables default
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 2400
+.OBJ 920D
+.OBJ 920C
+.OBJ 85EA
+.OBJ 85FB
+.OBJ 8101
+.OBJ 2300
+brne Openpathloop1
+rjmp Openpathok
+Openpathloop1:
+.OBJ 9631
+Openpathloop:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 93ED
+.OBJ 93FC
+.OBJ 81AC
+.OBJ 81BD
+rcall Parse_path                                            'pull out a path string
+.OBJ 93EF
+.OBJ 93FF
+.OBJ 930F
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+.OBJ 93BA
+.OBJ 93AA
+Call Find_file                                             'find the file
+.OBJ 9624
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 918D
+.OBJ 919C
+.OBJ EF7F
+.OBJ 1787
+.OBJ 797
+brne Openpath_chk_attrib                                   'if not equal to &HFFFF, then found
+.OBJ 910F
+.OBJ 91FF
+.OBJ 91EF
+.OBJ E20A
+rjmp Openpathfail                                           'and fail
+Openpath_chk_attrib:
+.OBJ E0A0
+.OBJ E0B0
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 93BA
+.OBJ 93AA
+Call Read_dir_attr                                         'get attribute in r0
+.OBJ 9624
+.OBJ 910F
+.OBJ 91FF
+.OBJ 91EF
+.OBJ 350C
+breq opendir
+.OBJ E20C
+.OBJ FC04
+rjmp Openpathfail                                           'then fail
+Openpath_file:
+rcall Openpath_open                                         'open the file
+rjmp Openpathok                                             'must be at end of string
+Opendir:
+.OBJ E20B
+.OBJ FE04
+rjmp Openpathfail                                           'then fail
+Openpath_dir:
+rcall Openpath_open                                         'open the dir
+.OBJ 8100
+.OBJ 2300
+breq Openpathok                                             'then bug out
+rjmp Openpathloop                                           'otherwise loop again
+Openpathfail:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 91ED
+.OBJ 91FC
+.OBJ 85A8
+.OBJ 85B9
+call _MoveString                                           'make Remain_path = path - currentpath
+rjmp Openpathend
+Openpathok:
+.OBJ E000
+.OBJ 85A8
+.OBJ 85B9
+.OBJ 930C
+Openpathend:
+sts {errorcode}, r16                                        'save error code
+.OBJ E052
+call Deallocateframe                                       'un create 1 byte local
+.OBJ E052
+call Deallocateframe                                       'un create 1 byte local
+.OBJ E05D
+call Deallocateframe                                       'un create 13 byte local
+.OBJ 9508
+Openpath_open:
+.OBJ 93EF
+.OBJ 93FF
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 918D
+.OBJ 919C
+.OBJ 81EE
+.OBJ 81FF
+.OBJ 8380
+.OBJ 8391
+.OBJ 93FA
+.OBJ 93EA
+Call Open_file                                             'Open the file or dir
+.OBJ 9622
+.OBJ 91FF
+.OBJ 91EF
+.OBJ 9508
+[end]
+[Parse_path]
+'***************************************************************
+'Parse_path
+'***************************************************************
+'Parse a path string pointed to by Z to a file name pointed to by X
+'If at end of path, r16 = 0
+'If file name is a dir, then r16 = "\"
+Parse_path:
+.OBJ E010
+Parse_path_loop:
+.OBJ 9101
+.OBJ 350C
+breq Parse_path_dir                                         'then end (dir)
+.OBJ 9513
+.OBJ 301D
+brge Parse_path_len_err                                     'if greater or equal, then there is a length error
+.OBJ 930D
+.OBJ 2300
+brne Parse_path_loop                                        'if not,then keep looping
+Parse_path_file:
+.OBJ 9731
+.OBJ 9508
+Parse_path_dir:
+.OBJ 2400
+.OBJ 920D
+.OBJ 9508
+Parse_path_len_err_loop:
+.OBJ 9101
+.OBJ 350C
+breq Parse_path_dir                                         'then end (dir)
+Parse_path_len_err:
+.OBJ 2300
+brne Parse_path_len_err_loop                                'if not, then keep looping
+.OBJ 930D
+rjmp Parse_path_file                                        'otherwise end (file)
+[end]
+[Create_path]
+'***************************************************************
+'Create Path
+'***************************************************************
+'path is converted to upper case, and any white space is trimmed off.
+'If the first character is \ (backslash) then the root directory is implied.
+'If the character after the name = \ then a directory is implied.
+'\foo\ = root\FOO directory
+'\foo\foo.bar = root\FOO\FOO.BAR file
+'FOO.BAR = current directory FOO.BAR file
+'Returns the file number of the last item created.
+'If a file was created, then errorcode will = Create_path_wrng
+'Function Create_path(path As String) As Word
+$EXTERNAL Allocateframe, mem2mem, No_dir_loaded, Parse_path, Create_file, Deallocateframe
+'MCS Routines
+$EXTERNAL _ucase, _trim
+Create_path:
+.OBJ E05D
+call Allocateframe                                         'create a 13 byte local variable (Currentpath)
+.OBJ E051
+call Allocateframe                                         'create a 1 byte local variable (Attribute)
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 1FD
+call _ucase                                                'Make upper case
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 1FD
+call _trim                                                 'Trim of any whitespace
+.OBJ 81EC
+.OBJ 81FD
+.OBJ 8100
+.OBJ 2300
+brne createpathchkroot
+.OBJ E21E
+rjmp Createpathend                                          'then bug out
+Createpathchkroot:
+.OBJ 350C
+brne createpathloop
+.OBJ 93EF
+.OBJ 93FF
+Loadadr Dirfirstcluster , Z
+Loadadr Bpb_rootclus , X
+.OBJ E054
+call mem2mem                                               'make Dirfirstcluster = Bpb_rootclus
+call No_dir_loaded                                         'make all dir variables default
+.OBJ 81AE
+.OBJ 81BF
+.OBJ 2400
+.OBJ 920D
+.OBJ 920C
+.OBJ 91FF
+.OBJ 91EF
+.OBJ 8101
+.OBJ E010
+.OBJ 2300
+breq createpathend
+.OBJ 9631
+Createpathloop:
+.OBJ 81AA
+.OBJ 81BB
+rcall Parse_path                                            'pull out a path string
+.OBJ 930F
+.OBJ 93EF
+.OBJ 93FF
+.OBJ E110
+.OBJ 350C
+breq createpathcreate                                       'then create a dir
+.OBJ E010
+Createpathcreate:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 931C
+.OBJ 81AE
+.OBJ 81BF
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 93BA
+.OBJ 93AA
+call Create_file                                           'create the file or dir
+.OBJ 9626
+.OBJ 91FF
+.OBJ 91EF
+.OBJ 910F
+.OBJ 2300
+brne createpathloop
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 910C
+.OBJ E010
+.OBJ FF04
+.OBJ E21D
+Createpathend:
+sts {errorcode}, r17                                        'then set error code
+.OBJ E051
+call Deallocateframe                                       'un create 1 byte local
+.OBJ E05D
+call Deallocateframe                                       'un create 13 byte local
+.OBJ 9508
+[End]
+[append_file]
+'***************************************************************
+'Append
+'***************************************************************
+$EXTERNAL randomaccess, cluster2nextcluster, Isclustereof
+Append_file:
+Loadadr Filecluster , Z
+.OBJ 8407
+.OBJ 8603
+.OBJ 8800
+.OBJ 8604
+.OBJ 8801
+.OBJ 8605
+.OBJ 8802
+.OBJ 8606
+_append:                                                    'alt entry point. Z points to cluster & fileoffset already set
+call randomaccess                                          'random access to the end of the file
+.OBJ 9101
+.OBJ 9111
+.OBJ 9121
+.OBJ 8130
+.OBJ 8185
+.OBJ 8196
+.OBJ 9701
+.OBJ 8385
+.OBJ 8396
+call cluster2nextcluster                                   'get the next cluster.
+'Returns with Z pointing to cluster in the fat buffer, and next cluster in r16-r19
+call Isclustereof                                          'check to see if it is at end of cluster chain
+brsh Append_clr_eof
+.OBJ E10C
+sts {errorcode}, r16
+jmp errorhandle
+Append_clr_eof:
+.OBJ 2400
+.OBJ 8200
+.OBJ 8201
+lds r16, {Fatstatus}                                        'get fatstatus in r16
+.OBJ FD04
+rjmp Append_clr_eof_end                                     'then we are done with the fat buffer
+.OBJ 8202
+.OBJ 8203
+Append_clr_eof_end:
+Loadadr Free_count , X
+.OBJ 918D
+.OBJ 919C
+.OBJ 9601
+.OBJ 939C
+.OBJ 938E
+brcc Append_inc_end                                         'if no carry (most of the time), end
+.OBJ 9612
+.OBJ 918D
+.OBJ 919C
+.OBJ 9601
+.OBJ 939C
+.OBJ 938E
+Append_inc_end:
+.OBJ 6200
+sts {fatstatus}, r16                                        'put it back
+Loadadr Filecluster , Z
+call randomaccess                                          'random access to the end of the file again
+.OBJ 9508
+[end]
+[Delete_file]
+'***************************************************************
+'Delete A File
+'***************************************************************
+$EXTERNAL No_dir_loaded, Read_dir_attr, open_file, Xbytesperdirentry, Accessdir
+$EXTERNAL Set_buffermodifiedflag, Flushdir2disk, de_allocate_cluster_chain, Updatefsinfo
+'Sub Delete_file(direntry As Word)
+Delete_file:
+call No_dir_loaded                                         'make all dir variables default to force a fresh dir load
+.OBJ E0A0
+.OBJ E0B0
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 93BA
+.OBJ 93AA
+call Read_dir_attr                                         'get attribute in r0
+.OBJ 9624
+.OBJ FE04
+rjmp Delete_file_ok                                         'OK continue
+.OBJ E209
+sts {errorcode}, r16
+rjmp Delete_file_end                                        'and bug out
+Delete_file_ok:
+.OBJ 2400
+sts {errorcode}, r0                                         'make error code = 0
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 93BA
+.OBJ 93AA
+call open_file                                             'open the file first
+.OBJ 9622
+call Xbytesperdirentry
+call Accessdir4name                                        'returns with X pointing to dir name
+.OBJ EE05
+.OBJ 930C
+call Set_buffermodifiedflag
+call Flushdir2disk                                         'flush the update to disk
+Loadadr Filecluster , Z
+call de_allocate_cluster_chain                                'remove all fat entries
+call Updatefsinfo                                          'update fsinfo and fat on disk
+Delete_file_end:
+jmp No_dir_loaded                                           'make all dir variables default to force a fresh dir load. Return from there
+[end]
+[zero_fill_cluster]
+'***************************************************************
+'Zero Fill Cluster
+'***************************************************************
+$EXTERNAL flush_file_sequential
+Zero_fill_cluster:
+* ldi r24, Filebuffersize_lo
+* ldi r25, Filebuffersize_hi                                  'r24, r25 = byte counter
+.OBJ 2400
+Loadadr Filebuffer(1) , X
+Zerofillclusterloop:
+.OBJ 920D
+.OBJ 9701
+brne Zerofillclusterloop                                    'till all done
+Zerofillclusterloop1:
+call flush_file_sequential                                   'flush zeroed file buffer to disk
+lds r24, {filenumofit}
+.OBJ 1786
+brne Zerofillclusterloop1                                   'till all done
+.OBJ 8174
+.OBJ 6870
+.OBJ 8374
+jmp flush_file_sequential                                     'final flush with end of file. Return from there
+[end]
+[create_dir]
+'***************************************************************
+'Create A Directory
+'***************************************************************
+$EXTERNAL Allocateframe, mem2mem, No_dir_loaded, Zero_fill_cluster, Flushfat, Randomaccess
+$EXTERNAL Write_dir_name, Write_dir_firstcluster, Write_dir_crttime
+$EXTERNAL Write_dir_crtdate, Write_dir_lstaccdate, Write_dir_wrttime, Write_dir_filesize
+$EXTERNAL Flushdir2disk, Deallocateframe
+'MCS routines
+$EXTERNAL _comp32
+Create_dir:
+.OBJ E052
+call Allocateframe                                         'create a 2 byte local variable (direntry)
+.OBJ E054
+call Allocateframe                                         'create a 4 byte local variable (Parentcluster)
+Loadadr Dirfirstcluster , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+Loadadr Bpb_rootclus , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917D
+call _comp32                                               'compare
+brne Createdirstparent
+.OBJ 2700
+.OBJ 2711
+.OBJ 2722
+.OBJ 2733
+Createdirstparent:                                          'store parent cluster
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933D
+Loadadr Nxt_free , X
+Loadadr Dirfirstcluster , Z
+.OBJ E054
+call mem2mem                                               'make Dirfirstcluster = nxt_free
+call No_dir_loaded                                         'make all dir variables default. Dircluster = Dirfirstcluster
+rcall Zero_fill_cluster                                     'fill the new cluster with zeros
+call Flushfat                                              'flush the fat to disk
+call No_dir_loaded                                         'make all directory variables default
+call Randomaccess                                          'returns with X pointing to file buffer at the first dir entry
+.OBJ E20E
+.OBJ E081
+.OBJ 930D
+.OBJ E200
+call Write_dir_name_pad                                    'pad space
+.OBJ E100
+.OBJ 930D
+.OBJ 81EA
+.OBJ 81FB
+.OBJ E000
+.OBJ 8300
+.OBJ 8301
+Loadadr Nxt_free , X
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 93FA
+.OBJ 93EA
+call Write_dir_firstcluster                                'write the first cluster (nxt_free = this directorys cluster)
+.OBJ 9624
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_crttime                                     'write the create time
+call Write_dir_crtdate                                     'write the create date
+call Write_dir_lstaccdate                                  'write the last accessed date
+call Write_dir_wrttime                                     'write the write time
+call Write_dir_wrtdate                                     'write the write date
+call Write_dir_filesize                                    'make filesize = Fileoffset = 0. Returns with X now pointing at the second dir entry
+.OBJ 9622
+.OBJ E20E
+.OBJ E082
+.OBJ 930D
+.OBJ 930D
+.OBJ E200
+call Write_dir_name_pad                                    'pad space
+.OBJ E100
+.OBJ 930D
+.OBJ 81EA
+.OBJ 81FB
+.OBJ E001
+.OBJ 8300
+.OBJ E000
+.OBJ 8301
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 93FA
+.OBJ 93EA
+call Write_dir_firstcluster                                'write the first cluster (Parentcluster)
+.OBJ 9624
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_crttime                                     'write the create time
+call Write_dir_crtdate                                     'write the create date
+call Write_dir_lstaccdate                                  'write the last accessed date
+call Write_dir_wrttime                                     'write the write time
+call Write_dir_wrtdate                                     'write the write date
+call Write_dir_filesize                                    'make filesize = Fileoffset = 0
+.OBJ 9622
+call Flushdir2disk
+.OBJ E054
+call Deallocateframe                                       'un create 4 byte local
+.OBJ E052
+call Deallocateframe                                       'un create 2 byte local
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 2400
+.OBJ 920D
+.OBJ 920C
+.OBJ 9508
+[end]
+[create_file]
+'***************************************************************
+'Create A File
+'***************************************************************
+$EXTERNAL No_dir_loaded, No_file_loaded, Find_freefile, Findfreecluster
+$EXTERNAL Write_dir_name, Write_dir_firstcluster, Write_dir_crttime
+$EXTERNAL Write_dir_crtdate, Write_dir_lstaccdate, Write_dir_wrttime, Write_dir_filesize
+$EXTERNAL Flushdir2disk,Create_dir, Findnextfreecluster, Updatefsinfo, No_dir_loaded
+'Function Create_file(name As String , Byval Attribute As Byte) As Word
+Create_file:
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 910C
+.OBJ 2300
+brne create_file_ok
+.OBJ E20F
+sts {errorcode}, r16                                        'set error code
+rjmp create_file_end                                        'then bug out
+create_file_ok:
+call No_dir_loaded                                         'make all dir variables default to force a fresh dir load
+call No_file_loaded                                        'make all file variables default. All we want is file offset = 0
+.OBJ 81AC
+.OBJ 81BD
+'allocate the only passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Find_freefile
+.OBJ 9622
+call Findfreecluster                                       'Make 100% sure that nxt_free is realy free
+'allocate the address of the first passed parameter
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_name_ext                                    'write the name.ext
+.OBJ 9624
+'allocate the address of the first passed parameter
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_attr                                        'write the attribute
+.OBJ 9624
+Loadadr Nxt_free , X
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_firstcluster                                'write the first cluster (nxt_free)
+.OBJ 9624
+.OBJ 81AC
+.OBJ 81BD
+'allocate the only passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_crttime                                     'write the create time
+call Write_dir_crtdate                                     'write the create date
+call Write_dir_lstaccdate                                  'write the last accessed date
+call Write_dir_wrttime                                     'write the write time
+call Write_dir_wrtdate                                     'write the write date
+call Write_dir_filesize                                    'make filesize = Fileoffset = 0
+.OBJ 9622
+call Flushdir2disk                                         'flush the directory to disk
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 900C
+.OBJ FC04
+rcall Create_dir                                            'then better do it
+call Findnextfreecluster                                   'We have just allocated a cluster so now find the next free cluster
+call Updatefsinfo                                          'and update fsinfo
+create_file_end:
+jmp No_dir_loaded                                           'make all dir variables default to force a fresh dir load. Return from there
+[end]
+[find_freefile]
+'***************************************************************
+'Find a Free File
+'***************************************************************
+$EXTERNAL Xbytesperdirentry, Accessdir
+'TO DO. Append a new cluster if directory cluster is full
+'Function Find_freefile() As Word
+Find_freefile:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 2400
+.OBJ 920D
+.OBJ 920C
+Find_freefile_loop:
+call Xbytesperdirentry
+'TO DO ADD TEST TO SEE IF WE NEED TO ALLOCATE A NEW CLUSTER
+call Accessdir4name                                        'returns with X pointing to dir name
+.OBJ 910D
+.OBJ 3E05
+breq Find_freefile_found                                    'was it a deleted entry ?
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+.OBJ 5000
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+breq Find_freefile_found                                    'was it a never used entry
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 918D
+.OBJ 919C
+.OBJ 9601
+.OBJ 939C
+.OBJ 938E
+rjmp Find_freefile_loop
+Find_freefile_found:
+.OBJ 9508
+[end]
+[find_file]
+'***************************************************************
+'Find File
+'***************************************************************
+$EXTERNAL Allocateframe, Read_dir_name_ext, Compare_file_name, deallocateframe
+'MCS Routines
+$EXTERNAL _ucase, _trim
+'returns direntry of a file or directory. If file not found, then returns &HFFFF
+'Function Find_file(dir_name_ext As String) As Word
+Find_file:
+.OBJ E05D
+call Allocateframe                                         'create a 13 byte local (Name_ext as string * 12)
+.OBJ E052
+call allocateframe                                         'create a local (direntry as word)
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 1FD
+call _ucase                                                'Make upper case
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 1FD
+call _trim                                                 'Trim of any whitespace
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 2400
+.OBJ 920D
+.OBJ 920D
+Find_file_rd_name:
+call Read_dir_name_ext                                     'call function. Local variables are dimmed in order, so to softstack funny stuff
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8103
+.OBJ 5000
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+breq Find_file_endofdir                                     'If it is zero, then we have reached the end of the directory
+call Compare_file_name                                     'compare the strings
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 918D
+.OBJ 919C
+breq Find_file_found
+.OBJ 9601
+.OBJ 939C
+.OBJ 938E
+rjmp Find_file_rd_name
+Find_file_endofdir:
+.OBJ EF8F
+.OBJ EF9F
+Find_file_found:
+.OBJ 81AE
+.OBJ 81BF
+.OBJ 938D
+.OBJ 939C
+.OBJ E052
+call deallocateframe                                       'un create the local (direntry as word)
+.OBJ E05D
+jmp deallocateframe                                         'un create the 13 byte local (Name_ext as string * 12)
+[end]
+[close_file]
+'***************************************************************
+'Close File
+'***************************************************************
+'If the file buffer is modified, or the fat buffer is modified, but not in random mode then
+'must have been sequential mode. So end of file flag is set, and final flush file,
+'and update directory filesize, write time & date, and access date.
+'If in random mode, then just update the directory write time & date, and access date.
+'otherwise, just update the directory access date.
+$EXTERNAL No_dir_loaded, Flush_file_random, flush_file_sequential, flushfat, Updatefsinfo
+$EXTERNAL Write_dir_filesize, Write_dir_wrtdate, Write_dir_wrttime, Write_dir_lstaccdate
+$EXTERNAL Flushdir2disk, No_file_loaded
+Close_file:
+call No_dir_loaded                                         'make all dir variables default to force a fresh dir load
+Loadadr Filecluster , Z
+lds r16, {fatstatus}
+.OBJ FF06
+rjmp closefileseq                                           'close sequential
+'Random mode
+.OBJ FF07
+rjmp closefilerand2                                         'update access date only
+call Flush_file_random                                       'flush the file random
+rjmp Updatedirentry1                                        'update write date & write time & access date
+Closefilerand2:
+rjmp Updatedirentry2                                        'update just the accsess date
+Closefileseq:                                               'close sequential
+.OBJ FD07
+rjmp closefileeof                                           'then set end of file & then flush seq
+.OBJ FF05
+rjmp Updatedirentry2                                        'update just the accsess date
+Closefileeof:
+.OBJ 8104
+.OBJ 6800
+.OBJ 8304
+call flush_file_sequential                                   'flush file buffer to disk with end of cluster chain
+call flushfat                                              'flush the fat back to disk
+call Updatefsinfo                                          'update fsinfo disk
+'at this point all the file stuff is done, now update the directory
+Loadadr Fileparentfilenumber , X
+'allocate the only passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_filesize                                    'Update file size
+.OBJ 9622
+Updatedirentry1:
+Loadadr Fileparentfilenumber , X
+'allocate the only passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_wrtdate                                     'Update write date
+call Write_dir_wrttime                                     'Update write time
+.OBJ 9622
+Updatedirentry2:
+Loadadr Fileparentfilenumber , X
+'allocate the only passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Write_dir_lstaccdate                                  'update last access date
+.OBJ 9622
+call Flushdir2disk                                         'flush the directory updates to disk
+call No_file_loaded                                        'make all file variables default.
+jmp No_dir_loaded                                           'make all dir variables default to force a fresh dir load. Return from there
+[end]
+[open_file]
+'***************************************************************
+'Open File or Directory
+'***************************************************************
+'Sub Open_file(direntry As Word)
+'File (or dir) variables are updated with their values.
+'If opening a directory, then direntry is updated with the 1st valid file in that dir.
+'If opening the root dir, then Dirfirstcluster = Bpb_rootclus
+$EXTERNAL No_dir_loaded, Read_dir_attr, Default_handle, Allocateframe, Next_file
+$EXTERNAL Deallocateframe, read_dir_firstcluster, Read_dir_filesize, No_file_loaded
+Open_file:
+call No_dir_loaded                                         'make all dir variables default to force a fresh dir load.
+'allocate the address of the first passed parameter
+.OBJ E0A0
+.OBJ E0B0
+.OBJ 93BA
+.OBJ 93AA
+'allocate the address of the second passed parameter
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 93BA
+.OBJ 93AA
+call Read_dir_attr                                         'get attribute in r0
+.OBJ 9624
+.OBJ FC03
+rjmp open_file_error                                        'there is an error
+.OBJ FE04
+rjmp open_file1
+'opening a directory
+Loadadr Dirfirstcluster , Z
+'allocate the address of the first passed parameter
+.OBJ 93FA
+.OBJ 93EA
+.OBJ 81AA
+.OBJ 81BB
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call read_dir_firstcluster                                 'get the first cluster
+.OBJ 9624
+Loadadr Dircluster , Z
+.OBJ 8107
+.OBJ 8510
+.OBJ 8521
+.OBJ 8532
+.OBJ 5000
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+brne Open_file_chk4validfile                                'If not = to zero all OK, so check for a valid file
+Loadadr Bpb_rootclus , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+.OBJ 8307
+.OBJ 8710
+.OBJ 8721
+.OBJ 8732
+Open_file_chk4validfile:
+call Default_handle                                        'make all dir variables default to force a fresh dir load
+.OBJ E051
+call Allocateframe                                         'allocate a 1 byte local variable (UpDown)
+.OBJ 81AA
+.OBJ 81BB
+.OBJ EF0F
+.OBJ 930D
+.OBJ 930C
+.OBJ 9711
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AA
+.OBJ 81BB
+.OBJ E001
+.OBJ 930C
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+rcall Next_file                                             'then find the next valid file number
+.OBJ 9624
+.OBJ E051
+call Deallocateframe                                       'deallocate the 1 byte local variable (UpDown)
+rjmp Open_file_end                                          'finished with directory
+Open_file1:                                                 'we are opening a file
+.OBJ 81A8
+.OBJ 81B9
+Loadadr Fileparentfilenumber , Z
+.OBJ 900D
+.OBJ 9201
+.OBJ 900C
+.OBJ 8200
+Loadadr Filefirstcluster , Z
+'allocate the address of the first passed parameter
+.OBJ 93FA
+.OBJ 93EA
+.OBJ 81AA
+.OBJ 81BB
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call read_dir_firstcluster                                 'get the first cluster
+.OBJ 9624
+Loadadr Filesize , Z
+'allocate the address of the first passed parameter
+.OBJ 93FA
+.OBJ 93EA
+.OBJ 81AA
+.OBJ 81BB
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Read_dir_filesize                                     'get the size of the file
+.OBJ 9624
+call No_file_loaded                                        'make all file variables default.
+'ldd r16, Z+15
+'ldd r17, Z+16
+'ldd r18, Z+17
+'ldd r19, Z+18                                               'get file size in r16-r19
+'subi r16, 0
+'sbci r17, 0
+'sbci r18, 0
+'sbci r19, 0                                                 'compare to 0
+'brne Open_file_end                                          'if not zero, then end
+'ldd r24, Z+4                                                'if file size was zero
+'sbr r24, 2^Endoffileflag                                    'set the end of file
+'std Z+4, r24                                                'put it back
+Open_file_end:
+.OBJ 9508
+Open_file_error:
+.OBJ E10F
+sts {errorcode}, r16
+jmp errorhandle
+[end]
+[read_random]
+'***************************************************************
+'Read a byte randomly from a file
+'***************************************************************
+'Function Read_random() As Byte
+$EXTERNAL Randomaccess
+Read_random:
+Loadadr Filecluster , Z
+call Randomaccess                                          'returns with X ponting to file buffer at file offset
+.OBJ 900C
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 920C
+.OBJ 9508
+[end]
+[write_random]
+'***************************************************************
+'Write a byte randomly to a file
+'***************************************************************
+'Sub Write_random(filebyte As Byte)
+$EXTERNAL Randomaccess, Set_buffermodifiedflag, Set_randommodeflag
+Write_random:
+Loadadr Filecluster , Z
+call Randomaccess                                          'returns with X ponting to file buffer at file offset
+call Set_buffermodifiedflag                                'set the buffer modified flag
+call Set_randommodeflag                                    'set the random mode flag
+.OBJ 81E8
+.OBJ 81F9
+.OBJ 8000
+.OBJ 920C
+.OBJ 9508
+[end]
+[Sectic]
+* #IF Media_is_rotating = 1
+   '***************************************************************
+   'Second Tick Interrupt Service Routine
+   '***************************************************************
+'incruments tick tock, and if equal to time to sleep, puts rotating media to sleep.
+$EXTERNAL Gotosleep
+   Sectic:
+.OBJ 930F
+.OBJ 931F
+   * in r16, sreg                                             'Status Register to r16
+.OBJ 930F
+   lds r16, {ticktock}                                      'Ticktock to r16
+   lds r17, {Timetosleep}                                   'Timetosleep to r17
+.OBJ 9503
+   sts {ticktock}, r16                                      'and put it back
+.OBJ 1710
+   brne Sectic1                                             'if it is time to sleep
+.OBJ 938F
+.OBJ 937F
+.OBJ 934F
+   call Gotosleep                                          'then put drive to sleep
+.OBJ 914F
+.OBJ 917F
+.OBJ 918F
+   Sectic1:
+.OBJ 910F
+   * out sreg, r16                                           'Put back Status Register
+.OBJ 911F
+.OBJ 910F
+   * #IF Clock_is_ds1307 = 1
+.OBJ 9518
+   * #ELSE
+.OBJ 9508
+   * #ENDIF
+* #ENDIF
+[end]
+[next_file_match]
+'***************************************************************
+'Next file match.
+'***************************************************************
+'Finds the next or previous VALID file that matches EITHER the file mask OR the attribute mask.
+'Function Next_file_match(file_mask As String , Byval Attrib_mask As Byte , Direntry As Word , Byval Updown As Byte)as Word
+$EXTERNAL Allocateframe, Next_file, Match_dir_name_ext_attr, deallocateframe
+Next_file_match:
+.OBJ E052
+call Allocateframe                                         'allocate a local (dir entry copy)
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 900D
+.OBJ 901C
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 920D
+.OBJ 921C
+Nextfilematchloop:
+.OBJ 81A8
+.OBJ 81B9
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Next_file                                             'get the next valid file
+.OBJ 9624
+.OBJ E0A0
+.OBJ E0B0
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 85AA
+.OBJ 85BB
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 85AA
+.OBJ 85BB
+'allocate the address of the third passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+'allocate the address of the fourth passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Match_dir_name_ext_attr                               'see if it matches
+.OBJ 9628
+.OBJ 2000
+brne Nextfilematchfound
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 900C
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 910C
+.OBJ 911C
+.OBJ 2000
+brmi Nextfilematchdwn
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 914C
+.OBJ 915C
+.OBJ 1704
+.OBJ 715
+brne Nextfilematchloop                                      'if we have not wrapped back yet, keep looking
+rjmp Nextfilematchfail                                      'and bug out
+Nextfilematchdwn:                                           'updown must have = down
+.OBJ 5000
+.OBJ 4010
+brne Nextfilematchloop                                      'if we have not reached zero, then keep looking
+Nextfilematchfail:
+.OBJ EF0F
+.OBJ EF1F
+rjmp Nextfilematchend                                       'and bug out
+Nextfilematchfound:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 910D
+.OBJ 911D
+Nextfilematchend:
+.OBJ 85AA
+.OBJ 85BB
+.OBJ 930D
+.OBJ 931C
+.OBJ E052
+jmp deallocateframe                                         'De-allocate the local (dir entry copy). Return from there
+[end]
+[initfat]
+'***************************************************************
+' Initialize FAT file system
+'***************************************************************
+$EXTERNAL mbr, bpb, readfsinfo, Parsefsi, Nofatloaded, Updatefreecnt, Findfreecluster
+$EXTERNAL mem2mem, No_dir_loaded
+Initfat:
+rcall mbr                                                   'Read Master Boot Record
+rcall bpb                                                   'Read Bios Parameter Block
+rcall readfsinfo                                            'read FSI
+rcall Parsefsi                                              'Check it out
+rcall Nofatloaded                                           'force a fresh load of FAT on next FAT access.
+lds r24, {Fatstatus}                                        'Get fatstatus
+.OBJ FD84
+rcall Updatefreecnt                                         'look up all free clusters, and update free count
+rcall Findfreecluster                                       'may take a long time, if a big disk is almost full. So do it now
+Loadadr Dirfirstcluster , Z
+Loadadr Bpb_rootclus , X
+.OBJ E054
+call mem2mem                                               'make Dirfirstcluster = Bpb_rootclus
+rcall No_dir_loaded                                         'make all dir variables default to force a fresh dir load
+.OBJ 9508
+[end]
+[mbr]
+'***************************************************************
+'Master Boot Record
+'***************************************************************
+'Get important stuff out of the MBR
+$EXTERNAL  Readsec, Getsec, Signaturecheck, Mem2mem
+Mbr:                                                        'Master Boot Record
+.OBJ E000
+.OBJ E010
+.OBJ E020
+.OBJ E030
+.OBJ E081
+call Readsec
+.OBJ E081
+Loadadr Filebuffer(1) , X
+'X points to where to put it
+call Getsec
+Loadadr Filebuffer(511) , X
+rcall Signaturecheck                                        'Check for signature word. X points to where signature word should be
+Loadadr Filebuffer(447) , X
+.OBJ 910C
+.OBJ 2300
+breq Mbr_ok
+.OBJ 3800
+breq  Mbr_ok
+rjmp Mbr_end                                                'if it is not &H80 or 0 then this is not a partion table. End, and leave Plbabegin = 0
+Mbr_ok:
+Loadadr Filebuffer(455) , X
+Loadadr Plbabegin , Z
+.OBJ E054
+call Mem2mem
+'maybe, one day add change partition by changing Plbabegin
+Mbr_end:
+.OBJ 9508
+[end]
+[bpb]
+'***************************************************************
+'Bios Parameter Block
+'***************************************************************
+'Get important stuff out of the BPB and calculates some other important stuff
+$EXTERNAL Readsec, Getsec, Signaturecheck, Mpy32base2, Div32base2, _add32,  _sub32
+$EXTERNAL _comp32, Mpy16base2, _div8
+Bpb:                                                        'Parse Bios Parameter Block
+Loadadr Plbabegin , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+.OBJ E081
+call Readsec
+.OBJ E081
+Loadadr Filebuffer(1) , X
+'X points to where to put it
+call Getsec
+Loadadr Filebuffer(511) , X
+rcall Signaturecheck                                        'Check for signature word.  X points to where signature word should be
+Loadadr Filebuffer(12) , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 5000
+.OBJ 4012
+breq  bpbsigok                                              'If result of compare not zero then something is wrong
+.OBJ E15D
+sts {Errorcode},r21                                         'store to sram
+jmp errorhandle
+Bpbsigok:
+'Look up Bpb_secperclus
+'Loadadr Filebuffer(14) , X                                  'Source address X points to Filebuffer(14). Already done
+Loadadr Bpb_secperclus , Z
+.OBJ 900D
+.OBJ 8200
+'Look up Bpb_resvdseccnt
+'Loadadr Filebuffer(15) , X                                  'Source address X points to Filebuffer(15). Already done
+Loadadr Bpb_resvdseccnt , Z
+.OBJ E052
+call Mem2mem                                               'Transfer memory to memory
+'Look up Bpb_numfats
+'Loadadr Filebuffer(17) , X                                  'Source address X points to Filebuffer(17). Already done
+Loadadr Bpb_numfats , Z
+.OBJ 900D
+.OBJ 8200
+'Calc Root_dir_sectors
+Loadadr Filebuffer(18) , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 2722
+.OBJ 2733
+.OBJ E240
+call Mpy32base2                                            'Multiply Bpb_root_ent_cnt by Bytesperdirentry
+.OBJ E040
+.OBJ E052
+call Div32base2                                            'divide by bytes per sector
+sts {Root_dir_sectors}, r16                                 'store to Root_dir_sectors. Will be 0 on a FAT32 vol.
+'Look up Bpb_totsec
+Loadadr Filebuffer(20) , X
+Loadadr Bpb_totsec , Z
+.OBJ 910D
+.OBJ 911D
+.OBJ 5000
+.OBJ 4010
+breq Bpb_totsec_32                                          'if zero then it must be Bpb_totsec_32
+.OBJ 9301
+.OBJ 9311
+.OBJ 2700
+.OBJ 9301
+.OBJ 8300
+rjmp bpb_fatz_16_32
+Bpb_totsec_32:
+Loadadr Filebuffer(33) , X
+.OBJ E054
+call Mem2mem                                               'Transfer memory to memory
+'Look up Bpb_fatz
+Bpb_fatz_16_32:
+Loadadr Filebuffer(23) , X
+Loadadr Bpb_fatz , Z
+.OBJ 910D
+.OBJ 911D
+.OBJ 5000
+.OBJ 4010
+breq bpb_fatz_32                                            'if zero, then must be fatz_32
+.OBJ 9301
+.OBJ 9311
+.OBJ E000
+.OBJ 9301
+.OBJ 9301
+rjmp bpb_calc_cntofclusters
+Bpb_fatz_32:
+Loadadr Filebuffer(37) , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+.OBJ 9301
+.OBJ 9311
+.OBJ 9321
+.OBJ 8330
+'Calc cntofclusters
+Bpb_calc_cntofclusters:
+lds r20, {Bpb_numfats}                                      'Bpb_numfats in r20
+call Mpy32base2                                            'Bpb_fatz * Bpb_numfats in r16-r19
+lds r20, {Bpb_resvdseccnt}
+lds r21, {Bpb_resvdseccnt+1}
+.OBJ E060
+.OBJ E070
+call _add32                                                'Bpb_fatz * Bpb_numfats + Bpb_resvdseccnt in r16-r19
+lds r20, {Root_dir_sectors}
+.OBJ 2755
+.OBJ 2766
+.OBJ 2777
+call _add32                                                'Bpb_fatz * Bpb_numfats + Bpb_resvdseccnt + Root_dir_sectors in r16-r19
+.OBJ 1A8
+.OBJ 1B9
+Loadadr Bpb_totsec , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+call _sub32                                                'Bpb_totsec - {Bpb_fatz * Bpb_numfats + Bpb_resvdseccnt} in r16-r19
+'DataSectors in r16-r19
+lds r20, {Bpb_secperclus}                                   'Bpb_secperclus in r20
+call Div32base2                                            'Bpb_totsec - {Bpb_fatz * Bpb_numfats + Bpb_resvdseccnt} / Bpb_secperclus in r16-r19
+.OBJ 5002
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+'Bpb_totsec - {Bpb_fatz * Bpb_numfats + Bpb_resvdseccnt + Root_dir_sectors} / Bpb_secperclus in r16-r19
+Loadadr Cntofclusters , X
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933C
+'Calc FAT Type
+.OBJ EF45
+.OBJ E05F
+.OBJ 2766
+.OBJ 2777
+call _comp32                                               'compare to Cntofclusters
+brsh bpb_fat16or32
+.OBJ E186
+sts {errorcode}, r24
+jmp errorhandle
+Bpb_fat16or32:
+.OBJ EF45
+.OBJ EF5F
+.OBJ 2766
+.OBJ 2777
+call _comp32                                               'compare to Cntofclusters
+brsh bpb_fat32                                              'if lower, then fat is FAT16
+lds r24, {Fatstatus}                                        'Get fatstatus
+.OBJ 6180
+sts {Fatstatus}, r24                                        'put it back
+Loadadr Nxt_free , X
+.OBJ E002
+.OBJ 930D
+.OBJ 2700
+.OBJ 930D
+.OBJ 930D
+.OBJ 930C
+rjmp bpb_calcbegins                                         'and skip the FAT32 stuff
+Bpb_fat32:
+'Look up bpb_rootclus if FAT32
+Loadadr Filebuffer(45) , X
+Loadadr Bpb_rootclus , Z
+.OBJ E054
+call Mem2mem
+'Calc Bpb_fsinfo if FAT32
+Loadadr Filebuffer(49) , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 2722
+.OBJ 2733
+Loadadr Plbabegin , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+call _add32
+Loadadr Bpb_fsinfo , X
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933C
+Bpb_calcbegins:
+'Calc Fatlbabegin
+Loadadr Plbabegin , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+lds r20, {Bpb_resvdseccnt}
+lds r21, {Bpb_resvdseccnt+1}
+.OBJ E060
+.OBJ E070
+call _add32
+Loadadr Fatlbabegin , X
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933C
+'Calc Dirlbabegin
+Loadadr Bpb_fatz , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+lds r24, {Bpb_numfats}
+.OBJ 3082
+brne bpb_dirlbabegin                                        'if only one copy of fat, then branch
+.OBJ F44
+.OBJ 1F55
+.OBJ 1F66
+.OBJ 1F77
+Bpb_dirlbabegin:
+'Fatlbabegin still in r16-19
+call _add32                                                'Bpb_fatz*2+Fatlbabegin in r16-r19
+Loadadr Dirlbabegin , X
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933C
+'Calc Bytesperclus
+.OBJ E000
+.OBJ E012
+lds r20, {Bpb_secperclus}
+call Mpy16base2
+sts {Bytesperclus}, r16
+sts {Bytesperclus+1}, r17                                   'Bytesperclus = Bpb_secperclus * bytespersec
+'Update buffer attributes
+lds r16, {Bpb_secperclus}
+* ldi r20, Filebuffersectorsize
+call _div8
+.OBJ 950A
+sts {Filenumofit}, r16                                      'Filenumofit = (Bpb_secperclus \ Filebuffersectorsize)-1
+'Now they are all constants. Do not touch
+.OBJ 9508
+[end]
+[readfsinfo]
+'***************************************************************
+'Read File System Info
+'***************************************************************
+'reads FSI into fat buffer. If the fat buffer was modified, flushes first.
+$EXTERNAL Flushfat, Nofatloaded,  Readsec , Getsec , Signaturecheck
+Readfsinfo:
+lds r0, {Fatstatus}                                         'get fatstatus
+.OBJ FC04
+.OBJ 9508
+.OBJ FC05
+rcall Flushfat                                              'then write the old buffer back to disk first, before reading Fsi
+rcall Nofatloaded                                           'force a fresh load of FAT on next FAT access
+Loadadr Bpb_fsinfo , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+.OBJ E081
+call Readsec
+.OBJ E081
+Loadadr Fatbuffer(1) , X
+'X points to where to put it
+call Getsec
+Loadadr Fatbuffer(511) , X
+rjmp Signaturecheck                                         'Check for signature word. X points to where signature word should be
+[end]
+[parsefsi]
+'***************************************************************
+'Parse File System Info
+'***************************************************************
+'Parses FSI from fat buffer
+$EXTERNAL Mem2mem
+Parsefsi:
+lds r0, {Fatstatus}                                         'get fatstatus
+.OBJ FC04
+.OBJ 9508
+Loadadr Fatbuffer(489) , X
+Loadadr Free_count , Z
+.OBJ E054
+call Mem2mem
+Loadadr Fatbuffer(493) , X
+Loadadr Nxt_free , Z
+.OBJ E054
+jmp Mem2mem                                                 'xfer mem to mem. Return from there
+[end]
+[updatefreecnt]
+'***************************************************************
+'Update Free Count or clusters
+'***************************************************************
+'Looks through the entire FAT, looking for free clusters.
+'Only needs to be done on a FAT16 volume, since a FAT32 volume has a FSI, which conatins
+'the latest count of free clusters.
+'WARNING, if called in a (large) FAT32 volume, it may take a long time.
+$EXTERNAL allocateframe, Cluster2nextcluster, deallocateframe
+Updatefreecnt:
+.OBJ E054
+call allocateframe                                         'create a local
+Loadadr Free_count , X
+.OBJ 2700
+.OBJ 930D
+.OBJ 930D
+.OBJ 930D
+.OBJ 930D
+lds r0, {fatstatus}
+.OBJ FC04
+rjmp Updatefreecnt16
+Loadadr Bpb_rootclus , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+rjmp Updatefreecntstore1st
+Updatefreecnt16:
+.OBJ E002
+.OBJ E010
+.OBJ E020
+.OBJ E030
+Updatefreecntstore1st:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933D
+rjmp Updatefreecntst
+Updatefreecntloop:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+.OBJ E041
+.OBJ F04
+.OBJ E040
+.OBJ 1F14
+.OBJ 1F24
+.OBJ 1F34
+.OBJ 933E
+.OBJ 932E
+.OBJ 931E
+.OBJ 930E
+Updatefreecntst:
+Loadadr Cntofclusters , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917D
+call _comp32
+'breq Updatefreecnt1more                                     'if equal, still usable
+brsh Updatefreecntend                                       'if greater, no more
+Updatefreecnt1more:
+call Cluster2nextcluster                                   'returns with z flag in sreg set if an unallocated cluster found
+brne Updatefreecntloop                                      'if an allocated cluster, loop
+Loadadr Free_count , Z
+.OBJ 8180
+.OBJ 8191
+.OBJ 9601
+.OBJ 8380
+.OBJ 8391
+brcc Updatefreecntloop                                      'if no carry (most of the time), then loop again
+.OBJ 8182
+.OBJ 8193
+.OBJ 9601
+.OBJ 8382
+.OBJ 8393
+rjmp Updatefreecntloop                                      'next
+Updatefreecntend:
+.OBJ E054
+jmp deallocateframe                                         'un create the local. Return from there
+[end]
+[nofatloaded]
+'***************************************************************
+'No Fat Loaded
+'***************************************************************
+'Makes fatloaded start and fat loaded stop a value, that forces a fresh load of the FAT
+Nofatloaded:
+lds r0, {Fatstatus}                                         'get fatstatus
+.OBJ FC05
+rjmp nofatloadederror                                       'and we are here, then there is something wrong
+Loadadr Fatloadedstart , X
+.OBJ EF0F
+.OBJ 930D
+.OBJ 930D
+.OBJ 930D
+.OBJ E00F
+.OBJ 930D
+.OBJ 9508
+Nofatloadederror:
+.OBJ E18E
+sts {Errorcode}, r24                                        'store error code
+jmp errorhandle
+[end]
+[signaturecheck]
+'***************************************************************
+'Signature Check
+'***************************************************************
+'Looks for the 55AA signatures at the end of Master Boot Record or Bios Parameter Block or FSI
+Signaturecheck:
+'Signature check
+.OBJ 910D
+.OBJ 911D
+.OBJ 5505
+.OBJ 4A1A
+brne  Signaturecheckerror                                   'If result of subtraction not zero then something is wrong
+.OBJ 9508
+Signaturecheckerror:
+.OBJ E105
+sts {Errorcode}, r16                                        'store to sram
+jmp errorhandle
+[end]
+[No_dir_loaded]
+'***************************************************************
+'Default Dir Variables.
+'***************************************************************
+$EXTERNAL Default_handle
+No_dir_loaded:
+Loadadr Dircluster , Z
+rjmp Default_handle                                         'default dir variables & return from there
+[end]
+[No_file_loaded]
+'***************************************************************
+'Default File Variables.
+'***************************************************************
+No_file_loaded:
+$EXTERNAL Default_handle
+Loadadr Filecluster , Z
+rjmp Default_handle                                         'default file variables & return from there
+[end]
+[default_handle1]
+'***************************************************************
+'Default File Handle1. Does not include file offset
+'***************************************************************
+'Defaults file variables pointed to by Z
+Default_handle1:
+.OBJ 8007
+.OBJ 8200
+.OBJ 8400
+.OBJ 8201
+.OBJ 8401
+.OBJ 8202
+.OBJ 8402
+.OBJ 8203
+.OBJ 2400
+.OBJ 8205
+.OBJ 8206
+.OBJ 8204
+.OBJ 9508
+[end]
+[default_handle]
+'***************************************************************
+'Default File Handle1. Including file offset
+'***************************************************************
+'Defaults file variables pointed to by Z
+$EXTERNAL Default_handle1
+Default_handle:
+rcall Default_handle1                                       'default all but file offset
+.OBJ 8603
+.OBJ 8604
+.OBJ 8605
+.OBJ 8606
+.OBJ 9508
+[end]
+[next_file]
+'***************************************************************
+'Next File
+'***************************************************************
+'Returns the next valid file number
+'Sub Next_file(direntry As Word , Byval Updown As Byte)
+'KNOWN BUG If the directiory is empty, will get stuck in a never ending loop.
+'Possible fix, is when entering Nextfilewrapback, set an error code,
+'and if re enter Nextfilewrapback, test for error code, and break from loop.
+$EXTERNAL Allocateframe, read_dir_name, read_dir_attr, Deallocateframe
+Next_file:
+.OBJ E059
+call Allocateframe                                         'allocate a 9 byte local variable (dir name string*8)
+'Dirname=Y+0 Y+1, Updown=Y+2 Y+3, direntry = Y+4 Y+5
+Nextfileincdec:
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 910C
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 918D
+.OBJ 919C
+.OBJ FF07
+.OBJ 9602
+.OBJ 9701
+'new dir entry in r24 - r25
+brcs nextfilewrapback                                       'if we have wrapped backwards, fix.
+.OBJ 939C
+.OBJ 938E
+'net result add 1 if bit 7 of up down clear OR subtract 1 if bit 7 of up down set OR min value = 0 then bug out
+Nextfilenoload:
+.OBJ 81A8
+.OBJ 81B9
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+rcall read_dir_name
+.OBJ 9624
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 910D
+'first character of dirname in r16
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+.OBJ 5000
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+breq Nextfilewrapback                                       'then we have reached the end of the dir structure
+.OBJ 3E05
+breq Nextfileincdec                                         'if free, go back and try next one
+.OBJ E1A0
+.OBJ E0B0
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+rcall read_dir_attr                                         'call function
+.OBJ 9624
+.OBJ FD03
+rjmp Nextfileincdec
+* ori r16, Attrib_valid
+* cpi r16, Attrib_valid                                        'if any extra bits set after the logical OR with what is valid
+brne Nextfileincdec                                         'then go back and try next one
+Nextfileend:
+.OBJ E059
+jmp Deallocateframe                                         'deallocate the 9 byte local variable (dir name string*8).
+Nextfilewrapback:
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 2788
+.OBJ 2799
+.OBJ 938D
+.OBJ 939C
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 938C
+rjmp Nextfilenoload                                         'make sure file number 0 is valid
+[end]
+[match_dir_name_ext_attr]
+'***************************************************************
+'Match Directory Name.Extension
+'***************************************************************
+'Function Match_dir_name_ext_attr(file_mask As String , Byval Attrib_mask As Byte , Direntry As Word) As Byte
+'Returns 1 if file_mask = file_name_ext(direntry) OR if Attrib_mask = read_dir_attr(direntry)
+'Match may have wild cards. ? matches a charcater in the string. * matches the rest of the string.
+$EXTERNAL Allocateframe, read_dir_name_ext, compare_str_wildcard, read_dir_attr, Deallocateframe
+'MCS Routines
+$EXTERNAL _ucase, _trim
+Match_dir_name_ext_attr:
+.OBJ E05D
+call Allocateframe                                         'create a 13 byte local (dir name as string * 12)
+.OBJ 81EE
+.OBJ 81FF
+.OBJ 1DF
+call _ucase                                                'convert file mask to upper case
+.OBJ 81EE
+.OBJ 81FF
+.OBJ 1DF
+call _trim                                                 'trim of whitespace if any
+.OBJ 81A8
+.OBJ 81B9
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+rcall read_dir_name_ext                                     'call function
+.OBJ 9624
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 81EE
+.OBJ 81FF
+'check file name (before the dot)
+call compare_str_wildcard                                  'compares 2 strings pointed to by X & Z
+brne Match_dir_name_ext_attr                                'Z flag in sreg set if strings equal
+'if we are here, then the file name must have been equal to the match char.
+'r24, still contains the last test char, r25 still contains the match char.
+'X still points one ahead to the last test char, Z still points one ahead to the last match char.
+.OBJ 2388
+breq Match_dir_name_ext_attrend                             'if so then done. Equal
+'match string must have had a wild card (*), so the test string may or may not be indexed up to the dot.
+Match_dir_name_ext_attrlook4dot:
+.OBJ 328E
+breq Match_dir_name_ext_attrlook4dot1                       'found a dot in test string, so look for dot in match string too.
+.OBJ 918D
+.OBJ 2388
+brne Match_dir_name_ext_attrlook4dot                        'not at end of string yet, keep looking
+.OBJ 9711
+Match_dir_name_ext_attrlook4dot1:
+.OBJ 329E
+breq Match_dir_name_ext_attrchkext                          'found a dot in match string, so check for extension
+.OBJ 9191
+.OBJ 2399
+brne Match_dir_name_ext_attrlook4dot1                       'not at end of string yet, keep looking
+.OBJ 9731
+Match_dir_name_ext_attrchkext:
+'check file name extension (after the dot)
+call compare_str_wildcard                                  'compares 2 strings pointed to by X & Z
+breq Match_dir_name_ext_attrend                             'Z flag in sreg set if strings equal, then done. Equal
+Match_dir_name_ext_chk_attr:                                'Check the attribute
+'If we are here, then the dir_name_ext must have failed the test for equal.
+.OBJ E1A0
+.OBJ E0B0
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+rcall read_dir_attr                                         'call function
+.OBJ 9624
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 911C
+.OBJ 2301
+.OBJ 1701
+Match_dir_name_ext_attrend:
+.OBJ E081
+breq Match_dir_name_ext_attrend1                            'if no extra bits are set after the compare, then end
+.OBJ 2788
+Match_dir_name_ext_attrend1:
+.OBJ 85A8
+.OBJ 85B9
+.OBJ 938C
+.OBJ E05D
+jmp Deallocateframe                                         'deallocate the 9 byte local variable (dir name string*8)
+[end]
+[compare_str_wildcard]
+'***************************************************************
+'Compare String with wildcard
+'***************************************************************
+'compares two strings
+'X points to the string to test.
+'Z points to the string to match with wild cards. ? = match character, * = match rest of string.
+'Both strings must be nul terminated.
+'Will not match if diffrent length strings, unless * is in the match string.
+'Returns with Z flag in sreg set if strings match.
+Compare_str_wildcard:
+.OBJ 918D
+.OBJ 9191
+.OBJ 329A
+breq Compare_str_wildcard_end                               'if equal, then rest of string is a match
+.OBJ 2388
+breq Compare_str_wildcard_end1                              'we are at end of string, almost done.
+.OBJ 339F
+breq Compare_str_wildcard                                   'if equal, then char match, get next
+.OBJ 1789
+breq Compare_str_wildcard                                   'if not equal, then no string match
+Compare_str_wildcard_end:
+.OBJ 9508
+Compare_str_wildcard_end1:
+.OBJ 2399
+.OBJ 9508
+[end]
+[compare_file_name]
+'***************************************************************
+'Compare File Name
+'***************************************************************
+'compares two file names
+'Z points to the string to test. (from the directory)
+'X points to the string to match with or without the implied dot in the file name. (user input)
+'Both strings must be nul terminated.
+'The implied "." in the test string is ingored if the match string does not have one AND
+'the current chracter offset is =9.
+'If the lenght of the match string is >=13 (with or without the implied dot) then
+'those characters will also be ignored.
+'Returns with Z flag in sreg set if strings match.
+Compare_file_name:
+.OBJ 2700
+.OBJ E211
+Compare_file_name_ld:                                       'load both match & test
+.OBJ 919D
+Compare_file_name_ldt:                                      'just load test
+.OBJ 9181
+.OBJ 9503
+.OBJ 9513
+.OBJ 3014
+breq Compare_file_name_end                                  'finished. Pass
+.OBJ 300D
+breq Compare_file_name_end                                  'finished. Pass
+.OBJ 2388
+brne Compare_file_name_chk_dot
+.OBJ 2399
+breq Compare_file_name_end                                  'both at end of string. Finished Pass
+Compare_file_name_chk_dot:
+.OBJ 328E
+brne Compare_file_name_chk_chr
+.OBJ 2711
+.OBJ 329E
+breq Compare_file_name_ld                                   'Pass for this char.
+.OBJ 3009
+breq Compare_file_name_ldt                                  'Pass for this char. Just load test
+rjmp Compare_file_name_end                                  'otherwise fail
+Compare_file_name_chk_chr:
+.OBJ 1789
+breq Compare_file_name_ld                                   'get next. Pass for this char
+'otherwise fail
+Compare_file_name_end:
+.OBJ 9508
+[end]
+[cluster2sector]
+'***************************************************************
+'Cluster to Sector
+'***************************************************************
+'Converts Cluster passed in r16-r19 to the first sector of that cluster, passed back in r16-r19
+$EXTERNAL Mpy32base2
+Cluster2sector:
+lds r0, {fatstatus}
+.OBJ FC04
+rjmp cluster2sector16
+Loadadr Bpb_rootclus , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+.OBJ 1B04
+.OBJ B15
+.OBJ B26
+.OBJ B37
+lds r20,{Bpb_secperclus}                                    'Bpb_secperclus to r20-r23
+call Mpy32base2                                            'Multiply by Bpb_secperclus, result in r16-r19
+Loadadr Dirlbabegin , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+'Add Dirlbabegin, result in r16-r19
+.OBJ F04
+.OBJ 1F15
+.OBJ 1F26
+.OBJ 1F37
+.OBJ 9508
+Cluster2sector16:
+.OBJ 5002
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+lds r20,{Bpb_secperclus}                                    'Bpb_secperclus to r20-r23
+call Mpy32base2                                            'Multiply by Bpb_secperclus, result in r16-r19
+Loadadr Dirlbabegin , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+'Add Dirlbabegin, result in r16-r19
+.OBJ F04
+.OBJ 1F15
+.OBJ 1F26
+.OBJ 1F37
+lds r20, {Root_dir_sectors}                                 'number of sectors occupied by root dir if FAT16
+.OBJ F04
+.OBJ E040
+.OBJ 1F14
+.OBJ 1F24
+.OBJ 1F34
+.OBJ 9508
+'the first sector of supplied cluster returned in r16-r19
+[end]
+[nextcluster]
+'***************************************************************
+'Next Cluster
+'***************************************************************
+'Returns the next cluster in the cluster chain.
+'Sets eof bit in status if a end of cluster chain is found.
+'Incr cluster index
+$EXTERNAL Isclustereof, cluster2nextcluster
+Nextcluster:
+.OBJ 93EF
+.OBJ 93FF
+.OBJ 9101
+.OBJ 9111
+.OBJ 9121
+.OBJ 8130
+rcall Isclustereof                                          'check if we are at end of cluster cahin
+brlo  Nextclusternoerror                                    'If lower is good
+.OBJ E187
+sts {errorcode}, r24
+jmp Errorhandle                                             'If >= is fatal. Next cluster called while end of file
+Nextclusternoerror:
+rcall cluster2nextcluster                                   'Returns with Z (Zero) flag in SREG set if cluster = 0 (not allocated cluster)
+'Next cluster is now in r16-r19
+brne nextclusternoerror1                                    'CHANGE TO BREQ?
+.OBJ 91FF
+.OBJ 91EF
+.OBJ E189
+sts {errorcode}, r24
+jmp Errorhandle                                             'Fatal error = bad
+Nextclusternoerror1:
+.OBJ 91FF
+.OBJ 91EF
+lds r0, {fatstatus}                                         'get fat status in r0
+.OBJ 8300
+.OBJ 8311
+.OBJ FC04
+rjmp Nextclusterchk4eof                                     'then no need for next word
+.OBJ 8322
+.OBJ 8333
+Nextclusterchk4eof:
+rcall Isclustereof                                          'check if we are at end of cluster cahin
+brlo noendoffile
+.OBJ 8184
+.OBJ 6880
+.OBJ 8384
+Noendoffile:
+.OBJ 8185
+.OBJ 8196
+.OBJ 9601
+.OBJ 8385
+.OBJ 8396
+.OBJ 9508
+[end]
+[isclustereof]
+'***************************************************************
+'Is Cluster at End Of File ?
+'***************************************************************
+'compares cluster passes in r16-r19 with End Of Cluster chain signiture
+Isclustereof:
+lds r0, {fatstatus}                                         'get fat status in r0
+.OBJ EF48
+.OBJ EF5F
+.OBJ 1704
+.OBJ 715
+.OBJ FC04
+.OBJ 9508
+.OBJ EF6F
+.OBJ E07F
+.OBJ 726
+.OBJ 737
+.OBJ 9508
+[end]
+[cluster2nextcluster]
+'***************************************************************
+'Cluster to Next Cluster
+'***************************************************************
+'Cluster is passed in r16-r19
+'And then returns the next cluster in r16-r19
+'And also, Z (Zero) flag in SREG set if cluster = 0 (not allocated cluster). Maybe bad, maybe good
+'And also Z register pair pointing to cluster in the fat buffer
+$EXTERNAL Mpy32base2, Mod32base2, Div32base2, Get_fat, Mpy16base2
+Cluster2nextcluster:
+.OBJ E044
+lds r0, {fatstatus}                                         'get fat status in r0
+.OBJ FC04
+.OBJ E042
+call Mpy32base2                                            'cluster * Bytesperfat in r16-r19
+'r16-r19 contains the byte offset from the start of fat, where the next cluster can be found
+.OBJ E040
+.OBJ E052
+.OBJ 2766
+.OBJ 2777
+call Mod32base2
+'r20-23 now contains the byte offset from the CORRECT fat sector, where the next cluster can be found
+.OBJ 934F
+.OBJ 935F
+'r16 -r19 Unchanged
+.OBJ E040
+.OBJ E052
+call Div32base2                                            'divide by bytespersec, result to r16-r19
+'r16-r19 contains the sector offset from the start of fat, where the next cluster can be found
+Loadadr Fatlbabegin , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+.OBJ F04
+.OBJ 1F15
+.OBJ 1F26
+.OBJ 1F37
+'r16-r19 = Wanted Fat Sector(relative to the start of the volume) , Which Contains Where The Next Cluster Can Be Found
+rcall Get_fat                                                'get the fat from disk (or not)
+'at this stage the fat is loaded into the fat buffer which is fat sector size long (in sectors) or Fat buffer size (in bytes)
+'all that has to be done is find the byte offset where the next cluster can be found
+Loadadr Fatloadedstart , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+'subtract fat loaded start from fat sector
+.OBJ 1B04
+.OBJ B15
+.OBJ B26
+.OBJ B37
+'r16-r17 now contains the sector number (0 < sector number > fatbuffersectorsize) of the currently loaded fat buffer where the next cluster can be found
+.OBJ E040
+.OBJ E052
+call Mpy16base2                                            'multiply by bytespersec
+'r16-r17 now contains the byte offset of the sector number currently loaded fat buffer where the next cluster can be found
+.OBJ 915F
+.OBJ 914F
+.OBJ F04
+.OBJ 1F15
+Loadadr Fatbuffer(1) , Z
+lds r0, {fatstatus}                                         'get fat status in r0 (REMOVE ?)
+.OBJ FE0
+.OBJ 1FF1
+.OBJ 8100
+.OBJ 8111
+.OBJ FC04
+rjmp cluster2nextcluster16
+.OBJ 8122
+.OBJ 8133
+.OBJ 703F
+.OBJ 5000
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+.OBJ 9508
+Cluster2nextcluster16:
+.OBJ 2722
+.OBJ 2733
+.OBJ 5000
+.OBJ 4010
+.OBJ 9508
+'Returns with Z (Zero) flag in SREG set if cluster = 0 (not allocated cluster)
+'AND Z pointing to cluster in the fat buffer
+[end]
+[get_fat]
+'***************************************************************
+'Get Fat
+'***************************************************************
+'The Wanted Fat Sector(relative To The Start Of The Disk) is passed in r16-r19.
+'Get Fat first checks Fat Loaded Start and Fat Loaded Stop.
+'If the Wanted Fat Sector is in this range, there is no need to load from the disk.
+'If outside the range, then grabs it from disk, and updates Fat Loaded Start & Stop & buffer status
+$EXTERNAL Readsec, Getsec, flushfat
+'MCS ROUTINES
+$EXTERNAL _comp32
+Get_fat:                                                     'asm entry with Wanted Fat Sector passed in r16-r19
+Loadadr Fatloadedstart , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917D
+call _comp32                                               'compare calculated fat sector with fat loaded start
+brlo loadfat                                                'if < fatloadedstart then load fat
+* ldi r24, Fatbuffersectorsize
+.OBJ F48
+.OBJ E080
+.OBJ 1F58
+.OBJ 1F68
+.OBJ 1F78
+call _comp32
+brlo fatloaded                                              'if < fatloadedstop (fatloadedstart+Fatbuffersectorsize-1) then fat already loaded
+Loadfat:
+.OBJ 930F
+.OBJ 931F
+.OBJ 932F
+.OBJ 933F
+lds r23, {Fatstatus}                                        'get fatstatus
+.OBJ FD75
+rcall Flushfatb4load                                        'then write the old buffer back to disk first, before getting new fat
+* ldi r24, Fatbuffersectorsize                               'fat buffer sector size to r24, ready for readsec
+call Readsec                                               'already done fat sector to r16 to r19, ready for readsec
+* ldi r24, Fatbuffersectorsize
+Loadadr Fatbuffer(1) , X
+call Getsec
+.OBJ 913F
+.OBJ 912F
+.OBJ 911F
+.OBJ 910F
+Loadadr Fatloadedstart , X
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933D
+Fatloaded:
+.OBJ 9508
+Flushfatb4load:
+.OBJ 930F
+.OBJ 931F
+.OBJ 932F
+.OBJ 933F
+rcall flushfat
+.OBJ 913F
+.OBJ 912F
+.OBJ 911F
+.OBJ 910F
+.OBJ 9508
+[end]
+[fillbuffer]
+'***************************************************************
+'Fill Buffer
+'***************************************************************
+'Inputs are Cluster, status, Cluster index
+'Outputs are Cluster, status, Cluster index, and of course the buffer full of data
+'Fills buffer till end of file
+'status file or dir keeps track of which buffer full we are up to.
+$EXTERNAL Nextcluster, cluster2sectoroffset, Readsec, Getsec
+Fillbuffer:
+.OBJ 8184
+.OBJ FD87
+rjmp Fillbuffererror                                        'Fill buffer called while end of file = BAD
+lds r25, {filenumofit}                                      'number of iterations till a new cluster in r25
+.OBJ 1798
+brsh Fillbuffer1                                            'Not time for a new cluster yet
+'Z still points to cluster
+rcall Nextcluster                                           'Get next cluster
+.OBJ 8184
+.OBJ FD87
+.OBJ 9508
+.OBJ E080
+.OBJ 8384
+Fillbuffer1:
+rcall cluster2sectoroffset
+* ldi r24, Filebuffersectorsize                              'Number of sectors to read
+call Readsec
+Loadadr Filebuffer(1) , X
+* ldi r24, Filebuffersectorsize                              'Number of sectors to get
+call Getsec                                               'Get data from drive
+.OBJ 8184
+.OBJ 9583
+.OBJ 8384
+.OBJ 9508
+Fillbuffererror:
+.OBJ E188
+sts {errorcode}, r24
+jmp Errorhandle
+[end]
+[cluster2sectoroffset]
+'***************************************************************
+'Cluster to Sector + Offset
+'***************************************************************
+'with the address of cluster in Z and status at Z+4
+'returns the sector in r16-r19
+$EXTERNAL Cluster2sector
+Cluster2sectoroffset:
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8133
+rcall Cluster2sector                                        'Convert the cluster to a sector (well ok it's first sector)
+'Calculate sector offset
+* ldi r25, Filebuffersectorsize
+.OBJ 8184
+.OBJ 778F
+.OBJ 9F89
+.OBJ 2744
+.OBJ D00
+.OBJ 1D11
+.OBJ 1F24
+.OBJ 1F34
+.OBJ 9508
+'returns with sector + offset in r16-r19
+[end]
+[cluster2previoussectoroffset]
+'***************************************************************
+'Cluster to Sector + (Offset - 1)
+'***************************************************************
+'with the address of cluster in Z and status of at Z+4
+'returns the previous sector in r16-r19
+Cluster2previoussectoroffset:
+$EXTERNAL Cluster2sector
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8133
+rcall Cluster2sector                                        'Convert the cluster to a sector (well ok it's first sector)
+'Calculate sector offset
+[Sector2previoussectoroffset]
+Sector2previoussectoroffset:                                'Alt entry point with sector in r16-19
+* ldi r25, Filebuffersectorsize
+.OBJ 8184
+.OBJ 778F
+.OBJ 2388
+breq Clus2prevsectoffseterror
+.OBJ 958A
+.OBJ 9F89
+.OBJ 2744
+.OBJ D00
+.OBJ 1D11
+.OBJ 1F24
+.OBJ 1F34
+.OBJ 9508
+Clus2prevsectoffseterror:
+.OBJ E18B
+sts {errorcode}, r24
+jmp Errorhandle
+[end]
+[read_32]
+'***************************************************************
+'Read a long
+'***************************************************************
+'Function Read_32()as Long
+$EXTERNAL read_16
+Read_32:
+rcall read_16                                               'read lo word of long
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 9611
+.OBJ 83A8
+.OBJ 83B9
+'drop thu to read_16
+[end]
+[read_16]
+'***************************************************************
+'Read a Word
+'***************************************************************
+'Function Read_16()as Word
+Read_16:
+$EXTERNAL Read_sequential
+rcall Read_sequential                                       'get the first byte of word
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 9611
+.OBJ 83A8
+.OBJ 83B9
+'drop thru to Read_sequential
+[end]
+[read_sequential]
+'$external File2bufferoffset
+'***************************************************************
+'Read Sequential Access
+'***************************************************************
+'Function Read_sequential()as byte
+'Returns a byte at global variable file offset
+'File offset is base 0. i.e. 0 returns 1st byte in file, 1 returns 2nd byte in file.
+'File offset is Increment by 1 ready for the next call
+$EXTERNAL Fillbuffer
+Read_sequential:
+Loadadr Filecluster , Z
+Readsequential:
+.OBJ 8543
+.OBJ 8554
+* andi r20, Filebuffersizeminus1_lo                           'mod of a base 2 = logical AND of base 2 - 1
+* andi r21, Filebuffersizeminus1_hi                           'buffer offset is now in r20-r21
+.OBJ 5040
+.OBJ 4050
+brne Rsequentialskipfreshbuffer                             'check to see if we need a fresh buffer full
+rcall Fillbuffer                                            'time for fresh buffer
+'if we are here, then we must need the first byte of the file buffer
+.OBJ E040
+.OBJ E050
+Rsequentialskipfreshbuffer:
+Loadadr Filebuffer(1) , X
+.OBJ FA4
+.OBJ 1FB5
+.OBJ 900C
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 920C
+.OBJ 8583
+.OBJ 8594
+.OBJ 85A5
+.OBJ 85B6
+.OBJ 9601
+.OBJ 8783
+.OBJ 8794
+brcc Rsequentialcpsize
+.OBJ 9611
+.OBJ 87A5
+.OBJ 87B6
+Rsequentialcpsize:
+.OBJ 8547
+.OBJ 8950
+.OBJ 8961
+.OBJ 8972
+.OBJ 1784
+.OBJ 795
+.OBJ 7A6
+.OBJ 7B7
+brlo Read_sequentialend                                     'if lower, finish
+.OBJ 8104
+.OBJ 6800
+.OBJ 8304
+Read_sequentialend:
+.OBJ 9508
+[end]
+[write_32]
+'***************************************************************
+'Write a Long
+'***************************************************************
+'Sub Write_32(file_long As Long)
+$EXTERNAL Write_16
+Write_32:
+rcall Write_16                                              'write lo word                                              '
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 9611
+.OBJ 83A8
+.OBJ 83B9
+'drop thru to Write_16
+[end]
+[write_16]
+'***************************************************************
+'Write a Word
+'***************************************************************
+'Sub Write_16(file_word As Word)
+$EXTERNAL Write_sequential
+Write_16:
+rcall Write_sequential                                      'write lo byte
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 9611
+.OBJ 83A8
+.OBJ 83B9
+'drop thru to Write_sequential
+[end]
+[write_sequential]
+'***************************************************************
+'Write Sequential
+'***************************************************************
+'Sub Write_sequential(file_byte As Byte)
+'sticks file byte in the file buffer. When the file buffer is full, flushes it to disk.
+'incruments file offset and sets a flag in fatstatus to indicate that the buffer is modified
+$EXTERNAL flush_file_sequential
+Write_sequential:
+Loadadr Filecluster , Z
+Writesequential:                                            'alt entry point with Z pointing to first file variable
+.OBJ 8543
+.OBJ 8554
+* andi r20, Filebuffersizeminus1_lo                           'mod of a base 2 = logical AND of base 2 - 1
+* andi r21, Filebuffersizeminus1_hi                           'buffer offset is now in r20-r21
+.OBJ 5040
+.OBJ 4050
+brne Wsequentialskipflush                                   'if we are pointing at the first position of the file buffer
+lds r16, {fatstatus}
+.OBJ FD07
+rcall flush_file_sequential                                   'then flush to disk.
+.OBJ E040
+.OBJ E050
+Wsequentialskipflush:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 900C
+Loadadr Filebuffer(1) , X
+.OBJ FA4
+.OBJ 1FB5
+.OBJ 920C
+lds r24, {fatstatus}                                        'get fat status
+.OBJ 6880
+sts {fatstatus}, r24                                        'put it back
+.OBJ 8583
+.OBJ 8594
+.OBJ 9601
+.OBJ 8783
+.OBJ 8794
+brcc Wsequentialmyincrlongend
+.OBJ 8585
+.OBJ 8596
+.OBJ 9601
+.OBJ 8785
+.OBJ 8796
+Wsequentialmyincrlongend:
+.OBJ 9508
+[end]
+[set_randommodeflag]
+'***************************************************************
+'Set the random mode flag
+'***************************************************************
+Set_randommodeflag:
+lds r24, {fatstatus}
+.OBJ 6480
+sts {fatstatus}, r24
+.OBJ 9508
+[end]
+[set_buffermodifiedflag]
+'***************************************************************
+'Set the buffer modified flag
+'***************************************************************
+Set_buffermodifiedflag:
+lds r24, {fatstatus}
+.OBJ 6880
+sts {fatstatus}, r24
+.OBJ 9508
+[end]
+[clear_randommodeflag]
+'***************************************************************
+'Clear the Random mode flag
+'***************************************************************
+Clear_randommodeflag:
+lds r24, {fatstatus}
+.OBJ 7B8F
+sts {fatstatus}, r24
+.OBJ 9508
+[end]
+[clear_buffermodifiedflag]
+'***************************************************************
+'Clear the buffer modified flag
+'***************************************************************
+Clear_buffermodifiedflag:
+lds r24, {fatstatus}
+.OBJ 778F
+sts {fatstatus}, r24
+.OBJ 9508
+[end]
+[flush_file_sequential]
+'***************************************************************
+'Flush File buffer to disk
+'***************************************************************
+'Flushes the file buffer to disk, and clears the buffer modified flag.
+$EXTERNAL Cluster2sectoroffset , Writesec , Putsec , Clear_buffermodifiedflag
+$EXTERNAL Splitstatus , Allocate_cluster
+flush_file_sequential:
+rcall Cluster2sectoroffset                                  'Convert cluster to sector & add offset
+* ldi r24, Filebuffersectorsize                              'Number of sectors to write
+call Writesec                                              'give the command to the drive
+* ldi r24, Filebuffersectorsize                              'Number of sectors to put into drive
+Loadadr Filebuffer(1) , X
+call Putsec                                               'put the data into the drive
+rcall Clear_buffermodifiedflag                              'Clear the buffer modified flag
+rcall Splitstatus
+.OBJ 9563
+lds r24, {filenumofit}
+.OBJ 1786
+.OBJ FF77
+brsh Flushfilesequentialend                                 'bug out if lower
+.OBJ 93EF
+.OBJ 93FF
+rcall Allocate_cluster                                       'allocate a new cluster or end of cluster chain
+.OBJ 91FF
+.OBJ 91EF
+rcall Splitstatus
+.OBJ E060
+Flushfilesequentialend:
+.OBJ 2B76
+.OBJ 8374
+.OBJ 9508
+[end]
+[findnextfreecluster]
+'***************************************************************
+'Find Next Free Cluster
+'***************************************************************
+'find the next free cluster after the current free cluster
+$EXTERNAL Findfreecluster
+Findnextfreecluster:
+Loadadr Nxt_free , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+.OBJ E041
+.OBJ F04
+.OBJ E040
+.OBJ 1F14
+.OBJ 1F24
+.OBJ 1F34
+rjmp Findfreeclusternoload
+[findfreeclusterfirst]
+'***************************************************************
+'Find Free Cluster from First cluster
+'***************************************************************
+'find a free cluster at or after the the first cluster
+$EXTERNAL Findfreecluster
+Findfreeclusterfirst:
+Loadadr Bpb_rootclus , X
+Loadadr Nxt_free , Z
+.OBJ E054
+call Mem2mem                                               'nxt_free = Bpb_rootclus
+.OBJ E18A
+sts {errorcode}, r24                                        'set error code, just in case disk is full
+'drop thu to Findfreecluster
+[findfreecluster]
+'***************************************************************
+'Find Free Cluster
+'***************************************************************
+'finds a free cluster stating from nxt_free.
+'If the disk is full, then sets error code = 9, and bye bye
+'WARNING May take a long time to find a free cluster on a big & almost full disk, if starting from Bpb_rootclus.
+$EXTERNAL Cluster2nextcluster
+'MCS Routines
+$EXTERNAL _comp32
+Findfreecluster:
+Loadadr Nxt_free , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+Findfreeclusternoload:
+'Cluster2nextcluster expects cluster in r16-r19
+.OBJ 930F
+.OBJ 931F
+.OBJ 932F
+.OBJ 933F
+rcall Cluster2nextcluster
+'returns with Z flag in status register set if a free cluster (&H0000) is found
+.OBJ 913F
+.OBJ 912F
+.OBJ 911F
+.OBJ 910F
+breq findfreeclusterfound                                   'Success
+.OBJ E041
+.OBJ F04
+.OBJ E040
+.OBJ 1F14
+.OBJ 1F24
+.OBJ 1F34
+Loadadr Cntofclusters , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+call _comp32                                               'compare
+brlo Findfreeclusternoload                                  'if < then try again
+'if >= then cannot go any further
+'disk is full, no free clusters.
+'OR
+'cannot find a free cluster after nxt_free, BUT there might be a free cluster before.
+''SOMETHING WRONG HERE???????
+''lds r24, {errorcode}                                        'error code to r24
+''cpi r24, 9                                                  'compare with 9 disk is full error code
+''brne Findfreeclusterfirst                                   'no error code set, so start from the first cluster
+''call Errorhandle                                           'disk is full. bye bye
+'ldi r24, Disk_full_err
+'sts {errorcode}, r24
+jmp Errorhandle                                             'disk is full. bye bye
+Findfreeclusterfound:
+Loadadr Nxt_free , X
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933C
+.OBJ E080
+sts {errorcode}, r24                                        'reset error code Errorcode = 0
+.OBJ 9508
+[end]
+[allocate_cluster]
+'***************************************************************
+'Allocate Cluster
+'***************************************************************
+'Allocates the next cluster in the fat buffer, and sets the fatBuffermodifiedflag in fatstatus
+'Allocates a real cluster if NOT end of file, and increments cluster index and finds the next free cluster for next time.
+'If end of file (Endoffileflag in status set)
+'Then a End Of Cluster Chain is allocated instead, does not find the next free cluster.
+'asm entry with Z pointing to cluster
+$EXTERNAL Cluster2nextcluster , Findnextfreecluster
+Allocate_cluster:
+.OBJ 8184
+.OBJ FF87
+rjmp Allocateclusternoeof                                   'if the end of file bit in status is clear, then allocate a real cluster
+'otherwise allocate a end of cluster chain indication
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8133
+.OBJ 93EF
+.OBJ 93FF
+rcall Cluster2nextcluster
+'returns with Z pointing to the fat buffer where the next cluster can be read, or written
+.OBJ EF08
+.OBJ EF1F
+.OBJ EF2F
+.OBJ E03F
+rjmp Allocateclusterallocate
+Allocateclusternoeof:                                       'no end of file
+.OBJ 93EF
+.OBJ 93FF
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8133
+rcall Cluster2nextcluster
+'returns with Z pointing to the fat buffer where the next cluster can be read, or written
+Loadadr Nxt_free , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+Allocateclusterallocate:
+.OBJ 8300
+.OBJ 8311
+lds r24, {Fatstatus}                                        'get fatstatus in r24
+.OBJ FD84
+rjmp Allocateclusterallocatedone                            'then we are done with the fat buffer
+.OBJ 8322
+.OBJ 8333
+Allocateclusterallocatedone:
+'So. The fat buffer at cluster position contains the current nxt_free, or End Of Cluster Chain indication.
+'Now make cluster = nxt_free, or End Of Cluster Chain indication.
+.OBJ 91FF
+.OBJ 91EF
+'set a flag to indicate that the fat buffer is modified
+.OBJ 6280
+sts {fatstatus}, r24                                        'put it back
+.OBJ 8300
+.OBJ 8311
+.OBJ 8322
+.OBJ 8333
+.OBJ 8185
+.OBJ 8196
+.OBJ 9601
+.OBJ 8385
+.OBJ 8396
+Allocateclusterdecfreecnt:                                  'decrument free count
+Loadadr Free_count , X
+.OBJ 918D
+.OBJ 919C
+.OBJ 9701
+.OBJ 939C
+.OBJ 938E
+brcc Allocateclusterend                                     'if no carry (most of the time), end
+.OBJ 9612
+.OBJ 918D
+.OBJ 919C
+.OBJ 9701
+.OBJ 939C
+.OBJ 938E
+Allocateclusterend:
+.OBJ 8184
+.OBJ FF87
+rjmp Findnextfreecluster                                    'Find the next free cluster, ready for next time around. Return from there
+.OBJ 9508
+[end]
+[flushfat]
+'***************************************************************
+'Flush Fat bufer to disk
+'***************************************************************
+'writes back to disk the FAT buffer and then clears the fatbuffermodifiedflag in fatstatus
+$EXTERNAL Writesec, Putsec
+Flushfat:
+Loadadr Fatloadedstart , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+* ldi r24, Fatbuffersectorsize
+call Writesec                                              'give the write sector command
+* ldi r24, Fatbuffersectorsize                               'number of sectors to write to disk
+Loadadr Fatbuffer(1) , X
+'X points to where to where data comes from
+call Putsec                                               'put the data into the drive
+lds r24, {Bpb_numfats}                                      'number of copies of fat to r24
+.OBJ 3082
+brne flushfatend                                            'if not 2, then end
+Loadadr Fatloadedstart , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+Loadadr Bpb_fatz , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+.OBJ F04
+.OBJ 1F15
+.OBJ 1F26
+.OBJ 1F37
+'r16-r19 = sector of 2nd copy of fat
+* ldi r24, Fatbuffersectorsize
+call Writesec                                              'give the write sector command
+* ldi r24, Fatbuffersectorsize                               'number of sectors to write to disk
+Loadadr Fatbuffer(1) , X
+'X points to where to where data comes from
+call Putsec                                               'put the data into the drive
+Flushfatend:
+lds r23, {Fatstatus}                                        'get fatstatus
+.OBJ 7D7F
+sts {fatstatus}, r23                                        'put it back
+.OBJ 9508
+[end]
+[updatefsinfo]
+'***************************************************************
+'Update File System Info
+'***************************************************************
+'writes back free_count & nxt_free to disk
+$EXTERNAL Readfsinfo, Mem2mem, Writesec, Putsec
+Updatefsinfo:
+lds r0, {fatstatus}                                         'get fatstatus in r0
+.OBJ FC04
+.OBJ 9508
+rcall Readfsinfo                                            'read the original of disk but write back the buffered FAT before if necessary
+'X points to where to put it
+Loadadr Free_count , X
+Loadadr Fatbuffer(489) , Z
+.OBJ E054
+call Mem2mem
+Loadadr Nxt_free , X
+Loadadr Fatbuffer(493) , Z
+.OBJ E054
+call Mem2mem                                               'Fatbuffer(493) = nxt_free
+Loadadr Bpb_fsinfo , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913D
+.OBJ E081
+call Writesec
+.OBJ E081
+Loadadr Fatbuffer(1) , X
+jmp Putsec                                                 'put it into the drive. Return from there
+[end]
+[splitstatus]
+'***************************************************************
+'Split status into count and control
+'***************************************************************
+Splitstatus:
+.OBJ 8164
+.OBJ 2F76
+.OBJ 776F
+.OBJ 7870
+.OBJ 9508
+[end]
+[file2bufferoffset]
+'***************************************************************
+'File Offset to Buffer Offset
+'***************************************************************
+'returns the buffer offset in r20-r21, given a file offset
+'buffer offset = file offset MOD File buffer size
+File2bufferoffset:
+.OBJ 8543
+.OBJ 8554
+* andi r20, Filebuffersizeminus1_lo                           'mod of a base 2 = logical AND of base 2 - 1
+* andi r21, Filebuffersizeminus1_hi                           'buffer offset is now in r20-r21
+.OBJ 9508
+[end]
+[randomaccess4fat16root]
+'***************************************************************
+'Random Access for FAT16 root directory
+'***************************************************************
+'since a fat16 root directory is a range of sectors, rather than a cluster chain, a special routine is needed.
+$EXTERNAL Div16base2, readsec, Getsec, File2bufferoffset
+Randomaccess4fat16root:
+.OBJ 8503
+.OBJ 8514
+.OBJ E040
+.OBJ E052
+call Div16base2                                            'Wanted sector index = Fileoffset / Bytespersector in r16
+.OBJ 8144
+.OBJ 1704
+brsh Randomaccess4fat16rootload
+* subi r20, Filebuffersectorsize
+.OBJ 1704
+brsh Randomaccess4fat16rootskipload
+Randomaccess4fat16rootload:
+lds r0, {fatstatus}                                         'get fatstatus in r0
+.OBJ FC07
+rcall Fat16rootflush                                        'then flush to disk before load
+Randomaccess4fat16rootload1:
+* ldi r24, Filebuffersectorsize
+.OBJ 2F90
+.OBJ F98
+.OBJ 8394
+.OBJ 2711
+.OBJ 2722
+.OBJ 2733
+Loadadr Dirlbabegin , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917D
+.OBJ F04
+.OBJ 1F15
+.OBJ 1F26
+.OBJ 1F37
+call readsec                                               'issue read sector command
+Loadadr Filebuffer(1) , X
+* ldi r24, Filebuffersectorsize
+call Getsec                                               'and then get the data
+Randomaccess4fat16rootskipload:
+rcall File2bufferoffset                                     'calculate the buffer offset from the file offset
+Loadadr Filebuffer(1) , X
+.OBJ FA4
+.OBJ 1FB5
+.OBJ 9508
+[end]
+[fat16rootflush]
+'***************************************************************
+'Flush a modified FAT16 root directory to disk
+'***************************************************************
+'since a fat16 root directory is a range of sectors, rather than a cluster chain, a special routine is needed.
+$EXTERNAL Sector2previoussectoroffset, Writesec, Putsec, Clear_buffermodifiedflag
+Fat16rootflush:
+Loadadr Dirlbabegin , X
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+rcall Sector2previoussectoroffset
+* ldi r24, Filebuffersectorsize
+call Writesec
+* ldi r24, Filebuffersectorsize
+Loadadr Filebuffer(1) , X
+call Putsec
+rjmp Clear_buffermodifiedflag                               'return from there
+[end]
+[flushdir2disk]
+'***************************************************************
+'Flush a modified directory to disk
+'***************************************************************
+$EXTERNAL Flush_file_random, fat16rootflush
+Flushdir2disk:
+lds r0, {fatstatus}                                         'get fatstatus in r0
+.OBJ FE07
+.OBJ 9508
+Loadadr Dircluster , Z
+.OBJ FE04
+rjmp Flush_file_random                                        'FAT32 dir. jump and return from there
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8133
+.OBJ 5000
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+brne Flushdir2disk1
+rjmp fat16rootflush                                         'FAT16 root. jump and return from there
+Flushdir2disk1:
+rjmp Flush_file_random                                        'FAT16 non root. jump and return from there
+[end]
+[random_access]
+'***************************************************************
+'Random Access for File only
+'***************************************************************
+random_access:
+loadadr filecluster, Z
+[randomaccess]
+'***************************************************************
+'Random Access
+'***************************************************************
+$EXTERNAL Div32base2, Flush_file_random, Default_handle1, nextcluster, Div16base2, Splitstatus, File2bufferoffset
+Randomaccess:
+.OBJ 8503
+.OBJ 8514
+.OBJ 8525
+.OBJ 8536
+lds r20, {Bytesperclus}
+lds r21, {Bytesperclus+1}
+call Div32base2                                            'Wanted index = Fileoffset / Bytesperclus in r16-r17
+.OBJ 8145
+.OBJ 8156
+.OBJ 1740
+.OBJ 751
+breq alignskipindexforward                                  'we already have the right cluster
+brlo alignskipfrombegining1                                 'If we want a higher index then we can skip the begining
+'the only backward is to start from the beginning
+lds r23, {fatstatus}
+.OBJ FF77
+rjmp alignfrombegining
+.OBJ 930F
+.OBJ 931F
+'wanted cluster index is lower
+rcall Flush_file_random                                       'flush buffer to disk, Z is not touched
+.OBJ 911F
+.OBJ 910F
+Alignfrombegining:
+rcall Default_handle1                                       'default all but file offset
+Alignskipfrombegining:
+.OBJ 8145
+.OBJ 8156
+.OBJ 1740
+.OBJ 751
+'r16-r17 still contains the cluster index we want
+brge alignskipindexforward                                  'Index forward till cluster index we want = cluster index (should never go greater)
+Alignskipfrombegining1:
+.OBJ 930F
+.OBJ 931F
+lds r23, {fatstatus}
+.OBJ FD77
+'Wanted cluster is higher
+rcall Flush_file_random                                       'flush buffer to disk, Z is not touched
+.OBJ E070
+.OBJ 8374
+rcall nextcluster                                           'Call next cluster, with Z pointing to cluster. Returns with Z pointing to cluster
+.OBJ 911F
+.OBJ 910F
+rjmp alignskipfrombegining
+Alignskipindexforward:                                      'We now have the right cluster
+.OBJ 8503
+.OBJ 8514
+* ldi r20, Filebuffersize_lo
+* ldi r21, Filebuffersize_hi
+call Div16base2                                            'file offset / file buffer size in r16-r17
+lds r20, {Filenumofit}                                      'number of iterations till next culster (always 1 less than base 2 number)
+.OBJ 2304
+rcall Splitstatus                                           'split status into count and control
+'ldd r22, Z+4
+'cbr r22, 2^Endoffileflag                                    'clear the end of file flag, in case were at end of file
+.OBJ 956A
+.OBJ 776F
+'lower loaded sector index in r22
+.OBJ 1760
+breq Randomaccessskipload                                   'if equal then there is no need to load a fresh buffer (or flush)
+lds r23, {fatstatus}
+.OBJ FD77
+'wanted sector diffrent
+rjmp flushfileb4load                                        'flush the buffer to disk before fresh load
+Randomfileflushed:
+.OBJ 8304
+rcall Fillbuffer1                                           'alternate entry point.
+Randomaccessskipload:
+rcall File2bufferoffset                                     'returns buffer offset in r20-r21
+Loadadr Filebuffer(1) , X
+.OBJ FA4
+.OBJ 1FB5
+.OBJ 9508
+Flushfileb4load:
+.OBJ 930F
+rcall Flush_file_random                                       'flush buffer to disk, Z is not touched
+.OBJ 910F
+rjmp randomfileflushed
+[end]
+[flush_file_random]
+'***************************************************************
+'Flush File buffer Random to disk
+'***************************************************************
+'Flushes the file buffer to disk in ramdom mode
+Flush_file_random:
+'Entry point if cluster address is loaded in Z
+$EXTERNAL Cluster2previoussectoroffset, Writesec, Putsec, Clear_buffermodifiedflag, Clear_randommodeflag
+rcall Cluster2previoussectoroffset
+* ldi r24, Filebuffersectorsize                              'Number of sectors to write
+call Writesec
+* ldi r24, Filebuffersectorsize                              'Number of sectors to put into drive
+Loadadr Filebuffer(1) , X
+call Putsec
+rcall Clear_buffermodifiedflag
+rjmp Clear_randommodeflag                                   'return from there
+[end]
+[read_dir_wrttime]
+'***************************************************************
+'Read Dir Write Time
+'***************************************************************
+'Function Read_dir_wrttime(direntry As Word) As String
+'returns a string containing the time of last write
+$EXTERNAL xbytesperdirentry, Accessdir, Dostime2str
+Read_dir_wrttime:
+rcall xbytesperdirentry
+.OBJ E146
+rcall Accessdir                                             'returns with X pointing to Read_dir_wrttime
+.OBJ 912D
+.OBJ 913C
+rjmp Dostime2str                                            'convert to a string. Return from there
+[end]
+[read_dir_crttime]
+'***************************************************************
+'Read Dir Create Time
+'***************************************************************
+'Function Read_dir_crttime(direntry As Word) As String
+'returns a string containing the time the file was created
+$EXTERNAL xbytesperdirentry, Accessdir, Dostime2str
+Read_dir_crttime:
+rcall xbytesperdirentry
+.OBJ E04E
+rcall Accessdir                                             'returns with X pointing to Read_dir_crttime
+.OBJ 912D
+.OBJ 913C
+rjmp Dostime2str                                            'convert to a string. Return from there
+[end]
+[dostime2str]
+'***************************************************************
+'Dos Time to String for function
+'***************************************************************
+'converts dos time in r18, r19 to a string pointed to by Y+2, Y+3
+'MCS ROUTINES
+$EXTERNAL _clock2time
+Dostime2str:
+.OBJ 2F12
+.OBJ 711F
+.OBJ F11
+.OBJ 9536
+.OBJ 9527
+.OBJ 9536
+.OBJ 9527
+.OBJ 9536
+.OBJ 9527
+.OBJ 9526
+.OBJ 9526
+.OBJ E1E1
+.OBJ E0F0
+.OBJ 81AA
+.OBJ 81BB
+jmp _clock2time                                             'convert sec, min, hour pointed to by Z to a string pointed to by X
+[end]
+[read_dir_wrtdate]
+'***************************************************************
+'Read Dir Write Date
+'***************************************************************
+'returns a string containing the date of the last write
+'Function Read_dir_wrtdate(direntry As Word) As String
+$EXTERNAL xbytesperdirentry, Accessdir, Dosdate2str
+Read_dir_wrtdate:
+rcall xbytesperdirentry
+.OBJ E148
+rcall Accessdir                                             'returns with X pointing to Read_dir_wrtdate
+.OBJ 912D
+.OBJ 913C
+rjmp Dosdate2str                                            'convert to a string. Return from there
+[end]
+[read_dir_crtdate]
+'***************************************************************
+'Read Dir Create Date
+'***************************************************************
+'Function Read_dir_crtdate(direntry As Word) As String
+'Returns a string containing the create date
+$EXTERNAL xbytesperdirentry, Accessdir, Dosdate2str
+Read_dir_crtdate:
+rcall xbytesperdirentry
+.OBJ E140
+rcall Accessdir                                             'returns with X pointing to Read_dir_crtdate
+.OBJ 912D
+.OBJ 913C
+rjmp Dosdate2str                                            'convert to a string. Return from there
+[end]
+[read_dir_lstaccdate]
+'***************************************************************
+'Read Dir Last Access Date
+'***************************************************************
+'Function Read_dir_lstaccdate(direntry As Word) As String
+'Returns a string contining the last access date
+$EXTERNAL xbytesperdirentry, Accessdir, Dosdate2str
+Read_dir_lstaccdate:
+rcall xbytesperdirentry
+.OBJ E142
+rcall Accessdir                                             'returns with X pointing to Read_dir_crtdate
+.OBJ 912D
+.OBJ 913C
+rjmp Dosdate2str                                            'convert to a string. Return from there
+[end]
+[dosdate2str]
+'***************************************************************
+'Dos Date to String for function
+'***************************************************************
+'converts dos Date in r18, r19 to a string pointed to by Y+2, Y+3
+'uses the "Config Date" parameters for format and seperators
+'MCS ROUTINEs
+$EXTERNAL _clock2date
+Dosdate2str:
+.OBJ 2F12
+.OBJ 711F
+.OBJ 9536
+.OBJ 9527
+.OBJ 9522
+.OBJ 702F
+.OBJ 3134
+brsh Dosdate2str2000                                        'is the year <=1999 (1980 + 19)
+.OBJ 5B30
+rjmp Dosdate2strconv2str
+Dosdate2str2000:
+.OBJ 5134
+Dosdate2strconv2str:
+.OBJ E1E1
+.OBJ E0F0
+.OBJ 81AA
+.OBJ 81BB
+jmp _clock2date                                             'convert day, month, year pointed to by Z to a string pointed to by X
+[end]
+[read_dir_attr]
+'***************************************************************
+'Dir Attribute
+'***************************************************************
+'Returns the attribute of a file (or dir)
+'Function read_dir_attr(direntry As Word) As Byte
+$EXTERNAL xbytesperdirentry, Accessdir
+Read_dir_attr:
+rcall xbytesperdirentry
+.OBJ E04B
+rcall Accessdir                                             'returns with X pointing to attribute
+.OBJ 910C
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 8300
+.OBJ 9508
+[end]
+[xbytesperdirentry]
+'***************************************************************
+'Multipy Y+0, Y+1 by bytes per dir entry. Used a few times by *_Dir_*
+'***************************************************************
+$EXTERNAL Mpy32base2
+Xbytesperdirentry:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 910D
+.OBJ 911C
+.OBJ 2722
+.OBJ 2733
+.OBJ E240
+jmp Mpy32base2                                              'multiply, result in r16-r19. Return from there
+[end]
+[accessdir]
+'***************************************************************
+'access dir. Used a few times by *_Dir_*
+'***************************************************************
+'r20 contains the byte offset of the directory attribite to access
+'r16 - r19 contains dir entry * bytes per dir dir entry (32)
+'returns with X pointing to the file buffer at the byte offset, ready for read or write
+$EXTERNAL Randomaccess, Randomaccess4fat16root
+'MCS ROUTINES
+$EXTERNAL _add32
+Accessdir:
+.OBJ 2755
+.OBJ 2766
+.OBJ 2777
+call _add32
+Accessdir4name:                                             'entry point for name (offset 0)
+Loadadr Dircluster , Z
+.OBJ 8703
+.OBJ 8714
+.OBJ 8725
+.OBJ 8736
+lds r0, {fatstatus}
+.OBJ FE04
+rjmp Randomaccess                                           'FAT32. jump and return from there
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8133
+.OBJ 5000
+.OBJ 4010
+.OBJ 4020
+.OBJ 4030
+brne Accessdir1
+rjmp Randomaccess4fat16root                                 'FAT16 root. jump and return from there
+Accessdir1:
+rjmp Randomaccess                                           'FAT16 non root. jump and return from there
+[end]
+[read_dir_name]
+'***************************************************************
+'Dir Name
+'***************************************************************
+'Returns the name of a file (or dir)
+'Function read_dir_name(direntry As Word) As String * 8
+$EXTERNAL Xbytesperdirentry, Accessdir, mem2mem
+'MCS ROUTINES
+$EXTERNAL _trim
+Read_dir_name:
+rcall Xbytesperdirentry
+rcall Accessdir4name                                        'returns with X pointing to dir name
+.OBJ 81EA
+.OBJ 81FB
+.OBJ E058
+call Mem2mem                                               'transfer, Z now points to the byte after read_dir_name
+.OBJ E040
+.OBJ 8340
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 1DF
+jmp _trim                                                   'trim off any whitespace. Return from there
+[end]
+[read_dir_ext]
+'***************************************************************
+'Dir Extension
+'***************************************************************
+'Returns the extension of a file (or dir)
+'Function read_Dir_ext(direntry As Word) As String * 3
+$EXTERNAL Xbytesperdirentry, Accessdir, mem2mem
+'MCS ROUTINES
+$EXTERNAL _trim
+Read_dir_ext:
+rcall Xbytesperdirentry
+.OBJ E048
+rcall Accessdir                                             'returns with X pointing to dir extension
+.OBJ 81EA
+.OBJ 81FB
+.OBJ E053
+call Mem2mem                                               'transfer, Z now points to the byte after read_dir_name
+.OBJ E040
+.OBJ 8340
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 1DF
+jmp _trim                                                   'trim off any whitespace. Return from there
+[end]
+[read_dir_name_ext]
+'***************************************************************
+'Read Dir Name dot Extension
+'***************************************************************
+'Returns the name.ext of a file (or dir)
+'Function Read_dir_name_ext(direntry As Word) As String * 12
+$EXTERNAL Allocateframe, read_dir_name, read_Dir_ext, Mem2mem, Deallocateframe
+'MCS ROUTINES
+$EXTERNAL _len
+Read_dir_name_ext:
+.OBJ E054
+call Allocateframe                                         'allocate a 4 byte local variable (dir extension string*3)
+'allocate the address of the first passed parameter
+.OBJ 81AC
+.OBJ 81BD
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+rcall read_dir_name                                         'assign file name
+.OBJ 9624
+.OBJ 81A8
+.OBJ 81B9
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AC
+.OBJ 81BD
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+rcall read_Dir_ext                                          'assign extension to local
+.OBJ 9624
+.OBJ 81A8
+.OBJ 81B9
+call _len                                                  'get length of extension in r24
+.OBJ 2388
+breq Read_dir_name_extend                                   'end if there is no extension, bug out
+'Add the extension if it has got one
+.OBJ 2F58
+.OBJ 81AC
+.OBJ 81BD
+call _len                                                  'get length of filename in r24
+.OBJ 81EC
+.OBJ 81FD
+.OBJ FE8
+.OBJ E080
+.OBJ 1FF8
+.OBJ E28E
+.OBJ 9381
+.OBJ 81A8
+.OBJ 81B9
+call Mem2mem                                               'append extension to filename
+.OBJ E080
+.OBJ 9381
+Read_dir_name_extend:
+.OBJ E054
+jmp Deallocateframe                                         'deallocate the 4 byte local variable (dir extension string*3)
+[end]
+[read_dir_filesize]
+'***************************************************************
+'Dir File Size
+'***************************************************************
+'Returns the file size
+'Function read_dir_filesize(direntry As Word) As Long
+$EXTERNAL Xbytesperdirentry, Accessdir, mem2mem
+Read_dir_filesize:
+rcall Xbytesperdirentry
+.OBJ E14C
+rcall Accessdir                                             'returns with X pointing to dir file size
+.OBJ 81EA
+.OBJ 81FB
+.OBJ E054
+jmp Mem2mem                                                 'Transfer memory to memory. Return from there
+[end]
+[read_dir_firstcluster]
+'***************************************************************
+'Dir First Cluster
+'***************************************************************
+'Returns the First Cluster of a file (or dir)
+'Function read_dir_firstcluster(direntry As Word ) As Long
+$EXTERNAL Xbytesperdirentry, Accessdir, mem2mem
+Read_dir_firstcluster:
+rcall Xbytesperdirentry
+.OBJ E14A
+rcall Accessdir                                             'returns with X pointing to dir first cluster (lo word)
+.OBJ 81EA
+.OBJ 81FB
+.OBJ E052
+call Mem2mem                                               'Transfer memory to memory
+.OBJ 9718
+.OBJ E052
+jmp Mem2mem                                                 'Transfer memory to memory. Return from there
+[end]
+[write_dir_attr]
+'***************************************************************
+'Write Dir Attribute
+'***************************************************************
+'Writes the attribute of a file (or dir)
+'Sub Write_dir_attr(byval Attribute As Byte , Direntry As Word)
+$EXTERNAL Xbytesperdirentry, Accessdir, Set_buffermodifiedflag
+Write_dir_attr:
+Rcall Xbytesperdirentry
+.OBJ E04B
+rcall Accessdir                                             'returns with X pointing to attribute in the file buffer
+rcall Set_buffermodifiedflag
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 8100
+.OBJ 930D
+.OBJ 2700
+.OBJ 930C
+.OBJ 9508
+[end]
+[write_dir_wrttime]
+'***************************************************************
+'Write Dir Write Time
+'***************************************************************
+'Sub Write_dir_wrttime(direntry As Word)
+'write the current time to the write time field in the directory
+$EXTERNAL Xbytesperdirentry, Accessdir, Set_buffermodifiedflag, Time2dostime
+Write_dir_wrttime:
+* #IF Clock_is_ds1307 = 1                                     'if we have a hardware clock
+'$EXTERNAL Getdatetime
+call Getdatetime                                           'first get the date & time out of the chip
+* #ENDIF                                                      'and into the variables
+rcall xbytesperdirentry
+.OBJ E146
+rcall Accessdir                                             'returns with X pointing to wrttime
+rcall Set_buffermodifiedflag
+rcall Time2dostime                                          'convert time to DOS time
+.OBJ 930D
+.OBJ 931C
+.OBJ 9508
+[end]
+[write_dir_crttime]
+'***************************************************************
+'Write Dir Create Time
+'***************************************************************
+'Sub Write_dir_crttime(direntry As Word)
+'write the current time to the create time field in the directory
+$EXTERNAL Xbytesperdirentry, Accessdir, Set_buffermodifiedflag, Time2dostime
+Write_dir_crttime:
+* #IF Clock_is_ds1307 = 1                                     'if we have a hardware clock
+'$EXTERNAL Getdatetime
+call Getdatetime                                           'first get the date & time out of the chip
+* #ENDIF                                                      'and into the variables
+rcall xbytesperdirentry
+.OBJ E04E
+rcall Accessdir                                             'returns with X pointing to crttime
+rcall Set_buffermodifiedflag
+rcall Time2dostime                                          'convert time to DOS time
+.OBJ 930D
+.OBJ 931C
+.OBJ 9508
+[end]
+[time2dostime]
+'***************************************************************
+'Time to DOS time
+'***************************************************************
+'converts _sec, _min, _hour to dos time in r16, r17
+Time2dostime:
+Loadadr _hour , Z
+.OBJ 8110
+.OBJ 9102
+.OBJ F00
+.OBJ F00
+.OBJ F00
+.OBJ 1F11
+.OBJ F00
+.OBJ 1F11
+.OBJ F00
+.OBJ 1F11
+.OBJ 9122
+.OBJ 732F
+.OBJ 9526
+.OBJ 2B02
+.OBJ 9508
+[end]
+[write_dir_wrtdate]
+'***************************************************************
+'Write Dir Write Date
+'***************************************************************
+'Sub Write_dir_wrtdate(direntry As Word)
+'write the current date to the write date field in the directory
+$EXTERNAL xbytesperdirentry, Accessdir, Set_buffermodifiedflag, Date2dosdate
+Write_dir_wrtdate:
+* #IF Clock_is_ds1307 = 1                                     'if we have a hardware clock
+'$EXTERNAL Getdatetime
+call Getdatetime                                           'first get the date & time out of the chip
+* #ENDIF                                                      'and into the variables
+rcall xbytesperdirentry
+.OBJ E148
+rcall Accessdir                                             'returns with X pointing to Read_dir_wrtdate
+rcall Set_buffermodifiedflag
+rcall Date2dosdate                                          'convert date to DOS date
+.OBJ 930D
+.OBJ 931C
+.OBJ 9508
+[end]
+[write_dir_crtdate]
+'***************************************************************
+'Write Dir Create Date
+'***************************************************************
+'Sub Write_dir_crtdate(direntry As Word)
+'write the current date to the create date field in the directory
+$EXTERNAL xbytesperdirentry, Accessdir, Set_buffermodifiedflag, Date2dosdate
+Write_dir_crtdate:
+* #IF Clock_is_ds1307 = 1                                     'if we have a hardware clock
+'$EXTERNAL Getdatetime
+call Getdatetime                                           'first get the date & time out of the chip
+* #ENDIF                                                      'and into the variables
+rcall xbytesperdirentry
+.OBJ E140
+rcall Accessdir                                             'returns with X pointing to Read_dir_crtdate
+rcall Set_buffermodifiedflag
+rcall Date2dosdate                                          'convert date to DOS date
+.OBJ 930D
+.OBJ 931C
+.OBJ 9508
+[end]
+[write_dir_lstaccdate]
+'***************************************************************
+'Write Dir Last Access Date
+'***************************************************************
+'Sub Write_dir_lstaccdate(direntry As Word)
+'write the current date to the last access date field in the directory
+$EXTERNAL xbytesperdirentry, Accessdir, Set_buffermodifiedflag, Date2dosdate
+Write_dir_lstaccdate:
+* #IF Clock_is_ds1307 = 1                                     'if we have a hardware clock
+'$EXTERNAL Getdatetime
+call Getdatetime                                           'first get the date & time out of the chip
+* #ENDIF                                                      'and into the variables
+rcall xbytesperdirentry
+.OBJ E142
+rcall Accessdir                                             'returns with X pointing to crtdate in the file buffer
+rcall Set_buffermodifiedflag
+rcall Date2dosdate                                          'convert date to DOS date
+.OBJ 930D
+.OBJ 931C
+.OBJ 9508
+[end]
+[date2dosdate]
+'***************************************************************
+'Time to DOS time
+'***************************************************************
+'converts _day, _month, _year to DOS date in r16, r17
+'DOES NOT WORK < YEAR 2000. It has already passed?
+Date2dosdate:
+Loadadr _year , Z
+.OBJ 8110
+.OBJ 5E1C
+.OBJ 9102
+.OBJ 700F
+.OBJ 9502
+.OBJ F00
+.OBJ 1F11
+.OBJ 9122
+.OBJ 712F
+.OBJ 2B02
+.OBJ 9508
+[end]
+[write_dir_firstcluster]
+'***************************************************************
+'write Dir First Cluster
+'***************************************************************
+'Writes the First Cluster of a file (or dir)
+'Sub Write_dir_firstclus(firstcluster As Long , Direntry As Word)
+$EXTERNAL  Xbytesperdirentry, Accessdir, Set_buffermodifiedflag, mem2mem
+Write_dir_firstcluster:
+rcall Xbytesperdirentry
+.OBJ E14A
+rcall Accessdir                                             'returns with X pointing to dir first cluster (lo word) in the file buffer
+rcall Set_buffermodifiedflag
+.OBJ 1FD
+.OBJ 81AA
+.OBJ 81BB
+.OBJ E052
+call Mem2mem                                               'Transfer memory to memory
+.OBJ 9738
+.OBJ E052
+jmp Mem2mem                                                 'Transfer memory to memory. Return from there
+[end]
+[write_dir_name]
+'***************************************************************
+'Write Dir Name
+'***************************************************************
+'writes the name of a file (or dir)
+'Sub Write_dir_name(dir_name As String , Direntry As Word)
+$EXTERNAL  Xbytesperdirentry, Accessdir, Set_buffermodifiedflag, alphanumfilt4file
+'MCS ROUTINES
+$EXTERNAL _ucase
+Write_dir_name:
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 1DF
+call _ucase                                                'convert dir_name to upper case
+Write_dir_name1:                                            'alt entry point
+rcall Xbytesperdirentry
+rcall Accessdir4name                                        'returns with X pointing to dir name in the file buffer
+rcall Set_buffermodifiedflag                                'it will be soon
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 1CD
+rcall alphanumfilt4file                                     'filter and copy to file buffer. (removes"." if there was one)
+.OBJ E200
+.OBJ 1B8A
+.OBJ B9B
+.OBJ 9581
+Write_dir_name_pad:
+.OBJ 308B
+brsh Write_dir_name_end                                     'finished?
+.OBJ 930D
+.OBJ 9583
+rjmp Write_dir_name_pad                                     'again
+Write_dir_name_end:
+.OBJ 9508
+[end]
+[write_dir_ext]
+'***************************************************************
+'Write Dir Extension
+'***************************************************************
+'writes the extension of a file (or dir)
+'Sub Write_dir_ext(dir_ext As String , Direntry As Word)
+$EXTERNAL  Xbytesperdirentry, Accessdir, Set_buffermodifiedflag, alphanumfilt4file
+'MCS ROUTINES
+$EXTERNAL _ucase
+Write_dir_ext:
+.OBJ 81EA
+.OBJ 81FB
+.OBJ 1DF
+call _ucase                                                'convert dir_name to upper case
+.OBJ 81EA
+.OBJ 81FB
+Write_dir_ext1:                                             'alt entry point, with address of source string in Z
+.OBJ 93EF
+.OBJ 93FF
+rcall Xbytesperdirentry
+.OBJ E048
+rcall Accessdir                                             'returns with X pointing to dir name in the file buffer
+rcall Set_buffermodifiedflag
+.OBJ 91FF
+.OBJ 91EF
+.OBJ 1CD
+rcall Alphanumfilt4file                                     'filter and copy to file buffer. (removes"." if there was one)
+.OBJ E200
+.OBJ 1B8A
+.OBJ B9B
+.OBJ 9581
+Write_dir_ext_pad:
+.OBJ 3083
+brsh Write_dir_ext_end                                      'finished?
+.OBJ 930D
+.OBJ 9583
+rjmp Write_dir_ext_pad                                      'again
+Write_dir_ext_end:
+.OBJ 9508
+[end]
+[write_dir_name_ext]
+'***************************************************************
+'Write Dir Name & Extension
+'***************************************************************
+'Sub Write_dir_name_ext(file_dot_ext As String , Direntry As Word)
+'writes the dir name and extension of a file (or dir).
+'There is an assumed dot in the file_dot_ext at position 8+
+$EXTERNAL Write_dir_name, Write_dir_ext
+Write_dir_name_ext:
+rcall Write_dir_name                                        'write the dir name (and pad extension just in case there is none) and convert to ucase
+.OBJ 81EA
+.OBJ 81FB
+Write_dir_name_ext_look4dot:
+.OBJ 9111
+.OBJ 321E
+breq Write_dir_name_ext_extfound                            'write extension
+.OBJ 2311
+breq Write_dir_name_extend                                  'no extension
+rjmp Write_dir_name_ext_look4dot                            'try again
+Write_dir_name_ext_extfound:
+rcall Write_dir_ext1                                        'alt entry point with Z pointing to source string
+Write_dir_name_extend:
+.OBJ 9508
+[end]
+[alphanumfilt4file]
+'***************************************************************
+'Alpha Numeric Filter for File Names
+'***************************************************************
+Alphanumfilt4file:
+'source string pointed to by Z
+'destination string pointed to by X
+'Filters in only 0-1, a-z, A-Z
+'NO END OF STRING CHARACTER IN DESTINATION. MUST APPEND IN APPLICATION IF NEEDED
+'TO DO, add more "special cases"
+.OBJ 9101
+.OBJ 2300
+breq alphanumfilt4fileend                                   'finished
+.OBJ 3E05
+breq alphanumfilt4fileok                                    'filter in
+.OBJ 320E
+breq alphanumfilt4fileend                                   'finished
+.OBJ 370B
+brsh alphanumfilt4file                                      'if so get next (filter out)
+.OBJ 3300
+brlo alphanumfilt4file                                      'if so get next (filter out)
+.OBJ 330A
+brlo alphanumfilt4fileok                                    'filter in "0" to "9"
+.OBJ 3601
+brsh alphanumfilt4fileok                                    'filter in "a" to "z"
+.OBJ 350B
+brsh alphanumfilt4file                                      'if so get next (filter out)
+.OBJ 3401
+brlo alphanumfilt4file                                      'if so get next (filter out)
+'"A" to "Z" filtered in
+Alphanumfilt4fileok:
+.OBJ 930D
+rjmp alphanumfilt4file                                      'get next
+Alphanumfilt4fileend:
+.OBJ 9508
+[end]
+[write_dir_filesize]
+'***************************************************************
+'Write Dir File Size
+'***************************************************************
+'Sub Write_dir_filesize(Direntry As Word)
+'Writes the current file offset to the file size field
+$EXTERNAL  Xbytesperdirentry, Accessdir, Set_buffermodifiedflag
+Write_dir_filesize:
+rcall Xbytesperdirentry
+.OBJ E14C
+rcall Accessdir                                             'returns with X pointing to dir file size in file buffer
+rcall Set_buffermodifiedflag                                'set the buffer modified flag
+Loadadr Filecluster , Z
+.OBJ 8503
+.OBJ 8514
+.OBJ 8525
+.OBJ 8536
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933D
+.OBJ 9508
+[end]
+[de_allocate_cluster_chain]
+'***************************************************************
+'De-Allocate Cluster Chain
+'***************************************************************
+'Sub De_allocate_cluster_chain(cluster As Long)
+'de-allocates from the current cluster to the end of the cluster chain
+'Z register pair points to cluster
+$EXTERNAL De_allocate_cluster, flushfat
+de_allocate_cluster_chain:
+.OBJ 8184
+.OBJ FD87
+rjmp Deallocateclusterchainend                              'then end
+rcall De_allocate_cluster                                     'otherwise de allocate the cluster
+rjmp de_allocate_cluster_chain                                 'if not at end of file, De-allocate the next cluster
+Deallocateclusterchainend:
+rjmp flushfat                                               'flush the fat buffer to disk. Return from there
+[end]
+[de_allocate_cluster]
+'***************************************************************
+'De-Allocate Cluster
+'***************************************************************
+'Sub De_allocate_cluster(cluster As Long)
+De_allocate_cluster:
+'de-allocates the curent cluster
+'Z register pair points to cluster
+$EXTERNAL Cluster2nextcluster, Isclustereof
+'MCS Routines
+$EXTERNAL _comp32
+.OBJ 93EF
+.OBJ 93FF
+.OBJ 8100
+.OBJ 8111
+.OBJ 8122
+.OBJ 8133
+Loadadr Nxt_free , X
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917D
+call _comp32                                               'compare
+brsh Deallocateclusterstart                                 'if >= start
+.OBJ 933E
+.OBJ 932E
+.OBJ 931E
+.OBJ 930E
+Deallocateclusterstart:
+rcall Cluster2nextcluster
+'returns with Z to the fat buffer where the next cluster can be read, or written
+'and Z flag in sreg set if found an unalocated cluster
+brne Deallocatecluster
+.OBJ E189
+sts {errorcode}, r24
+jmp Errorhandle                                             'Fatal error = bad
+Deallocatecluster:
+lds r24, {Fatstatus}                                        'get fatstatus
+.OBJ 2400
+.OBJ 8200
+.OBJ 8201
+.OBJ FD84
+rjmp Deallocateclusterdone                                  'then we are done
+.OBJ 8202
+.OBJ 8203
+Deallocateclusterdone:
+.OBJ 91FF
+.OBJ 91EF
+rcall Isclustereof                                          'is this cluster at end of cluster chain?
+brlo Deallocateclusternoeof
+.OBJ 8164
+.OBJ 6860
+.OBJ 8364
+Deallocateclusternoeof:                                     'no end of file
+.OBJ 6280
+sts {fatstatus}, r24                                        'put it back
+.OBJ 8300
+.OBJ 8311
+.OBJ 8322
+.OBJ 8333
+Loadadr Free_count , X
+.OBJ 918D
+.OBJ 919C
+.OBJ 9601
+.OBJ 939C
+.OBJ 938E
+brcc Deallocateclusterend                                   'if no carry (most of the time), end
+.OBJ 9612
+.OBJ 918D
+.OBJ 919C
+.OBJ 9601
+.OBJ 939C
+.OBJ 938E
+Deallocateclusterend:
+.OBJ 9508
+[end]
+[drivemodel]
+'***************************************************************
+'ATA model number
+'***************************************************************
+'returns the model number of the ATA drive.
+'According to the ATA specs, it can be a string of up to 40 bytes, but this function only returns 16 bytes max.
+'Function Atamodel() As String * 16
+Drivemodel:
+* #IF Drive_type = 1
+$EXTERNAL flushfat, identify_device, mem2mem, Swapbytesofword, Nofatloaded
+'MCS ROUTINES
+$EXTERNAL _trim
+lds r23, {Fatstatus}                                        'get fatstatus
+.OBJ FD75
+call flushfat                                              'flush it first
+Loadadr Fatbuffer(1) , X
+'X points to where to the data will be buffered
+call identify_device                                              'issue Identify device command and get the data
+Loadadr Fatbuffer(55) , X
+'Source address to X
+.OBJ 81E8
+.OBJ 81F9
+.OBJ E150
+call Mem2mem
+.OBJ 81A8
+.OBJ 81B9
+.OBJ E058
+call Swapbytesofword                                       'ascii is tranfered in bigedian order
+.OBJ E050
+.OBJ 935C
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 1FD
+call _trim                                                 'trim off white space
+rjmp Nofatloaded                                            'force a fresh load of the fatbuffer since we have just mucked it up
+* #ENDIF
+* #IF Drive_type = 2
+'***************************************************************
+'card model number
+'***************************************************************
+'returns the model number of the drive.
+'Function cardmodel() As String * 7
+'returns the card mfg & model in the CIS of a MMC/SD card
+$EXTERNAL Allocateframe, Identify_device, Mem2mem, Deallocateframe
+'MCS ROUTINES
+$EXTERNAL _trim
+.OBJ E150
+call Allocateframe                                         'create a 16 byte local variable
+.OBJ 81A8
+.OBJ 81B9
+call Identify_device                                              'issue Identify device command (Send_cid) and get the data
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 9612
+.OBJ 81EA
+.OBJ 81FB
+.OBJ E057
+call Mem2mem
+.OBJ E050
+.OBJ 8350
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 1FD
+call _trim                                                 'trim off white space
+.OBJ E150
+jmp Deallocateframe                                         'uncreate the 16 byte local. Return from there
+* #ENDIF
+* #IF Drive_type = 3
+$EXTERNAL flushfat, identify_device, mem2mem, Swapbytesofword, Nofatloaded
+'MCS ROUTINES
+$EXTERNAL _trim
+lds r23, {Fatstatus}                                        'get fatstatus
+.OBJ FD75
+call flushfat                                              'flush it first
+Loadadr Fatbuffer(1) , X
+'X points to where to the data will be buffered
+call identify_device                                              'issue Identify device command and get the data
+Loadadr Fatbuffer(55) , X
+'Source address to X
+.OBJ 81E8
+.OBJ 81F9
+.OBJ E150
+call Mem2mem
+.OBJ 81A8
+.OBJ 81B9
+.OBJ E058
+call Swapbytesofword                                       'ascii is tranfered in bigedian order
+.OBJ E050
+.OBJ 935C
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 1FD
+call _trim                                                 'trim off white space
+rjmp Nofatloaded                                            'force a fresh load of the fatbuffer since we have just mucked it up
+* #ENDIF
+[end]
+[read_dir_filesizestr]
+'***************************************************************
+'Read Dir File Size as String
+'***************************************************************
+'returns a string of the File Size, made as small as possible to try to fit all info on a LCD
+'If the file is a directory, then <DIR> is returned.
+'Function Read_dir_filesizestr(direntry As Word) As String * 5
+$EXTERNAL Read_dir_attr, Read_dir_filesize, Allocateframe, Deallocateframe
+'MCS ROUTINES
+$EXTERNAL _Flash2RAM, _LPMBYTE, _comp32, _NUM2STR
+'''''$EXTERNAL _mul32, _div32  'Phantom routines that are there but are nowhere to be found, but work??
+Read_dir_filesizestr:
+.OBJ E054
+call Allocateframe                                         'create a 4 byte local variable (Comparitor)
+.OBJ E054
+call Allocateframe                                         'create a 4 byte local variable (Dirfilesize)
+ldi Zl, low(Read_dir_filesizestrdefault*2)
+ldi Zh, high(Read_dir_filesizestrdefault*2)                 'Z points to default string "<DIR>"
+.OBJ 81AE
+.OBJ 81BF
+.OBJ E086
+* call _Flash2RAM
+.OBJ E1A0
+.OBJ E0B0
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Read_dir_attr                                         'call function
+.OBJ 9624
+.OBJ FD04
+rjmp Read_dir_filesizestrend                                'so bug out
+.OBJ 81A8
+.OBJ 81B9
+'allocate the address of the first passed parameter
+.OBJ 93BA
+.OBJ 93AA
+.OBJ 81AE
+.OBJ 81BF
+'allocate the address of the second passed parameter
+.OBJ 93BA
+.OBJ 93AA
+call Read_dir_filesize                                     'call function
+.OBJ 9624
+.OBJ 81AA
+.OBJ 81BB
+.OBJ E001
+.OBJ 930D
+.OBJ E000
+.OBJ 930D
+.OBJ 930D
+.OBJ 930C
+ldi Zl, low(Read_dir_filesizestrsuffix*2)
+ldi Zh, high(Read_dir_filesizestrsuffix*2)                  'Z points to suffix table
+Dir_filesizestr0:
+call _LPMBYTE                                              'get suffix in r0
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+* ldi r20, kilo_lo
+* ldi r21, kilo_hi
+.OBJ 2766
+.OBJ 2777
+.OBJ 920F
+.OBJ 93EF
+.OBJ 93FF
+call _mul32                                                'Comparitor * 1 kilo in r16-19
+.OBJ 91FF
+.OBJ 91EF
+.OBJ 900F
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+call _comp32
+breq Dir_filesizestr2                                       'if comparitor = file size, then keep looping
+brsh Dir_filesizestr1                                       'if comparitor > file size, then exit this loop
+Dir_filesizestr2:
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 930D
+.OBJ 931D
+.OBJ 932D
+.OBJ 933C
+rjmp Dir_filesizestr0
+Dir_filesizestr1:
+.OBJ 81A8
+.OBJ 81B9
+.OBJ 910D
+.OBJ 911D
+.OBJ 912D
+.OBJ 913C
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+.OBJ 920F
+call _div32                                                'divide, div in r16-r19, mod in r20-r23
+.OBJ 900F
+'Divided Dirfilesize in r20-23, Remainder in r16-r19.
+.OBJ 81E8
+.OBJ 81F9
+.OBJ 8340
+.OBJ 8351
+.OBJ 8362
+.OBJ 8373
+.OBJ 81AA
+.OBJ 81BB
+.OBJ 914D
+.OBJ 915D
+.OBJ 916D
+.OBJ 917C
+.OBJ 9576
+.OBJ 9567
+.OBJ 9557
+.OBJ 9547
+call _comp32                                               'compare remainder with 1/2 comparitor
+brlo Dir_filesizestr3
+breq Dir_filesizestr3                                       'if bigger, then add 1 to divided dirfilesize
+.OBJ 8140
+.OBJ 8151
+.OBJ 8162
+.OBJ 8173
+.OBJ E081
+.OBJ F48
+.OBJ E080
+.OBJ 1F58
+.OBJ 1F68
+.OBJ 1F78
+.OBJ 8340
+.OBJ 8351
+.OBJ 8362
+.OBJ 8373
+Dir_filesizestr3:
+.OBJ 81AE
+.OBJ 81BF
+call _printlong                                            'turn number pointed to by Z into a string pointed to by X
+.OBJ 9711
+.OBJ 920D
+.OBJ 938D
+Read_dir_filesizestrend:
+.OBJ E054
+call Deallocateframe                                         'Un create a 4 byte local variable (Dirfilesize)
+.OBJ E054
+call Deallocateframe                                         'Un create a 4 byte local variable (Comparitor)
+.OBJ 9508
+Read_dir_filesizestrsuffix:
+.db &H42 , &H6B , &H4D , &H47                              '"B"ytes, "k"ilobytes, "M"egabytes, "G"igabytes
+Read_dir_filesizestrdefault:
+.db &H3C , &H44 , &H49 , &H52 , &H3E , &H00                '<DIR>
+[end]

@@ -1,0 +1,469 @@
+Copyright = Phil
+Comment = Reference Material
+Comment = At Attachment With Packet Interface Extension(ata / Atapi -4)
+Comment = I Have Tried To Keep The Names Of Registers And Fields The Same As The Reference Material
+Comment = Sandisk Compact Flash Product Manual Version 10.8
+Comment = Driver For Compact Flash in PC Card Memory Mode Connected To Non Extended I/O Ports.
+Comment = Does not work on Extended Ports
+
+Libversion = 1.00
+Date = 1 June 2005
+Statement = Use At Own Risk.
+History = No Known Bugs.
+
+.equ Devlba = &B01000000                                    'LBA mode and device 0 (master). Must be LBA mode.
+.equ Atacommand_reg = 7                                     'write only
+.equ Atacylinderhigh_reg = 5                                'write only
+.equ Atacylinderlow_reg = 4
+.equ Atadata_reg = 0
+.equ Atadevicehead_reg = 6
+.equ Ataerror_reg = 1                                       'read only
+.equ Atafeatures_reg = 1                                    'write only
+.equ Atasectorcount_reg = 2
+.equ Atasectornumber_reg = 3
+.equ Atastatus_reg = 7                                      'read only
+.equ Atadevicecontrol_reg = 6                               'write only, the only useful thing here is reset, which may not be needed
+.equ Ataaltstatus_reg = 6                                   'read only Not used, the same info is in the Atastatus_reg
+.equ Bsy = 7                                                'Busy bit 7
+.equ Drdy = 6                                               'Device Ready bit 6 (not used)
+.equ Drq = 3                                                'Data Request bit 3
+.equ Errr = 0                                               'Error bit 0
+
+'ATA commands
+.equ Standbyimmediate = &HE0
+.equ Readsectors = &H20
+.equ Identifydevice = &HEC
+.equ Writesectors = &H30
+'error codes
+.equ Time_out_err = 1                                       'Time Out
+.equ Word_xfer_err = 2                                      'transfered words not equal to expected
+.equ Ata_status_err = 3                                     'status register has error bit set
+
+'For use on extended ports change all:-
+'"out ExtI/O, rX" to "sts ExtI/O, rX"
+'"in rX, ExtI/O" to lds rX, ExtI/O"
+'"cbi ExtI/O, const" to "lds r23, ExtI/O" + "cbr r23, 2^const" + "sts ExtI/O, r23"
+'"sbi ExtI/O, const" to "lds r23, ExtI/O" + "sbr r23, 2^const" + "sts ExtI/O, r23"
+
+[get_sec]
+'***************************************************************
+'Get da Sector Data from the CF and Stick it in da RAM
+'***************************************************************
+'Sub Get_Sec(buffer() , Byval Sec_expected As Byte )
+'entry point if registers need to be loaded by soft stack
+Get_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec_expected
+ld r24, X                                                   'r24 contains Sec_expected
+ldd Xl, Y+2                                                 'X register pair points to buffer
+ldd Xh, Y+3
+'entry point if registers pre loaded
+'r24 = Sector Counter (Sec_expected)
+'Xl & Xh = (X register pair) points to buffer
+[getsec]
+$EXTERNAL Wait4bsy , Wait4drq , Setaddress , Chk4nodrq
+Getsec:
+clr r0                                                      'timeout Counter lo
+clr r1                                                      'timeout Counter hi
+rcall Wait4bsy                                              'Wait for busy to clear
+'Now drive is not busy, and there is no error
+clr r25                                                     'Word counter = 0
+Get_sec_drq:
+rcall wait4drq
+'Now drive is not busy, and there is no error, and it has issued a Data Request
+ldi r20, Atadata_reg
+rcall Setaddress
+*cbi Contport, Cfce1                                         'make CF CE1 active
+Get_sec_next:
+*cbi Contport, Cfoe                                          'make CF OE active
+nop
+nop                                                         'wait a bit
+*in r20, Lo8pin                                              'Get lo 8 byte
+*sbi Contport, Cfoe                                          'make CF OE not active
+st X+, r20                                                  'Store to buffer, post incr (2 cycles)
+*cbi Contport, Cfoe                                          'make CF OE active
+nop
+nop                                                         'wait a bit
+*in r20, lo8pin                                              'Get hi 8 byte
+*sbi Contport, Cfoe                                          'make CF OE not active
+st X+, r20                                                  'Store to buffer, post incr
+inc r25                                                     'Increment word counter
+brne Get_sec_next                                           'More words to go
+*sbi Contport, Cfce1                                         'make CF CE1 not active
+dec r24                                                     'Decrement sector counter
+brne Get_sec_drq                                            'More sectors to go
+rcall Chk4nodrq                                             'Last check for Data Request
+ret
+[end]
+
+[read_sec]
+'***************************************************************
+'issue Read Sector command to drive
+'***************************************************************
+'Sub Read_sec(lbasector As Long , Byval Sec2xfer As Byte)
+'entry point if registers need to be loaded by soft stack
+Read_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec2xfer
+ld r24, X                                                   'r24 contains Sec2xfer
+ldd Xl, Y+2
+ldd Xh, Y+3                                                 'X register pair points to lbasector
+ld r16, X+                                                  'r16 contains bits 0 - 7 of LBA & post incr
+ld r17, X+                                                  'r17 contains bits 8 - 15 of LBA & post incr
+ld r18, X+                                                  'r18 contains bits 16 - 23 of LBA & post incr
+ld r19, X                                                   'r19 contains bits 24 to 31 of LBA only 27 is used
+'entry point if registers pre loaded
+'r24 = sectors to transfer, r16 to r19 = lbasector
+[Readsec]
+$EXTERNAL Wait4bsy, Setaddress, dataoutput
+Readsec:
+clr r0                                                      'timeout Counter lo
+clr r1                                                      'timeout Counter hi
+rcall Wait4bsy                                              'Wait for busy to clear
+ori r19, Devlba                                             'OR with Devlba
+ldi r20, Atadevicehead_reg
+rcall setaddress
+*cbi Contport, Cfce1                                         'make CF CE1 active
+*Out Lo8port , R19                                          'r19 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+*sbi Contport, Cfce1                                         'make CF CE1 not active
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atasectorcount_reg
+rcall setaddress
+*cbi Contport, Cfce1                                         'make CF CE1 active
+*out Lo8port, r24                                           'r24 to Atasectorcount_reg
+rcall dataoutput                                            'output and strobe write
+*sbi Contport, Cfce1                                         'make CF CE1 not active
+'send lbasector to LBA registers
+ldi r20, Atasectornumber_reg
+rcall setaddress
+*cbi Contport, Cfce1                                         'make CF CE1 active
+*out Lo8port, R16                                           'r16 to Atasectornumber_reg
+rcall dataoutput                                            'output and strobe write
+*sbi Contport, Cfce1                                         'make CF CE1 not active
+ldi r20, Atacylinderlow_reg
+rcall setaddress
+*cbi Contport, Cfce1                                         'make CF CE1 active
+*out Lo8port, r17                                           'r17 to Atacylinderlow_reg
+rcall dataoutput                                            'output and strobe write
+*sbi Contport, Cfce1                                         'make CF CE1 not active
+ldi r20, Atacylinderhigh_reg
+rcall setaddress
+*cbi Contport, Cfce1                                         'make CF CE1 active
+*Out Lo8port , R18                                          'r18 to Atacylinderhigh_reg
+rcall dataoutput                                            'output and strobe write
+*sbi Contport, Cfce1                                         'make CF CE1 not active
+'issue command
+ldi r20, Atacommand_reg
+rcall setaddress
+*cbi Contport, Cfce1                                         'make CF CE1 active
+ldi r24, Readsectors                                        'Read sectors command to r24
+*out Lo8port, r24                                           'r24 to Atacommand_reg
+rcall dataoutput                                            'output and strobe write
+*sbi Contport, Cfce1                                         'make CF CE1 not active
+ret
+[end]
+
+[initdrive]
+'***************************************************************
+'Init drive.
+'***************************************************************
+'Init ports and drive
+$EXTERNAL Dataoutput
+Initdrive:
+rcall datainput                                             'make data bus an input
+*Ldi R24 , Adjustedcontmask                                  'make address 0 to 3 & CF CE1 & OE & WE outputs
+*Out Contdd , R24
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+*Sbi Contport , Cfoe                                         'make CF OE not active
+*Sbi Contport , Cfwe                                         'make CF WE not active
+ret
+[end]
+
+[put_sec]
+'***************************************************************
+'Put da Sector Data from the RAM and Stick it in da CF
+'***************************************************************
+'Sub Put_sec(buffer() as Byte , Byval Sec_expected As Byte )
+'entry point if registers need to be loaded by soft stack
+Put_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec_expected
+ld r24, X                                                   'r24 contains Sec_expected
+ldd Xl, Y+2                                                 'X register pair points to buffer
+ldd Xh, Y+3
+'entry point if registers pre loaded
+'r24 = Sector Counter (Sec_expected)
+'Xl & Xh = (X register pair) points to buffer
+[Putsec]
+$EXTERNAL Wait4bsy, wait4drq, Setaddress, dataoutput, Chk4nodrq
+Putsec:
+clr r0                                                      'timeout Counter lo
+clr r1                                                      'timeout Counter hi
+rcall Wait4bsy                                              'Wait for busy to clear
+'Now drive is not busy, and there is no error
+clr r25                                                     'Word counter = 0
+Put_sec_chk_drq:
+rcall wait4drq
+'Now drive is not busy, and there is no error, and it has issued a Data Request
+ldi r20, Atadata_reg
+rcall Setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+Put_sec_next:
+ld r20, X+                                                  'get lo byte from buffer, post inc
+*Out Lo8port , R20
+rcall dataoutput                                            'output and strobe write
+ld r20, X+                                                  'get hi byte from buffer, post inc
+*Out lo8port , R20
+rcall dataoutput                                            'output and strobe write
+inc r25                                                     'Increment word counter
+brne put_sec_next                                           'More words to go
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+dec r24                                                     'Decrement sector counter
+brne put_sec_chk_drq                                        'More sectors to go
+rcall Chk4nodrq                                             'Last check for Data Request
+ret
+[end]
+
+[write_sec]
+'***************************************************************
+'issue Write Sector command to drive
+'***************************************************************
+'Sub Write_sec(lbasector As Long , Byval Sec2xfer As Byte)
+'entry point if registers need to be loaded by soft stack
+Write_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec2xfer
+ld r24, X                                                   'r24 contains Sec2xfer
+ldd Xl, Y+2
+ldd Xh, Y+3                                                 'X register pair points to lbasector
+ld r16, X+                                                  'r16 contains bits 0 - 7 of LBA & post incr
+ld r17, X+                                                  'r17 contains bits 8 - 15 of LBA & post incr
+ld r18, X+                                                  'r18 contains bits 16 - 23 of LBA & post incr
+ld r19, X                                                   'r19 contains bits 24 to 31 of LBA only 27 is used
+'entry point if registers pre loaded
+'r24 = sectors to transfer, r16 to r19 = lbasector
+[Writesec]
+$EXTERNAL Wait4bsy, setaddress, dataoutput
+Writesec:
+clr r0                                                      'timeout Counter lo
+clr r1                                                      'timeout Counter hi
+rcall Wait4bsy                                              'Wait for busy to clear
+Ori R19 , Devlba                                            'OR with Devlba
+'set address
+ldi r20, Atadevicehead_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+*Out Lo8port , R19                                          'r19 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atasectorcount_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+*Out Lo8port , R24                                          'r24 to Atasectorcount_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+'send lbasector to LBA registers
+ldi r20, Atasectornumber_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+*Out Lo8port , R16                                          'r16 to Atasectornumber_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+ldi r20, Atacylinderlow_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+*Out Lo8port , R17                                          'r17 to Atacylinderlow_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+ldi r20, Atacylinderhigh_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+*Out Lo8port , R18                                          'r18 to Atacylinderhigh_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+'issue command
+ldi r20, Atacommand_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+ldi r24, Writesectors                                       'Write sectors command to r24
+*Out Lo8port , R24                                          'r24 to Atacommand_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+ret
+[end]
+
+[wait4bsy]
+'***************************************************************
+'Wait for Busy to clear (with timeout)
+'***************************************************************
+'waits for the bsy bit in the ATA Status register to clear.
+'for non rotaing media, timeout on iteration count is in r0, r1.
+'r21 is used for error code
+'r20 contains the latest ticktock (second) & status register
+$EXTERNAL setaddress, Cfonbuserror
+Wait4bsy:
+ldi r21, Time_out_err                                       'Errorcode by default
+ldi r20, Atastatus_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+Wait4bsy1:
+dec r0                                                      'decr timeout counter lo
+brne Wait4bsy_chk_status
+dec r1                                                      'decr timeout counter hi
+breq Cfonbuserror                                           'If equal, then we have timed out
+Wait4bsy_chk_status:
+*Cbi Contport , Cfoe                                         'make CF OE active
+nop
+nop                                                         'wait a bit
+*In R20 , Lo8pin                                             'Status Register to r20
+*Sbi Contport , Cfoe                                         'make CF OE not active
+sbrc r20, Bsy                                               'IF Busy bit set then
+rjmp Wait4bsy                                               'Loop to Wait4bsy
+'rjmp Wait4bsy1                                               'Loop to Wait4bsy
+ldi r21, Ata_status_err                                     'Errorcode by default
+sbrc r20, Errr                                              'Errr'IF error bit set then
+rjmp Cfonbuserror                                           'then never come back
+'Now drive is not busy, and there is no error
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+ret
+[end]
+
+[wait4drq]
+'***************************************************************
+'Wait for data request to set (with timeout)
+'***************************************************************
+'waits for the drq bit in the ATA Status register to be set.
+'for non rotaing media, timeout on iteration count is in r0, r1
+'r21 is used for error code
+'r20 contains the latest ticktock (second) & status register
+$EXTERNAL setaddress, Cfonbuserror
+Wait4drq:
+ldi r21, Time_out_err                                       'Errorcode by default
+ldi r20, Atastatus_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+Wait4drq1:
+dec r0                                                      'decr timeout counter lo
+brne Wait4drq_chk_status
+dec r1                                                      'decr timeout counter hi
+breq Cfonbuserror                                           'If equal, then we have timed out
+Wait4drq_chk_status:
+*Cbi Contport , Cfoe                                         'make CF OE active
+nop
+nop                                                         'wait a bit
+*In R20 , Lo8pin                                             'Status Register to r20
+*Sbi Contport , Cfoe                                         'make CF OE not active
+sbrs r20, drq                                               'IF Busy bit set then
+rjmp Wait4drq                                               'Loop to Wait4drq
+'rjmp Wait4drq1                                               'Loop to Wait4drq
+ldi r21, Ata_status_err                                     'Errorcode by default
+sbrc r20, Errr                                              'Errr'IF error bit set then
+rjmp Cfonbuserror                                           'then never come back
+'Now drive has issued a data request, and there is no error
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+ret
+[end]
+
+[Chk4nodrq]
+'***************************************************************
+'Check for no Data Request after last data transfer
+'***************************************************************
+$EXTERNAL Cfonbuserror
+Chk4nodrq:
+'Last check for Data Request
+ldi r21, Word_xfer_err                                      'Errorcode by default
+ldi r20, Atastatus_reg
+rcall setaddress
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+*Cbi Contport , Cfoe                                         'make CF CE1 active
+nop
+nop                                                         'wait a bit
+*In R20 , Lo8pin                                             'ATA Status Register to r20
+*Sbi Contport , Cfoe                                         'make CF OE not active
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+sbrc r20, drq                                               'IF Data Request bit clear then we have finished transferring all data
+rjmp Cfonbuserror                                           'Something is wrong
+ldi r21, Ata_status_err                                     'Errorcode by default
+sbrc r20, Errr                                              'Errr'IF error bit set then
+rjmp Cfonbuserror                                           'then never come back
+ret
+[end]
+
+[Cfonbuserror]
+'***************************************************************
+'Compact Flash on bus error
+'***************************************************************
+'stores error code from r21 to sram variable errorcode
+Cfonbuserror:
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+sts {errorcode}, r21                                        'Store error code
+jmp errorhandle                                             'and jump to error handler. Fatal error, never to return
+[end]
+
+[identify_device]
+'***************************************************************
+'Identify Device
+'***************************************************************
+'issues an identify device command, and sticks the data in the buffer pointed to by X
+$EXTERNAL Wait4bsy, setaddress, dataoutput, Wait4bsy, Getsec
+Identify_device:
+clr r0                                                      'timeout Counter lo
+clr r1                                                      'timeout Counter hi
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atadevicehead_reg
+rcall setaddress                                            'set the address
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+Ldi R24 , Devlba                                            'LBA mode and device 0
+*Out Lo8port , R24                                          'r24 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atacommand_reg
+rcall setaddress                                            'set the address
+*Cbi Contport , Cfce1                                        'make CF CE1 active
+ldi r24, Identifydevice                                     'Identifydevice command to r24
+*Out Lo8port , R24                                          'r24 to Atacommand_reg
+rcall dataoutput                                            'output and strobe write
+*Sbi Contport , Cfce1                                        'make CF CE1 not active
+ldi r24, 1                                                  'transfer 1 sector worth of data
+'X still points to the buffer
+rcall Getsec                                                'get the data
+ret
+[end]
+
+[setaddress]
+'***************************************************************
+'Set address
+'***************************************************************
+'address is passed in r20
+Setaddress:
+*In r23, Contport                                            'copy of control port in r23
+*Cbr r23, Adjustedaddressmask                                'clear space for address
+or r20, r23                                                 'set address
+*Out Contport , R20                                         'out address
+ret
+[end]
+
+[dataoutput]
+'***************************************************************
+'Dataoutput
+'***************************************************************
+'makes the data port = output, and then strobes the write pin, and then makes data port = input again
+Dataoutput:
+ser r20
+*Out Lo8dd , R20                                            'make lo 8 port output
+*Cbi Contport , Cfwe                                         'make CF WE active
+nop
+nop                                                         'wait a bit
+*Sbi Contport , Cfwe                                         'make CF WE not active
+'***************************************************************
+'Datainput
+'***************************************************************
+'makes the data port = input
+Datainput:
+clr r20
+*Out Lo8dd , R20                                            'make lo 8 port input
+ret
+[end]

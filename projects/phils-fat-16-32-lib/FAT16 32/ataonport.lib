@@ -1,0 +1,585 @@
+Copyright = Phil
+Comment = Reference Material
+Comment = At Attachment With Packet Interface Extension(ata / Atapi -4)
+Comment = I Have Tried To Keep The Names Of Registers And Fields The Same As The Reference Material
+Comment = Driver For Ata Drive Connected To Non Extended Ports.
+Comment = Does not work on Extended I/O Ports
+comment = Atacs1 (ATA Chip Select 1) is only used to software reset drive.
+Comment = if Atacs1 (ATA Chip Select 1) not used, make it equal to, or greater than 8
+
+Libversion = 1.02
+Date = 2 June 2005
+Statement = Use At Own Risk.
+History = No Known Bugs.
+
+.equ Atacommand_reg = 7                                     'write only
+.equ Atacylinderhigh_reg = 5                                'write only
+.equ Atacylinderlow_reg = 4
+.equ Atadata_reg = 0
+.equ Atadevicehead_reg = 6
+.equ Ataerror_reg = 1                                       'read only
+.equ Atafeatures_reg = 1                                    'write only
+.equ Atasectorcount_reg = 2
+.equ Atasectornumber_reg = 3
+.equ Atastatus_reg = 7                                      'read only
+.equ Atadevicecontrol_reg = 6                               'write only, the only useful thing here is reset, which may not be needed
+.equ Ataaltstatus_reg = 6                                   'read only Not used, the same info is in the Atastatus_reg
+.equ Bsy = 7                                                'Busy bit 7
+.equ Drdy = 6                                               'Device Ready bit 6 (not used)
+.equ Drq = 3                                                'Data Request bit 3
+.equ Errr = 0                                               'Error bit 0
+.equ Srst = &H04
+
+'ATA commands
+.equ Standbyimmediate = &HE0
+.equ Readsectors = &H20
+.equ Identifydevice = &HEC
+.equ Writesectors = &H30
+'error codes
+.equ Time_out_err = 1                                       'Time Out
+.equ Word_xfer_err = 2                                      'transfered words not equal to expected
+.equ Ata_status_err = 3                                     'status register has error bit set
+
+'For use on extended ports change all:-
+'"out ExtI/O, rX" to "sts ExtI/O, rX"
+'"in rX, ExtI/O" to lds rX, ExtI/O"
+'"cbi ExtI/O, const" to "lds r23, ExtI/O" + "cbr r23, 2^const" + "sts ExtI/O, r23"
+'"sbi ExtI/O, const" to "lds r23, ExtI/O" + "sbr r23, 2^const" + "sts ExtI/O, r23"
+
+[get_sec]
+'***************************************************************
+'Get da Sector Data from the ATA and Stick it in da RAM
+'***************************************************************
+'Sub Get_Sec(buffer() , Byval Sec_expected As Byte )
+'entry point if registers need to be loaded by soft stack
+Get_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec_expected
+ld r24, X                                                   'r24 contains Sec_expected
+ldd Xl, Y+2                                                 'X register pair points to buffer
+ldd Xh, Y+3
+'entry point if registers pre loaded
+'r24 = Sector Counter (Sec_expected)
+'Xl & Xh = (X register pair) points to buffer
+[Getsec]
+$EXTERNAL Wait4bsy, wait4drq, Setaddress, Chk4nodrq
+Getsec:
+* #IF Media_is_rotating = 1
+lds r22, {ticktock}       'Ticktock To R22
+* subi r22, Maxtime * -1  'Add maxtime , give maxtime till timeout
+* #ELSE
+clr r0                     'timeout Counter lo
+clr r1                     'timeout Counter hi
+* #ENDIF
+rcall Wait4bsy                                              'Wait for busy to clear
+'Now drive is not busy, and there is no error
+clr r25                                                     'Word counter = 0
+Get_sec_drq:
+rcall wait4drq
+'Now drive is not busy, and there is no error, and it has issued a Data Request
+'Finally the good stuff, get data and put it in buffer
+ldi r20, Atadata_reg
+rcall Setaddress
+Get_sec_next:
+* cbi Contport, Atacs0                                    'make Atacs0 active
+* cbi Contport, Atard                                     'make Atard active
+nop
+nop                                                         'wait a bit
+* in r20, Lo8pin                                          'Get lo 8 byte
+st X+, r20                                                  'Store to buffer, post incr
+* in r20, Hi8pin                                          'Get hi 8 byte
+st X+, r20                                                  'Store to buffer, post incr
+* sbi Contport, Atard                                     'make Atard not active
+* sbi Contport, Atacs0                                   'make Atacs0 not active
+inc r25                                                     'Increment word counter
+brne Get_sec_drq                                            'More words to go
+dec r24                                                     'Decrement sector counter
+brne Get_sec_drq                                           'More sectors to go
+'Last check for Data Request
+rcall Chk4nodrq                                             'Last check for Data Request
+* #IF Media_is_rotating = 1
+lds r20, {ticktock}                                         'ticktock to r20
+* subi r20, Sleeptime * -1
+sts {timetosleep}, r20                                      'put drive to sleep in Sleeptime seconds
+* #ENDIF
+ret
+[end]
+
+[read_sec]
+'***************************************************************
+'issue Read Sector command to drive
+'***************************************************************
+'Sub Read_sec(lbasector As Long , Byval Sec2xfer As Byte)
+'entry point if registers need to be loaded by soft stack
+Read_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec2xfer
+ld r24, X                                                   'r24 contains Sec2xfer
+ldd Xl, Y+2
+ldd Xh, Y+3                                                 'X register pair points to lbasector
+ld r16, X+                                                  'r16 contains bits 0 - 7 of LBA & post incr
+ld r17, X+                                                  'r17 contains bits 8 - 15 of LBA & post incr
+ld r18, X+                                                  'r18 contains bits 16 - 23 of LBA & post incr
+ld r19, X                                                   'r19 contains bits 24 to 31 of LBA only 27 is used
+'entry point if registers pre loaded
+'r24 = sectors to transfer, r16 to r19 = lbasector
+[Readsec]
+$EXTERNAL Wait4bsy, Setaddress, dataoutput
+Readsec:
+* #IF Media_is_rotating = 1
+lds r22 , {ticktock}       'Ticktock To R22
+* subi r22 , Maxtime * -1  'Add maxtime , give maxtime till timeout
+* #ELSE
+clr r0                     'timeout Counter lo
+clr r1                     'timeout Counter hi
+* #ENDIF
+rcall Wait4bsy                                              'Wait for busy to clear
+* ori r19, Devlba                                        'OR with Devlba
+'set address
+ldi r20, Atadevicehead_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+* out Lo8port, r19                                       'r19 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atasectorcount_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+* out Lo8port, r24                                       'r24 to Atasectorcount_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+'send lbasector to LBA registers
+ldi r20, Atasectornumber_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+* out Lo8port, R16                                       'r16 to Atasectornumber_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+ldi r20, Atacylinderlow_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+* out Lo8port, r17                                       'r17 to Atacylinderlow_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+ldi r20, Atacylinderhigh_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+* Out Lo8port, r18                                       'r18 to Atacylinderhigh_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+'issue command
+ldi r20, Atacommand_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+ldi r24, Readsectors                                        'Read sectors command to r24
+* out Lo8port, r24                                       'r24 to Atacommand_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+ret
+[end]
+
+* #IF Media_is_rotating = 1
+[gotosleep]
+'***************************************************************
+'Go to Sleep
+'***************************************************************
+'put drive to sleep
+'no wait for busy here because
+'#1. Used in error handler and if it times out, it will end up in the error handler again in a never ending loop.
+'#2. Got to sleep is (SHOULD) only used after a preset period of no reads or writes. Plenty of time for the drive to be not busy.
+'#3. Used in ISR. So get in, do your stuff, and get out ASAP
+'Registers used are r24, r20, r23
+$EXTERNAL setaddress, dataoutput
+Gotosleep:
+* ldi r24, Devlba                                        'LBA mode and device 0
+ldi r20, Atadevicehead_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+* out Lo8port, r24                                       'r24 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+ldi r24, Standbyimmediate                                   'Standbyimmediate command to r24
+ldi r20, Atacommand_reg
+rcall setaddress
+* cbi Contport, Atacs0                                   'make Atacs0 active
+* out Lo8port, r24                                       'r24 to Atacommand_reg
+rcall dataoutput                                            'output and strobe write
+* sbi Contport, Atacs0                                   'make Ata cs0 not active
+ret
+[end]
+* #ENDIF
+
+[initdrive]
+'***************************************************************
+'Init drive. Software reset drive
+'***************************************************************
+'Init ports and drive
+$EXTERNAL setaddress, dataoutput
+Initdrive:
+rcall datainput                                             'make data bus an input
+* Ldi R24 , Adjustedcontmask                              'make address 0 to 3 & cs0 to cs1 & rd & wr outputs
+* Out Contdd , R24
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+* #IF Atacs1 < 8
+   * Sbi Contport , Atacs1                                    'make Atacs1 not active
+* #ENDIF
+* Sbi Contport , Atard                                    'make Ata rd not active
+* Sbi Contport , Atawr                                    'make Ata wr not active
+* #IF Media_is_rotating = 1
+   *BASIC:WAITMS 10000
+* #ENDIF
+ldi r20, Atadevicehead_reg
+rcall setaddress
+* Ldi r20, Devlba
+* Cbi Contport, Atacs0                                   'make Atacs0 active
+* Out Lo8port, r20                                       'r20 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+* #IF Atacs1 < 8
+   ldi r20, Atadevicecontrol_reg                               'set address
+   rcall setaddress
+   * Cbi Contport , Atacs1                                   'make Atacs1 active
+   ldi r20, Srst                      'software reset
+   * Out Lo8port, r20                                       'r20 to Atadevicecontrol_reg
+   rcall dataoutput                                            'output and strobe write
+   * Sbi Contport , Atacs1                                   'make Ata cs1 not active
+   *BASIC:WAITMS 1000
+   ldi r20, Atadevicecontrol_reg                               'set address
+   rcall setaddress
+   * Cbi Contport , Atacs1                                   'make Atacs1 active
+   ldi r20, 0                    'un software reset
+   * Out Lo8port , R20          'r20 to Atadevicecontrol_reg
+   rcall dataoutput                                            'output and strobe write
+   * Sbi Contport , Atacs1                                    'make Ata cs1 not active
+* #ENDIF
+*BASIC:WAITMS 1000
+ldi r20, Atadevicehead_reg
+rcall setaddress
+* Cbi Contport, Atacs0                                   'make Atacs0 active
+* Ldi r20, Devlba
+* Out Lo8port, r20                                       'r20 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport, Atacs0                                   'make Ata cs0 not active
+ret
+[end]
+
+[put_sec]
+'***************************************************************
+'Put da Sector Data from the RAM and Stick it in da ATA
+'***************************************************************
+'Sub Put_sec(buffer() as Byte , Byval Sec_expected As Byte )
+'entry point if registers need to be loaded by soft stack
+Put_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec_expected
+ld r24, X                                                   'r24 contains Sec_expected
+ldd Xl, Y+2                                                 'X register pair points to buffer
+ldd Xh, Y+3
+'entry point if registers pre loaded
+'r24 = Sector Counter (Sec_expected)
+'Xl & Xh = (X register pair) points to buffer
+[Putsec]
+$EXTERNAL Wait4bsy, wait4drq, Setaddress, dataoutput, Chk4nodrq
+Putsec:
+* #IF Media_is_rotating = 1
+lds r22 , {ticktock}       'Ticktock To R22
+* subi r22 , Maxtime * -1  'Add maxtime , give maxtime till timeout
+* #ELSE
+clr r0                     'timeout Counter lo
+clr r1                     'timeout Counter hi
+* #ENDIF
+rcall Wait4bsy                                              'Wait for busy to clear
+'Now drive is not busy, and there is no error
+clr r25                                                     'Word counter = 0
+Put_sec_drq:
+rcall wait4drq
+'Now drive is not busy, and there is no error, and it has issued a Data Request
+'Finally the good stuff, put the data in the ata drive
+ldi r20, Atadata_reg
+rcall Setaddress
+Put_sec_next:
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+ld r20, X+                                                  'get lo byte from buffer, post inc
+* Out Lo8port , R20
+ld r20, X+                                                  'get ho byte from buffer, post inc
+* Out Hi8port , R20
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Atacs0 not active
+inc r25                                                     'Increment word counter
+brne put_sec_drq                                            'More words to go
+dec r24                                                     'Decrement sector counter
+brne put_sec_drq                                           'More sectors to go
+'Last check for Data Request
+rcall Chk4nodrq
+* #IF Media_is_rotating = 1
+lds r20, {ticktock}                                         'ticktock to r20
+* subi r20, Sleeptime * -1
+sts {timetosleep}, r20                                      'put drive to sleep in Sleeptime seconds
+* #ENDIF
+ret
+[end]
+
+[write_sec]
+'***************************************************************
+'issue Write Sector command to drive
+'***************************************************************
+'Sub Write_sec(lbasector As Long , Byval Sec2xfer As Byte)
+'entry point if registers need to be loaded by soft stack
+Write_sec:
+ldd Xl, Y+0
+ldd Xh, Y+1                                                 'X register pair points to Sec2xfer
+ld r24, X                                                   'r24 contains Sec2xfer
+ldd Xl, Y+2
+ldd Xh, Y+3                                                 'X register pair points to lbasector
+ld r16, X+                                                  'r16 contains bits 0 - 7 of LBA & post incr
+ld r17, X+                                                  'r17 contains bits 8 - 15 of LBA & post incr
+ld r18, X+                                                  'r18 contains bits 16 - 23 of LBA & post incr
+ld r19, X                                                   'r19 contains bits 24 to 31 of LBA only 27 is used
+'entry point if registers pre loaded
+'r24 = sectors to transfer, r16 to r19 = lbasector
+[Writesec]
+$EXTERNAL Wait4bsy, setaddress, dataoutput
+Writesec:
+* #IF Media_is_rotating = 1
+lds r22 , {ticktock}       'Ticktock To R22
+* subi r22 , Maxtime * -1  'Add maxtime , give maxtime till timeout
+* #ELSE
+clr r0                     'timeout Counter lo
+clr r1                     'timeout Counter hi
+* #ENDIF
+rcall Wait4bsy                                              'Wait for busy to clear
+* Ori R19 , Devlba                                        'OR with Devlba
+'set address
+ldi r20, Atadevicehead_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Out Lo8port , R19                                       'r19 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atasectorcount_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Out Lo8port , R24                                       'r24 to Atasectorcount_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+'send lbasector to LBA registers
+ldi r20, Atasectornumber_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Out Lo8port , R16                                       'r16 to Atasectornumber_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+ldi r20, Atacylinderlow_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Out Lo8port , R17                                       'r17 to Atacylinderlow_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+ldi r20, Atacylinderhigh_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Out Lo8port , R18                                       'r18 to Atacylinderhigh_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+'issue command
+ldi r20, Atacommand_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+ldi r24, Writesectors                                       'Write sectors command to r24
+* Out Lo8port , R24                                       'r24 to Atacommand_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+ret
+[end]
+
+[wait4bsy]
+'***************************************************************
+'Wait for Busy to clear (with timeout)
+'***************************************************************
+'waits for the bsy and drq bits in the ATA Status register to clear.
+'Maximum time for timeout, based on ticktock, must be loaded in r22.
+'r21 is used for error code
+'r20 contains the latest ticktock (second) & status register
+$EXTERNAL setaddress, ataonbuserror
+Wait4bsy:
+ldi r21, Time_out_err           'Errorcode by default
+* #IF Media_is_rotating = 1
+lds r20, {ticktock}        'Ticktock to r20
+cp r20, r22                'Compare
+* #ELSE
+dec r0                     'decr timeout counter lo
+brne Wait4bsy_chk_status
+dec r1                     'decr timeout counter hi
+* #ENDIF
+breq Ataonbuserror         'If equal, then we have timed out
+Wait4bsy_chk_status:
+ldi r20, Atastatus_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Cbi Contport , Atard                                    'make Atard active
+nop
+nop                                                         'wait a bit
+* In R20 , Lo8pin                                         'ATA Status Register to r20
+* Sbi Contport , Atard                                    'make Atard not active
+* Sbi Contport , Atacs0                                   'make Atacs0 not active
+sbrc r20, Bsy                                               'IF Busy bit set then
+rjmp Wait4bsy                                               'Loop to Wait4bsy
+ldi r21, Ata_status_err                                     'Errorcode by default
+sbrc r20, Errr                                              'Errr'IF error bit set then
+rjmp Ataonbuserror                                          'then never come back
+'Now drive is not busy, and there is no error
+ret
+[end]
+
+[wait4drq]
+'***************************************************************
+'Wait for data request to set (with timeout)
+'***************************************************************
+'waits for the drq bit in the ATA Status register to be set.
+'for non rotaing media, timeout on iteration count is in r0, r1
+'r21 is used for error code
+'r20 contains the latest ticktock (second) & status register
+$EXTERNAL setaddress, ataonbuserror
+Wait4drq:
+ldi r21, Time_out_err         'Errorcode by default
+* #IF Media_is_rotating = 1
+lds r20, {ticktock}        'Ticktock to r20
+cp r20, r22                'Compare
+* #ELSE
+dec r0                     'decr timeout counter lo
+brne Wait4drq_chk_status
+dec r1                     'decr timeout counter hi
+* #ENDIF
+breq Ataonbuserror         'If equal, then we have timed out
+Wait4drq_chk_status:
+ldi r20, Atastatus_reg
+rcall setaddress
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Cbi Contport , Atard                                    'make Atard active
+nop
+nop                                                         'wait a bit
+*In R20 , Lo8pin                                             'Status Register to r20
+* Sbi Contport , Atard                                    'make Atard not active
+* Sbi Contport , Atacs0                                   'make Atacs0 not active
+sbrs r20, drq                                               'IF Busy bit set then
+rjmp Wait4drq                                               'Loop to Wait4drq
+ldi r21, Ata_status_err                                     'Errorcode by default
+sbrc r20, Errr                                              'Errr'IF error bit set then
+rjmp ataonbuserror                                           'then never come back
+'Now drive has issued a data request, and there is no error
+ret
+[end]
+
+[Chk4nodrq]
+'***************************************************************
+'Check for no Data Request after last data transfer
+'***************************************************************
+$EXTERNAL setaddress, ataonbuserror
+Chk4nodrq:
+'Last check for Data Request
+ldi r21, Word_xfer_err                                      'Errorcode by default
+ldi r20, Atastatus_reg
+rcall setaddress
+*Cbi Contport , Atacs0                                        'make Atacs0 active
+*Cbi Contport , Atard                                    'make Atard active
+nop
+nop                                                         'wait a bit
+*In R20 , Lo8pin                                             'ATA Status Register to r20
+* Sbi Contport , Atard                                    'make Atard not active
+*Sbi Contport , Atacs0                                   'make Atacs0 not active
+sbrc r20, drq                                               'IF Data Request bit clear then we have finished transferring all data
+rjmp Ataonbuserror                                          'Something is wrong
+ldi r21, Ata_status_err                                     'Errorcode by default
+sbrc r20, Errr                                              'Errr'IF error bit set then
+rjmp Ataonbuserror                                           'then never come back
+ret
+[end]
+
+[ataonbuserror]
+'***************************************************************
+'ata on bus error
+'***************************************************************
+'stores error code from r21 to sram variable errorcode
+Ataonbuserror:
+* Sbi Contport , Atacs0                                    'make Atacs0 not active
+* #IF Atacs1 < 8
+   * Sbi Contport , Atacs1                                    'make Atacs1 not active
+* #ENDIF
+sts {errorcode}, r21                                        'Store error code
+jmp errorhandle                                             'and jump to error handler. Fatal error, never to return
+[end]
+
+[identify_device]
+'***************************************************************
+'Identify Device
+'***************************************************************
+'issues an identify device command, and sticks the data in the buffer pointed to by X
+$EXTERNAL Wait4bsy, setaddress, dataoutput, Getsec
+Identify_device:
+* #IF Media_is_rotating = 1
+lds r22 , {ticktock}       'Ticktock To R22
+* subi r22 , Maxtime * -1  'Add maxtime , give maxtime till timeout
+* #ELSE
+clr r0                     'timeout Counter lo
+clr r1                     'timeout Counter hi
+* #ENDIF
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atadevicehead_reg
+rcall setaddress                                            'set the address
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+* Ldi R24 , Devlba                                        'LBA mode and device 0
+* Out Lo8port , R24                                       'r24 to Atadevicehead_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                    'make Ata cs0 not active
+rcall Wait4bsy                                              'Wait for busy to clear
+ldi r20, Atacommand_reg
+rcall setaddress                                            'set the address
+* Cbi Contport , Atacs0                                   'make Atacs0 active
+ldi r24, Identifydevice                                     'Identifydevice command to r24
+* Out Lo8port , R24                                       'r24 to Atacommand_reg
+rcall dataoutput                                            'output and strobe write
+* Sbi Contport , Atacs0                                   'make Ata cs0 not active
+ldi r24, 1                                                  'transfer 1 sector worth of data
+'X still points to the buffer
+rcall Getsec                                               'get the data
+ret
+[end]
+
+[setaddress]
+'***************************************************************
+'Set address
+'***************************************************************
+'address is passed in r20
+Setaddress:
+* In r23, Contport                                       'copy of control port in r23
+* Cbr r23, Adjustedaddressmask                           'clear space for address
+or r20, r23                                                 'set address
+* Out Contport, r20                                      'out address
+ret
+[end]
+
+[dataoutput]
+'***************************************************************
+'Dataoutput
+'***************************************************************
+'makes the data port = output, and then strobes the write pin, and then makes data port = input again
+Dataoutput:
+ser r20
+* Out Lo8dd, r20                                         'make lo 8 port output
+* Out Hi8dd, r20                                         'make hi 8 port output
+* Cbi Contport , Atawr                                    'make Ata wr active
+nop
+nop                                                         'wait a bit
+* Sbi Contport , Atawr                                    'make Ata wr not active
+'***************************************************************
+'Datainput
+'***************************************************************
+'makes the data port = input
+Datainput:
+clr r20
+* Out Lo8dd, r20                                        'make lo 8 port input
+* Out Hi8dd, r20                                          'make hi 8 port input
+ret
+[end]
