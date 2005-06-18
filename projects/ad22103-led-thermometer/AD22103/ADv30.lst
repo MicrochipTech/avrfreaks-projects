@@ -1,0 +1,472 @@
+gavrasm Gerd's AVR assembler version 0.7 (C)2003 by DG4FAC
+----------------------------------------------------------
+Source file: ADv30.asm
+Hex file:    ADv30.hex
+Eeprom file: ADv30.eep
+Compiled:    17.06.2005, 10:47:29
+Pass:        2
+     1: ; ADv30.asm     Thermometer using Analog Devices AD22103 and two 7-segment LED displays
+     2: ; CPU -- Atmel AVR Tiny26   [1K words Flash, 128 bytes SRAM, 128 EEPROM, no UART; 10-bit ADC] 
+     3: ;
+     4: ; Alan Probandt   Portland Oregon USA   alan_probandt@yahoo.com    June 2, 2005
+     5: ;
+     6: ;
+     7: ; Temperture display on LED 7-segment pair is displayed for 1 second and then turned off
+     8: ; for three seconds.  During the ON period, the timer0 overflows 90 times a second and 
+     9: ; multiplexes the lighting of each LED 7-seg digit.  Timer1 is set for one-second timeouts.
+    10: ; In between each one-second timeout, the Tiny26 main program sleeps in idle mode 
+    11: ; to reduce power consumption.
+    12: ;
+    13: ;  ver 3.0    @50mA with LEDs on,  @10mA with LEDs off
+    14: ;
+    15: ; 	    Atmel AVR Tiny26
+    16: ;    	pb0	1 | 20 pa0 LED digit select
+    17: ;    	pb1	2 | 19 pa1 LED seg A-360ohms --LED-- +5
+    18: ;    	pb2	3 | 18 pa2 LED seg B-360ohms --LED-- +5 
+    19: ;    	pb3	4 | 17 pa3 LED seg C-360ohms --LED-- +5 
+    20: ;  +5V	VCC	5 | 16 GND
+    21: ;  	GND	6 | 15 AVCC +5V
+    22: ; AD22103 input 7 | 14 pa4 LED seg D-360ohms --LED-- +5 
+    23: ; 	pd5	8 | 13 pa5 LED seg E-360ohms --LED-- +5 
+    24: ;     	pb6	9 | 12 pa6 LED seg F-360ohms --LED-- +5 
+    25: ;   reset\	10| 11 pa7 LED seg G-360ohms --LED-- +5  
+    26: ;
+    27: ; AVR instr that use upper registers only: ldi, ser, cbr, sbr, ori, andi, subi, sbci 
+    28: 
+    29: .nolist
+    32: 
+    33: .equ	T26Clock	= 1000000
+    34: ; 16-bit Timer1 values for 1 second
+    35: .equ	T26TimerPeriod	= T26Clock/16384
+    36: .equ	OneSecT26	= ~T26TimerPeriod
+    37: 
+    38: ;     LEDMuxReloadValue should IRQ at no less than 50 times a second
+    39: .equ	LEDMuxReloadValue = ~10  ; interrupt 95 times a second to multiplex LEDs
+    40: 
+    41: 
+    42: ; common
+    43: .equ	LEDport		= porta
+    44: .equ	LEDddr		= ddra
+    45: .equ	LEDselect	= 0
+    46: .equ	NumberOfSecondsDisplayIsOff  = 4
+    47: .equ	NumberOfSecondsDisplayIsOn = 1
+    48: 
+    49: ; register definitions
+    50: .def	SevenSegValue	= r1
+    51: .def	LowDelay	= r2
+    52: .def	LongDelay	= r3
+    53: .def	high_digit	= r4
+    54: .def	low_digit	= r5
+    55: ; high registers
+    56: .def	Temp		= r16
+    57: .def	irqTemp		= r17
+    58: .def	degree		= r18
+    59: .def	ToggleFlags	= r19
+    60: .equ	LEDs_Lighted	= 7	; set=LED display is being multiplexed on,clear= no LED display
+    61: .equ	UpdateDisplay	= 6
+    62: 
+    63: ;***** Binary2BCD Subroutine Register Variables
+    64: 
+    65: .def	fbin	=r20		;8-bit binary value
+    66: .def	tBCDL	=r20		;BCD result MSD
+    67: .def	tBCDH	=r21		;BCD result LSD
+    68: 
+    69: 
+    70: 
+    71: .cseg  ; load the following code into AVR Flash Program memory
+    72: 
+    73: .org 0x0  ; interrupt vector address jump table for ATTiny26
+    74: 000000   C00B  rjmp	reset
+    75: .org	INT0addr	;=0x001
+    76: 000001   9518  reti	;rjmp	EXT_INT0
+    77: .org	IOPINSaddr	;=0x002
+    78: 000002   9518  reti	;rjmp	PIN_CHANGE
+    79: .org	OC1Aaddr	;=0x003
+    80: 000003   9518  reti	;rjmp	TIM1_CMP1A
+    81: .org	OC1Baddr	;=0x004
+    82: 000004   9518  reti	;rjmp	TIM1_CMP1B
+    83: .org	OVF1addr	;=0x005
+    84: 000005   C04C  rjmp	TIM1_OVF
+    85: .org 	OVF0addr	;=0x006
+    86: 000006   C05F  rjmp	TIM0_OVF
+    87: .org	USI_STARTaddr	;=0x007
+    88: 000007   9518  reti	;rjmp	USI_STRT
+    89: .org	USI_OVFaddr	;=0x008
+    90: 000008   9518  reti	;rjmp	USI_OVF
+    91: .org	ERDYaddr	;=0x009
+    92: 000009   9518  reti	;rjmp	EE_RDY
+    93: .org	ACIaddr  	;=0x00a
+    94: 00000A   9518  reti	;rjmp	ANA_COMP
+    95: .org	ADCCaddr   	;=0x00b
+    96: 00000B   C043  rjmp	ADC_Complete
+    97: 
+    98: 
+    99: reset:
+   100: ; initialize stack
+   101: 00000C   ED0F  ldi	Temp,RAMEND ; setup stack
+   102: 00000D   BF0D  out	SP,Temp	;init Stack Pointer - use SPL for AVR2313
+   103: 
+   104: ; initialize I/O ports
+   105: 00000E   EF0F  ser	temp
+   106: 00000F   BB0A  out	LEDDDR, temp  ; LED port all outputs
+   107: 000010   9ABD  sbi	ddrb, 5 ; broken pin 13 replacement pin8 [pb5] is output
+   108: 
+   109: ; initialize Timers
+   110: 000011   E006  ldi	Temp,  (1 << TOIE0)  | (1 << TOIE1) ; enable timers 1 and 0 overflow interrupts
+   111: 000012   BF09  out	TIMSK, Temp	; enable timer interrupts
+   112: 000013   BF08  out	TIFR, Temp	; clear previously-set timer interrupt flags
+   113: 
+   114: ; Timer1 is one second period
+   115: ; Timer1 for Tiny26   8-bit with large preset
+   116: 000014   EC02  ldi	Temp, OneSecT26 ; load timer1 count register for 1 second
+   117: 000015   BD0E  out	TCNT1, Temp	; start LED segment display
+   118: 000016   E00F  ldi	Temp, ( (1<<CS13) | (1<<CS12) | (1<<CS11) | (1<<CS10) ); start timer 1 at preset sysclk/1638
+   119: 000017   BD0F  out	TCCR1B, Temp
+   120: 
+   121: 
+   122: ; Timer0 is LED display segment multiplex @ 90 times per Sec
+   123: 000018   EF05  ldi	Temp, LEDMuxReloadValue	; load timer0 count register for 1 millisecond
+   124: 000019   BF02  out	TCNT0, Temp	; start LED segment display
+   125: 00001A   E005  ldi	Temp, (  (1<<CS02) | (0<<CS01) | (1<<CS00) ); start timer 0 at preset sysclk/1024 -97 interrupts/second
+   126: 00001B   BF03  out	TCCR0, Temp
+   127: 
+   128: ; initialize general interrupts
+   129: 00001C   9478  sei
+   130: 
+   131: ; initialize application
+   132: ; When powered on, display temperture for one second, then off for 3 or 4 seconds
+   133: ;  add one to the flags because the interrupt routine decrements before checking
+   134: 00001D   EC31  ldi	ToggleFlags,(1<<UpdateDisplay) | (1<<LEDs_Lighted) + 1
+   135: 	;  LEDs_Lighted set=light the LED display, clear=don't light LEDs
+   136: 
+   137: 
+   138: ;********************************************************************
+   139: ;  Main program code for thermometer display
+   140: ;********************************************************************
+   141: ;
+   142: main:
+   143: 00001E   E200  ldi	temp, (1<<SE) | (0<<SM1) | (0<<SM0)  ; enable idle mode for Tiny26
+   144: 00001F   BF05  out	MCUCR, temp
+   145: 000020   9588  sleep 	; either timer interrupt will awaken MPU
+   146: 
+   147: 000021   FF36  sbrs	ToggleFlags, UpdateDisplay
+   148: 000022   CFFB  rjmp	main ; still in DisplayOff mode
+   149: 
+   150: ;  return here from timer interrupts that are entered upon awakening.
+   151: ; 	LEDs_Lighted=set >> turn on LED display and start multiplexing with timer 0
+   152: ;	LEDs_Lighted=clear >> turn off LED display
+   153: 000023   7B3F  cbr	ToggleFlags, (1 << UpdateDisplay)
+   154: 000024   FD37  sbrc	ToggleFlags, LEDs_Lighted
+   155: 000025   C00B  rjmp	Main_HaltLEDdisplay
+   156: 
+   157: ;  LEDs_Lighted flag is off -- check if LEDdisplay count is zero
+   158: 000026   C001  rjmp	Main_RestartLEDdisplay
+   159: 
+   160: ;  still in LEDoff mode - LEDdisplay count was decremented but value was not zero
+   161: ;  so go back to sleep
+   162: 000027   CFF6  rjmp	main
+   163: 
+   164: Main_RestartLEDdisplay:
+   165: 000028   D011  rcall	GetDegreeValue  ; update the current temperture reading
+   166: 000029   EF1F  ser	irqTemp	; enable LED display by permitting LEDport to pull segments to ground
+   167: 00002A   BB1A  out	LEDDDR, irqTemp
+   168: 00002B   9ABD  sbi	ddrb,5
+   169: 00002C   EF15  ldi	irqTemp, LEDMuxReloadValue	; load timer0 count register for 1 millisecond
+   170: 00002D   BF12  out	TCNT0, irqTemp	; start LED segment display
+   171: 00002E   E015  ldi	irqTemp, (  (1<<CS02) | (0<<CS01) | (1<<CS00) ); start timer 0 at preset sysclk/1024 -97 interrupts/second
+   172: 00002F   BF13  out	TCCR0, irqTemp
+   173: 
+   174: 000030   CFED  rjmp	Main	; go back to sleep until next Timer0 Overflow for LED display mux
+   175: 
+   176: Main_HaltLEDdisplay:
+   177: 000031   2711  clr	irqTemp; stop timer 0
+   178: 000032   BF13  out	TCCR0, irqTemp
+   179: 000033   EF1F  ser	irqTemp ; all LED segments off --- input port pullup resistors on
+   180: 000034   BB1B  out	LEDport, irqTemp
+   181: 000035   2711  clr	irqTemp ; LED port pins are all inputs- HiZ
+   182: 000036   BB1A  out	LEDDDR, irqTemp
+   183: 000037   98BD  cbi	ddrb,5; broken pin replacement
+   184: 000038   9AC5  sbi	portb,5; turn on pull-up resistor in order to turn off segment lighting
+   185: 
+   186: 000039   CFE4  rjmp	main
+   187: 
+   188: 
+   189: ; subroutine to get ADC value of temperture and format to two digit Fahrenheit degree value
+   190: GetDegreeValue:
+   191: 00003A   D00C  rcall	GetADC ; setup ADC, start conversion, sleep until finished, do ADCIRQ, return
+   192: 
+   193: ; for Tiny26 with left alignment - bits 9-2 in highADC
+   194: 00003B   0C55  lsl	low_digit; move ADC result bit 1 into carry
+   195: 00003C   1C44  rol	high_digit ; throw away bit 9 of ADC result, shift ADC result bit 1 into LSB of high_digit
+   196: 
+   197: 
+   198: 00003D   E0F1  GDV1:	ldi	ZH, high(FahrTable*2)
+   199: 00003E   E3E4  ldi	ZL, low(FahrTable*2)
+   200: 00003F   0DE4  add	ZL, high_digit ; for Tiny26
+   201: 
+   202: 000040   F408  brcc	GDV10
+   203: 000041   95F3  inc	ZH
+   204: 000042   95C8  GDV10:	lpm
+   205: 000043   2D40  mov	fbin, r0
+   206: 000044   D045  rcall	bin2bcd8
+   207: 
+   208: 000045   2E14  mov	SevenSegValue, fbin
+   209: 000046   9508  ret
+   210: 
+   211: GetADC:   ;  routine is for Tiny26
+   212: 000047   E207  ldi	Temp, (0<<REFS1) | (0<<REFS0) | (1<<ADLAR) |(0<<MUX3) | (1<<MUX2) | (1<<MUX1) | (1<<MUX0)
+   213: ; ADC reference --  00=AVCC
+   214: ; ADLAR	= ADC left adjust result for ADC bits 8 & 9  1=left align>highbyte=bits 9-2
+   215: ; MUX = ADC channel 7, pin 7
+   216: 000048   B907  out	ADMUX, Temp
+   217: 
+   218: 000049   E90B  ldi	Temp, (1<<ADEN) | (1<<ADIE) | (1<<ADIF) | (0<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
+   219: ;  set up noise canceling with ADCenable=on, ADCinterrupt=on, clear Int flag
+   220: ;  set ADC clock preset to 8 -- 125KHz from 1MHz System Clock
+   221: 00004A   B906  out	ADCSR, Temp
+   222: 
+   223: 00004B   E208  ldi	Temp, (0<<SM1) | (1<<SM0)  | ( 1<<SE)
+   224: ;  set up sleep mode for best ADC resolution
+   225: 00004C   BF05  out	MCUCR, Temp
+   226: ; entering sleep will start ADC conversion, completion will wake the MCU to ADC interrupt
+   227: 00004D   9588  sleep
+   228: 00004E   9508  ret
+   229: 
+   230: ;*****************************
+   231: ; **** ADC interrupt routine
+   232: ; ****************************
+   233: ADC_Complete:
+   234: 00004F   B054  in	low_digit, ADCL ; always read low digit first
+   235: 000050   B045  in	high_digit,ADCH
+   236: 000051   9518  reti
+   237: 
+   238: 
+   239: ;********************************************************************************
+   240: ; TIM1_OVF Timer 1 Overflow interrupt routine - overflows 1 time per second
+   241: ;  Activates CPU from sleep idle mode, then:
+   242: ;	decrement second count (bits 3-0 of ToggleFlags)
+   243: ;	if not zero, then exit interrupt routine
+   244: ;	if zero, then reset second count according to LEDs_Lighted flag
+   245: ;
+   246: ;	tests LEDs_Lighted flag,
+   247: ;	 flag clear > tests and adjusts LEDdisplay count
+   248: ;	 flag set >  clears flag and returns to main
+   249: ;  This routine should only set or clear the flag for lighting LEDs
+   250: ;	registers used: 'ToggleFlags'
+   251: ;********************************************************************************
+   252: TIM1_OVF:
+   253: 000052   931F  push	irqTemp
+   254: ; Timer1 reload for Tiny26
+   255: 000053   EC12  ldi	irqTemp, OneSecT26 ; load timer1 count register for 1 second
+   256: 000054   BD1E  out	TCNT1, irqTemp	; start LED segment display
+   257: 000055   2F13  mov	irqtemp, ToggleFlags ; decrement current second count
+   258: 000056   701F  andi	irqtemp, 0x0f
+   259: 000057   951A  dec	irqtemp
+   260: 000058   F019  breq	T1Ovr_tglUD  ; if decremented count is zero, set UpdateDisplay flag
+   261: 000059   7F30  andi	ToggleFlags, 0xf0
+   262: 00005A   2B31  or	ToggleFlags, irqTemp
+   263: 00005B   C008  rjmp	T1Ovr_Exit
+   264: 
+   265: T1Ovr_tglUD:
+   266: 00005C   6430  sbr	ToggleFlags, (1 << UpdateDisplay)  ; tell main program to turn LEDs off/on
+   267: 
+   268: ; toggle LEDs_Lighted flag
+   269: 00005D   E810  ldi	irqTemp, (1<< LEDs_Lighted)
+   270: 00005E   2731  eor	ToggleFlags, irqTemp
+   271: 
+   272: T1Ovr_restoreSecondCount:
+   273: 00005F   E011  ldi	irqtemp,  NumberOfSecondsDisplayIsOn
+   274: 000060   FD37  sbrc	ToggleFlags, LEDs_Lighted
+   275: 000061   E014  ldi	irqtemp, NumberOfSecondsDisplayIsOff
+   276: 000062   7F30  andi	ToggleFlags, 0xf0
+   277: 000063   2B31  or	ToggleFlags, irqTemp
+   278: T1Ovr_Exit:
+   279: 000064   911F  pop	irqTemp
+   280: 000065   9518  reti
+   281: 
+   282: 
+   283: ;********************************************************************************
+   284: ; TIM0_OVF Timer 0 Overflow interrupt routine - overflows 97 times per second
+   285: ;	LED 7-segment multiplex dual display of hex byte using Timer0 interrupt
+   286: ;	Hex bite being displayed from register SevenSegValue
+   287: ;	uses T-flag (as a static variable, so SREG is not stacked)
+   288: ;	registers used: Zh, Zl,'irqtemp', 'SevenSegValue'
+   289: ;********************************************************************************
+   290: TIM0_OVF: ; same routine used for both 4433-ICE and Tiny26
+   291: 000066   93FF  push	ZH
+   292: 000067   93EF  push	ZL
+   293: 000068   931F  push	irqTemp
+   294: 000069   EF15  ldi	irqTemp, LEDMuxReloadValue
+   295: 00006A   BF12  out	TCNT0, irqTemp	; restore the timer count to 0.5 millisecond
+   296: 
+   297: 00006B   F06E  brts	RightLEDdigit
+   298: 00006C   9468  set	; ; next Timer1 overflow displays right LED digit (LSB)
+   299: 00006D   E0F1  ldi	ZH, high(SevenSegMAN6710*2)  ; load 16-bit Z register with the byte address of the LED pattern table
+   300: 00006E   E2E4  ldi	ZL, low(SevenSegMAN6710*2)
+   301: 00006F   2D11  mov	irqTemp, SevenSegValue	  ;SevenSegValue is the hex digit pair to be displayed
+   302: 000070   701F  andi	irqTemp,0x0f	; mask out the most sig digit
+   303: 000071   0FE1  add	ZL, irqTemp	; add digit value offset to Z low
+   304: 000072   F408  brcc	LED_a		; add one to Z high if result crosses a 256 byte boundary
+   305: 000073   95F3  inc	ZH
+   306: 000074   95C8  LED_a:	lpm			; move LED 7-seg digit pattern for the digit to R0 from program memory table
+   307: 000075   2D10  mov	irqTemp,r0   	; OUT instruction uses high register bank only
+   308: 000076   BB1B  out	LEDPort,irqTemp	; output 7-seg pattern to port A
+   309: 000077   98D8  cbi	LEDPort,LEDselect ; Port A bit 0 selects which digit gets lighted; 0=least sig;  bits 1-7 are seg_a to seg_g
+   310: 000078   C00D  rjmp	LEDexit
+   311: 
+   312: RightLEDdigit:
+   313: 000079   94E8  clt	; next Timer0 overflow displays left LED digit (MSB)
+   314: 00007A   E0F1  ldi	ZH, high(SevenSegMAN6710*2)   ; reload 16-bit Z register with the byte address of the LED pattern table
+   315: 00007B   E2E4  ldi	ZL, low(SevenSegMAN6710*2)
+   316: 00007C   2D11  mov	irqTemp, SevenSegValue	;SevenSegValue is the hex digit pair to be displayed
+   317: 00007D   7F10  andi	irqTemp,0xf0	; mask out the least sig digit
+   318: 00007E   9512  swap	irqTemp     	; move most sig digit to bits 0-3
+   319: 00007F   0FE1  add	ZL, irqTemp	; add digit value offset to Z low
+   320: 000080   F408  brcc	LED_b		; add one to Z high if result crosses a 256 byte boundary
+   321: 000081   95F3  inc	ZH
+   322: 000082   95C8  LED_b:	lpm			; move LED 7-seg digit pattern for the digit to R0 from program memory table
+   323: 000083   2D10  mov	irqTemp,r0
+   324: 000084   BB1B  out	LEDPort, irqTemp	; OUT instruction uses high register bank only
+   325: 
+   326: 000085   9AD8  sbi	LEDPort, LEDselect ; Port A bit 0 set means that the right (MSB) LED digit gets lighted
+   327: LEDexit:
+   328: 000086   911F  pop	irqtemp
+   329: 000087   91EF  pop	ZL
+   330: 000088   91FF  pop	ZH
+   331: 000089   9518  reti
+   332: 
+   333: 
+   334: ;***************************************************************************
+   335: ;*
+   336: ;* "bin2BCD8" - 8-bit Binary to BCD conversion
+   337: ;*
+   338: ;* This subroutine converts an 8-bit number (fbin) to a 2-digit
+   339: ;* BCD number (tBCDH:tBCDL), or packed BCD in fbin
+   340: ;*
+   341: ;* Number of words	:6 + return
+   342: ;* Number of cycles	:5/50 (Min/Max) + return
+   343: ;* Low registers used	:None
+   344: ;* High registers used  :2 (fbin/tBCDL,tBCDH)
+   345: ;*
+   346: ;* Included in the code are lines to add/replace for packed BCD output.
+   347: ;*
+   348: ;***************************************************************************
+   349: 
+   350: 
+   351: ;***** Code from Atmel Application Note   avr204 BCD Arithmetics.asm
+   352: 
+   353: bin2bcd8:
+   354: 00008A   2755  clr	tBCDH		;clear result MSD
+   355: 00008B   504A  bBCD8_1:subi	fbin,10		;input = input - 10
+   356: 00008C   F010  brcs	bBCD8_2		;abort if carry set
+   357: ;	inc	tBCDH		;inc MSD
+   358: ;---------------------------------------------------------------------------
+   359: ;				;Replace the above line with this one
+   360: ;				;for packed BCD output
+   361: 00008D   5F50  subi	tBCDH,-0x10 	;tBCDH = tBCDH + 10
+   362: ;---------------------------------------------------------------------------
+   363: 00008E   CFFC  rjmp	bBCD8_1		;loop again
+   364: 00008F   5F46  bBCD8_2:subi	fbin,-10	;compensate extra subtraction
+   365: ;---------------------------------------------------------------------------
+   366: ;				;Add this line for packed BCD output
+   367: 000090   0F45  add	fbin,tBCDH
+   368: ;---------------------------------------------------------------------------
+   369: 000091   9508  ret
+   370: 
+   371: 
+   372: 
+   373: SevenSegMAN6710: ;  - bit 7 select - low lights LSD - High lights MSD  -- logic low to light segment
+   374: ;	PortB 0 - 6 pins have 360 ohm resistors; #1 & #2 letter segments tied together
+   375: ;   PortB 7  to PNP and NPN on common anodes (1K ohm base resistor on NPN & PNP)
+   376: .db 0x01,0x4f,0x12,0x06,0x4c,0x24,0x20,0x0f,0x00,0x0c,0x08,0x60,0x31,0x42,0x30,0x38
+        000092 4F01 0612 244C 0F20
+        000096 0C00 6008 4231 3830
+   377: ;       abcdefg   	  0=on 1=off  MAN6710 dual 7-seg common anode
+   378: ; 0  0b00000001	  ______________________________                     IEE 1737 R
+   379: ; 1  0b01001111	  | 18 17 16 15 14 13 12 11 10  \                   ___________
+   380: ; 2  0b00010010	  |       __a_      __a_        |              a  1 |   __a_   |14  ca
+   381: ; 3  0b00000110	  |  #1  |    |    |    | #2    |              f  2 |  |    |  |13  b
+   382: ; 4  0b01001100	  |     f|__g_|b  f|__g_|b      |             ca  3 | f|__g_|b |-
+   383: ; 5  0b00100100	  |      |    |    |    |       |                 - |  |    |  |11  g
+   384: ; 6  0b00100000	  |     e|__d_|c  e|__d_|c      |                 - | e|__d_|c |10  c
+   385: ; 7  0b00001111	  | ____________________________|            dp L 6 |          | 9  dpt R
+   386: ; 8  0b00000000	   \__1  2  3  4  5  6  7  8  9 \               e 7 |__________| 8  d
+   387: ; 9  0b00011000	    pinout:
+   388: ; A  0b00001000	      1 #1e    7 #2g   13 #2 com Anode
+   389: ; b  0b01100000	      2 #1d    8 #2c   14 #1 com Anode
+   390: ; c  0b00110001	      3 #1c    9 #2Rdp 15 #1b
+   391: ; d  0b01000010	      4 #1Rdp 10 #2b   16 #1a
+   392: ; E  0b00110000	      5 #2e   11 #2a   17 #1g
+   393: ; F  0b00001110	      6 #2d   12 #2f   18 #1f
+   394: ;*************************************************************************************************
+   395: 
+   396: 
+   397: ;***********************************************************************************************
+   398: ;  Temperature table ; Value is the LED display of F° degrees for each shifted ADC result value
+   399: ;***********************************************************************************************
+   400: FahrTable:
+   401: .db 16,17,17,18,19,19,20,20     ;  00-07 ADC shifted result
+        00009A 1110 1211 1313 1414
+   402: .db 21,21,22,23,23,24,24,25     ;  08-0F
+        00009E 1515 1716 1817 1918
+   403: .db 26,26,27,27,28,29,29,30     ;  10-17
+        0000A2 1A1A 1B1B 1D1C 1E1D
+   404: .db 30,31,31,32,33,33,34,34     ;  18-1F
+        0000A6 1F1E 201F 2121 2222
+   405: .db 35,36,36,37,37,38,39,39     ;  20-27
+        0000AA 2423 2524 2625 2727
+   406: .db 40,40,41,41,42,43,43,44     ;  28-2F
+        0000AE 2828 2929 2B2A 2C2B
+   407: .db 44,45,46,46,47,47,48,49     ;  30-37
+        0000B2 2D2C 2E2E 2F2F 3130
+   408: .db 49,50,50,51,51,52,53,53     ;  38-3F
+        0000B6 3231 3332 3433 3535
+   409: .db 54,54,55,56,56,57,57,58     ;  40-47
+        0000BA 3636 3837 3938 3A39
+   410: .db 59,59,60,60,61,61,62,63     ;  48-4F
+        0000BE 3B3B 3C3C 3D3D 3F3E
+   411: .db 63,64,64,65,66,66,67,67     ;  50-57
+        0000C2 403F 4140 4242 4343
+   412: .db 68,69,69,70,70,71,71,72     ;  58-5F
+        0000C6 4544 4645 4746 4847
+   413: .db 73,73,74,74,75,76,76,77     ;  60-67
+        0000CA 4949 4A4A 4C4B 4D4C
+   414: .db 77,78,79,79,80,80,81,81     ;  68-6F
+        0000CE 4E4D 4F4F 5050 5151
+   415: .db 82,83,83,84,84,85,86,86     ;  70-77
+        0000D2 5352 5453 5554 5656
+   416: .db 87,87,88,89,89,90,90,91     ;  78-7F
+        0000D6 5757 5958 5A59 5B5A
+   417: .db 92,92,93,93,94,94,95,96     ;  80-87
+        0000DA 5C5C 5D5D 5E5E 605F
+   418: .db 96,97,97,98,99,99, 0, 0     ;  88-8F
+        0000DE 6160 6261 6363 0000
+   419: .db  1, 2, 2, 3, 3, 4, 4, 5     ;  90-97
+        0000E2 0201 0302 0403 0504
+   420: .db  6, 6, 7, 7, 8, 9, 9,10     ;  98-9F
+        0000E6 0606 0707 0908 0A09
+   421: .db 10,11,12,12,13,13,14,14     ;  A0-A7
+        0000EA 0B0A 0C0C 0D0D 0E0E
+   422: .db 15,16,16,17,17,18,19,19     ;  A8-Af
+        0000EE 100F 1110 1211 1313
+   423: 
+   424: ; ********************** ASCII strings
+   425: ID:  ;     "****  ADv30.asm  Jun 2, 2005  Alan Probandt "
+   426: .db        "****  DA3v.0sa mJ nu2  ,0250  lAnaP orabdn t"
+        0000F2 2A2A 2A2A 2020 4144
+        0000F6 7633 302E 6173 6D20
+        0000FA 204A 756E 2032 2C20
+        0000FE 3230 3035 2020 416C
+        000102 616E 2050 726F 6261
+        000106 6E64 7420
+   427: 
+   428:                                                                                                                                                                                                
+ -> Warning 001: 7 symbol(s) defined, but not used!
+
+Program             :      146 words.
+Constants           :      118 words.
+Total program memory:      264 words.
+Eeprom space        :        0 bytes.
+Data segment        :        0 bytes.
+Compilation completed, no errors.
+Compilation endet 17.06.2005, 10:47:29
