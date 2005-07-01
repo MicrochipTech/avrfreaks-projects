@@ -1,0 +1,780 @@
+gavrasm Gerd's AVR assembler version 0.7 (C)2003 by DG4FAC
+----------------------------------------------------------
+Source file: D:\AVR\0_source\Midifoot\Midifoot.asm
+Hex file:    D:\AVR\0_source\Midifoot\Midifoot.hex
+Eeprom file: D:\AVR\0_source\Midifoot\Midifoot.eep
+Compiled:    25.06.2005, 11:24:10
+Pass:        2
+     1: ; MIDIfoot.asm   Control a MIDI foot switch controller with Atmel AVR 90S2313
+     2: ; version 1.6  June 25, 2005     Alan Probandt     Portland, Oregon USA
+     3: 
+     4: ;  This circuit runs a foot switch board that has 12 momentary normal-open push switches.
+     5: ;  These switches are labeled 0 - 9, 10's Up, and 10's Down.
+     6: ;  There is a set of six DIP switches also.
+     7: ;  DIP switches 1-4 set the MIDI channel.
+     8: ;  DIP 5 selects between sending Program Change only or PrgChng and Song Position (beginning).
+     9: ;  DIP 6 selects between displaying 1-128 or  0-127 for the program number on the LEDs.
+    10: 
+    11: ; The switches are organized into banks of ten.  There are twelve banks that correspond to 
+    12: ;  MIDI program numbers 1 to 128.
+    13: ; When pedal0 - pedal9 is pressed, change the MIDI program number in the current bank.
+    14: ; No MIDI program change message when 10sUp or 10sDown is pressed.   Put a dash in 
+    15: ;  the 10's digit to let user know pedal was pressed.  When pedal0 - pedal9 is pressed,
+    16: ;  change the bank and send the new MIDI program change message.
+    17: ;  Selecting Program 0 sends the MIDI start command (0xFA), prg 129 sends MIDI stop (0xFC).
+    18: 
+    19: ;  three functions:  multiplex 7 segment LEDs,  read three sets of switches, and output MIDI commands.
+    20: ; The switches are read by a pair of 74HC147 priority encoders (reverse logic output).
+    21: ;  	U2  74hc147  	    U3  74hc147	
+    22: ;  out 	0 1 2           out 0 1 2
+    23: ;	-------------------------------- 
+    24: ;  	0 1 1 SW5           0 1 1 Pedal 3
+    25: ;  	1 0 1 10's Up       1 0 1 Pedal 4
+    26: ;  	0 0 1 10's Down     0 0 1 Pedal 5
+    27: ;  	1 1 0 Pedal 0       1 1 0 Pedal 6
+    28: ;  	0 1 0 Pedal 1       0 1 0 Pedal 7
+    29: ;  	1 0 0 Pedal 2       1 0 0 Pedal 8
+    30: ;                           0 0 0 Pedal 9
+    31: ;
+    32: ;
+    33: ;            Atmel AVR 90s2313
+    34: ;	 RESET\	|1          20| VCC +5V
+    35: ;     1's digit	|2 pd0  pb7 19| seg 100 - DIP sw4
+    36: ;      MIDI out |3 pd1  pb6 18| seg g - DIP sw3
+    37: ;   	 8MHz   |4 xtl1 pb5 17| seg f - DIP sw2
+    38: ;   	 8MHz   |5 xtl2 pb4 16| seg e - DIP sw1
+    39: ; 	out0 U3 |6 pd2  pb3 15| seg d - DIP sw6
+    40: ; 	out1 U3 |7 pd3  pb2 14| seg c - out2 U2
+    41: ; 	out2 U3 |8 pd4  pb1 13| seg b - out1 U2
+    42: ;		|9 pd5  pb0 12| seg a - out0 U2
+    43: ;    	    GND |10     pd6 11| 10's digit
+    44: 
+    45: 
+    46: .nolist
+    49: 
+    50: .equ	clock	= 8000000
+    51: .equ	MIDIbaud = 31250
+    52: .equ	MIDIUBRR = ((clock/MIDIbaud)/16)-1
+    53: .equ	LED_TCNT_high   = 0xff; 16-bit timer with large prescale
+    54: .equ	LED_TCNT_low   = 200; 16-bit timer with large prescale
+    55: .equ	LEDport = portb
+    56: .equ	LEDselectPort = portd
+    57: .equ	LEDselect1pin = 0  ; portd0
+    58: .equ	LEDselect10pin = 6 ; portd6
+    59: .equ	LED100pin = 7 ;portb7
+    60: .equ	SW6pin	= 3 ; port b
+    61: .equ	SW5	= 4 ; bit in Switches register showing raw state of Switch 5 (PrgmChange vs. PrgmChng & SongPtr)
+    62: .equ	U3ddr   = ddrd	
+    63: .equ	U3Pin  = pind 
+    64: .equ	U2ddr   = ddrb  
+    65: .equ	U2Pin  = pinb
+    66: 
+    67:  
+    68: 
+    69: ;************************
+    70: ;  Register definitions
+    71: ;************************
+    72: .def	Counter		= r1
+    73: .def	SevenSegValue	= r2
+    74: .def	MIDIchannel 	= r3
+    75: .def	PowerOn		= r4
+    76: 
+    77: 
+    78: ; high registers
+    79: .def	temp		= r16
+    80: .def	irqtemp		= r17
+    81: .def	ProgramValue	= r18  ;Always 1-128 in source code. "SendMIDIprg" decrements
+    82: ;	PV for MIDI data format {0x00 - 0x7f}. 
+    83: .def	DIPswitches 	= r19 ; raw negative logic when switches are read
+    84: .equ	PrgChngMode	= 4 ; switch 5 gnd = on>>Send song select and program change
+    85: .equ	Mode128		= 5 ; switch 6 gnd = on>>Use pgm 1-128, else use prgm 0-127
+    86: .def	Flags		= r20
+    87: .equ	UpdateSwitches	= 0
+    88: .equ	LEDselect	= 1
+    89: .equ	Digit100	= 2
+    90: .equ	SwitchDown	= 3
+    91: .equ	PrgChngModeFlag	= 4 ;  1=Send song select and program change  0=send program change msg only
+    92: .equ	Mode128Flag	= 5 ;  1=use pgm 1-128, 0=use prgm 0-127
+    93: 
+    94: .def	OnesValue	= r21
+    95: .def	TensValue	= r22
+    96: .def	HundsValue	= r23
+    97: .def	BankValue	= r24
+    98: .def	PedalState	= r25
+    99: .def	StorePortB	= r26
+   100: 
+   101: 
+   102: 
+   103: .dseg
+   104: .org	0x60
+   105: RAM100:
+   106: .byte	1
+   107: RAM10:
+   108: .byte	1
+   109: RAM1:
+   110: .byte	1
+   111: StorePortD:
+   112: .byte	1
+   113: 
+   114: .cseg
+   115:     
+   116: ;***************************************************************
+   117: ; Interrupt Vector table -  Code Starts Here on Reset/Power On
+   118: ;***************************************************************
+   119: .org 0
+   120: 000000   C00A  rjmp	reset
+   121: .org INT0addr
+   122: 000001   9518  reti		; External interrupt 0 handler  $001 
+   123: .org INT1addr
+   124: 000002   9518  reti		; External interrupt 1 handler  $002
+   125: .org ICP1addr
+   126: 000003   9518  reti		; Timer1 capture event handler  $003
+   127: .org OC1addr
+   128: 000004   9518  reti		; Timer1 compare match     $004
+   129: .org OVF1addr
+   130: 000005   C132  rjmp TIM1_OVF	; Timer1 overflow handler  $005
+   131: .org OVF0addr
+   132: 000006   9518  reti		; Timer0 overflow handler  $006
+   133: .org URXCaddr
+   134: 000007   9518  reti		; UART Rx Complete $007
+   135: .org UDREaddr
+   136: 000008   9518  reti		; UART Data Register empty $008
+   137: .org UTXCaddr
+   138: 000009   9518  reti		; UART Tx Complete $009
+   139: .org ACIaddr
+   140: 00000A   9518  reti		; Analog comparator handler $00a
+   141: 
+   142: 
+   143: ;**************************************************
+   144: ;  Code
+   145: ;**************************************************
+   146: 
+   147: reset:
+   148: ;****  initialize stack pointer before anything else
+   149: 00000B   ED0F  ldi	temp, RAMEND 
+   150: 00000C   BF0D  out	spl, temp
+   151:                               
+   152: ;**** initialize I/O ports
+   153: 00000D   E401  ldi	temp, 0b01000001 ; read U3 on 2,3,4  out 1's digit on 0; UART TxD on 1; out 10's digit on 6
+   154: 00000E   BB01  out	U3ddr, temp ; ddrd
+   155: 		                            
+   156: ;**** initialize timers
+   157: 00000F   E800  ldi	temp, (1 << TOIE1) ; set TOIE1 - LED multiplex
+   158: 000010   BF09  out	TIMSK,temp 	; TOIE enable interrupt on  overflow
+   159: 000011   BF08  out	TIFR,temp	;  to clear T/C1 overflow flag
+   160: 
+   161: ; --initialize timer1  interrupt to run continously at 1/60th second
+   162: 000012   EF0F  ldi	Temp, LED_TCNT_High ; load timer1 count register for 1/60 second
+   163: 000013   BD0D  out	TCNT1H, Temp
+   164: 000014   EC08  ldi	Temp,LED_TCNT_Low ; load timer1 count register for 1/60 second
+   165: 000015   BD0C  out	TCNT1L, Temp
+   166: 000016   E005  ldi	Temp, ( (1<<CS12) | (0<<CS11) | (1<<CS10) ); start timer 1 at preset sysclk/1024 7812overflows/sec
+   167: 000017   BD0E  out	TCCR1B, Temp
+   168: 	
+   169: ;---initialize UART
+   170: 000018   E00F  ldi	temp,MIDIUBRR ; 15; ((clock/31250)/16)-1 MIDI baud of 31250
+   171: 000019   B909  out	UBRR,temp
+   172: 00001A   6008  sbr	temp, (1<<TXEN) ; UART transmit enabled
+   173: 00001B   B90A  out	UCR,temp	; setup UART control register
+   174: 	
+   175: ;---initialize global interrupt enable
+   176: 00001C   9478  sei
+   177: 
+   178: ;---initialize watchdog
+   179: 00001D   E00C  ldi	temp, (1<<WDE) | (1<<WDP2) | (0<<WDP1) | (0<<WDP0) ; 256ms
+   180: 00001E   BD01  out	WDTCR, temp
+   181: 
+   182: ;**** initialize application
+   183: ; --- PowerOn register will be 0xAA if reset was caused by Watchdog timeout.
+   184: ; --- If WD reset, don't initialize all the variables or change the current program #. 
+   185: 00001F   2D04  mov	temp, PowerOn
+   186: 000020   3A0A  cpi	temp, 0xaa
+   187: 000021   F079  breq	WDtimeOut
+   188: 000022   EA0A  ldi	temp, 0xaa
+   189: 000023   2E40  mov	PowerOn, temp
+   190: 000024   2755  clr	OnesValue
+   191: 000025   2766  clr	TensValue
+   192: 000026   2777  clr	HundsValue
+   193: 000027   2788  clr	BankValue
+   194: 000028   2722  clr	ProgramValue
+   195: 000029   2700  clr	temp
+   196: 00002A   E001  ldi	temp, 0x01 ; AVR ProgramValue is 01, but MIDI program change is 00
+   197: 00002B   2E20  mov	SevenSegValue, temp
+   198: 00002C   2F20  mov	ProgramValue, temp
+   199: 00002D   2744  clr	Flags
+   200: 00002E   2733  clr	DIPswitches
+   201: 00002F   E00A  ldi	temp, 10
+   202: 000030   2E10  mov	Counter, temp  ; test switches every 1/6 of a second; or after ten LED mux IRQs
+   203: 	
+   204: WDTimeOut: ; come here if wiring causes the watchdog to trigger.  Reset with changing variables
+   205: 
+   206: ;--   read initial DIP switch state --  up position= open; reads logic high- switches read reverse logic 1111= channel 0
+   207: 
+   208: 000031   2700  clr	temp; all 8 pins on portb need to be read at program initialization
+   209: 000032   BB07  out	DDRB, temp  ;  U2out on pb2-0, DIP6 on pb3, DIP 4-1 on pb7-4
+   210: 000033   EF0F  ser	temp
+   211: 000034   BB08  out	PortB, temp;  turn on all port b pull-up resistors
+   212: 000035   0000  nop	; wait one cycle for instruction to go through pipeline before reading pin state
+   213: 000036   B396  in	PedalState, U2pin  ; read  U2 (switch 5 in U2 matrix) and switch 6 (bit 0)
+   214: 000037   2700  clr	temp
+   215: 000038   BB08  out	portb, temp ; don't light display when setting portb as outputs
+   216: 000039   EF0F  ser	temp
+   217: 00003A   BB07  out	U2ddr, temp ; set port b to output LED display
+   218: 	
+   219: ; test Mode128 setting.  DIP#6 is on (grounded) by default. MIDI program LED display is 01-128.
+   220: ; Mode128 setting is handled in the ProgramValue register.
+   221: 00003B   FB93  bst	PedalState, SW6pin  ; put switch6 into T flag  [Bit Store to T]
+   222: 00003C   7D3F  cbr	DIPswitches, (1<<Mode128)
+   223: 00003D   6240  sbr	Flags, (1<<Mode128Flag); bit 5
+   224: 00003E   F416  brtc	TstSw10	; if T is clear, jump.  Switch 6  is active (connected to ground) -use prgm 1-128
+   225: 00003F   6230  sbr	DIPswitches, (1<<Mode128); reverse settings if Switch 6  is off (pulled high)
+   226: 000040   7D4F  cbr	Flags, (1<<Mode128Flag)
+   227: 	
+   228: TstSw10:
+   229: 000041   2F09  mov	temp, PedalState
+   230: 000042   7007  andi	temp, 0b00000111  ; check status of U2 output for state of switch5
+   231: 000043   3006  cpi	temp, 0b00000110  ; switch 5 is on (U2 A0 is ground) if equal
+   232: 000044   F419  brne	TstSw30  ; branch if switch is off
+   233: 000045   7E3F  cbr	DIPswitches, (1<<SW5)
+   234: 000046   6140  sbr	Flags, (1<<PrgChngModeFlag); sw5 down= flag on. Output Song Select and Pgm.
+   235: 000047   C002  rjmp	TstSw40
+   236: TstSw30:
+   237: 000048   6130  sbr	DIPswitches,(1<< PrgChngMode); register holds raw logic from DIP switches
+   238: 000049   7E4F  cbr	Flags, (1<<PrgChngModeFlag)
+   239: 	
+   240: TstSw40: ; get MIDI channel
+   241: 00004A   9592  swap	PedalState
+   242: 00004B   709F  andi	PedalState, 0x0f
+   243: 00004C   2B39  or	DIPswitches, PedalState  ; 00001111 is MIDI channel 0   - reverse logic
+   244: 00004D   9590  com	PedalState
+   245: 00004E   709F  andi	PedalState, 0x0f
+   246: 00004F   2E39  mov	MIDIchannel, PedalState
+   247: ; MIDIchannel register initialized;  PrgChng Mode initialized, 127/128 mode initialized
+   248: 
+   249: 
+   250: ;************************************************
+   251: ;%%%%%%%%%%%%%%%%%%%%%%%%
+   252: ;  Main Program
+   253: ;%%%%%%%%%%%%%%%%%%%%%%%%
+   254: ;************************************************
+   255: 
+   256: main:
+   257: 000050   FF40  sbrs	Flags, UpdateSwitches
+   258: 000051   CFFE  rjmp	main
+   259: 
+   260: 000052   7F4E  cbr	Flags, (1<<UpdateSwitches)
+   261: 000053   E00A  ldi	temp,10
+   262: 000054   2E10  mov	Counter, temp
+   263: 000055   D001  rcall	TestPedals
+   264: 
+   265: 000056   CFF9  rjmp	main
+   266: 
+   267: ;*********************
+   268: ; test pedal switches
+   269: ;*********************
+   270: TestPedals:
+   271: 000057   94F8  cli
+   272: 000058   B302  in	temp, portd
+   273: 000059   9300  sts	StorePortD, temp
+        00005A   0063
+   274: 00005B   B3A8  in	StorePortB, portb
+   275: 	
+   276: 00005C   EF08  ldi	temp,0b11111000
+   277: 00005D   BB07  out	ddrb, temp
+   278: 00005E   E007  ldi	temp, 0x07
+   279: 00005F   BB08  out	portb, temp; turn on pull-up resistors
+   280: 000060   0000  nop
+   281: 000061   FD43  sbrc	Flags, SwitchDown
+   282: 000062   C067  rjmp	WaitSwitchRelease
+   283: 
+   284: ; test for any switch pressed on U2 ; sw5, 10up, 10dn, p0, p1, p2  U2 
+   285: 000063   B396  in	PedalState, pinb
+   286: 000064   0000  nop
+   287: 000065   7097  andi	PedalState, 0b00000111
+   288: 000066   3097  cpi	PedalState, 0b00000111 ; no switch pressed on U2
+   289: 000067   F139  breq	CheckU3 ; no U2 switch press, check on U3
+   290: 	
+   291: 000068   6048  sbr	Flags, (1<<SwitchDown)  ; set flag that says wait until key is released
+   292: ; Update Pedal status for new U2 value
+   293: 000069   3095  cpi	PedalState, 0b00000101 ; check for 10s Up key
+   294: 00006A   F1C1  breq	TP_incBankValue 
+   295: 00006B   3094  cpi	PedalState, 0b00000100 ; check for 10s Down key
+   296: 00006C   F409  brne	TP5
+   297: 00006D   C04D  rjmp	TP_decBankValue
+   298: 	
+   299: 00006E   9590  TP5:	com	PedalState ; isolate the pedal number
+   300: 00006F   7093  andi	PedalState, 0b00000011
+   301: 000070   2F59  mov	onesValue, PedalState
+   302: 	
+   303: 000071   D074  rcall	DigitsToProgramValue
+   304: 000072   D0A5  rcall	DigitsTo7SegValue
+   305: 000073   3821  cpi	ProgramValue, 129
+   306: 000074   F059  breq	TP_Stop
+   307: 000075   3020  cpi	ProgramValue, 0
+   308: 000076   F089  breq	TP_Start	
+   309: 000077   D0AA  rcall	SendMIDIprg
+   310: 
+   311: ;--------------------------------------
+   312: TP_exit: 
+   313: 000078   9100  lds	temp, StorePortD
+        000079   0063
+   314: 00007A   BB02  out	portd, temp
+   315: 00007B   EF0F  ser	temp
+   316: 00007C   BB07  out	ddrb, temp
+   317: 00007D   BBA8  out	portb, StorePortB
+   318: 00007E   9478  sei
+   319: 00007F   9508  ret
+   320: ;--------------------------------------
+   321: 
+   322: TP_Stop:
+   323: 000080   E50C  ldi	temp, 0x5c ; load 'SP' into SevenSeg for MIDI stop cmd (#129)
+   324: 000081   2E20  mov	SevenSegValue, temp
+   325: 000082   7F4B  cbr	Flags, (1<<Digit100) ; display 'SP' instead of '1SP'
+   326: 000083   EF0C  ldi	temp, 0xfc ; MIDI system common message for Stop
+   327: 000084   B90C  out	UDR, temp
+   328: TP_Stop0:
+   329: 000085   9B5D  sbis	USR, UDRE 
+   330: 000086   CFFE  rjmp	TP_Stop0
+   331: 000087   CFF0  rjmp	TP_exit
+   332: 
+   333: TP_Start:
+   334: 000088   E50B  ldi	temp, 0x5b ; load 'Sr' into SevenSeg for MIDI start cmd (#00)
+   335: 000089   2E20  mov	SevenSegValue, temp
+   336: 00008A   EF0A  ldi	temp, 0xfa ; MIDI system common message for Start
+   337: 00008B   B90C  out	UDR, temp
+   338: TP_Start0:
+   339: 00008C   9B5D  sbis	USR, UDRE 
+   340: 00008D   CFFE  rjmp	TP_Start0
+   341: 00008E   CFE9  rjmp	TP_exit
+   342: 
+   343: CheckU3:
+   344: 00008F   B390  in	PedalState, U3pin
+   345: 000090   9596  lsr	PedalState  
+   346: 000091   9596  lsr	PedalState
+   347: 000092   7097  andi	PedalState, 0b00000111
+   348: 000093   3097  cpi	PedalState, 0b00000111 ; no switch pressed on U3
+   349: 000094   F069  breq	NoPedalPresses
+   350: ; U3 is all pedal numbers in sequence - starting at 3
+   351: 000095   6048  sbr	Flags, (1<<SwitchDown)
+   352: 000096   9590  com	PedalState
+   353: 000097   7097  andi	PedalState, 0b00000111
+   354: 000098   5F9E  subi	PedalState, -2
+   355: 000099   2F59  mov	OnesValue, PedalState
+   356: 00009A   D04B  rcall	DigitsToProgramValue
+   357: 00009B   D07C  rcall	DigitsTo7SegValue
+   358: 00009C   3821  cpi	ProgramValue, 129
+   359: 00009D   F311  breq	TP_Stop
+   360: 00009E   3020  cpi	ProgramValue, 0
+   361: 00009F   F341  breq	TP_Start	
+   362: 0000A0   D081  rcall	SendMIDIprg
+   363: 0000A1   CFD6  rjmp	TP_exit
+   364: 
+   365: NoPedalPresses:
+   366: 0000A2   CFD5  rjmp	TP_exit
+   367: 
+   368: ; don't send any MIDI program change message when 10sUp or 10sDown is pressed.  
+   369: ; Put a dash in the 10's digit to let user know pedal was pressed.
+   370: TP_incBankValue:
+   371: 0000A3   9583  inc	BankValue
+   372: 0000A4   308D  cpi	BankValue, 13
+   373: 0000A5   F421  brne	TPinc20
+   374: 0000A6   2788  clr	BankValue ; roll over to bank 0
+   375: 0000A7   2766  clr	TensValue
+   376: 0000A8   2777  clr	HundsValue
+   377: 0000A9   C009  rjmp	TPincExit
+   378: TPinc20:
+   379: 0000AA   2777  clr	HundsValue
+   380: 0000AB   308A  cpi	BankValue,10
+   381: 0000AC   F02C  brlt	TPinc30
+   382: 0000AD   E071  ldi	HundsValue, 1
+   383: 0000AE   2F08  mov	temp, BankValue ; don't change BankValue to get new TensValue
+   384: 0000AF   500A  subi	temp, 10
+   385: 0000B0   2F60  mov	TensValue, temp
+   386: 0000B1   C001  rjmp	TPincExit
+   387: 0000B2   9563  TPinc30: inc	TensValue
+   388: TPincExit:
+   389: 0000B3   D026  rcall	BankValueToDigits
+   390: 0000B4   D031  rcall	DigitsToProgramValue
+   391: 0000B5   D062  rcall	DigitsTo7SegValue
+   392: 0000B6   2D02  mov	temp, SevenSegValue
+   393: 0000B7   700F  andi	temp, 0x0f  ; clear tens digit
+   394: 0000B8   6A00  ori	temp, 0xa0 ; put dash into tens digit display
+   395: 0000B9   2E20  mov	SevenSegValue, temp
+   396: 0000BA   CFBD  rjmp	TP_exit
+   397: 
+   398: ;------------------------
+   399: TP_decBankValue:
+   400: 0000BB   958A  dec	BankValue ; original BankValue 12--00, new BankValue 11 or -1(255)
+   401: 0000BC   2388  tst	BankValue
+   402: 0000BD   F00A  brmi	TPdec10 ; new BankValue = -1, change to 12
+   403: 0000BE   C003  rjmp	TPdec_exit
+   404: 
+   405: TPdec10:
+   406: 0000BF   E08C  ldi	BankValue, 12
+   407: 0000C0   E062  ldi	TensValue, 2
+   408: 0000C1   E071  ldi	HundsValue, 1
+   409: TPdec_exit:
+   410: 0000C2   D017  rcall	BankValueToDigits
+   411: 0000C3   D022  rcall	DigitsToProgramValue
+   412: 0000C4   D053  rcall	DigitsTo7SegValue
+   413: 0000C5   2D02  mov	temp, SevenSegValue
+   414: 0000C6   700F  andi	temp, 0x0f  ; clear tens digit
+   415: 0000C7   6A00  ori	temp, 0xa0 ; put dash into tens digit display
+   416: 0000C8   2E20  mov	SevenSegValue, temp
+   417: 0000C9   CFAE  rjmp	TP_exit
+   418: 
+   419: WaitSwitchRelease:
+   420: 0000CA   B396  in	PedalState, pinb
+   421: 0000CB   0000  nop
+   422: 0000CC   7097  andi	PedalState, 0b00000111; sw5, 10up, 10dn, P0, P1,  P2  on  U2
+   423: 0000CD   3097  cpi	PedalState, 0b00000111 ; no switch pressed on U2
+   424: 0000CE   F009  breq	WSR10
+   425: 0000CF   CFA8  rjmp	TP_exit
+   426: 0000D0   B390  WSR10:	in	PedalState, U3pin
+   427: 0000D1   0000  nop
+   428: 0000D2   9596  lsr	PedalState
+   429: 0000D3   9596  lsr	PedalState
+   430: 0000D4   7097  andi	PedalState, 0b00000111; check for P3, P4, P5, P6, P7, P8, P9 on U3
+   431: 0000D5   3097  cpi	PedalState, 0b00000111 ; no switch pressed on U3
+   432: 0000D6   F009  breq	WSR20
+   433: 0000D7   CFA0  rjmp	TP_exit
+   434: 0000D8   7F47  WSR20:	cbr	Flags, (1<<SwitchDown)
+   435: 0000D9   CF9E  rjmp	TP_exit
+   436: 
+   437: ;*************************************************************************
+   438: ; end of TestPedals
+   439: ;*************************************************************************
+   440: 
+   441: 
+   442: BankValueToDigits:
+   443: 0000DA   308A  cpi	BankValue, 10
+   444: 0000DB   F424  brge	BVD10
+   445: 0000DC   2777  clr	HundsValue
+   446: 0000DD   7F4B  cbr	Flags, (1<<Digit100)
+   447: 0000DE   2F68  mov	TensValue, BankValue
+   448: 0000DF   9508  ret
+   449: 0000E0   E071  BVD10:	ldi	HundsValue,1
+   450: 0000E1   6044  sbr	Flags, (1<<Digit100)
+   451: 0000E2   2F08  mov	temp, BankValue
+   452: 0000E3   500A  subi	temp, 10
+   453: 0000E4   2F60  mov	TensValue, temp
+   454: 0000E5   9508  ret
+   455: 
+   456: ;***************************************************************
+   457: DigitsToProgramValue:
+   458: ; three register variables: HundsValue, TensValue, OnesValue to binary value in register 'ProgramValue'
+   459: 0000E6   9370  sts	RAM100, HundsValue
+        0000E7   0060
+   460: 0000E8   9360  sts	RAM10, TensValue
+        0000E9   0061
+   461: 0000EA   9350  sts	RAM1, OnesValue
+        0000EB   0062
+   462: 0000EC   2722  clr	ProgramValue
+   463: 0000ED   7F4B  cbr	Flags, (1<<Digit100)
+   464: 0000EE   2377  tst	HundsValue
+   465: 0000EF   F011  breq	DPV10
+   466: 0000F0   592C  subi	ProgramValue, -100
+   467: 0000F1   6044  sbr	Flags, (1<<Digit100)
+   468: 0000F2   2366  DPV10:	tst	TensValue
+   469: 0000F3   F019  breq	DPV20
+   470: 0000F4   956A  dec	TensValue
+   471: 0000F5   5F26  subi	ProgramValue, -10
+   472: 0000F6   CFFB  rjmp	DPV10
+   473: 0000F7   2355  DPV20:	tst	OnesValue
+   474: 0000F8   F019  breq	DPVexit
+   475: 0000F9   955A  dec	OnesValue
+   476: 0000FA   5F2F  subi	ProgramValue, -1
+   477: 0000FB   CFFB  rjmp	DPV20
+   478: DPVexit:
+   479: 0000FC   9170  lds	HundsValue, RAM100
+        0000FD   0060
+   480: 0000FE   9160  lds	TensValue, RAM10
+        0000FF   0061
+   481: 000100   9150  lds	OnesValue, RAM1
+        000101   0062
+   482: 000102   9508  ret
+   483: 
+   484: ;********************************************************************************
+   485: ; Mode128Adjust-   change digits if user wants program displayed as 00-127, instead of default 01-128.
+   486: 
+   487: Mode128Adjust: 
+   488: 000103   2F02  mov	temp, ProgramValue
+   489: 000104   950A  dec	temp
+   490: 000105   2777  clr	HundsValue
+   491: 000106   2766  clr	TensValue
+   492: 000107   2755  clr	OnesValue
+   493: ; convert adjusted copy of ProgramValue to digit values
+   494: 000108   5604  MdAdj05: subi	temp, 100
+   495: 000109   F010  brcs	MdAdj10  ; value 100 or greater
+   496: 00010A   9573  inc	HundsValue
+   497: 00010B   CFFC  rjmp	MdAdj05
+   498: 00010C   590C  MdAdj10: subi	temp, -100 ; restore the value before the subtraction that caused carry flag to be set
+   499: 00010D   500A  MdAdj20: subi	temp, 10
+   500: 00010E   F010  brcs	MdAdj30 
+   501: 00010F   9563  inc	TensValue
+   502: 000110   CFFC  rjmp	MdAdj20
+   503: 000111   5F06  MdAdj30: subi	temp, -10 ; restore the value before the subtraction that caused carry flag to be set	
+   504: 000112   5001  MdAdj40: subi	temp, 1
+   505: 000113   F010  brcs	MdAdj_exit
+   506: 000114   9553  inc	OnesValue
+   507: 000115   CFFC  rjmp	MdAdj40
+   508: MdAdj_exit: 
+   509: 000116   5F0F  subi	temp, -1 ; restore the value before the subtraction that caused carry flag to be set
+   510: 000117   9508  ret
+   511: 
+   512: ;***************************************************************************
+   513: DigitsTo7SegValue:  ; enter with ProgramValue register formatted into the three Digit registers.
+   514: ; test the Mode128Flag.  Set (default) = display Programs 01-128.  Clear = display 00-127
+   515: ; If Mode128 is clear, then convert digits to binary, decrement bin value,  convert back to digits, and put digits into 7seg.
+   516: 000118   FF45  sbrs	Flags, Mode128Flag
+   517: 000119   DFE9  rcall	Mode128adjust
+   518: 00011A   7F4B  cbr	Flags, (1<<Digit100)
+   519: 00011B   2377  tst	HundsValue
+   520: 00011C   F009  breq	D7SV10
+   521: 00011D   6044  sbr	Flags, (1<<Digit100)
+   522: 00011E   2E26  D7SV10:	mov	SevenSegValue, TensValue
+   523: 00011F   9422  swap	SevenSegValue
+   524: 000120   2A25  or	SevenSegValue, OnesValue
+   525: 000121   9508  ret
+   526: 
+   527: 
+   528: ;******************************************
+   529: ;   MIDI routines
+   530: ;******************************************
+   531: SendMIDIprg:
+   532: 000122   2D03  mov	temp, MIDIchannel
+   533: 000123   6C00  ori	temp, 0xc0
+   534: 000124   B90C  out	UDR, temp
+   535: 000125   9B5D  SMidi0:	sbis	USR, UDRE
+   536: 000126   CFFE  rjmp	SMidi0
+   537: 
+   538: 000127   2F02  mov	temp, ProgramValue; PV register variable is always 128 - 01
+   539: 000128   950A  dec	temp
+   540: 000129   B90C  out	UDR, temp
+   541: 00012A   9B5D  SMidi1:	sbis	USR, UDRE
+   542: 00012B   CFFE  rjmp	SMidi1
+   543: 00012C   FF44  sbrs	Flags, PrgChngModeFlag
+   544: 00012D   9508  ret
+   545: 	; send MIDI system common song_select and song number
+   546: 	
+   547: 00012E   EF03  ldi	temp, 0xf3
+   548: 00012F   B90C  out	UDR, temp
+   549: 000130   9B5D  SMidi2:	sbis	USR, UDRE
+   550: 000131   CFFE  rjmp	SMidi2
+   551: 000132   2F02  mov	temp, ProgramValue
+   552: 000133   950A  dec	temp
+   553: 000134   B90C  out	UDR, temp
+   554: 000135   9B5D  SMidi3:	sbis	USR, UDRE
+   555: 000136   CFFE  rjmp	SMidi3	
+   556: 000137   9508  ret
+   557: 
+   558: 
+   559: ;*******************************************
+   560: ;  LED display   Timer interrupt routine   
+   561: ;  puts BCD digits in SevenSegValue onto LEDs
+   562: ;*******************************************
+   563: TIM1_OVF:
+   564: 000138   931F  push	irqtemp
+   565: 000139   95A8  wdr		; reset watchdog 
+   566: 	
+   567: 00013A   EF1F  ldi	irqtemp, LED_TCNT_high
+   568: 00013B   BD1D  out	TCNT1H, irqtemp
+   569: 00013C   EC18  ldi	irqtemp,LED_TCNT_low
+   570: 00013D   BD1C  out	TCNT1L, irqtemp	; 1/60th Second period  - 8MHz clock/1024 preset
+   571: 00013E   EF1F  ser	irqtemp
+   572: 00013F   BB17  out	ddrb, irqtemp
+   573: 	
+   574: 000140   941A  dec	Counter
+   575: 000141   F409  brne	T1_LED
+   576: 000142   6041  sbr	Flags, (1<<UpdateSwitches)
+   577: 	
+   578: 	
+   579: 000143   FF41  T1_LED:	sbrs	Flags, LEDselect ; if entered this IRQ with LEDselect hi ( MSD lighted), then skip to doLSD
+   580: 000144   C011  rjmp	doMSD ; if entered this IRQ with LEDselect low ( LSD lighted), then don't skip this opcode
+   581: 000145   7F4D  cbr	Flags, (1<<LEDselect)
+   582: 000146   E0F2  ldi	ZH, high (SevenSegTable*2)  ; load 16-bit Z register with the byte address of the LED pattern table
+   583: 000147   EDE2  ldi	ZL, low  (SevenSegTable*2)
+   584: 000148   2D12  mov	irqtemp, SevenSegValue	  ;SevenSegValue is the hex digit pair to be displayed
+   585: 000149   701F  andi	irqtemp, 0x0f	; mask out the most sig digit
+   586: 00014A   0FE1  add	ZL, irqtemp	; add digit value offset to Z low
+   587: 00014B   F408  brcc	LED_0		; add one to Z high if result crosses a 256 byte boundary
+   588: 00014C   95F3  inc	ZH
+   589: 00014D   95C8  LED_0:	lpm			; move LED 7-seg digit pattern for the digit to R0 from program memory table
+   590: 00014E   2D10  mov	irqtemp, r0	;   bits 76543210
+   591: 00014F   FD42  sbrc	Flags, Digit100 ; if Digit100 flag is set, then light the 100's digit
+   592: 000150   6810  sbr	irqtemp,(1 << LED100pin)
+   593: 000151   0000  nop
+   594: 000152   BB18  out	LEDport, irqtemp
+   595: 000153   9896  cbi	LEDselectport, LEDselect10pin ; left (MSB) LED digit switched off 
+   596: 000154   9A90  sbi	LEDselectport, LEDselect1pin  ; right (MSB) LED digit gets lighted
+   597: 000155   C011  rjmp	LEDexit
+   598: 
+   599: doMSD:	;RightLEDdigit 10's put new value on most-sig digit
+   600: 000156   6042  sbr	Flags, (1<<LEDselect)
+   601: 000157   E0F2  ldi	ZH, high (SevenSegTable*2)   ; reload 16-bit Z register with the byte address of the LED pattern table
+   602: 000158   EDE2  ldi	ZL, low  (SevenSegTable*2)
+   603: 000159   2D12  mov	irqtemp, SevenSegValue	;SevenSegValue is the hex digit pair to be displayed
+   604: 00015A   7F10  andi	irqtemp, 0xf0	; mask out the least sig digit
+   605: 00015B   9512  swap	irqtemp     	; move most sig digit to bits 0-3
+   606: 00015C   0FE1  add	ZL, irqtemp	; add digit value offset to Z low
+   607: 00015D   F408  brcc	LED_1		; add one to Z high if result crosses a 256 byte boundary
+   608: 00015E   95F3  inc	ZH
+   609: 00015F   95C8  LED_1:	lpm			; move LED 7-seg digit pattern for the digit to R0 from program memory table
+   610: 000160   2D10  mov	irqtemp, r0	;  bits 76543210 
+   611: 000161   FD42  sbrc	Flags, Digit100 ; if Digit100 flag is set, then light the 100's digit
+   612: 000162   6810  sbr	irqtemp,(1 << LED100pin)
+   613: 000163   0000  nop	 
+   614: 000164   BB18  out	LEDport, irqtemp ;	Igfedcba
+   615: 000165   9A96  sbi	LEDselectport, LEDselect10pin ; left (MSB) LED digit gets lighted
+   616: 000166   9890  cbi	LEDselectport, LEDselect1pin  ; right (MSB) LED digit switched off
+   617: 
+   618: 000167   911F  LEDexit: pop	irqtemp
+   619: 000168   9518  reti
+   620: 
+   621: 
+   622: ;; display on a dual LED 7-segment display - Common Cathode - segments wired in parallel
+   623: ;;  - bit 7 100's - PD0 lights LeastSigDigit - PD6 lights MostSigDigit
+   624: SevenSegTable:		  
+   625: .db   0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x67,0x40,0x50,0x73
+ -> Warning 004: Number of bytes on line is odd, added 00 to fit program memory!
+   File: D:\AVR\0_source\Midifoot\Midifoot.asm, Line: 625
+   Source line: .db   0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x67,0x40,0x50,0x73
+        000169 063F 4F5B 6D66 077D
+        00016D 677F 5040 0073
+   626:      
+   627: ;AT2313 Igfe dcba  display board  1=segment on
+   628: ;  bits 7654 3210  portB
+   629: ;   0   0011 1111  0x3f
+   630: ;   1   0000 0110  0x06
+   631: ;   2   0101 1011  0x5b
+   632: ;   3   0100 1111  0x4f
+   633: ;   4   0110 0110  0x66
+   634: ;   5   0110 1101  0x6d
+   635: ;   6   0111 1101  0x7d
+   636: ;   7   0000 0111  0x07
+   637: ;   8   0111 1111  0x7f
+   638: ;   9   0110 0111  0x67
+   639: ;   -   0100 0000  0x40   dash  aa
+   640: ;   t   0101 0000  0x50   looks like r for 'Start' 5b
+   641: ;   P   0111 0011  0x73   'Stop' 5c
+   642: 
+   643: 
+   644: ; shows program information when the code is read back from the AVR chip.  ASCII pairs must be reversed.
+   645: ;      ****  MIDIfoot.asm v1.6  June 25, 2005  Alan Probandt
+   646: .db   "****  IMIDoftoa.msv .1 6J nu e52 ,0250  lAnaP orabdn t"
+        000170 2A2A 2A2A 2020 4D49
+        000174 4449 666F 6F74 2E61
+        000178 736D 2076 312E 3620
+        00017C 204A 756E 6520 3235
+        000180 2C20 3230 3035 2020
+        000184 416C 616E 2050 726F
+        000188 6261 6E64 7420
+   647: 
+
+List of symbols:
+Type nDef nUsed Decimalval Hexvalue Name
+  T     1     0       2046      7FE AT90S2313
+  L     1     2         96       60 RAM100
+  L     1     2         97       61 RAM10
+  L     1     2         98       62 RAM1
+  L     1     2         99       63 STOREPORTD
+  L     1     2         11        B RESET
+  L     1     2         49       31 WDTIMEOUT
+  L     1     2         65       41 TSTSW10
+  L     1     2         72       48 TSTSW30
+  L     1     2         74       4A TSTSW40
+  L     1     4         80       50 MAIN
+  L     1     2         87       57 TESTPEDALS
+  L     1     2        110       6E TP5
+  L     1    18        120       78 TP_EXIT
+  L     1     4        128       80 TP_STOP
+  L     1     2        133       85 TP_STOP0
+  L     1     4        136       88 TP_START
+  L     1     2        140       8C TP_START0
+  L     1     2        143       8F CHECKU3
+  L     1     2        162       A2 NOPEDALPRESSES
+  L     1     2        163       A3 TP_INCBANKVALUE
+  L     1     2        170       AA TPINC20
+  L     1     2        178       B2 TPINC30
+  L     1     4        179       B3 TPINCEXIT
+  L     1     2        187       BB TP_DECBANKVALUE
+  L     1     2        191       BF TPDEC10
+  L     1     2        194       C2 TPDEC_EXIT
+  L     1     2        202       CA WAITSWITCHRELEASE
+  L     1     2        208       D0 WSR10
+  L     1     2        216       D8 WSR20
+  L     1     4        218       DA BANKVALUETODIGITS
+  L     1     2        224       E0 BVD10
+  L     1     8        230       E6 DIGITSTOPROGRAMVALUE
+  L     1     4        242       F2 DPV10
+  L     1     4        247       F7 DPV20
+  L     1     2        252       FC DPVEXIT
+  L     1     2        259      103 MODE128ADJUST
+  L     1     2        264      108 MDADJ05
+  L     1     2        268      10C MDADJ10
+  L     1     2        269      10D MDADJ20
+  L     1     2        273      111 MDADJ30
+  L     1     2        274      112 MDADJ40
+  L     1     2        278      116 MDADJ_EXIT
+  L     1     8        280      118 DIGITSTO7SEGVALUE
+  L     1     2        286      11E D7SV10
+  L     1     4        290      122 SENDMIDIPRG
+  L     1     2        293      125 SMIDI0
+  L     1     2        298      12A SMIDI1
+  L     1     2        304      130 SMIDI2
+  L     1     2        309      135 SMIDI3
+  L     1     2        312      138 TIM1_OVF
+  L     1     2        323      143 T1_LED
+  L     1     2        333      14D LED_0
+  L     1     2        342      156 DOMSD
+  L     1     2        351      15F LED_1
+  L     1     2        359      167 LEDEXIT
+  L     1     4        361      169 SEVENSEGTABLE
+  R     1     3          1        1 COUNTER
+  R     1    12          2        2 SEVENSEGVALUE
+  R     1     2          3        3 MIDICHANNEL
+  R     1     2          4        4 POWERON
+  R     1    93         16       10 TEMP
+  R     1    21         17       11 IRQTEMP
+  R     1    13         18       12 PROGRAMVALUE
+  R     1     6         19       13 DIPSWITCHES
+  R     1    26         20       14 FLAGS
+  R     1    10         21       15 ONESVALUE
+  R     1    14         22       16 TENSVALUE
+  R     1    13         23       17 HUNDSVALUE
+  R     1    12         24       18 BANKVALUE
+  R     1    34         25       19 PEDALSTATE
+  R     1     2         26       1A STOREPORTB
+  C     1     1    8000000   7A1200 CLOCK
+  C     1     1      31250     7A12 MIDIBAUD
+  C     1     1         15        F MIDIUBRR
+  C     1     2        255       FF LED_TCNT_HIGH
+  C     1     2        200       C8 LED_TCNT_LOW
+  C     1     2         24       18 LEDPORT
+  C     1     4         18       12 LEDSELECTPORT
+  C     1     2          0        0 LEDSELECT1PIN
+  C     1     2          6        6 LEDSELECT10PIN
+  C     1     2          7        7 LED100PIN
+  C     1     1          3        3 SW6PIN
+  C     1     1          4        4 SW5
+  C     1     1         17       11 U3DDR
+  C     1     2         16       10 U3PIN
+  C     1     1         23       17 U2DDR
+  C     1     1         22       16 U2PIN
+  C     1     1          4        4 PRGCHNGMODE
+  C     1     2          5        5 MODE128
+  C     1     3          0        0 UPDATESWITCHES
+  C     1     3          1        1 LEDSELECT
+  C     1     9          2        2 DIGIT100
+  C     1     4          3        3 SWITCHDOWN
+  C     1     3          4        4 PRGCHNGMODEFLAG
+  C     1     3          5        5 MODE128FLAG
+   No macros.
+
+Program             :      361 words.
+Constants           :       34 words.
+Total program memory:      395 words.
+Eeprom space        :        0 bytes.
+Data segment        :        4 bytes.
+Compilation completed, no errors.
+Compilation endet 25.06.2005, 11:24:11
