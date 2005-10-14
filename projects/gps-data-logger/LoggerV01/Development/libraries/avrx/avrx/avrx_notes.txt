@@ -1,0 +1,58 @@
+Notes to myself:
+
+6/20/02 - all suggestions, below, implemented as of 5/30/02  Actual performance
+testing not done, but responding to an interrupt from IDLE should be about twice
+as fast and SetSemaphore should be double to triple the speed when no or a lower
+priority task has been queue (relative to the caller).
+
+-------
+
+AvrXSetSemaphore
+	AvrXIntSetSemaphore works because "Running" isn't changed until Epilog.
+	So setting a semaphore and queueing a pid doesn't affect the state until
+	the running task is interrupted.  So, a further optimization would be:
+
+	rcall	AvrXIntSetSemapore
+
+	BeginCritical
+	lds	tmp0, Running+NextL	; 16 cycles if no taskswap.
+	lds	tmp1, Running+NextH
+	lds	tmp2, RunQueue+NextL
+	lds	tmp3, RunQueue+NextH
+	cp	tmp0, tmp2
+	cpc	tmp1, tmp3
+	breq	exit
+	rcall	IntProlog
+	rjmp	_Epilog
+exit:
+	EndCriticalReturn
+
+A better way would be to have some sort of flag set by QueuePid, as it "knows"
+when something has changed the head of a queue.
+
+In general, checking for task swap (e.g. top of queue changed) before doing actual
+task swap...
+
+This could be a general re-write of AvrX -> General scheduler in C.  Just use
+regular C constructs and swap contexts as needed.  This would probably be pretty
+fast at the expense of more task stack space needed.
+
+Epilog/Prolog/IdleTask
+    Have a bit somewhere that says we are in IDLE state and skip saving context
+    for first entry into kernel or restoring context for 1->0 transistion.
+
+Tasking, in general:
+        Critical kernel data (Running, RunQUeue, Syslevel, AvrXC_stack (IAR only)
+        could be a struct and all routines re-written to use that data via a pointer.
+        This would make for more instructions to load/reload, but faster because LDD
+        is only 2 cycles vs 3 for LDS.  
+
+	ldi	Zl, lo8(_kernel)
+	ldi	zh, hi8(_kernel)
+	ldd
+	...
+	cp
+	...
+
+I have an experimental version of Avrx_tasking that uses this technique (not tested)
+and it looks like a push.

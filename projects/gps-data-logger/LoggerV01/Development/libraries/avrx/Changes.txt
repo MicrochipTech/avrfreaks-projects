@@ -1,0 +1,160 @@
+9/16/2002 New release AvrX 2.6.e
+1. Touched headers and source files to allow compilation under both
+   GCC 3.02 and 3.2 (Added SFR_IO_ADDR() macro for all I/O addresses)
+
+   IAR stuff most certainly broken now, particularly for interrupt vectors.
+   GCC changed how vectors are specified with 3.0 and the IAR support was
+   written based upon 2.97 support.
+
+2. Touched all C files (samples and tests) to
+      #define _SFR_ASM_COMPAT 1
+   which is a hack to make all the old outp, inp stuff work.  For new
+   3.2 code, use direct I/O.  I.e. char temp = SREG or PORTA |= 0x01
+
+6/04/2002 New release AvrX 2.6.d
+1. New tasking code for zippier performance
+    - Moved kernel data into a struct and accessed them via a pointer.
+      this actually saved cycles and words when more than two accesses
+      were needed.  This affected "avrx.inc", tasking, semaphores,
+      single step, priority, terminate and probably other files.
+
+    - Re-arranged _Prolog() to exit early if entering from the IDLE
+      task.  I.e. no context is saved or restored for IDLE.
+      NB: It is no longer possible to do work during IDLE.  If
+      you need a background IDLE task, create a new task with a low
+      priority.  With the changes, the round trip from IDLE for a timer
+      handler interrupt is ~140 cycles vs ~240 prior to the changes.  This
+      won't allow faster interrupts since the round trip when interrupting
+      a task is no faster, but it will reduce system load overall.
+
+    - Modified _QueuePid slightly to return status.  Used this
+      status to optimize AvrXIntSetSemaphore() so the context switch
+      is skipped if the top of the run queue (self) hasn't changed.
+
+2. Added terminate function to monitor.
+    - Now you can k[oooo] a task.  Then you can p[oooo] to re-initialize
+      it and then r[oooo] to start it running again.  Whoohoo.
+
+3. Updated all regression tests and verified they worked
+    - TestCase3 was checking little-endien (pre IAR rework) so
+      I removed the macro.
+
+4. Updated "serialio.s" to include the file "avrx-signal.h" which is
+   needed with the #define SIG_UART_DATA when using 3.02 or earlier versions
+   of gcc-avr.  The GCC file "sig-avr.h" would work fine as well.
+
+5/31/2002 update for mega128 support in GCC
+1. mostly minor changes to re-name stuff to conform to new register and
+   bit names in the iom128.h file.  Files touched:
+
+   samples/hardware.h - Check for m128 and use alternate bit names
+   samples/*.c      - included new header for serialio routines.
+   avrx/serialio.h  - new header with function prototypes
+   avrx/serialio.s  - lots of #ifdef for changing bit names
+   avrx/monitor.s   - bug fixes in address handling when modifying memory
+   avrx/avrx_eeprom.s - bug fix where small chips won't compile (used EEARH)
+   avrx/avrx_generatesinglestepinterrupt.s
+                    - redefined bit name when using '128
+
+6/8/2001 avrx 2.6
+1. Updated source code with aliases for all registers (avrxctoasm.h) to
+allow assembling under either avr-gcc or IAR C compilers.
+
+2. I replaced avrx macros "AVRX_TASK" and "AVRX_TASKDEF" with New macros:
+	AVRX_IAR_TASKDEF
+	AVRX_GCC_TASKDEF
+	AVRX_IAR_TASK
+	AVRX_GCC_TASK
+see the header file "avrx.h" for all the gory details.
+
+3. Added several new header files to implement the interrupt table function
+of GCC in the IAR environment (DON'T USE THE IAR INTERRUPT CONSTRUCTS!)
+	avrx-io.h
+	avrx-signal.h
+	avrio.h (actually this is a pre-release IAR file...)
+	avrx_iar_intvect.s
+
+4. changed the way "Epilog()" works to work around optimization issues
+in IAR C compiler.
+
+5. Updated samples and test cases to build under either compiler
+
+6. Updated Makefile to reflect the differing needs of GCC and IAR
+
+7. Look for more release notes on the avrx web site on how to deal with IAR.  It
+is not as simple as GCC..
+
+2/28/01 avrx 2.5b
+
+1. Updated kernel and debugger to work with 2.97 and later
+version of avr-gcc.  This change reflects the new calling
+conventions: p1 = R24, p2 = R22, etc.
+
+2. The 01/18 version of the compiler has subtle bugs with -O3
+optimization.  Build samples and test code -Os or -O2
+
+7-4-00	avrx 2.5a
+
+1. Modified AvrXWaitSemaphore and AvrXSetSemaphore (and varients)
+to vastly speed up the trivial case of no tasks waiting, or
+the semaphore already set.  Previously a half-context switch
+was made upon entry and exit of each routine.  In AvrX 2.3 this
+was relatively inexpensive and preserved all registers used in
+the call.  In 2.5 all registers are switched (to allow C to be
+used everywhere) and it became expensive.  Since GCC does not
+expect R17-R31 to be preserved (except R29:28) across calls I
+was able to move the half context switch to the precise point
+where a context switch would be needed (e.g. when a task needs
+to block, or when un-blocking another task).  Now, when using
+Semaphores as a mutual exlusion flag (e.g. resource access like
+EEPromRead/Write) the normal case will be very cheap: just grab
+and release the flag.  The only time any real work is done is
+when two tasks attempt to access the resource at the same time.
+
+A side effect of the change, implied above, is that registers
+R22-27, 30 & 31 are not preserved across calls.  This doesn't
+affect GCC, but will cause problems for assembly code that used
+to count on all registers being preserved.
+
+2. Added a series of macros to simplify the C code of an AvrX
+task.  From the header file "AvrX.H"  Updated the sample code
+with the macros.
+
+AVRX_TASK(start, stacksz, priority)
+	Declare task data structures and forward reference to task
+AVRX_TASKDEF(start, stacksz, priority)
+	Declare task data structure and the top level C
+	declaration (AVRX_TASK + C function declaration)
+AVRX_SIGINT(vector)
+	Declare the top level C declaration for an
+	interrupt handler
+AVRX_EXTERNTASK(start)
+	Declare external task data structures
+PID(start)
+	Return the pointer to the task PID
+TCB(start)
+	Return the pointer to the task TCB
+
+6-20-00 avrx 2.5
+
+1. Initial release of AvrX rewritten for the avr-gcc compiler.
+All pointers changed to 'near' (16 bits) and all interfaces
+modified to be native GCC.  Also, the context switch was modified
+to swap the entire context since C can and does use all registers.
+
+Although the stack usage rises a lot, compared to AvrX 2.3, overall
+the speed of execution is very similar.  The former took 211 cycles
+to process a timer tick with an active timer in the queue.  The
+new version takes 239 cycles, about 10% slower.  The bulk of the
+cycles are in the context switch from user code to kernel and back
+(~160).
+
+2. Included test cases to exercise basic AvrX functionality.  Test
+cases cover semaphores, basic tasking, message queues and timer queues.
+
+3. Included sample code illustrating how to write an interrupt handler,
+extend the message model to include data and how to use timers.
+
+4. Extended the AvrX model with a special version of a timer element
+that queues itself onto a message queue when expired.  This allows a
+task to wait upon a message queue for multiple events including timers.
