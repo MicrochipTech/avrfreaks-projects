@@ -1,0 +1,129 @@
+# AvrX Lib makefile
+#
+#Copyright (C) 2002  Larry Barello (larry@barello.net)
+#
+#This library is free software; you can redistribute it and/or
+#modify it under the terms of the GNU Library General Public
+#License as published by the Free Software Foundation; either
+#version 2 of the License, or (at your option) any later version.
+#
+#This library is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#Library General Public License for more details.
+#
+#You should have received a copy of the GNU Library General Public
+#License along with this library; if not, write to the
+#Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+#Boston, MA  02111-1307, USA.
+#    
+#http://www.gnu.org/copyleft/lgpl.html
+#
+# Need an absolute path for the source files in order for Astudio debugging support
+# to work in a library.  This needs to be rebuilt if the source location should
+# ever change.
+#
+# In DOS, or your startup file, set AVRX = root directory.
+#
+# NB: As of 4/02 you need to build "serialio.s" for the specific target chip
+# as the interrupt vector name changes from chip to chip.
+#
+# Generic stuff
+
+	DEBUG	= -DSINGLESTEPSUPPORT
+#	ABSPATH = g:/mydocu~1/robotics/avrx-dev/avrx
+#	ABSPATH = c:/mydocu~1/robotics/avrx-dev/avrx
+	ABSPATH	= .
+	RM	= rm -f
+	INCDIR	= .
+#
+# MCU - What a mess.  IAR uses different mechanisms for C and ASM
+# and buggers the identifier for the mega parts so the GCCMCU will break
+# with mega parts.  The AVRXMCU goes away when IAR updates their tools for
+# unified IO headers (ioavr.h)
+
+	ICCMCU	= m8
+	AAVRMCU	= 3
+	GCCMCU	= atmega8
+	AVRXMCU	= __AT90Mega8__
+
+#	ICCMCU	= m32
+#	AAVRMCU	= 3
+#	GCCMCU	= atmega32
+#	AVRXMCU	= __AT90Mega32__
+
+#	ICCMCU	= m103
+#	AAVRMCU	= 3
+#	GCCMCU	= atmega103
+#	AVRXMCU	= __AT90Mega103__
+
+#	ICCMCU	= m128
+#	AAVRMCU	= 3
+#	GCCMCU	= atmega128
+#	AVRXMCU	= __AT90Mega128__
+
+#	MCU	= 8535
+#	AAVRMCU	= 1
+#	GCCMCU	= at90s$(MCU)
+#	AVRXMCU	= __AT90S$(MCU)__
+
+#	ICCMCU	= m64
+#	AAVRMCU	= 3
+#	GCCMCU	= atmega64
+#	AVRXMCU	= __AT90Mega64__
+
+# GCC equates
+	LIST	= ,-ahlms=$(<:.s=.lst)
+	AS	= avr-gcc -x assembler-with-cpp -mmcu=$(GCCMCU) -c -Wa,-gstabs,-mmcu=$(GCCMCU) -I$(INCDIR) $(DEBUG)
+	AR	= avr-ar -rcsv
+
+# ICC equates
+	AAVR	= aavr -b -re -v$(AAVRMCU) -I$(INCDIR) -I$(IAR)/avr/inc -D$(AVRXMCU) $(DEBUG)
+	XLIB	= xlib
+
+#MS: removed signelstepping Dec04
+
+	ASRC = 	avrx_tasking.s \
+		avrx_semaphores.s \
+		avrx_resetsemaphore.s \
+		avrx_terminate.s \
+		avrx_halt.s \
+		avrx_priority.s \
+		avrx_suspend.s \
+		avrx_testsemaphore.s \
+		avrx_message.s \
+		avrx_recvmessage.s \
+		avrx_timequeue.s \
+		avrx_starttimermessage.s \
+		avrx_canceltimer.s \
+		avrx_canceltimermessage.s\
+		avrx_generatesinglestepinterrupt.s\
+		avrx_eeprom.s
+	OBJ =	$(ASRC:.s=.o)
+
+%o: %s avrx.inc makefile
+	$(AS) $(ABSPATH)/$< -o $@
+#	$(AS) $< -o $@
+
+%r90: %s avrx.inc makefile
+	$(AAVR) $< -o $@
+
+all:	avrx_$(GCCMCU).a
+
+
+avrx_$(GCCMCU).a:  $(OBJ) makefile
+	$(AR) $@ $(OBJ)
+
+avrx.xlb: makefile
+	echo define-cpu A90 > avrx.xlb
+	for %i in ($(ASRC:.s=.r90) do echo fetch-mod % avrx >> avrx.xlb
+	echo fetch-mod avrx_iar_vect avrx >> avrx.xlb
+	echo exit >> avrx.xlb
+
+avrx.r90: $(ASRC:.s=.r90) avrx_iar_vect.r90 makefile avrx.inc avrx-io.h
+	$(RM) avrx.r90
+	$(XLIB) avrx.xlb
+
+clean:
+	$(RM) $(OBJ) $(ASRC:.s=.r90) avrx_iar_vect.r90 avrx.a avrx.r90 $(ASRC:.s=.s_sym)
+
