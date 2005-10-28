@@ -1,0 +1,267 @@
+#include <90s8515.h>
+
+// Alphanumeric LCD Module functions
+#asm
+   .equ __lcd_port=0x15 ;PORTC
+#endasm
+#include <lcd.h>
+
+// Standard Input/Output functions
+#include <stdio.h>
+#include <delay.h>
+
+#define up_BN PIND.6               //up key 
+#define down_BN PIND.7             //donw key 
+#define buffersize 10        
+// External Interrupt 0 service routine
+interrupt [EXT_INT0] void ext_int0_isr(void)
+{
+printf("worked");
+}
+
+// External Interrupt 1 service routine
+interrupt [EXT_INT1] void ext_int1_isr(void)
+{
+printf("ls",0x0d,0x0a);
+
+}
+// Declare your global variables here
+char s;
+int  istore[buffersize],j,b,i,x,state; 
+unsigned char line[buffersize][17];  //holds 16 chars + terminator
+
+enum  {crlf,bla,bkspce,line0,ignor};
+bit line2flag;
+bit up,down;
+
+
+
+void main(void)
+{
+// Declare your local variables here
+
+// Input/Output Ports initialization
+// Port A initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTA=0x00;
+DDRA=0x00;
+
+// Port B initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTB=0x00;
+DDRB=0x00;
+
+// Port C initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTC=0x00;
+DDRC=0x00;
+
+// Port D initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTD=0x00;
+DDRD=0x00;
+
+// Timer/Counter 0 initialization
+// Clock source: System Clock
+// Clock value: Timer 0 Stopped
+TCCR0=0x00;
+TCNT0=0x00;
+
+// Timer/Counter 1 initialization
+// Clock source: System Clock
+// Clock value: Timer 1 Stopped
+// Mode: Normal top=FFFFh
+// OC1A output: Discon.
+// OC1B output: Discon.
+// Noise Canceler: Off
+// Input Capture on Falling Edge
+TCCR1A=0x00;
+TCCR1B=0x00;
+TCNT1H=0x00;
+TCNT1L=0x00;
+OCR1AH=0x00;
+OCR1AL=0x00;
+OCR1BH=0x00;
+OCR1BL=0x00;
+
+// External Interrupt(s) initialization
+// INT0: On
+// INT0 Mode: Falling Edge
+// INT1: On
+// INT1 Mode: Falling Edge
+GIMSK=0xC0;
+MCUCR=0x0A;
+GIFR=0xC0;
+
+// Timer(s)/Counter(s) Interrupt(s) initialization
+TIMSK=0x00;
+
+// UART initialization
+// Communication Parameters: 8 Data, 1 Stop, No Parity
+// UART Receiver: On
+// UART Transmitter: On
+// UART Baud rate: 115200
+UCR=0x18;
+UBRR=0x01;
+
+// Analog Comparator initialization
+// Analog Comparator: Off
+// Analog Comparator Input Capture by Timer/Counter 1: Off
+ACSR=0x80;
+
+// LCD module initialization
+lcd_init(16);
+printf("hello World");
+lcd_clear();
+line2flag=0;
+i=0;
+j=0;
+printf("%s",line);
+
+while (1)
+      {         
+                //if(up_BN==0)
+                //printf("it worked");            
+              
+                  
+                state=bla;
+                s=getchar();
+                if(s==0x0d)
+                state=crlf;
+                if(s==0x08)
+                state=bkspce;
+                if(s==0x0a)
+                state=ignor;
+                switch(state)
+                {       
+                        case crlf:
+                        printf("CRLF");
+                        for(x=16-i;x!=0;x--)                 //this just fills the remainng of line with spaces
+                        {                             
+                                line[j][i]=0x20;
+                                i++;   
+                        }
+                        i=0;
+                        if (line2flag==1)
+                        {
+                                
+                                lcd_clear();
+                                lcd_puts(line[j]);
+                                
+                                printf("crlf\n%s\n\r",line[j]);
+                                printf("\nline number is %i\n\r",j);
+                                if(j<buffersize);
+                                j++;
+                                break;
+                        }
+                        else
+                        {
+                                lcd_clear();
+                                printf("crlf\n%s\n\r",line[j]);
+                                printf("\nline number is %i\n\r",j);
+                                if(j<buffersize);
+                                j++;
+                        } 
+                              
+                        break; 
+                        
+                        case bla:
+                        if(i<16)
+                        {
+                                if(line2flag==1)              
+                                        lcd_gotoxy(i,1);
+                                else
+                                        lcd_gotoxy(i,0);
+                                lcd_putchar(s);
+                                line[j][i]=s;
+                                i++;
+                        }  
+                        else
+                        {       if(line2flag==0)
+                                {
+                                        line2flag=1;
+                                        lcd_gotoxy(0,1);
+                                        lcd_putchar(s);
+                                        i=1;
+                                        break;
+                                }
+                                else
+                                {
+                                        lcd_clear();
+                                             
+                                        lcd_puts(line[j]);
+                                        lcd_gotoxy(0,1);
+                                        lcd_putchar(s);
+                                        
+                                        printf("line over flow \n%s\n\r",line[j]);
+                                        printf("\nline number is %i\n\r",j);
+                                        if(j<buffersize);
+                                        j++;
+                                        line[j][0]=s;
+                                        i=1;
+                                        
+                                }
+                        }
+                        
+                        break;
+                        case bkspce:
+                                if((i==0) &&(line2flag==1)) 
+                                {
+                                        line2flag=0;
+                                        i=16;
+                                        
+                                }
+                                else 
+                                {       
+                                        if(line2flag==1)
+                                        {
+                                                i--;
+                                                lcd_gotoxy(i,1);
+                                                lcd_putchar(0x20);
+                                                
+                                        }       
+                                        else
+                                        {
+                                                if(i!=0)
+                                                {
+                                                        i--; 
+                                                        lcd_gotoxy(i,0);
+                                                        lcd_putchar(0x20);
+                                                }
+                                                else
+                                                {       
+                                                        if(j>0)   
+                                                        j--;
+                                                        printf("bkspace %s\n\r",line[j]);
+                                                        printf("line number is %i\n\r",j);
+                                                        lcd_clear();
+                                                        lcd_puts(line[j]);
+                                                        i=16;
+                                                }
+                                                        
+                                        }
+                                }
+                                break;
+                                if(line2flag==1)              
+                                lcd_gotoxy(i,1);
+                                else
+                                lcd_gotoxy(i,0);
+                                lcd_putsf(" ");
+                                break;
+                        
+                        case ignor:
+                        break;
+                        default:
+                        break;
+                }
+                        
+             
+      
+      
+
+      }
+}
