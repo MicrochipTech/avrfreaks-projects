@@ -1,0 +1,113 @@
+<HTML>
+<HEAD>
+<TITLE>Davros - Use it or be exterminated</TITLE>
+</HEAD>
+<BODY>
+
+<FONT SIZE=2><P><IMG SRC="Image1.jpg" WIDTH=200 HEIGHT=200></P>
+</FONT><B><FONT FACE="Arial"><P ALIGN="CENTER">Davros – The Operating System for conquering and destroying</P>
+</B></FONT><FONT SIZE=2>
+<br>
+Written by Jeff Hunsinger for the BSS 02 computer system.<br>
+<P>Davros is a simple operating system for the AVR microcontroller series that uses Atmel Dataflash for mass storage. It is intended to be very simple, along the lines of CP/M and other simplistic operating systems.</P>
+
+<P>Davros uses a command line prompt for all user commands. Most commands consist of two characters. Some commands require arguments while others do not.</P>
+</FONT>
+<TABLE BORDER CELLSPACING=1 CELLPADDING=7 WIDTH=631>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>Command</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Function</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>ls</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>List directory</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>rm filename</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Remove file</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>cp sourceFilename destinationFilename</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Copy file</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>mv sourceFilename destinationFilename</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Move (rename) file</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>ul filename</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Upload file from Dataflash to PC using X-Modem</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>dl filename</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Download file to Dataflash from PC using X-Modem</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>dd</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Disk Dump. Hex view of Dataflash blocks (Used for development)</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>init</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Initialize (format) Dataflash</FONT></TD>
+</TR>
+<TR><TD WIDTH="38%" VALIGN="TOP">
+<FONT SIZE=2><P>verf filename</FONT></TD>
+<TD WIDTH="62%" VALIGN="TOP">
+<FONT SIZE=2><P>Verify file with flash contents</FONT></TD>
+</TR>
+</TABLE>
+
+<FONT SIZE=2>
+<P>In addition to these commands, the user can also enter the name of an executable. This launches the program by reading the binary file from Dataflash and programming it into the AVR's flash before jumping to the start address of the executable. In this way, the AVR can behave like a traditional PC loading a program from disk.</P>
+
+<P>There are a number of functions callable by the user. </P>
+<br>JMPTAB:
+<br>&#9;RJMP&#9;CONST&#9;&#9;; Test for char received on console
+<br>&#9;RJMP&#9;CONIN&#9;&#9;; Read character from console
+<br>&#9;RJMP&#9;CONOUT&#9;; Write character to console
+<br>&#9;RJMP&#9;DELETE&#9;; Delete file
+<br>&#9;RJMP&#9;RENAME&#9;; Rename file
+<br>&#9;RJMP&#9;COPY&#9;&#9;; Copy file
+<br>&#9;RJMP&#9;DIR&#9;&#9;; List directory contents
+<br>&#9;RJMP&#9;GETLN&#9;&#9;; Get line of text (up to 80 chars) from console
+<br>&#9;RJMP&#9;PRTNUM&#9;; Print decimal number
+<br>&#9;RJMP&#9;PRTSTG&#9;; Print string in flash pointed to by Z
+<br>&#9;RJMP&#9;PRTRSTG&#9;; Print string in RAM pointed to by Y
+<br>&#9;RJMP&#9;GETCH&#9;&#9;; Wait for character on serial port
+<br>&#9;RJMP&#9;LOAD&#9;&#9;; Load file from dataflash into AVR flash
+
+<P>The heart of Davros is the Dataflash file system. Like Davros itself, it is intended to be very simple. Unlike most disk operating systems, Davros does not use a directory page. This is done to prevent repeated erase/program cycles to a single page of flash, which would shorten the lifetime of the flash.</P>
+
+<P>For this reason, the Davros file system is resembles a tape file system more than a disk file system. Instead of disk sectors, the file system uses flash blocks. Each block of flash consists of 264 bytes (256 bytes + 8).</P>
+
+<P>The first page of every file consists of the following arrangement:</P>
+
+<P>Directory Page/First block:</P>
+<ul>Two byte pointer to the next flash page with the MSB set</ul>
+<ul>16 byte filename with unused bytes padded with FF (standard erase state of flash)</ul>
+<ul>Two byte file length</ul>
+<ul>244 data bytes</ul>
+
+<P>If the file data exceeds 244 bytes, a data block is used. It's a simplified version of the directory block:</P>
+<ul>Two byte pointer to the next flash page (MSB clear)</ul>
+<ul>262 data bytes</ul>
+
+<P>Each page points to the next page in the chain. Unused pages are left blank (all FF), so locating a blank page involves searching for a page of flash that begins with FF.</P>
+
+<P>Using a dedicated page (or pages) of flash to hold the directory information would make file searches and directory listing very fast. The stream format used here is much slower, but not intolerably so. With a moderate SPI clock, file searches take about as long as floppy drives. However, once the file location is known, file access is nearly instantaneous.</P>
+
+<P>File entries are found by searching each page for one with the MSB set in the next page pointer (without being equal to FF).</P>
+
+<P>There are obvious limitations to this approach. The maximum page number is limited to 0x3FFF. This is not much of a real problem, given the limited size of Dataflash. For larger densities, a move to MMC or SD cards is probably a better approach.</P>
+
+<P>&nbsp;</P></FONT></BODY>
+</HTML>

@@ -1,0 +1,3894 @@
+.include "m169def.inc"
+;.include "m8515def.inc"
+
+; Comment out this define if you want console I/O via the serial port
+; Leave it defined if you want the AVR to output video (still received console input via serial, though)
+#define __VIDEO__
+
+; Define baud rate
+#define BAUD 9600
+
+; Define master clock frequency. Must be greater than ~12MHz for 32 character video
+#define OSC 14318180
+
+; TinyBasic 3 with Video output
+; Written by Jeff Hunsinger in Fall/Winter 2004
+; Frankfurt/Oder, Germany
+; Based on the original copyleft source from Li-Chen Wang
+
+; Serial port used for console input
+; Non-video version uses serial for output
+; Video version generates NTSC video:
+;
+;	PC7 ---/\/\/\------|---- Composite Video Out
+;           300        |
+;                      |
+;   PD7 ---/\/\/\------|
+;           1.2k       |
+;                      \
+;                      / 75
+;                      \
+;                      /
+;                      |
+;                     GND
+; Uses Dataflash for saving and loading programs
+
+; I know the code is ugly and many comments are out of date
+
+; Known bugs:
+;    1. Sometimes backspace doesn't work
+;    2. Occasionally reboots, especially on screen scroll
+;    3. SET/RESET/POINT don't work entirely right. Only even Y positions work
+
+
+; EXPR needs to be modified to support strings
+;	Return pointer to final string
+;	Strings may be added (concatenated)
+
+; TSTC needs to set flag if string
+; SETV needs to recognize string
+; EXPR also needs to recognize strings and dismiss illegal
+; operators for the type
+; Read/Data will also need some modification
+
+; Adds video
+
+; Instead of using a fixed size stack, what about using a pointer
+; to the end of basic as the stack limit? Add buffer for calls, etc
+; Or, create software stack for gosub/for
+; Also, is it really necessary to match the variable on a NEXT? Why not
+; just use the last stacked FOR?
+
+; A=-32768 is illegal (overflow check in eval)
+; ...but A=&8000 is legal
+
+; Errors often currupt source when doing substitutions
+;	Not sure this is completely fixed
+; Give better errors? Next w/o for, etc?
+
+; Add exponents
+
+
+; Add strings and arrays
+; Make float the standard storage element
+; Add full screen editor/pseudo-compiler
+;		Labels instead of line numbers (though line numbers will remain valid
+;		"Compiling" crunches tokens, converts labels to addresses,
+;		converts vars to pointers (with a flag to indicate variable & type),
+;		and perform syntax checking
+; Other stuff:
+;	More commands: Sound, plot, etc
+;			sound(freq, duration)
+;			freq(freq1, freq2, duration)
+;			pwm(freq, duty, period)
+;			delay(period)
+; sound/freq/pwm should have flag to say whether they're blocking or non-blocking
+;
+; Advanced graphic routines:
+;	rect
+;	circle
+;	line
+;	hlin
+;	vlin
+;	fill
+;	color
+;
+; Version 1.2
+; Adds crunch routine after line input
+; LIST decompresses program
+; EXEC changed for new tokenized version
+; Added hex format numbers (&A5, etc)
+; Added mod (%), bitwise AND/OR
+
+; Make string, float, etc all conditional
+
+; Add sound/PWM commands
+; Also, add PORT/PIN/DDR. Translate them to POKE statements?
+; Debounce?
+
+; Add strings A-Z. 256 bytes reserved for each + 256 byte work buffer?
+;	1st pass, anyway
+; 2nd pass, with array support. Move memory around as
+; they change in size. Arrays are really just strings with pre-allocated
+; space (or strings are arrays with a set length). Double dimensioned arrays
+; are simply arrays of size X*Y, as in array(x,y). So:
+;	array(y+1) is the same as array(0,1)
+;	arrays are stored like this:
+;		0,0
+;		0,1
+;		0,2
+;		...
+;		0,Y
+;		1,0
+;		1,1
+;		etc (makes handling arrays of string easier)
+; When new string defined or existing string modified, perform
+; garbage collection (delete existing string from string pool,
+; copy memory as appropriate, then insert string - again moving
+; memory as appropriate. May be able to re-use line insert/delete
+; functions
+
+
+; AVR stacks return address as High Byte, Low Byte
+
+; Add RESTORE xx
+; READ/DATA quirk: Will wrap around to start of data after complete list read
+
+; Add string support for read/data
+; Add float (make it the default?)
+
+
+; Original AVR conversion September 27, 2004
+; X = HL
+; Y = DE
+; R16 = A
+; R17 = F
+; ZH = B
+; ZL = C
+
+.DEF DATPTL = R10
+.DEF DATPTH = R11
+.DEF NXTPGL = R12
+.DEF NXTPGH = R13
+.DEF ZERO = R15
+.DEF F = R16
+.DEF A = R17
+.DEF TMPREG = R18
+.DEF CharPos = R19
+
+.DEF CURSORL = R20
+.DEF CURSORH = R21
+.DEF CURRNTL = R22
+.DEF CURRNTH = R23
+
+.DEF TMPL = R24
+.DEF TMPH = R25
+
+.DEF B = R31		; Change this later
+.DEF C = R30
+
+.EQU CR = 13
+.EQU LF = 10
+
+; Tokens
+.EQU FXTOK		= 0x19	; Maximum command token + 1
+.EQU PRTTOK		= 0x85	; Print token
+.EQU DATTOK 		= 0x91	; Data token number (with MSB set)
+.EQU TOTOK		= 0x9F	; TO token
+.EQU STEPTOK		= 0xA0	; STEP token
+.EQU GREATER_OR_EQUAL	= 0xA1	; >= token
+.EQU UNEQUAL 		= 0xA2	; <> token
+.EQU LESS_OR_EQUAL 	= 0xA3	; <= token
+.EQU ANDTOK		= 0xA4	; AND token
+.EQU ORTOK		= 0xA5	; OR token
+
+; Dataflash constants
+.EQU PGSIZE  = 262	; Page size (264 bytes) - 2 bytes for next page link
+.EQU DIRSIZE = 244	; Page size (264 bytes) - 2 byte link - 16 byte filename - 2 byte file length
+.EQU MAXPAGE = 4	; 0x400 pages
+
+#ifdef _M8515DEF_INC_
+.EQU CS = 4		; Dataflash chip select on PB4
+#else
+.EQU CS = 0		; PB0 on the Mega169
+#endif
+
+; Video constants
+#ifdef __VIDEO__
+.EQU LINESIZE = 32	; 32 characters/line
+.EQU VIDSIZE = 512	; 512 characters total
+
+.EQU	LINETIME = OSC/15750 ;909 ;508 ; for 8 MHz ; 909 for 14.31818 MHz = OSC/15750
+.EQU    SYNC 	 = 7
+
+.EQU	VIDPORT = PORTC
+
+.MACRO SHIFTREG2VID		; Shift 6 bits of register out to port
+	OUT VIDPORT,@0		; Bit 7
+	LSL @0
+	OUT VIDPORT,@0		; Bit 6
+	LSL @0
+	OUT VIDPORT,@0		; Bit 5
+	LSL @0
+	OUT VIDPORT,@0		; Bit 4
+	LSL @0
+	OUT VIDPORT,@0		; Bit 3
+	LSL @0
+	OUT VIDPORT,@0		; Bit 2
+	LSL @0
+.ENDMACRO
+#endif
+
+
+	.DSEG
+
+#ifdef _M8515DEF_INC_
+	.ORG	0x60
+#else
+	.ORG	0x100
+#endif
+
+#ifdef __VIDEO__
+
+VIDRAM:	.BYTE	VIDSIZE		; Video display (character) RAM
+LINE:	.BYTE	1		; Video line
+LINEH:	.BYTE	1
+TMP_YL:	.BYTE	1
+TMP_YH:	.BYTE	1
+TMP_ZL:	.BYTE	1
+TMP_ZH:	.BYTE	1
+
+#endif
+
+STKGOS:	.BYTE	2		; SAVES SREGL IN 'GOSUB'
+VARNXT:	.BYTE	2		; TEMPORARY STORAGE
+STKINP:	.BYTE	2		; SAVES SREGL IN 'INPUT'
+LOPVAR:	.BYTE	2		; 'FOR' LOOP SAVE AREA
+LOPINC:	.BYTE	2		; INCREMENT
+LOPLMT:	.BYTE	2		; LIMIT
+LOPLN:	.BYTE	2		; LINE NUMBER
+LOPPT:	.BYTE	2		; TEXT POINTER
+RANPNT:	.BYTE	2		; RANDOM NUMBER POINTER
+;ASTRING:.BYTE   0x10
+;BSTRING:.BYTE	0x10
+VARBGN:	.BYTE	2*27		; VARIABLE @(0)
+	.BYTE	1		; EXTRA BYTE FOR BUFFER
+BUFFER:	.BYTE	80		; INPUT BUFFER
+BUFEND: ;EQU	$		; BUFFER ENDS
+STREND:	.BYTE	2		; End of string space (start = TXTUNF)
+TXTUNF:	.BYTE	2 ;TXTBGN	; ->UNFILLED TEXT AREA ??? change to register
+TXTBGN:	.BYTE	1		; TEXT SAVE AREA BEGINS 
+; NOTE: Do not add any variables after TXTBGN
+	.ORG RAMEND-0x20	; EXTRA BYTES FOR STACK
+TXTEND:	;EQU	$		; TEXT SAVE AREA ENDS 
+STKLMT:	;EQU	$		; TOP LIMIT FOR STACK
+		.BYTE	0x20
+STACK:				; STACK STARTS HERE
+
+
+	.CSEG
+	.ORG	0
+#ifdef _M8515DEF_INC_
+	RJMP	INIT
+#else
+	JMP		INIT
+#ifdef __VIDEO__
+	JMP	INIT
+	JMP	INIT
+	JMP	INIT
+	JMP	INIT
+	JMP	INIT
+	JMP	INIT
+	JMP	T1CMPA
+#endif ; video
+#endif ; m8515
+
+;**************************************************************
+;* 
+;*                TINY BASIC FOR INTEL 8080
+;*                      VERSION 1.0
+;*                    BY LI-CHEN WANG
+;*                     10 JUNE, 1976 
+;*                       @COPYLEFT 
+;*                  ALL WRONGS RESERVED
+;* 
+;**************************************************************
+;* 
+
+CMDTAB:
+	RJMP	LIST		; 0
+	RJMP	RUN		; 1
+	RJMP	NEW		; 2
+	RJMP	DLOAD		; 3
+	RJMP	DSAVE		; 4
+	RJMP	PRINT		; 5
+	RJMP	FOR		; 6
+	RJMP	GOTO		; 7
+	RJMP	NEXT		; 8
+	RJMP	POKE		; 9
+	RJMP	IFF		; A
+	RJMP	GOSUB		; B
+	RJMP	REM		; C
+	RJMP	RETURN		; D
+	RJMP	INPUT		; E
+	RJMP	END		; F
+	RJMP	READ		; 10
+	RJMP	DATA		; 11
+	RJMP	FORMAT		; 12
+	RJMP	DIR		; 13
+	RJMP	RESTORE		; 14
+	RJMP	SOUND		; 15
+	RJMP	CMD_CLS		; 16
+	RJMP	CMD_SET		; 17
+	RJMP	CMD_RESET	; 18
+; Functions
+	RJMP	PEEK		; 19
+	RJMP	SIZE		; 1A
+	RJMP	RND		; 1B
+	RJMP	USR_CMD		; 1C
+	RJMP	ABS_		; 1D
+	RJMP	NOT_		; 1E
+;	RJMP	FR1	; TO	; 1F
+;	RJMP	FR2	; STEP	; 20
+;	RJMP	REST1	; >=	; 21
+;	RJMP	XP11	; <>	; 22
+;	RJMP	XP14	; <=	; 23
+;			; AND	; 24
+;			; OR	; 25
+
+
+; THIS TABLE IS ORGANIZED SUCH THAT THE ASSEMBLER DOES NOT PAD THE
+; SPACE BETWEEN ELEMENTS WITHIN A TABLE
+TOKTAB:		 			; DIRECT COMMANDS 
+	.DB	"LIS",'T' | 0x80			; 00
+	.DB	"RU",'N' | 0x80, "NE",'W' | 0x80	; 01 02
+	.DB	"LOA",'D' | 0x80			; 03
+	.DB	"SAV",'E' | 0x80			; 04
+TOKTAB2: 				; DIRECT/STATEMENT
+	.DB	"PRIN",'T' | 0x80,"FO",'R' | 0x80	; 05 06
+	.DB	"GOT",'O' | 0x80			; 07
+	.DB	"NEX",'T' | 0x80			; 08
+	.DB	"POK",'E' | 0x80			; 09
+	.DB	"I",'F' | 0x80				; 0A
+	.DB	"GOSU",'B' | 0x80, "RE",'M' | 0x80	; 0B 0C
+	.DB	"RETUR",'N' | 0x80			; 0D
+	.DB	"INPU",'T' | 0x80,"EN",'D' | 0x80	; 0E 0F
+	.DB	"REA",'D' | 0x80			; 10
+	.DB	"DAT",'A' | 0x80			; 11
+	.DB	"INI",'T' | 0x80			; 12
+	.DB	"DI",'R' | 0x80,"RESTOR",'E' | 0x80	; 13 14
+	.DB	"SOUN",'D'| 0x80,"CL",'S' | 0x80	; 15 16
+	.DB	"SET",'(' | 0x80, "RESET",'(' | 0x80	; 17 18
+FXTAB: 				; FUNCTIONS 
+	.DB	"PEEK",'(' | 0x80,"ME",'M' | 0x80	; 19 1A
+	.DB	"RND",'(' | 0x80			; 1B
+	.DB	"USR",'(' | 0x80			; 1C
+	.DB	"ABS",'(' | 0x80			; 1D
+	.DB	"NOT",'(' | 0x80			; 1E
+
+	.DB	"T",'O' | 0x80				; 1F
+	.DB	"STE",'P' | 0x80			; 20
+;TAB8: 				; RELATION OPERATORS
+	.DB	'>','=' | 0x80		; >=		; 21
+	.DB	'<','>' | 0x80		; <>		; 22
+	.DB	'<','=' | 0x80		; <=		; 23
+
+	.DB	"AN",'D' | 0x80, "O",'R' | 0x80		; 24 25
+	.DB	0			; End of table
+
+;* 
+MSG:
+	.DB "AVR TINY BASIC VER. 1.2",CR
+
+; ERRORS
+OK:	.DB	"OK",CR
+HOW:	.DB	"HOW?",CR
+WHAT:	.DB	"WHAT?",CR
+SORRY:	.DB	"SORRY",CR
+
+; POWER OF 10 TABLE (FOR PRTNUM)
+PWR10:	.DW	10000
+	.DW	1000
+	.DW	100
+	.DW	10
+	.DW	0
+
+;* 
+;* 
+INIT:
+
+	CLR	ZERO
+
+	LDI	TMPL,HIGH(RAMEND)	; INIT STACK
+	OUT	SPH,TMPL
+	LDI	TMPL,LOW(RAMEND)
+	OUT	SPL,TMPL
+
+#ifdef _M8515DEF_INC_
+	LDI	A,0xF0			; INIT PORTB
+#else
+	LDI	A,0x07
+#endif
+	OUT	PORTB,A
+	OUT	DDRB,A
+
+	LDI	A,0x5C			; INIT SPI
+	OUT	SPCR,A
+	LDI	A,0
+	OUT	SPSR,A
+
+#ifdef _M8515DEF_INC_
+	LDI	TMPL,HIGH(OSC/(16*BAUD)-1)
+	OUT	UBRRH,TMPL		; INIT UART
+	LDI	TMPL,LOW(OSC/(16*BAUD)-1) ;// 1.23 MHz 3.69MHz=23				; 9600 baud
+	OUT	UBRRL,TMPL
+	LDI	TMPL,1 << RXEN | 1 << TXEN		; Enable tx and rx
+	OUT	UCSRB,TMPL
+	LDI	TMPL,1 << URSEL | 1 << UCSZ1 | 1 << UCSZ0
+	OUT	UCSRC,TMPL				; 8N1
+#else
+	LDI	TMPL,HIGH(OSC/(16*BAUD)-1)
+	STS	UBRR0H,TMPL		; INIT UART to 38.4k
+	LDI	TMPL,LOW(OSC/(16*BAUD)-1)
+	STS	UBRR0L,TMPL
+	LDI	TMPL,1 << RXEN0 | 1 << TXEN0 ; Enable tx and rx
+	STS	UCSR0B,TMPL
+	LDI	TMPL,1 << UCSZ01 | 1 << UCSZ00
+	STS	UCSR0C,TMPL		; 8N1
+#endif
+
+#ifdef __VIDEO__
+	LDI	R16,1				; Line = 1
+	STS	LINE,R16
+	CLR	R16
+	STS	LINEH,R16
+
+	LDI	R16,1 << SYNC
+	OUT	PORTD,R16
+	LDI	R16,1 << SYNC			; PD7 = sync
+	OUT	DDRD,R16
+
+	LDI	R16,1 << OCIE1A
+;	LDI	R16,1 << TOIE1
+	STS	TIMSK1,R16
+	LDI	R16,1
+	OUT	TCCR0A,R16
+
+	LDI	A,0x80				; Video signal
+	OUT	DDRC,A
+
+	LDI	R16,HIGH(LINETIME)	; Video interrupt
+	STS	OCR1AH,R16
+	LDI	R16,LOW(LINETIME)
+	STS	OCR1AL,R16
+	LDI	R16,9
+	STS	TCCR1B,R16
+	CLR	R16
+	STS	TCCR1A,R16
+
+	SEI
+
+#endif
+
+	RCALL	CLRSCR
+
+	LDI	ZL,LOW(MSG*2)	; GET INIT MESSAGE
+	LDI	ZH,HIGH(MSG*2)
+	RCALL	PRTSTG		; SEND IT
+	RJMP	NEW2		; RESET TXTUNF TO START OF TXT
+
+;* 
+;**************************************************************
+;* 
+;* *** SETVAL *** FIN *** ENDCHK *** & ERROR (& FRIENDS) *** 
+;* 
+;* "SETVAL" EXPECTS A VARIABLE, FOLLOWED BY AN EQUAL SIGN AND
+;* THEN AN EXPR.  IT EVALUATES THE EXPR. AND SET THE VARIABLE
+;* TO THAT VALUE.
+;* 
+;* "FIN" CHECKS THE END OF A COMMAND.  IF IT ENDED WITH ":", 
+;* EXECUTION CONTINUES.  IF IT ENDED WITH A CR, IT FINDS THE 
+;* NEXT LINE AND CONTINUE FROM THERE.
+;* 
+;* "ENDCHK" CHECKS IF A COMMAND IS ENDED WITH CR.  THIS IS 
+;* REQUIRED IN CERTAIN COMMANDS. (GOTO, RETURN, AND END ETC.) 
+;* 
+;* "ERROR" PRINTS THE STRING POINTED BY DE (AND ENDS WITH CR). 
+;* IT THEN PRINTS THE LINE POINTED BY 'CURRNT' WITH A "?"
+;* INSERTED AT WHERE THE OLD TEXT POINTER (SHOULD BE ON TOP
+;* O THE STACK) POINTS TO.  EXECUTION OF TB IS STOPPED
+;* AND TBI IS RESTARTED.  HOWEVER, IF 'CURRNT' -> ZERO 
+;* (INDICATING A DIRECT COMMAND), THE DIRECT COMMAND IS NOT
+;*  PRINTED.  AND IF 'CURRNT' -> NEGATIVE # (INDICATING 'INPUT'
+;* COMMAND, THE INPUT LINE IS NOT PRINTED AND EXECUTION IS 
+;* NOT TERMINATED BUT CONTINUED AT 'INPERR'. 
+;* 
+;* RELATED TO 'ERROR' ARE THE FOLLOWING: 
+;* 'QWHAT' SAVES TEXT POINTER IN STACK AND GET MESSAGE "WHAT?" 
+;* 'AWHAT' JUST GET MESSAGE "WHAT?" AND JUMP TO 'ERROR'. 
+;* 'QSORRY' AND 'ASORRY' DO SAME KIND OF THING.
+;* 'QHOW' AND 'AHOW' IN THE ZERO PAGE SECTION ALSO DO THIS 
+;* 
+
+;* 
+
+; Y POINTS TO STRING
+TSTC:				; *** TSTC OR RST 1 *** 
+SKPSPC:
+	LD	A,Y		; *** IGNBLK/RST 5 ***
+	CPI	A,' '		; IGNORE BLANKS 
+	BRNE	SKPRET		; IN TEXT (WHERE DE->)
+	ADIW	YL,1		; AND RETURN THE FIRST
+	RJMP	SKPSPC		; NON-BLANK CHAR. IN A
+SKPRET:
+	RET
+
+;* 
+TSTV:
+	RCALL	SKPSPC		; *** TSTV OR RST 7 *** 
+	SUBI	A,64		; TEST IF VARIABLE (A-Z)
+	BRCS	TV2		; CARRY SET:NOT A VARIABLE
+
+	BRNE	TV1		; NOT "@" ARRAY 
+	INC	YL		; IT IS THE "@" ARRAY 
+	RCALL	PARN		; @ SHOULD BE FOLLOWED BY (EXPR) AS ITS INDEX
+	ADD	XL,XL		; DOUBLE IT, SINCE THESE ARE 16 BIT ENTRIES
+	ADC	XH,ZERO
+;	BRCC	ST0
+;	RJMP	QHOW		; IS INDEX TOO BIG? ( > 127)
+ST0:
+;	PUSH	YH
+;	PUSH    YL
+;	MOVW    YL,XL
+
+	PUSH	XH		; WILL IT OVERWRITE 
+	PUSH	XL		; TEXT?
+	RCALL	SIZE		; FIND NUMBER OF FREE BYTES
+	SBIW	XL,2		; AND SUBTRACT TWO BYTES FOR LENGTH OF ARRAY
+	POP	TMPL
+	POP	TMPH
+	CP	XL,TMPL		; AND CHECK THAT
+	CPC	XH,TMPH
+	BRCS	ASORRY		; IF SO, SAY "SORRY"
+
+SS1A:
+	LDS	XL,TXTUNF+1     ; IF NOT, GET ADDRESS 
+	LDS     XH,TXTUNF
+	ADIW	XL,1		; POINT TO ONE BYTE PAST END OF PROGRAM
+	ADD	XL,TMPL		; OF @(EXPR) AND PUT IT 
+	ADC	XH,TMPH
+
+;	POP	XL		; IN X
+;	POP	XH
+	RET			; C FLAG IS CLEARED 
+
+TV1:
+	CPI	A,27		; NOT @, IS IT A TO Z?
+	BRCC    TV2		; IF NOT RETURN C FLAG
+	ADIW    YL,1		; IF A THROUGH Z
+TV1A:
+	LD	F,Y		; Test next character
+	CPI	F,'$'		; $?
+	BRNE	TV1C		; No -> Skip ahead
+	; Use A as offset into string table
+	; Build string in string temp
+	; 
+;	LDI	XH,HIGH(ASTRING)
+;	LDI	XL,LOW(ASTRING)
+;	CPI	A,1		; A?
+;	BREQ	TV1A_		; Yes -> Check for $
+TV1B:
+;	ADIW	XL,0x10		; Else check if it's B (POINT TO BSTRING)
+;	CPI	A,2		; IS IT B?
+;	BRNE	TV1C
+TV1A_:
+;	LD	F,Y		; LOOK AT NEXT CHAR
+;	CPI	F,'$'		; IS THIS A STRING?
+;	BRNE	TV1C		; NO -> TREAT AS REGULAR VARIABLE
+;	ADIW	YL,1
+;	SEV			; Set overflow flag to indicate it's a string
+;	RJMP	TV2		; EXIT
+TV1C:				; NOT A STRING
+	CLC
+	LDI	XL,LOW(VARBGN)	; COMPUTE ADDRESS OF
+	LDI     XH,HIGH(VARBGN)
+	ROL     A		; THAT VARIABLE 
+	ADD	XL,A		; AND RETURN IT IN HL 
+				; WITH C FLAG CLEARED 
+	ADC	XH,ZERO
+	RET
+TV2:
+	SEC			; SET CARRY FLAG
+	RET
+
+SETVAL:
+	RCALL	TSTV		; *** SETVAL ***
+;	BRVS	SETSTR		; SET STRING VALUE
+	BRCS	QWHAT		; "WHAT?" NO VARIABLE 
+	PUSH	XH		; SAVE ADDRESS OF VAR.
+	PUSH	XL
+	RCALL	TSTC		; CHECK FOR "=" SIGN 
+	CPI	A,'='
+	BRNE	QWHAT 		; NO "="? -> ERROR
+	ADIW	YL,1
+	RCALL	EXPR		; EVALUATE EXPR.
+	POP	ZL		; GET VARIABLE ADDRESS
+	POP	ZH
+	ST	Z,XL		; SAVE VALUE
+	STD	Z+1,XH
+SETRET:
+	RET
+;* 
+ENDCHK:
+	RCALL	SKPSPC		; *** ENDCHK ***
+	CPI	A,CR		; END WITH CR?
+	BREQ	SETRET		; OK, ELSE SAY "WHAT?"
+
+QSORRY:
+	PUSH	YH		; *** QSORRY ***
+	PUSH	YL
+ASORRY:
+	LDI	ZL,LOW(SORRY*2)	; *** ASORRY ***
+	LDI	ZH,HIGH(SORRY*2)
+	RJMP	ERROR
+;* 
+QWHAT:
+	PUSH	YH		; *** QWHAT *** 
+	PUSH	YL
+AWHAT:
+	LDI	ZH,HIGH(WHAT*2)	; *** AWHAT *** 
+	LDI	ZL,LOW(WHAT*2)
+ERROR:
+	RCALL	PRTSTG		; PRINT 'WHAT?', 'HOW?' 
+	POP	YL		; OR 'SORRY'
+	POP	YH
+
+	MOV	A,CURRNTL
+	CPI	A,0
+	MOV	A,CURRNTH	; IF NEGATIVE
+	CPC	A,ZERO
+	BRPL	ERR1
+	POP	A		; RESTORE STACK
+	RJMP	INPERR		; REDO INPUT
+ERR1:
+	BRNE	ERR2		; IF ZERO, RESTART
+	RJMP	RSTART		; IF ZERO, JUST RESTART
+ERR2:
+	LD	F,Y		; READ CHARACTER WHERE ERROR WAS FOUND
+	PUSH	F
+	ST	Y,ZERO		; PUT A ZERO TEHRE
+	MOVW	YL,CURRNTL	; POINT TO START OF LINE
+	RCALL	PRTLN		; ELSE PRINT THE LINE 
+	SBIW	YL,1		; BACK UP POINTER
+	POP	F
+	ST	Y,F		; RESTORE STRING
+	LDI	A,'?'		; PRINT A "?" 
+	RCALL	OUTC
+	RCALL	PRTLN2		; AND THE REST OF THE LINE
+;	LDI	A,CR
+;	RCALL	OUTC
+	RCALL	CRLF
+	RJMP	RSTART
+
+; ASSIGN STRING
+SETSTR:
+;	RCALL	TSTC
+;	CPI	A,'='
+;	BRNE	QWHAT
+;	ADIW	YL,1
+;	RCALL	TSTC
+;	CPI	A,0x22		; TEST FOR QUOTE
+;	BRNE	QWHAT
+;	ADIW	YL,1
+;	LDI	F,0x10
+STRCPY:
+;	LD	A,Y+
+;	CPI	A,0x22
+;	BREQ	STRING2
+;	ST	X+,A
+;	DEC	F
+;	BRMI	QWHAT		; ERROR - STRING TOO LONG (> 16 BYTES)
+;	RJMP	STRCPY
+STRING2:
+;	TST	F
+;	BREQ	STRING3
+;	LDI	A,0xFF
+;	ST	X+,A		; PAD WITH FF
+;	DEC	F
+;	RJMP	STRING2
+STRING3:
+;	RET
+;* 
+FIN:
+	RCALL	TSTC		; *** FIN *** 
+	CPI	A,':'
+	BRNE	FI1
+	ADIW	YL,1
+	POP	A		; ":", PURGE RET ADDR.
+	POP	A
+	RJMP	RUNSML		; CONTINUE SAME LINE
+FI1:
+	CPI	A,CR		; Is it a CR?
+	BRNE	FI2		; No -> Exit
+	ADIW	YL,1		; BUMP PAST IT
+	POP	A		; YES, PURGE RET ADDR.
+	POP	A
+	CPI	CURRNTL,0	; ARE WE RUNNING IN DIRECT MODE?
+	CPC	CURRNTH,ZERO
+	BREQ	RSTART		; YES -> RESTART
+	RJMP	RUNNXL		; RUN NEXT LINE 
+FI2:
+	RET			; ELSE RETURN TO CALLER 
+
+;* 
+;**************************************************************
+;* 
+;* *** MAIN ***
+;* 
+;* THIS IS THE MAIN LOOP THAT COLLECTS THE TINY BASIC PROGRAM
+;* AND STORES IT IN THE MEMORY.
+;* 
+;* AT START, IT PRINTS OUT "(CR)OK(CR)", AND INITIALIZES THE 
+;* STACK AND SOME OTHER INTERNAL VARIABLES.  THEN IT PROMPTS 
+;* ">" AND READS A LINE.  IF THE LINE STARTS WITH A NON-ZERO 
+;* NUMBER, THIS NUMBER IS THE LINE NUMBER.  THE LINE NUMBER
+;* (IN 16 BIT BINARY) AND THE REST OF THE LINE (INCLUDING CR)
+;* IS STORED IN THE MEMORY.  IF A LINE WITH THE SAME LINE
+;* NUMBER IS ALREDY THERE, IT IS REPLACED BY THE NEW ONE.  IF
+;* THE REST OF THE LINE CONSISTS OF A 0x0D ONLY, IT IS NOT STORED
+;* AND ANY EXISTING LINE WITH THE SAME LINE NUMBER IS DELETED. 
+;* 
+;* AFTER A LINE IS INSERTED, REPLACED, OR DELETED, THE PROGRAM 
+;* LOOPS BACK AND ASK FOR ANOTHER LINE.  THIS LOOP WILL BE 
+;* TERMINATED WHEN IT READS A LINE WITH ZERO OR NO LINE
+;* NUMBER; AND CONTROL IS TRANSFERED TO "DIRCT".
+;* 
+;* TINY BASIC PROGRAM SAVE AREA STARTS AT THE MEMORY LOCATION
+;* LABELED "TXTBGN" AND ENDED AT "TXTEND".  WE ALWAYS FILL THIS
+;* AREA STARTING AT "TXTBGN", THE UNFILLED PORTION IS POINTED
+;* BY THE CONTENT OF A MEMORY LOCATION LABELED "TXTUNF". 
+;* 
+;* THE MEMORY LOCATION "CURRNT" POINTS TO THE LINE NUMBER
+;* THAT IS CURRENTLY BEING INTERPRETED.  WHILE WE ARE IN 
+;* THIS LOOP OR WHILE WE ARE INTERPRETING A DIRECT COMMAND 
+;* (SEE NEXT SECTION), "CURRNT" SHOULD POINT TO A 0. 
+;* 
+
+RSTART:
+	LDI	A,LOW(RAMEND)	; RESET STACK POINTER
+	OUT	SPL,A
+	LDI	A,HIGH(RAMEND)
+	OUT	SPH,A
+	MOV	A,CursorL
+	ANDI	A,0x1F		; Not at position zero?
+	BREQ	ST1
+	RCALL	CRLF		; Then print a carriage return
+ST1:
+	LDI	ZL,LOW(OK*2)	; "OK"
+	LDI	ZH,HIGH(OK*2)
+	RCALL	PRTSTG		; PRINT STRING UNTIL CR
+	MOV	CURRNTL,ZERO	; CURRNT->LINE # = 0
+	MOV	CURRNTH,ZERO
+	MOV	DATPTH,ZERO	; RESET DATA POINTER
+	MOV	DATPTL,ZERO
+
+	STS	LOPVAR,ZERO	; RESET FOR VARIABLE
+	STS	LOPVAR+1,ZERO
+	STS	STKGOS,ZERO	; RESET GOSUB STACK
+	STS	STKGOS+1,ZERO
+ST2:
+	LDI	A,'>'		; PROMPT '>' AND
+	RCALL	GETLN		; READ A LINE 
+;	PUSH	YH		; Y->END OF LINE 
+;	PUSH	YL		; SAVE IT
+
+	LDI	YL,LOW(BUFFER)	; Y->BEGINNING OF LINE 
+	LDI	YH,HIGH(BUFFER)
+	RCALL	TSTNUM		; Does line start with a number? (B=0 if not, else B=#chars)
+	PUSH	YH		; Save start of text
+	PUSH	YL
+	LDI	YL,LOW(BUFFER-1) ; Y->BEGINNING OF LINE - 1
+	LDI	YH,HIGH(BUFFER-1)
+;	SBIW	YL,2		; BACKUP Y AND SAVE
+	ST	Y+,XL		; VALUE OF LINE # THERE 
+	TST	B
+;	CPI	XL,0		; X=VALUE OF THE # OR
+;	CPC	XH,ZERO		; 0 IF NO # WAS FOUND 
+	BREQ	ST3
+	ST	Y+,XH
+ST3:
+	MOVW	XL,YL		; X points to start of line
+	POP	YL		; Y points to text after possible line number
+	POP	YH
+	RCALL	CRUNCH		; X now points to end of crunched line
+	MOVW	ZL,XL		; Z=X
+;	RCALL	SKPSPC
+;	POP	C		; Z->END OF LINE 
+;	POP	B
+	LDI	YL,LOW(BUFFER-1) ; Y->BEGINNING OF LINE - 1
+	LDI	YH,HIGH(BUFFER-1)
+	LD	XL,Y+		; Check line number
+	TST	XL
+	BRNE	HandleLine	; NO LINE NUMBER -> DIRECT STATEMENT
+	CPI	ZL,LOW(BUFFER+1)
+	BREQ	ST2		; Nothing entered, so loop back
+	RJMP	RUNSML
+
+HandleLine:			; Otherwise, insert/delete it
+	LD	XH,Y+		; X=line number
+	PUSH	ZH		; Z=END OF LINE
+	PUSH	ZL
+;	PUSH	YH		; Y=Start of line text (do we really need to do this?)
+;	PUSH	YL
+	MOV	A,ZL
+	SUBI	A,LOW(BUFFER-1) ;YL
+	PUSH	A		; A=# OF BYTES IN LINE (including line number)
+	RCALL	FNDLN		; Find line in program save area
+;	LDI	YL,LOW(BUFFER-1) ; Y->BEGINNING OF LINE - 1
+;	LDI	YH,HIGH(BUFFER-1)
+	PUSH	YH		; Y = Pointer to line in program area (insertion point)
+	PUSH	YL		; Save it
+	BRNE	ST4		; NZ:NOT FOUND, INSERT
+
+DeleteLine:
+;	PUSH	YH		; Z:FOUND, DELETE IT
+;	PUSH	YL
+	MOVW	ZL,YL		; Z=LINE TO BE DELETED
+	RCALL	FNDNXT		; FIND NEXT LINE
+;*                                  DE->NEXT LINE 
+;	POP	ZL		; Z->LINE TO BE DELETED
+;	POP	ZH
+	LDS	XL,TXTUNF	; X->UNFILLED SAVE AREA
+	LDS	XH,TXTUNF+1
+	RCALL	MVUP		; MOVE UP TO DELETE 
+				; TXTUNF->UNFILLED AREA 
+	STS	TXTUNF,C	; UPDATE
+	STS	TXTUNF+1,B
+
+InsertLine:
+ST4:
+	POP	ZL		; GET READY TO INSERT (Restore insertion point)
+	POP	ZH
+	LDS	XL,TXTUNF	; BUT FIRST CHECK IF
+	LDS	XH,TXTUNF+1
+	POP	A		; THE LENGTH OF NEW LINE
+	PUSH	XH		; IS 3 (LINE # AND CR)
+	PUSH	XL
+	CPI	A,3		; THEN DO NOT INSERT
+	BRNE	ST4_
+	RJMP	RSTART		; MUST CLEAR THE STACK
+
+ST4_:
+	ADD	XL,A		; COMPUTE NEW TXTUNF
+	ADC	XH,ZERO		; HL->NEW UNFILLED AREA 
+ST4A:
+	LDI	YL,LOW(TXTEND)	; CHECK TO SEE IF THERE !!! Change to TXTUNF?
+	LDI	YH,HIGH(TXTEND)	; IS ENOUGH SPACE 
+	CP	XL,YL		; COMPARE HL WITH DE
+	CPC	XH,YH		; RETURN CORRECT C AND Z FLAGS 
+
+	BRCS	ST4B
+	RJMP	QSORRY		; SORRY, NO ROOM FOR IT 
+ST4B:
+	STS	TXTUNF,XL	; OK, UPDATE TXTUNF 
+	STS	TXTUNF+1,XH
+	POP	YL		; DE->OLD UNFILLED AREA 
+	POP	YH
+	RCALL	MVDOWN
+	LDI	YH,HIGH(BUFFER-1) ; Y->BEGIN, X->END
+	LDI	YL,LOW(BUFFER-1)
+	POP	XL
+	POP	XH
+	RCALL	MVUP		; MOVE NEW LINE TO SAVE 
+	RJMP	ST2		; AREA
+
+
+HEXNUM:
+	ADIW	YL,1
+	LD	A,Y
+	CPI	A,'0'		; If not A-F, return 0 in B and X
+	BRCS	TSTNRET		; 
+	CPI	A,0x3A		; Else convert to hex in X
+	BRCS	HN2		; And count number of digits with B
+	CPI	A,'A'
+	BRCS	TSTNRET		; Less than 'A'
+	CPI	A,'G'
+	BRCC	TSTNRET		; Or greater than 'F' is not a valid digit
+	SUBI	A,7		; Subtract extra difference between '9' and 'A'
+HN2:
+	SUBI	A,'0'		; Subtract ASCII offset
+	LSL	XL		; X <<= 4
+	ROL	XH
+	LSL	XL
+	ROL	XH
+	LSL	XL
+	ROL	XH
+	LSL	XL
+	ROL	XH
+	ADD	XL,A		; X += A
+	INC	B
+	RJMP	HEXNUM		; Loop until not A-Z or 0-9 (&ABCDEF would just maintain CDEF)
+
+;* 
+;*
+; RETURNS NUMBER IN X IF FOUND, WITH B=NUMBER OF DIGITS
+; B=0 IF NO NUMBER FOUND
+TSTNUM:
+	CLR	XL		; *** TSTNUM ***
+	CLR	XH
+	CLR	B		; TEST IF THE TEXT IS 
+	RCALL	SKPSPC		; A NUMBER
+	CPI	A,'&'
+	BREQ	HEXNUM
+TN1:
+	CPI	A,'0'		; IF NOT, RETURN 0 IN 
+	BRCS	TSTNRET		; B AND HL
+	CPI	A,0x3A		; IF NUMBERS, CONVERT 
+	BRCC	TSTNRET		; TO BINARY IN X AND 
+	LDI	A,0xF0		; SET A TO # OF DIGITS
+	AND	A,XH		; IF H>255, THERE IS NO 
+	BRNE	QHOW		; ROOM FOR NEXT DIGIT 
+	INC	B		; B COUNTS # OF DIGITS
+	MOVW	TMPL,XL		; HL=10;*HL+(NEW DIGIT)
+	LSL	XL		; WHERE 10;* IS DONE BY
+	ROL	XH
+	LSL	XL		; SHIFT AND ADD 
+	ROL	XH
+	ADD	XL,TMPL		; (2*X+1)*2 = 10*X
+	ADC	XH,TMPH
+	LSL	XL
+	ROL	XH
+	LD	A,Y+		; AND (DIGIT) IS FROM 
+				; STRIPPING THE ASCII 
+	ANDI	A,0x0F		; CODE
+	ADD	XL,A
+	ADC	XH,ZERO
+	LD	A,Y		; DO THIS DIGIT NEXT
+	BRPL	TN1		; SIGN SAYS OVERFLOW
+QHOW:
+	PUSH	YH		; *** ERROR: "HOW?" *** 
+	PUSH    YL
+AHOW:
+	LDI	ZL,LOW(HOW*2)
+	LDI	ZH,HIGH(HOW*2)
+	RJMP	ERROR
+TSTNRET:
+	RET
+
+;* 
+NOT_:
+	RCALL	PARN2		; *** ABS(EXPR) *** 
+	COM	XH		; Invert value
+	COM	XL
+	RET
+
+;* 
+ABS_:
+	RCALL	PARN2		; *** ABS(EXPR) *** 
+	RCALL	CHKSGN		; CHECK SIGN
+	TST	XH		; NOTE THAT -32768
+				; CANNOT CHANGE SIGN
+	BRMI	QHOW		; SO SAY: "HOW?"
+	RET
+
+;* 
+RND:
+	RCALL	PARN2		; *** RND(EXPR) *** 
+	TST	XH		; EXPR MUST BE +
+	BRMI	QHOW
+	TST	XL		; AND NON-ZERO
+	BREQ	QHOW
+
+	MOVW	F,XL		; MOVE PARAMETER TO AF
+	LDS	ZL,RANPNT	; GET MEMORY AS RANDOM (NUMBER SEED?)
+	LDS	ZH,RANPNT+1
+	ADIW	ZL,1		; BUMP IT
+	LDI	TMPL,HIGH(LSTROM)
+	CPI	ZL,LOW(LSTROM)	; END OF ROM?
+	CPC	ZH,TMPL
+	BRCS	RA1		; WRAP AROUND IF LAST BYTE
+	LDI	ZL,LOW(INIT)
+	LDI	ZH,HIGH(INIT)
+RA1:
+	STS	RANPNT,ZL
+	STS	RANPNT+1,ZH
+;
+	LPM	XL,Z+		; READ WORD OF FLASH 
+	LPM	XH,Z		; AS RANDOM NUMBER
+
+	RCALL	DIVIDE		; RND(Y)=MOD(X,Y)+1 
+	ADIW	XL,1		; RESULT IN X
+RndExit:
+	RET
+
+;**************************************************************
+;* 
+;* *** TABLES *** DIRECT *** & EXEC ***
+;* 
+;* THIS SECTION OF THE CODE TESTS A STRING AGAINST A TABLE.
+;* WHEN A MATCH IS FOUND, CONTROL IS TRANSFERED TO THE SECTION 
+;* OF CODE ACCORDING TO THE TABLE. 
+;* 
+;* AT 'EXEC', Y SHOULD POINT TO THE STRING AND Z SHOULD POINT
+;* TO THE TABLE.  AT 'DIRECT', Y SHOULD POINT TO THE STRING,
+;* Z WILL BE SET UP TO POINT TO TAB1, WHICH IS THE TABLE OF 
+;* ALL DIRECT AND STATEMENT COMMANDS.
+;* 
+;* A '.' IN THE STRING WILL TERMINATE THE TEST AND THE PARTIAL 
+;* MATCH WILL BE CONSIDERED AS A MATCH.  E.G., 'P.', 'PR.',
+;* 'PRI.', 'PRIN.', OR 'PRINT' WILL ALL MATCH 'PRINT'. 
+;* 
+;* THE TABLE CONSISTS OF ANY NUMBER OF ITEMS.  EACH ITEM 
+;* IS A STRING OF CHARACTERS WITH BIT 7 SET TO 0 AND 
+;* A JUMP ADDRESS STORED HI-LOW WITH BIT 7 OF THE HIGH 
+;* BYTE SET TO 1.
+;* 
+;* END OF TABLE IS AN ITEM WITH A JUMP ADDRESS ONLY.  IF THE 
+;* STRING DOES NOT MATCH ANY OF THE OTHER ITEMS, IT WILL 
+;* MATCH THIS NULL ITEM AS DEFAULT.
+;* 
+; Currently searches list if numbers are encountered, which seems
+; stupid since we know they're not valid tokens
+; For integer BASIC, should we just convert them to 2 byte values right here?
+;* 
+CRUNCH: 			; *** Crunch - Tokenize line ***
+	LDI	ZH,HIGH(TOKTAB*2)
+	LDI	ZL,LOW(TOKTAB*2)
+	RCALL   SKPSPC		; IGNORE LEADING BLANKS
+	CLR	TMPREG		; Token number = 0
+
+	LD	F,Y		; Read next character
+	CPI	F,CR		; Carraige return?
+	BREQ	NoTokenMatch	; Then exit. Routine is complete
+	CPI	F,0x22		; Quote? -> Skip out of here
+	BREQ	CopyLine
+NextToken:
+	MOVW	TMPL,YL		; SAVE POINTER
+;	CP	YL,BASEND
+;	CPC	YH,BASEND
+;	BREQ	CrunchDone
+
+	SBIW	YL,1
+CompareToken:
+	ADIW	YL,1
+	LD	F,Y
+	CPI	F,'@'		; Not a letter? Then skip uppercase conversion
+	BRCS	CompareChar
+	ANDI	F,0xDF		; Convert to upper case
+CompareChar:
+	CPI	F,'.'		; Is it a period?
+	BREQ	PartialMatch	; Then we declare this as a match
+
+	LPM	A,Z+		; Otherwise read next byte from command table
+	TST	A		; Is it a zero?
+	BREQ	NoTokenMatch	; Then this is the  end of the token table. No matches
+	SUB	F,A		; Compare characters
+	BREQ	CompareToken	; Same? -> Keep looping
+	CPI	F,0x80		; MSB set? This is a match
+	BREQ	TokenMatch	; 
+	RJMP	FE2
+
+FindEOT:			; Find end of token string
+	LPM	A,Z+		; 
+FE2:
+	SBRS	A,7		; End is flagged by bit 7
+	RJMP	FindEOT
+
+	INC	TMPREG		; Increment token number
+	MOVW	YL,TMPL		; Restore string pointer
+	RJMP	NextToken	; Compare with next command string
+
+PartialMatch:
+TokenMatch:
+	ADIW	YL,1
+	ORI	TMPREG,0x80	; Set MSB of token
+	ST	X+,TMPREG	; Save token at next location
+	RJMP	Crunch
+
+NoTokenMatch:
+	MOVW	YL,TMPL		; Restore string pointer
+	ADIW	YL,1
+	CPI	F,'?'		; Print?
+	BRNE	NTM2
+	LDI	F,PRTTOK	; Then substitute print token
+NTM2:
+	ST	X+,F
+	CPI	F,CR		; Carraige return?
+	BRNE	Crunch		; Keep looping if not
+CrunchExit:
+	RET			; Otherwise return
+
+; Copy quoted text - ignore tokens that appear between quotes
+CopyLine:
+	ST	X+,F		; Save first quote
+	ADIW	YL,1
+CopyLine2:
+	LD	F,Y+		; Read next char
+	ST	X+,F
+	CPI	F,CR		; Exit crunch routine if Carriage return
+	BREQ	CrunchExit	; 
+	CPI	F,0x22		; End quote?
+	BRNE	CopyLine2
+	RJMP	Crunch		; Continue crunching line
+
+;* 
+;**************************************************************
+;* 
+;* WHAT FOLLOWS IS THE CODE TO EXECUTE DIRECT AND STATEMENT
+;* COMMANDS.  CONTROL IS TRANSFERED TO THESE POINTS VIA THE
+;* COMMAND TABLE LOOKUP CODE OF 'DIRECT' AND 'EXEC' IN LAST
+;* SECTION.  AFTER THE COMMAND IS EXECUTED, CONTROL IS 
+;* TANSFERED TO OTHER SECTIONS AS FOLLOWS:
+;* 
+;* FOR 'LIST', 'NEW', AND 'END': GO BACK TO 'RSTART'
+;* FOR 'RUN': GO EXECUTE THE FIRST STORED LINE IFF ANY; ELSE
+;* GO BACK TO 'RSTART'.
+;* FOR 'GOTO' AND 'GOSUB': GO EXECUTE THE TARGET LINE. 
+;* FOR 'RETURN' AND 'NEXT': GO BACK TO SAVED RETURN LINE.
+;* FOR ALL OTHERS: IF 'CURRNT' -> 0, GO TO 'RSTART', ELSE
+;* GO EXECUTE NEXT COMMAND.  (THIS IS DONE IN 'FINISH'.) 
+;* 
+;**************************************************************
+;* 
+;* *** NEW *** END *** RUN (& FRIENDS) *** & GOTO *** 
+;* 
+;* 'NEW(CR)' SETS 'TXTUNF' TO POINT TO 'TXTBGN'
+;* 
+;* 'END(CR)' GOES BACK TO 'RSTART'
+;* 
+;* 'RUN(CR)' FINDS THE FIRST STORED LINE, STORE ITS ADDRESS (IN
+;* 'CURRNT'), AND START EXECUTE IT.  NOTE THAT ONLY THOSE
+;* COMMANDS IN TAB2 ARE LEGAL FOR STORED PROGRAM.
+;* 
+;* THERE ARE 3 MORE ENTRIES IN 'RUN':
+;* 'RUNNXL' FINDS NEXT LINE, STORES ITS ADDR. AND EXECUTES IT. 
+;* 'RUNTSL' STORES THE ADDRESS OF THIS LINE AND EXECUTES IT. 
+;* 'RUNSML' CONTINUES THE EXECUTION ON SAME LINE.;* 
+;* 'GOTO EXPR(CR)' EVALUATES THE EXPRESSION, FIND THE TARGET 
+;* LINE, AND JUMP TO 'RUNTSL' TO DO IT.
+;* 'DLOAD' LOADS A NAMED PROGRAM FROM DISK.
+;* 'DSAVE' SAVES A NAMED PROGRAM ON DISK.
+;* 'FCBSET' SETS UP THE FILE CONTROL BLOCK FOR SUBSEQUENT DISK I/O.
+;* 
+NEW:
+	RCALL	ENDCHK		; *** NEW(CR) *** 
+	RCALL	CLRSCR
+NEW2:
+	LDI	XL,LOW(TXTBGN)
+	LDI	XH,HIGH(TXTBGN)
+	STS	TXTUNF,XL
+	STS	TXTUNF+1,XH
+	RJMP	RSTART
+;* 
+END:
+	RCALL	ENDCHK		; *** END(CR) ***
+	RJMP	RSTART
+;* 
+RUN:
+	RCALL	ENDCHK		; *** RUN(CR) *** 
+	LDI	YL,LOW(TXTBGN)	; FIRST SAVED LINE
+	LDI	YH,HIGH(TXTBGN)
+;* 
+RUNNXL:
+	LDI	XL,0		; *** RUNNXL ***
+	LDI	XH,0
+	RCALL	FNDLNP		; FIND WHATEVER LINE #
+	BRCC	RUNTSL
+	RJMP	RSTART		; C:PASSED TXTUNF, SO WE'RE DONE 
+;* 
+RUNTSL:				; *** RUNTSL ***
+	MOVW	CURRNTL,YL	; 'CURRNT' POINTS TO START OF LINE
+	ADIW	YL,2		; BUMP PASS LINE #
+;* 
+RUNSML:
+	RCALL	CHKIO		; *** RUNSML ***
+	LD	A,Y+		; Read byte
+	TST	A
+	BRPL	LET		; If not token, assume it's a variable assignment
+	LDI	ZL,LOW(CMDTAB)	; Look up token in table
+	LDI	ZH,HIGH(CMDTAB)
+	ANDI	A,0x7F
+	CPI	A,FXTOK		; Not a command token?
+	BRCC	TokErr		; Error
+	ADD	ZL,A
+	ADC	ZH,ZERO
+	IJMP			; Execute it
+
+TOKERR:
+	RJMP	QWHAT		; Invalid token
+
+;* 
+LET:				; *** LET *** 
+	SBIW	YL,1
+LET2:
+	RCALL	SETVAL		; SET VALUE TO VAR
+	RCALL	TSTC	
+	CPI	A,','
+	BRNE	LT1
+	ADIW	YL,1
+	RJMP	LET2		; ITEM BY ITEM
+LT1:
+	RCALL	FINISH		; UNTIL FINISH
+
+;* 
+GOTO:
+	RCALL	EXPR		; *** GOTO EXPR *** 
+	PUSH	YL		; SAVE FOR ERROR ROUTINE
+	PUSH	YH
+	RCALL	ENDCHK		; MUST FIND A CR
+	RCALL	FNDLN		; FIND THE TARGET LINE (Y PTS TO START OF LINE UPON RETURN)
+	BREQ	GOTO2
+	SBIW	YL,1		; Back up text pointer
+	RJMP	AHOW		; NO SUCH LINE #
+GOTO2:
+	POP	A		; CLEAN UP STACK
+	POP	A
+	RJMP	RUNTSL		; GO DO IT
+
+;************************************************************* 
+;* 
+;* *** LIST *** & PRINT ***
+;* 
+;* LIST HAS TWO FORMS: 
+;* 'LIST(CR)' LISTS ALL SAVED LINES
+;* 'LIST #(CR)' START LIST AT THIS LINE #
+;* YOU CAN STOP THE LISTING BY CONTROL C KEY 
+;* 
+;* PRINT COMMAND IS 'PRINT ....;' OR 'PRINT ....(CR)'
+;* WHERE '....' IS A LIST OF EXPRESIONS, FORMATS, BACK-
+;* ARROWS, AND STRINGS.  THESE ITEMS ARE SEPERATED BY COMMAS.
+;* 
+;* A FORMAT IS A POUND SIGN FOLLOWED BY A NUMBER.  IT CONTROLS
+;* THE NUMBER OF SPACES THE VALUE OF A EXPRESION IS GOING TO 
+;* BE PRINTED.  IT STAYS EFFECTIVE FOR THE REST OF THE PRINT 
+;* COMMAND UNLESS CHANGED BY ANOTHER FORMAT.  IF NO FORMAT IS
+;* SPECIFIED, 6 POSITIONS WILL BE USED.
+;* 
+;* A STRING IS QUOTED IN A PAIR OF SINGLE QUOTES OR A PAIR OF
+;* DOUBLE QUOTES.
+;* 
+;* A BACK-ARROW MEANS GENERATE A (CR) WITHOUT (LF) 
+;* 
+;* A (CRLF) IS GENERATED AFTER THE ENTIRE LIST HAS BEEN
+;* PRINTED OR IF THE LIST IS A NULL LIST.  HOWEVER IF THE LIST 
+;* ENDED WITH A COMMA, NO (CRLF) IS GENERATED. 
+;* 
+LIST:
+	RCALL	TSTNUM		; TEST IF THERE IS A #
+	RCALL	ENDCHK		; IF NO # WE GET A 0
+	RCALL	FNDLN		; FIND THIS OR NEXT LINE
+LS1:
+	BRCC	LS2
+	RJMP	RSTART		; C:PASSED TXTUNF, so we're done
+LS2:
+	RCALL	PRTLN		; PRINT THE LINE
+	RCALL	CHKIO		; STOP IF HIT CONTROL-C 
+	RCALL	FNDLNP		; FIND NEXT LINE
+	RJMP	LS1		; AND LOOP BACK 
+;* 
+PRINT:
+	RCALL	TSTC		; IF NULL LIST & ":"
+	CPI	A,':'
+	BRNE	PR2
+	ADIW	YL,1
+	RCALL	CRLF		; GIVE CR-LF AND
+	RJMP	RUNSML		; CONTINUE SAME LINE
+PR2:
+;	RCALL	TSTC		; IF NULL LIST (CR) 
+	CPI	A,CR
+	BRNE	PR0
+	ADIW	YL,1
+	RCALL	CRLF		; ALSO GIVE CR-LF AND 
+	RJMP	RUNNXL		; GO TO NEXT LINE 
+PR0:
+	CPI	A,'@'		; Print@?
+	BRNE	PR1
+	ADIW	YL,1
+	RCALL	EXPR		; Eval expression
+	CPI	XL,0xFF
+	LDI	A,1
+	CPC	XH,A		; Is it valid (0-511)?
+	BRCC	GHOW		; No -> Error
+	MOVW	CursorL,XL	; Cursor = new value
+	RJMP	PR3
+;	RCALL	TSTC		; ELSE IS IT FORMAT?
+;	CPI	A,0x23		; '#'
+;	BRNE	PR1
+;	ADIW	YL,1
+;	RCALL	EXPR		; YES, EVALUATE EXPR. 
+;	MOV	C,XL		; AND SAVE IT IN C
+;	RJMP	PR3		; LOOK FOR MORE TO PRINT
+PR1:
+	RCALL	QTSTG		; OR IS IT A STRING?
+	RJMP	PR8		; IF NOT, MUST BE EXPR. 
+PR3:
+	RCALL	TSTC		; IF "," or ";", GO FIND NEXT
+	CPI	A,0x3B
+	BREQ	PR4
+	CPI	A,','
+	BRNE	PR6
+PR4:
+	ADIW	YL,1
+	RCALL	FIN		; IN THE LIST.
+	RJMP	PR0		; LIST CONTINUES
+PR6:
+	RCALL	CRLF		; LIST ENDS 
+	RCALL	FINISH
+PR8:
+;	RCALL	TSTV		; SEE IF IT'S A$ OR B$
+;	BRVS	PR9		; YES: PRINT IT
+	RCALL	EXPR		; EVALUATE THE EXPR 
+;	PUSH	B	; why do we save Z?
+;	PUSH	C
+	RCALL	PRTNUM		; PRINT THE VALUE 
+;	POP	C
+;	POP	B
+	RJMP	PR3		; MORE TO PRINT?
+
+PR9:				; PRINT A$/B$
+;	LDI	F,0x10
+PR10:
+;	LD	A,X+		; GET A CHARACTER FROM RAM
+				; AND BUMP POINTER
+;	CPI	A,0xFF		; SAME AS END CHARACTER?
+;	BREQ	PR11		; YES, RETURN 
+;	RCALL	OUTC		; ELSE PRINT IT 
+;	DEC	F		; 16 BYTES PRINTED?
+;	BRNE	PR10		; NO, NEXT
+PR11:
+;	RJMP	PR3		; YES, RETURN 
+
+FINISH:
+	POP	A		; *** FINISH/RST 6 ***
+	POP	A		; REMOVE RETURN ADDRESS
+	RCALL	FIN		; CHECK END OF COMMAND
+	RJMP	QWHAT		; PRINT "WHAT?" IF WRONG
+
+GHOW:
+	RJMP	QHOW
+
+;* 
+;**************************************************************
+;* 
+;* *** GOSUB *** & RETURN ***
+;* 
+;* 'GOSUB EXPR;' OR 'GOSUB EXPR (CR)' IS LIKE THE 'GOTO' 
+;* COMMAND, EXCEPT THAT THE CURRENT TEXT POINTER, STACK POINTER
+;* ETC. ARE SAVE SO THAT EXECUTION CAN BE CONTINUED AFTER THE
+;* SUBROUTINE 'RETURN'.  IN ORDER THAT 'GOSUB' CAN BE NESTED 
+;* (AND EVEN RECURSIVE), THE SAVE AREA MUST BE STACKED.
+;* THE STACK POINTER IS SAVED IN 'STKGOS'. THE OLD 'STKGOS' IS 
+;* SAVED IN THE STACK.  IF WE ARE IN THE MAIN ROUTINE, 'STKGOS'
+;* IS ZERO (THIS WAS DONE BY THE "MAIN" SECTION OF THE CODE),
+;* BUT WE STILL SAVE IT AS A FLAG FORr NO FURTHER 'RETURN'S.
+;* 
+;* 'RETURN(CR)' UNDOS EVERYHING THAT 'GOSUB' DID, AND THUS
+;* RETURN THE EXCUTION TO THE COMMAND AFTER THE MOST RECENT
+;* 'GOSUB'.  IF 'STKGOS' IS ZERO, IT INDICATES THAT WE 
+;* NEVER HAD A 'GOSUB' AND IS THUS AN ERROR. 
+;* 
+GOSUB:
+	RCALL	PUSHA		; SAVE THE CURRENT "FOR"
+	RCALL	EXPR		; PARAMETERS
+	PUSH	YH		; AND TEXT POINTER
+	PUSH	YL
+	RCALL	FNDLN		; FIND THE TARGET LINE
+	BREQ	GOSUB2
+	SBIW	YL,1		; Back up text pointer
+	RJMP	AHOW		; NOT THERE. SAY "HOW?" 
+GOSUB2:
+	PUSH	CURRNTH		; FOUND IT, SAVE OLD
+	PUSH	CURRNTL
+	LDS	XL,STKGOS	; 'CURRNT' OLD 'STKGOS' 
+	LDS	XH,STKGOS+1
+	PUSH	XH
+	PUSH	XL
+	CLR	XH		; AND LOAD NEW ONES 
+	CLR	XL
+	STS	LOPVAR,XL
+	STS	LOPVAR+1,XH
+	IN	XL,SPL
+	STS	STKGOS,XL
+	IN	XH,SPH
+	STS	STKGOS+1,XH
+	RJMP	RUNTSL		; THEN RUN THAT LINE
+RETURN:
+	RCALL	ENDCHK		; THERE MUST BE A CR
+	LDS	XL,STKGOS	; OLD STACK POINTER 
+	LDS	XH,STKGOS+1
+	CPI	XL,0		; 0 MEANS NOT EXIST 
+	CPC	XH,ZERO
+	BRNE	RETURN2
+	RJMP	QWHAT		; SO, WE SAY: "WHAT?" 
+RETURN2:
+	OUT	SPH,XH		; ELSE, RESTORE IT
+	OUT	SPL,XL
+	POP	XL
+	POP	XH
+	STS	STKGOS,XL	; AND THE OLD 'STKGOS'
+	STS	STKGOS+1,XH
+	POP	CURRNTL
+	POP	CURRNTH		; AND THE OLD 'CURRNT'
+	POP	YL		; OLD TEXT POINTER
+	POP	YH
+	RCALL	POPA		; OLD "FOR" PARAMETERS
+	RCALL	FINISH		; AND WE ARE BACK HOME
+
+JQWHAT:
+	RJMP	QWHAT
+
+;* 
+;**************************************************************
+;* 
+;* *** FOR *** & NEXT ***
+;* 
+;* 'FOR' HAS TWO FORMS:
+;* 'FOR VAR=EXP1 TO EXP2 STEP EXP1' AND 'FOR VAR=EXP1 TO EXP2' 
+;* THE SECOND FORM MEANS THE SAME THING AS THE FIRST FORM WITH 
+;* EXP1=1.  (I.E., WITH A STEP OF +1.) 
+;* TBI WILL FIND THE VARIABLE VAR. AND SET ITS VALUE TO THE
+;* CURRENT VALUE OF EXP1.  IT ALSO EVALUATES EXPR2 AND EXP1
+;* AND SAVE ALL THESE TOGETHER WITH THE TEXT POINTERr ETC. IN 
+;* THE 'FOR' SAVE AREA, WHICH CONSISTS OF 'LOPVAR', 'LOPINC',
+;* 'LOPLMT', 'LOPLN', AND 'LOPPT'.  IF THERE IS ALREADY SOME-
+;* THING IN THE SAVE AREA (THIS IS INDICATED BY A NON-ZERO 
+;* 'LOPVAR'), THEN THE OLD SAVE AREA IS SAVED IN THE STACK 
+;* BEFORE THE NEW ONE OVERWRITES IT. 
+;* TBI WILL THEN DIG IN THE STACK AND FIND OUT IF THIS SAME
+;* VARIABLE WAS USED IN ANOTHER CURRENTLY ACTIVE 'FOR' LOOP. 
+;* IF THAT IS THE CASE THEN THE OLD 'FOR' LOOP IS DEACTIVATED.
+;* (PURGED FROM THE STACK..) 
+;* 
+;* 'NEXT VAR' SERVES AS THE LOGICAL (NOT NECESSARILY PHYSICAL)
+;* END OF THE 'FOR' LOOP.  THE CONTROL VARIABLE VAR. IS CHECKED
+;* WITH THE 'LOPVAR'.  IF THEY ARE NOT THE SAME, TBI DIGS IN 
+;* THE STACK TO FIND THE RIGHTt ONE AND PURGES ALL THOSE THAT 
+;* DID NOT MATCH.  EITHER WAY, TBI THEN ADDS THE 'STEP' TO 
+;* THAT VARIABLE AND CHECK THE RESULT WITH THE LIMIT.  IF IT 
+;* IS WITHIN THE LIMIT, CONTROL LOOPS BACK TO THE COMMAND
+;* FOLLOWING THE 'FOR'.  IF OUTSIDE THE LIMIT, THE SAVE ARER 
+;* IS PURGED AND EXECUTION CONTINUES.
+;* 
+FOR:
+	RCALL	PUSHA		; SAVE THE OLD SAVE AREA
+	RCALL	SETVAL		; SET THE CONTROL VAR.
+	STS	LOPVAR,ZL	; SAVE THAT 
+	STS	LOPVAR+1,ZH
+	LD	A,Y		; TO token?
+	CPI	A,TOTOK
+	BRNE	JQWHAT
+;FR1:
+	ADIW	YL,1
+	RCALL	EXPR		; EVALUATE THE LIMIT
+	STS	LOPLMT,XL	; SAVE THAT 
+	STS	LOPLMT+1,XH
+	LD	A,Y		; STEP token?
+	CPI	A,STEPTOK
+	BRNE	Step1		; No STEP token, so set STEP to 1
+	ADIW	YL,1
+	RCALL	EXPR		; FOUND IT, GET STEP value
+	RJMP	FR4
+Step1:
+	LDI	XL,1		; NOT FOUND, SET TO 1 
+	LDI	XH,0
+FR4:
+	STS	LOPINC,XL	; Save STEP value
+	STS	LOPINC+1,XH
+FR5:
+	MOVW	XL,CURRNTL
+	
+	STS	LOPLN,XL
+	STS	LOPLN+1,XH
+	STS	LOPPT,YL	; AND TEXT POINTER
+	STS	LOPPT+1,YH
+	LDI	C,10		; DIG INTO STACK TO 
+	LDI	B,0
+	LDS	YL,LOPVAR	; FIND 'LOPVAR' 
+	LDS	YH,LOPVAR+1
+	IN	XL,SPL		; HERE IS THE STACK 
+	IN	XH,SPH
+	ADIW	XL,1
+	RJMP	FR7B
+FR7:
+	ADD	XL,C		; EACH LEVEL IS 10 DEEP 
+	ADC	XH,B
+FR7B:
+	LD	A,X+		; GET THAT OLD 'LOPVAR' 
+	LD	TMPL,X
+	OR	A,TMPL
+	BREQ	FR8		; 0 SAYS NO MORE IN IT
+	LD	A,X
+	SBIW	XL,1
+	CP	A,YH		; SAME AS THIS ONE? 
+	BRNE	FR7
+	LD	A,X		; THE OTHER HALF? 
+	CP	A,YL
+	BRNE	FR7
+	IN	YL,SPL
+	IN	YH,SPH
+	MOVW	C,YL
+	LDI	YL,10
+	CLR	YH
+	ADD	YL,XL
+	ADC	YH,XH
+	RCALL	MVDOWN		; AND PURGE 10 WORDS
+	OUT	SPL,XL		; IN THE STACK
+	OUT	SPH,XH
+FR8:
+	LDS	YL,LOPPT	; JOB DONE, RESTORE DE
+	LDS	YH,LOPPT+1
+	RCALL	FINISH		; AND CONTINUE
+;* 
+NEXT:
+	RCALL	TSTV		; GET ADDRESS OF VAR. 
+; No var should be OK, just use last stacked value
+	BRCC	NX
+;	RJMP	QWHAT		; NO VARIABLE, "WHAT?"
+	LDS	XL,LOPVAR	; No var given, so assume same as last time
+	LDS	XH,LOPVAR+1
+NX:
+	STS	VARNXT,XL	; YES, SAVE IT
+	STS	VARNXT+1,XH
+NX0:
+	PUSH	YH		; SAVE TEXT POINTER 
+	PUSH	YL
+	LDS	YL,LOPVAR	; GET VAR. IN 'FOR' 
+	LDS	YH,LOPVAR+1
+	CPI	YL,0		; 0 SAYS NEVER HAD ONE
+	CPC	YH,ZERO
+	BRNE	NXT1
+	RJMP	AWHAT		; SO WE ASK: "WHAT?"
+NXT1:
+				; ELSE WE CHECK THEM
+	CP	XL,YL		; COMPARE HL WITH DE
+	CPC	XH,YH		; RETURN CORRECT C AND Z FLAGS 
+	BREQ	NX3		; OK, THEY AGREE
+	POP	YL		; NO, LET'S SEE 
+	POP	YH
+	RCALL	POPA		; PURGE CURRENT LOOP
+	LDS	XL,VARNXT	; AND POP ONE LEVEL 
+	LDS	XH,VARNXT+1
+	RJMP	NX0		; GO CHECK AGAIN
+NX3:
+	LD	XL,Y		; COME HERE WHEN AGREED 
+	LDD	XH,Y+1		; X = Variable/index value
+	LDS	F,LOPINC	; Step value
+	LDS	A,LOPINC+1
+	ADD	F,XL		; ADD ONE STEP
+	ADC	A,XH
+	ST	Y+,F		; PUT IT BACK 
+	ST	Y,A
+	LDS	XL,LOPLMT	; X = Loop limit
+	LDS	XH,LOPLMT+1
+	MOVW	YL,F		; Y = new value
+	LDS	TMPREG,LOPINC+1
+	TST	TMPREG
+	BRPL	NX1		; If STEP < 0
+	MOVW	YL,XL		; then swap X and Y
+	MOVW	XL,F
+NX1:
+	RCALL	CKHLDE		; COMPARE WITH LIMIT
+	POP	YL		; RESTORE TEXT POINTER
+	POP	YH
+	BRCS	NX2		; OUTSIDE LIMIT 
+	LDS	XL,LOPLN	; WITHIN LIMIT, GO
+	LDS	XH,LOPLN+1
+	MOVW	CURRNTL,XL	; BACK TO THE SAVED VALUES
+	LDS	YL,LOPPT	;
+	LDS	YH,LOPPT+1
+	RCALL	FINISH
+NX2:
+	RCALL	POPA		; PURGE THIS LOOP 
+	RCALL	FINISH
+;* 
+;**************************************************************
+;* 
+;* *** REM *** IFF *** INPUT *** & LET (& DEFLT) ***
+;* 
+;* 'REM' CAN BE FOLLOWED BY ANYTHING AND IS IGNORED BY TBI.
+;* TBI TREATS IT LIKE AN 'IF' WITH A FALSE CONDITION.
+;* 
+;* 'IF' IS FOLLOWED BY AN EXPR. AS A CONDITION AND ONE OR MORE 
+;* COMMANDS (INCLUDING OUTHER 'IF'S) SEPERATED BY SEMI-COLONS. 
+;* NOTE THAT THE WORD 'THEN' IS NOT USED.  TBI EVALUATES THE 
+;* EXPR. IF IT IS NON-ZERO, EXECUTION CONTINUES.  IF THE 
+;* EXPR. IS ZERO, THE COMMANDS THAT FOLLOWS ARE IGNORED AND
+;* EXECUTION CONTINUES AT THE NEXT LINE. 
+;* 
+;* 'IPUT' COMMAND IS LIKE THE 'PRINT' COMMAND, AND IS FOLLOWED
+;* BY A LIST OF ITEMS.  IF THE ITEM IS A STRING IN SINGLE OR 
+;* DOUBLE QUOTES, OR IS A BACK-ARROW, IT HAS THE SAME EFFECT AS
+;* IN 'PRINT'.  IF AN ITEM IS A VARIABLE, THIS VARIABLE NAME IS
+;* PRINTED OUT FOLLOWED BY A COLON.  THEN TBI WAITS FOR AN 
+;* EXPR. TO BE TYPED IN.  THE VARIABLE IS THEN SET TO THE
+;* VALUE OF THIS EXPR.  IF THE VARIABLE IS PROCEDED BY A STRING
+;* (AGAIN IN SINGLE OR DOUBLE QUOTES), THE STRING WILL BE
+;* PRINTED FOLLOWED BY A COLON.  TBI THEN WAITS FOR INPUT EXPR.
+;* AND SET THE VARIABLE TO THE VALUE OF THE EXPR.
+;* 
+;* IF THE INPUT EXPR. IS INVALID, TBI WILL PRINT "WHAT?",
+;* "HOW?" OR "SORRY" AND REPRINT THE PROMPT AND REDO THE INPUT.
+;* THE EXECUTION WILL NOT TERMINATE UNLESS YOU TYPE CONTROL-C. 
+;* THIS IS HANDLED IN 'INPERR'.
+;* 
+;* 'LET' IS FOLLOWED BY A LIST OF ITEMS SEPERATED BY COMMAS. 
+;* EACH ITEM CONSISTS OF A VARIABLE, AN EQUAL SIGN, AND AN EXPR. 
+;* TBI EVALUATES THE EXPR. AND SET THE VARIBLE TO THAT VALUE.
+;* TB WILL ALSO HANDLE 'LET' COMMAND WITHOUT THE WORD 'LET'.
+;* THIS IS DONE BY 'DEFLT'.
+;* 
+DATA:				; *** DATA (TREAT AS REM) *** 
+REM:
+	CLR	XH		; *** REM *** 
+	CLR	XL
+	RJMP	IFF2
+;* 
+IFF:
+	RCALL	EXPR		; *** IFF ***
+	CPI	XL,0
+	CPC	XH,ZERO		; IS THE EXPR.=0? 
+	BREQ	IFF2
+	RJMP	RUNSML		; NO, CONTINUE
+IFF2:
+	RCALL	FNDSKP		; YES, SKIP REST OF LINE
+	BRCS	IFF3
+	RJMP	RUNTSL
+IFF3:
+	RJMP	RSTART
+;* 
+INPERR:
+	LDS	XL,STKINP	; *** INPERR ***
+	LDS	XH,STKINP+1
+	OUT	SPL,XL		; RESTORE OLD SREG
+	OUT	SPH,XH
+	POP	CURRNTL
+	POP	CURRNTH		; AND OLD 'CURRNT'
+	POP	YL		; AND OLD TEXT POINTER
+	POP	YH
+	POP	YL		; REDO INPUT
+	POP	YH
+;* 
+INPUT: 				; *** INPUT *** 
+IP1:
+	PUSH	YH		; SAVE IN CASE OF ERROR 
+	PUSH	YL
+	RCALL	QTSTG		; IS NEXT ITEM A STRING?
+;	RJMP	IP1_		; NO
+	NOP			; NO, BUT CONTINUE ANYWAY
+;	RJMP	IP2
+;IP1_:
+;	RCALL	TSTV		; YES. BUT FOLLOWED BY A
+;	BRCS	IP4		; VARIABLE?   NO. 
+;	RJMP	IP3		; YES.  INPUT VARIABLE
+IP2:
+;	PUSH	YH		; SAVE FOR 'PRTRSTG' 
+;	PUSH	YL
+	RCALL	TSTC		; FOLLOWED BY , or ;?
+	CPI	A,','
+	BREQ	IP2_
+	CPI	A,0x3B		; Semicolon
+	BRNE	IP2OK
+IP2_:
+	ADIW	YL,1		; IGNORE COMMA AND SEMICOLON
+IP2OK:
+	RCALL	TSTV		; MUST BE VARIABLE NOW
+	BRCC	IP3
+	RJMP	QWHAT		; "WHAT?" IT IS NOT?
+;IP2_:
+;	LD	C,Y		; GET READY FOR 'RTSTG'
+;	CLR	TMPH
+;	ST	Y,TMPH
+;	POP	YL
+;	POP	YH
+;	RCALL	PRTRSTG		; PRINT STRING AS PROMPT
+;	SBIW	YL,1
+;	ST	Y,C		; RESTORE TEXT
+IP3:
+	PUSH	YH		; SAVE CURRENT TEXT POINTER
+	PUSH	YL
+;???	EX	DE,HL
+	PUSH	CURRNTL		; ALSO SAVE 'CURRNT'
+	PUSH	CURRNTH
+
+;	MOV	CURRNTL,F	; A NEGATIVE NUMBER AS A FLAG 
+	LDI	CURRNTH,0xFF
+	IN	A,SPL
+	STS	STKINP,A	; SAVE SREG TOO 
+	IN	A,SPH
+	STS	STKINP+1,A
+	PUSH	XH		; OLD HL
+	PUSH	XL
+	LDI	A,58 		; PRINT '?'
+	RCALL	GETLN		; AND GET A LINE
+IP3A:
+	LDI	YL,LOW(BUFFER)	; POINT TO LINE BUFFER
+	LDI	YH,HIGH(BUFFER)
+	RCALL	EXPR		; EVALUATE INPUT
+				; CAN BE 'CALL ENDCHK'
+	POP	YL		; OK, GET OLD HL
+	POP	YH
+;???	EX	DE,HL
+	ST	Y+,XL		; SAVE VALUE IN VAR.
+	ST	Y,XH
+	POP	XL		; GET OLD 'CURRNT'
+	POP	XH
+	MOVW	CURRNTL,XL
+	POP	YL		; AND OLD TEXT POINTER
+	POP	YH
+IP4:
+	POP	A		; PURGE JUNK IN STACK (ORIGINAL TEXT POINTER)
+	POP	A
+	RCALL	TSTC		; IS NEXT CH. ','?
+	CPI	A,','
+	BRNE	IP5
+	ADIW	YL,1
+	RJMP	IP1		; YES, MORE ITEMS.
+IP5:	RCALL	FINISH
+;* 
+
+;* 
+;**************************************************************
+;* 
+;* *** EXPR ***
+;* 
+;* 'EXPR' EVALUATES ARITHMETICAL OR LOGICAL EXPRESSIONS. 
+;* <EXPR>::=<EXPR2>
+;*          <EXPR2><REL.OP.><EXPR2>
+;* WHERE <REL.OP.> IS ONE OF THE OPERATORSs IN TAB8 AND THE 
+;* RESULT OF THESE OPERATIONS IS 1 IF TRUE AND 0 IF FALSE. 
+;* <EXPR2>::=(+ OR -)<EXPR3>(+ OR -<EXPR3>)(....)
+;* WHERE () ARE OPTIONAL AND (....) ARE OPTIONAL REPEATS.
+;* <EXPR3>::=<EXPR4>(<* OR /><EXPR4>)(....)
+;* <EXPR4>::=<VARIABLE>
+;*           <FUNCTION>
+;*           (<EXPR>)
+;* <EXPR> IS RECURSIVE SO THAT VARIABLE '@' CAN HAVE AN <EXPR> 
+;* AS INDEX, FNCTIONS CAN HAVE AN <EXPR> AS ARGUMENTS, AND
+;* <EXPR4> CAN BE AN <EXPR> IN PARANTHESE. 
+;* 
+;*                 EXPR   CALL EXPR2     THIS IS AT LOC. 18
+;*                        PUSH HL        SAVE <EXPR2> VALUE
+
+
+JQHOW:
+	RJMP	QHOW
+
+;* 
+EXPR:
+EXPR2:
+	RCALL	TSTC		; NEGATIVE SIGN?
+	CPI	A,'-'		; '-'
+	BRNE	XP21
+	ADIW	YL,1
+	CLR	XH		; YES, FAKE '0-'
+	CLR	XL
+	RJMP	Subtract	; TREAT LIKE SUBTRACT 
+XP21:
+;	RCALL	TSTC		; POSITIVE SIGN?  IGNORE
+	CPI	A,'+'
+	BRNE	EXPR3	
+	ADIW	YL,1
+;* 
+EXPR3:
+	RCALL	EXPR4		; GET 1ST <EXPR4> 
+XP31:
+	RCALL	TSTC		; MULTIPLY? 
+CHKMUL:
+	CPI	A,'*'
+	BRNE	CHKDIV
+	ADIW	YL,1
+	PUSH	XH		; YES, SAVE 1ST OPERAND
+	PUSH	XL
+	RCALL	EXPR4		; AND GET 2ND <EXPR4> 
+	CLR	B		; CLEAR TEMP REG FOR SIGN
+	RCALL	CHKSGN		; CHECK SIGN
+;	MOV	A,XH		; MOVE 2ND INTO AF
+	MOVW	F,XL
+	POP	XL		; 1ST IN X NOW 
+	POP	XH
+	RCALL	CHKSGN		; CHECK SIGN OF 1ST 
+; Check to see if both numbers are more than one byte. If so, we have an overflow error
+	TST	A		; IS AF > 255 ? 
+	BREQ	XP32		; NO -> SKIP AHEAD
+	TST	XH		; YES, HOW ABOUT X? 
+	BRNE	JQHOW		; YES -> OVERFLOW ERROR BECAUSE BOTH ARE > 255
+	MOVW	TMPL,XL
+	MOVW	XL,F
+	MOVW	F,TMPL
+
+XP32:
+	MUL	XL,F		; MULTIPLY X*Y
+	MOV	XL,R0		; PUT RESULT IN YL
+	MOV	TMPL,R1		; SAVE HI BYTE OF RESULT
+	MUL	XH,F
+	MOV	XH,R0		; PUT RESULT IN YH
+	ADD	XH,TMPL		; ADD HI BYTE OF PREVIOUS RESULT
+	BRCS	JAHOW		; OVERFLOW -> ERROR
+	RJMP	XP31		; FINISHED
+
+CHKDIV:				; DIVIDE? 
+	CPI	A,'/'
+	BRNE	CHKMOD
+	RCALL	Do_Divide
+	MOVW	XL,ZL		; X = Z = RESULT
+	MOV	ZH,R0		; GET SIGN BACK 
+DIV2:
+	TST	XH		; HL MUST BE +
+	BRMI	JQHOW		; ELSE IT IS OVERFLOW 
+	TST	ZH		; Check sign
+	BRPL	DIVX
+	RCALL	CHGSGN		; CHANGE SIGN IF NEEDED 
+DIVX:
+	RJMP	XP31		; LOOK OR MORE TERMS 
+
+CHKMOD:
+	CPI	A,'%'		; MOD
+	BRNE	CHKADD
+	RCALL	Do_Divide	; X = remainder
+	RJMP	XP31
+
+
+CHKADD:
+;	RCALL	TSTC		; NEXT CHAR = ADD?
+	CPI	A,'+'		;'+'
+	BRNE	CHKSUB
+	ADIW	YL,1		; Bump past + sign
+	PUSH	XH		; Save value
+	PUSH	XL
+	RCALL	EXPR3		; Get next expression
+AddAFXL:			; Add AD to XL
+	POP	F		; 1st expression in AF
+	POP	A 
+	ADD	XL,F
+	ADC	XH,A
+	BRMI	CHKADD		; 1ST 2ND SIGN DIFFER 
+	EOR	A,XH		; 1ST 2ND SIGN EQUAL
+	BRPL	JXP31 ;XP23	; SO IS RESULT
+	RJMP	QHOW		; Overflow - NOTE: Doesn't allow for -32768
+CHKSUB:
+	CPI	A,'-'		; '-'
+	BRNE	JXP31
+	ADIW	YL,1
+Subtract:
+	PUSH	XH		; YES, SAVE 1ST <EXPR3> 
+	PUSH	XL
+	RCALL	EXPR3		; GET 2ND <EXPR3> 
+	RCALL	CHGSGN		; NEGATE
+	RJMP	AddAFXL		; AND ADD THEM
+JXP31:
+	CPI	A,'<'		; Check for relative expression
+	BREQ	Less
+	CPI	A,'>'
+	BREQ	Greater
+	CPI	A,'='
+	BREQ	Equal
+	CPI	A,GREATER_OR_EQUAL ; >=
+	BREQ	GreaterOrEqual
+	CPI	A,LESS_OR_EQUAL	; <=
+	BREQ	LessOrEqual
+	CPI	A,UNEQUAL
+	BREQ	NotEqual
+	CPI	A,ANDTOK	; AND
+	BRNE	CHKOR
+	RCALL	GetTerm2
+	AND	XL,F
+	AND	XH,A
+	RJMP	XP31
+CHKOR:
+	CPI	A,ORTOK		; OR
+	BRNE	ExprX
+	RCALL	GetTerm2
+	OR	XL,F
+	OR	XH,A
+	RJMP	XP31
+ExprX:
+	RET			; Else return
+
+JAHOW:
+	RJMP	AHOW
+
+GetTerm2:			; Get second term
+	ADIW	YL,1		; Bump past token
+	PUSH	XH		; Save first term
+	PUSH	XL
+	RCALL	Expr2		; Get second term
+	POP	F		; First term now in AF
+	POP	A
+	RET
+
+Do_Divide:			; Perform divide operation
+	ADIW	YL,1
+	PUSH	XH		; YES, SAVE 1ST <EXPR4> 
+	PUSH	XL
+	RCALL	EXPR4		; AND GET 2ND ONE 
+	LDI	B,0		; CLEAR B FOR SIGN
+	RCALL	CHKSGN		; CHECK SIGN OF 2ND 
+	MOVW	F,XL		; PUT 2ND IN AF
+	POP	XL		; GET 1ST IN HL 
+	POP	XH
+	RCALL	CHKSGN		; CHECK SIGN OF 1ST 
+	CPI	F,0		; DIVIDE BY 0?
+	CPC	A,ZERO
+	BREQ	JAHOW		; SAY "HOW?"
+	MOV	R0,B		; ELSE SAVE SIGN
+	RCALL	DIVIDE		; USE SUBROUTINE (RESULT RETURNED IN Z)
+	RET
+
+
+GreaterOrEqual:
+	RCALL	RelExpr		; REL.OP.">=" 
+	BRCS	EXPRET		; NO, RETURN HL=0 
+TRUE:
+	MOV	XL,A		; YES, RETURN HL=1
+	RET
+
+Less:
+	RCALL	RelExpr		; REL.OP."<"
+	BRCC	EXPRET		; FALSE, RETURN HL=0
+	RJMP	TRUE		; TRUE, RETURN HL=1 
+
+Greater:
+	RCALL	RelExpr		; REL.OP.">"
+	BREQ	EXPRET		; FALSE 
+	BRCS	EXPRET		; ALSO FALSE, HL=0
+	RJMP	TRUE		; TRUE, RETURN HL=1 
+
+Equal:
+	RCALL	RelExpr		; REL.OP."="
+	BRNE	EXPRET		; FALSE, RETRUN HL=0
+	RJMP	TRUE		; TRUE, RETURN HL=1 
+
+NotEqual:
+	RCALL	RelExpr		; REL.OP."#"
+	BREQ	EXPRET		; FALSE, RETURN HL=0
+	RJMP	TRUE		; TRUE, RETURN HL=1 
+
+LessOrEqual:
+	RCALL	RelExpr		; REL.OP."<=" 
+	MOV	XL,A		; SET HL=1
+	BREQ	EXPRET		; REL. TRUE, RETURN 
+	BRCS	EXPRET
+	MOV	XL,XH		; ELSE SET HL=0 
+	RET
+
+RelExpr:
+	RCALL	GetTerm2	; Get second term
+	PUSH	YH		; Save current text pointer
+	PUSH	YL
+	MOVW	YL,XL		; Y = 2nd
+	MOVW	XL,F		; X = 1st expression
+
+;	ADIW	YL,1
+;	PUSH	XH		; REVERSE TOP OF STACK
+;	PUSH	XL		; Return address
+;	RCALL	EXPR2		; GET 2ND <EXPR2> 
+
+;	MOVW	F,XL		; Move 2nd expression to AF
+;	POP	XL		; Recover 1st expression from stack
+;	POP	XH
+;	PUSH	YH		; Save current text pointer
+;	PUSH	YL
+;	MOVW	YL,F		; Y=AF
+
+	RCALL	CKHLDE		; COMPARE 1ST WITH 2ND
+	POP	YL		; RESTORE TEXT POINTER
+	POP	YH
+	LDI	XH,0		; SET HL=0, A=1 
+	LDI	XL,0
+	LDI	A,1
+EXPRET:
+	RET
+
+;* 
+; Add test for '-' sign at start of this? (as in A=5*-RND(10))
+; Doesn't really seem necessary. Could be rewritten as 5*(0-RND(10))
+EXPR4:
+	TST	A
+	BRPL	XP40
+	; Search function table - screen value for valid function first?
+	LDI	ZH,HIGH(CMDTAB)	; Find function in table
+	LDI	ZL,LOW(CMDTAB)
+	ANDI	A,0x7F
+;	CPI	A,FXTOK
+;	BRCS	ERROR
+;	CPI	A,LASTTOK
+;	BRCC	ERROR
+	ADD	ZL,A
+	ADC	ZH,ZERO
+	IJMP
+
+XP40:
+	RCALL	TSTV		; NO, NOT A FUNCTION
+	BRCS	XP41		; NOR A VARIABLE
+	LD	F,X+		; VARIABLE
+	LD	A,X
+	MOVW	XL,F
+	RET
+XP41:
+	RCALL	TSTNUM		; OR IS IT A NUMBER 
+	TST	B		; # OF DIGIT
+	BREQ	EXP		; Not a digit, so check exponent
+	RET
+
+EXP:
+;	CPI	A,'^'
+;	BRNE	PARN
+;	PUSH	XH
+;	PUSH	XL
+;	RCALL	EXPR4		; Get second expression
+;	POP	F
+;	POP	A
+	; Multiply AF times AF, XH times
+;	RET
+PARN:
+	RCALL	TSTC		; NO DIGIT, MUST BE 
+	CPI	A,'('
+	BRNE	XP43
+PARN2:
+	ADIW	YL,1
+	RCALL	EXPR		; "(EXPR)"
+;PARN3:
+	RCALL	TSTC
+	CPI	A,')'
+	BRNE	XP43
+	ADIW	YL,1
+XP42:
+	RET
+XP43:
+; Compare with matching char like ")". If no match, then error, else RET
+	RJMP	QWHAT		; ELSE SAY: "WHAT?" 
+
+JHOW:
+	RJMP	QHOW
+
+
+;* RETURNS NUMBER OF BYTES FREE IN X
+SIZE:
+	ADIW	YL,1
+	LDI	XL,LOW(STKLMT)	;IN XL,SPL !!! Change to TXTUNF?
+	LDI	XH,HIGH(STKLMT)	;IN XH,SPH
+	LDS	TMPL,TXTUNF	; *** SIZE ***
+	LDS	TMPH,TXTUNF+1	; GET THE NUMBER OF FREE
+	SUB	XL,TMPL		; AND TXTBGN (TOP OF STACK-END OF TEXT)
+	SBC	XH,TMPH
+	RET
+
+;*********************************************************
+;*
+;*   *** POKE *** PEEK *** & USR
+;*
+;*  POKE I,J(,K,L)
+;*
+;*  THIS COMMAND WORKS LIKE OUT EXCEPT THAT IT PUTS DATA 'J'
+;*  INTO MEMORY LOCATION 'I'.
+;*
+;*  PEEK (I)
+;*
+;*  THIS FUNCTION WORKS LIKE INP EXCEPT IT GETS IT'S VALUE
+;*  FROM MEMORY LOCATION 'I'.
+;*
+;*  USR (I(,J))
+;*
+;*  USR CALLS A MACHINE LANGUAGE SUBROUTINE AT LOCATION 'I'
+;*  IF THE OPTIONAL PARAMETER 'J' IS USED ITS VALUE IS PASSED
+;*  IN H&L.  THE VALUE OF THE FUNCTION SHOULD BE RETURNED IN H&L.
+;*
+;************************************************************
+;*
+
+POKE:
+	RCALL	EXPR
+	PUSH	XH
+	PUSH	XL
+	RCALL	TSTC
+	CPI	A,','
+	BRNE	POKE2
+	ADIW	YL,1
+	RCALL	EXPR
+	MOV	A,XL
+	POP	XL
+	POP	XH
+	ST	X,A
+	RCALL	TSTC
+POKE2:
+	CPI	A,','
+	BRNE	POKE3
+	ADIW	YL,1
+	RJMP	POKE
+POKE3:
+	RCALL	FINISH
+
+PEEK:
+	RCALL	PARN2
+	LD	TMPL,X
+	MOV	XL,TMPL
+	CLR	XH
+	RET
+
+USR_CMD:
+	PUSH	B
+	PUSH	C
+;	RCALL	TSTC
+;	CPI	A,'('
+;	BRNE	J1QWHAT		; QWHAT
+;	ADIW	YL,1
+	RCALL	EXPR
+	RCALL	TSTC
+	CPI	A,')'
+	BRNE	PASREGLRM	; Not a ')', so must be passing parameter
+	ADIW	YL,1		; Closed parenthesis found, so save text pointer
+	PUSH	YH
+	PUSH	YL
+	LDI	YL,LOW(USRET)
+	LDI	YH,HIGH(USRET)
+	PUSH	YH		; SAVE RETURN POINT FROM FUNCTION
+	PUSH	YL
+	PUSH	XH		; SAVE USER ADDRESS AS RETURN ADDRESS
+	PUSH	XL
+	RET			; CALL USR ROUTINE
+
+PASREGLRM:			; Pass parameter in X
+	RCALL	TSTC
+	CPI	A,','		; Not a comma, so error out
+	BRNE	USRET
+	ADIW	YL,1
+	PUSH	XH		; Save address
+	PUSH	XL
+	RCALL	EXPR		; Get parameter
+	RCALL	TSTC
+	CPI	A,')'		; Not a closed paren, so error out
+	BRNE	USRET
+	ADIW	YL,1
+	POP	C		; Restore address
+	POP	B
+	PUSH	YH		; Save text pointer
+	PUSH	YL
+	LDI	YL,LOW(USRET)
+	LDI	YH,HIGH(USRET)
+	PUSH	YH		; Save USRET as return address from called routine
+	PUSH	YL
+	PUSH	B		; Save user address as return address
+	PUSH	C
+	RET			; CALL USR ROUTINE
+USRET:
+	POP	YL		; Restore text pointer
+	POP	YH
+	POP	C		; Clean up stack
+	POP	B
+	RET
+;J1QWHAT:
+;	RJMP	QWHAT
+
+
+; This really isn't right at the moment
+; duration is really cycles instead of a time delay
+; No way to create different tones with equal delays with this set-up
+Sound:			; Tone (1/10kHz), duration
+	SBI	DDRA,0
+	RCALL	EXPR		; Get tone
+	PUSH	XH		; Save it
+	PUSH	XL
+	RCALL	TSTC
+	CPI	A,','
+	BRNE	Snd3		; Error
+	ADIW	YL,1
+	RCALL	EXPR		; Get duration in X
+	POP	TMPL		; TMP = tone
+	POP	TMPH
+Snd1:
+	LDI	F,20		; 20x50us = 1ms
+SndLoop:
+	SBI	PORTA,0		; Turn pin on
+	RCALL	DelayN25	; Delay n periods of 25us
+	CBI	PORTA,0		; Turn pin off
+	RCALL	DelayN25
+	DEC	F
+	BRNE	SndLoop
+	SBIW	XL,1		; Decrement duration
+	BRNE	Snd1
+
+SndX:
+	RCALL	TSTC		; Check for more values
+Snd2:
+	CPI	A,','
+	BRNE	Snd3
+	ADIW	YL,1
+	RJMP	Sound
+Snd3:
+	RCALL	FINISH
+
+DelayN25:
+	MOVW	ZL,TMPL		; Save count
+DlyN:
+	RCALL	Delay25
+	SBIW	ZL,1
+	BRNE	DlyN
+	RET
+
+Delay25:			; Delay 25us
+	LDI	A,6
+D50:
+	DEC	A
+	BRNE	D50
+	RET
+
+; Need way to flag strings to the print routine
+; CHR$
+;CHRSTR:
+;	RCALL	PARN2
+; Hex2Asc
+;	RET
+
+;**************************************************************
+;* 
+;* *** DIVIDE *** CHKSGN *** CHGSGN *** & CKHLDE *** 
+;* 
+;* 'DIVIDE' DIVIDES X BY AF, RESULT IN BC, REMAINDER IN X
+;* 
+;* 'CHKSGN' CHECKS SIGN OF HL.  IF +, NO CHANGE.  IF -, CHANGE 
+;* SIGN AND FLIP SIGN OF B.
+;* 
+;* 'CHGSGN' CHNGES SIGN OF HL AND B UNCONDITIONALLY. 
+;* 
+;* 'CKHLE' CHECKS SIGN OF HL AND DE.  IF DIFFERENT, HL AND DE 
+;* ARE INTERCHANGED.  IF SAME SIGN, NOT INTERCHANGED.  EITHER
+;* CASE, HL DE ARE THEN COMPARED TO SET THE FLAGS. 
+;* 
+DIVIDE:
+	PUSH	XL		; *** DIVIDE ***
+	MOV	XL,XH		; DIVIDE H BY DE
+	LDI	XH,0
+	RCALL	DV1
+	MOV	B,C		; SAVE RESULT IN B
+	MOV	TMPL,XL		; (REMAINDER+L)/DE
+	POP	XL
+	MOV	XH,TMPL
+DV1:
+	LDI	C,0xFF		; RESULT IN C 
+DV2:
+	INC	C		; DUMB ROUTINE
+				; DIVIDE BY SUBTRACT
+	SUB	XL,F		; SUBTRACT DE FROM
+	SBC	XH,A		; HL
+	BRCC	DV2		; AND COUNT 
+	ADD	XL,F
+	ADC	XH,A
+	RET
+;* 
+CHKSGN:				; *** CHKSGN ***
+	TST	XH		; CHECK SIGN OF HL
+	BRPL	CHKRET		; IF -, CHANGE SIGN 
+;* 
+CHGSGN:
+	COM	XH		; *** CHGSGN ***
+	COM	XL		; CHANGE SIGN OF HL 
+	ADIW	XL,1
+	LDI	F,0x80		; AND ALSO FLIP SIGN (ONLY USED IN MULTIPLY AND DIVIDE)
+	EOR	ZH,F
+CHKRET:
+	RET
+;* 
+CKHLDE:
+	MOV	A,XH
+	EOR	A,YH		; SAME SIGN?
+	BRPL	CK1		; YES, COMPARE
+	PUSH	YH
+	PUSH	YL		; NO, XCH AND COMP
+	MOVW	YL,XL
+	POP	XL
+	POP	XH
+CK1:
+	CP	XL,YL		; COMPARE HL WITH DE
+	CPC	XH,YH		; RETURN CORRECT C AND Z FLAGS 
+	RET
+
+;**************************************************************
+;* 
+;* *** GETLN *** FNDLN (& FRIENDS) *** 
+;* 
+;* 'GETLN' READS LINE FROM THE CONSOLE INTO 'BUFFER'. IT FIRST PROMPTS
+;* THE CHARACTER IN A (GIVEN BY THE CALLER), THEN IT FILLS THE 
+;* THE BUFFER AND ECHOS.  IT IGNORES LF'S AND NULLS, BUT STILL 
+;* ECHOS THEM BACK.  RUB-OUT IS USED TO CAUSE IT TO DELETE 
+;* THE LAST CHARATER (IF THERE IS ONE), AND ALT-MOD IS USED TO 
+;* CAUSE IT TO DELETE THE WHOLE LINE AND START IT ALL OVER.
+;* CR SIGNALS THE END OF A LINE AND CAUSES 'GETLN' TO RETURN.
+;* 
+;* 'FNDLN' FINDS A LINE WITH A GIVEN LINE # (IN X) IN THE 
+;* TEXT SAVE AREA.  Y IS USED AS THE TEXT POINTER.  IF THE
+;* LINE IS FOUND, Y WILL POINT TO THE BEGINNING OF THAT LINE
+;* (I.E., THE LOW BYTE OF THE LINE #), AND FLAGS ARE NC & Z. 
+;* IF THAT LINE IS NOT THERE AND A LINE WITH A HIGHER LINE # 
+;* IS FOUND, Y POINTS TO THERE AND FLAGS ARE NC & NZ.  IF 
+;* WE REACHED THE END OF TEXT SAVE ARE AND CANNOT FIND THE 
+;* LINE, FLAGS ARE C & NZ. 
+;* 'FNDLN' WILL INITIALIZE Y TO THE BEGINNING OF THE TEXT SAVE
+;* AREA TO START THE SEARCH.  SOME OTHER ENTRIES OF THIS 
+;* ROUTINE WILL NOT INITIALIZE Y AND DO THE SEARCH. 
+;* 'FNDLNP' WILL START WITH Y AND SEARCH FOR THE LINE #.
+;* 'FNDNXT' WILL BUMP Y BY 2, FIND A CR AND THEN START SEARCH.
+;* 'FNDSKP' USE Y TO FIND A CR, AND THEN START SEARCH. 
+;* 
+GETLN:
+	RCALL	OUTC		; *** GETLN *** 
+	LDI	YH,HIGH(BUFFER)	; PROMPT AND INIT
+	LDI	YL,LOW(BUFFER)
+#ifdef __VIDEO__
+	LDI	ZH,HIGH(VIDRAM)
+	LDI	ZL,LOW(VIDRAM)
+	ADD	ZL,CursorL
+	ADC	ZH,CursorH
+GL0:
+	LDI	A,'_'
+	ST	Z,A
+;	RCALL	OUTC
+;	MOVW	TMPL,CursorL
+;	SBIW	TMPL,1
+;	MOVW	CursorL,TMPL
+GL1:
+	RCALL	CHKIO		; CHECK KEYBOARD
+	BREQ	GL1		; NO INPUT, WAIT
+	CPI	A,8		; DELETE CHARACTER?
+	BREQ	GL3		; YES
+	TST	A		; IGNORE NULL
+	BREQ	GL1
+	CPI	A,CR		; CR? Then skip free room check
+	BREQ	GL2
+	CPI	YL,LOW(BUFEND-1) ; MORE FREE ROOM?
+	BREQ	GL1		; NO, GET NEXT INPUT 
+GL2:
+	ST	Y+,A		; ELSE, SAVE INPUT and BUMP POINTER
+	CPI	A,CR
+	BRNE	GL
+	LDI	A,' '
+;	RCALL	OUTC
+	ST	Z,A
+	LDI	A,CR
+GL:
+	ADIW	ZL,1
+	RCALL	OUTC		; AND ECHO TO CONSOLE (Z set if CR)
+;	CPI	A,CR		; WAS IT CR?
+	BRNE	GL0		; NO
+	RET			; WE'VE GOT A LINE
+
+GL3:				; DELETE LAST CHARACTER 
+	CPI	YL,LOW(BUFFER)	; DO WE HAVE ANY TO DELETE?
+	BREQ	GL1		; NO, IGNORE
+	SBIW	YL,1		; YES, BACKUP POINTER 
+	MOVW	TMPL,CursorL
+	SBIW	TMPL,1		; Back up cursor
+	MOVW	CursorL,TMPL	; Set cursor value
+	LDI	A,' '		; Clear characters
+	ST	Z,A
+	ST	-Z,A
+;	RCALL	OUTC		; Clear character
+;	RCALL	OUTC
+;	MOVW	CursorL,TMPL
+
+;	LDI	A,0x08		; AND ECHO A BACK-SPACE 
+;	RCALL	OUTC
+;	LDI	A,0x08
+;	RCALL	OUTC
+	RJMP	GL0		; GO GET NEXT CHARACTER
+
+#else
+; Serial
+GL1:
+	RCALL	CHKIO		; CHECK KEYBOARD
+	BREQ	GL1		; NO INPUT, WAIT
+	CPI	A,8		; DELETE CHARACTER?
+	BREQ	GL3		; YES
+	CPI	A,LF		; IGNORE LF
+	BREQ	GL1
+	TST	A		; IGNORE NULL
+	BREQ	GL1
+	CPI	A,92		; DELETE THE WHOLE LINE?
+	BREQ	GL4		; YES
+
+	ST	Y+,A		; ELSE, SAVE INPUT
+				; AND BUMP POINTER
+	RCALL	OUTC		; AND ECHO TO CONSOLE
+	CPI	A,CR		; WAS IT CR?
+	BRNE	GL2		; NO
+	RET			; WE'VE GOT A LINE
+GL2:
+	CPI	YL,LOW(BUFEND)	; MORE FREE ROOM?
+	BRNE	GL1		; YES, GET NEXT INPUT 
+
+GL3:				; DELETE LAST CHARACTER 
+	CPI	YL,LOW(BUFFER)	; DO WE HAVE ANY TO DELETE?
+	BREQ	GL1		; NO, IGNORE
+	SBIW	YL,1		; YES, BACKUP POINTER 
+	LDI	A,0x08		; AND ECHO A BACK-SPACE 
+	RCALL	OUTC
+	LDI	A,' '
+	RCALL	OUTC
+	LDI	A,0x08
+	RCALL	OUTC
+	RJMP	GL1		; GO GET NEXT CHARACTER
+
+#endif
+
+GL4:
+	RJMP	GETLN
+;* 
+FNDLN:			; *** FNDLN *** 
+	TST	XH		; CHECK SIGN OF HL
+	BRPL	FNDLN2 ; would like to change this so we can have lines 1-65535
+	RJMP	QHOW		; IT CAN'T BE NEGATIVE
+FNDLN2:
+	LDI	YL,LOW(TXTBGN)	; INIT. TEXT POINTER
+	LDI	YH,HIGH(TXTBGN)
+;
+FNDLNP: 			; *** FNDLNP ***
+FL1:
+; could do something like this after making TXTUNF a register:
+;	CP	TXTUNF,YL
+;	CP	TXTUNF+1,YH
+;	BRCS	FNDRET
+
+	LDS	TMPL,TXTUNF	; CHECK IF WE PASSED END
+	LDS	TMPH,TXTUNF+1
+	SBIW	TMPL,1
+	CP	TMPL,YL		; COMPARE HL WITH DE
+	CPC	TMPH,YH		; RETURN CORRECT C AND Z FLAGS 
+
+	BRCS	FNDRET		; C,NZ PASSED END 
+	LD	A,Y		; WE DID NOT, GET BYTE 1
+	SUB	A,XL		; IS THIS THE LINE? 
+				; COMPARE LOW ORDER 
+	LDD	F,Y+1		; GET BYTE 2
+	SBC	F,XH		; COMPARE HIGH ORDER
+	BRCS	FL2		; NO, NOT THERE YET 
+	OR	A,F		; IT, OR IT IS NOT THERE
+FNDRET:
+	RET			; NC,Z:FOUND; NC,NZ:NO
+;* 
+FNDNXT:		 		; *** FNDNXT ***
+FL2:
+	ADIW	YL,2 		; JUST PASSED BYTE 1 & 2
+;* 
+FNDSKP:
+	LD	A,Y+		; *** FNDSKP ***
+	CPI	A,CR		; TRY TO FIND CR
+	BRNE	FNDSKP		; KEEP LOOKING
+				; FOUND CR, SKIP OVER 
+	RJMP	FL1		; CHECK IF END OF TEXT
+;* 
+;*************************************************************
+;* 
+;* *** PRTSTG *** QTSTG *** PRTNUM *** & PRTLN *** 
+;* 
+;* 'PRTSTG' PRINTS A STRING POINTED BY DE.  IT STOPS PRINTING
+;* AND RETURNS TO CALLER WHEN EITHER A CR IS PRINTED OR WHEN 
+;* THE NEXT BYTE IS THE SAME AS WHAT WAS IN B (GIVEN BY THE
+;* CALLER).
+;* 
+;* 'QTSTG' LOOKS FOR A BACK-ARROW, SINGLE QUOTE, OR DOUBLE 
+;* QUOTE.  IF NONE OF THESE, RETURN TO CALLER.  IF BACK-ARROW, 
+;* OUTPUT A CR WITHOUT A LF.  IF SINGLE OR DOUBLE QUOTE, PRINT 
+;* THE STRING IN THE QUOTE AND DEMANDS A MATCHING UNQUOTE. 
+;* AFTER THE PRINTING THE NEXT 3 BYTES OF THE CALLER IS SKIPPED
+;* OVER (USUALLY A JUMP INSTRUCTION).
+;* 
+;* 'PRTNUM' PRINTS THE NUMBER IN HL.  LEADING BLANKS ARE ADDED 
+;* IF NEEDED TO PAD THE NUMBER OF SPACES TO THE NUMBER IN C. 
+;* HOWEVER, IF THE NUMBER OF DIGITS IS LARGER THAN THE # IN
+;* C, ALL DIGITS ARE PRINTED ANYWAY.  NEGATIVE SIGN IS ALSO
+;* PRINTED AND COUNTED IN, POSITIVE SIGN IS NOT. 
+;* 
+;* 'PRTLN' PRINTS A SAVED TEXT LINE WITH LINE # AND ALL. 
+;* 
+PRTRSTG:			; *** PRTRSTG ***
+PS1:
+	LD	A,Y+		; GET A CHARACTER FROM RAM
+				; AND BUMP POINTER
+	CP	A,TMPH		; SAME AS END CHARACTER?
+	BREQ	PRTRET		; YES, RETURN 
+	RCALL	OUTC		; ELSE PRINT IT 
+;	CPI	A,CR		; WAS IT A CR?
+	BRNE	PS1		; NO, NEXT
+PRTRET:
+	RET			; YES, RETURN 
+
+;* 
+QTSTG:
+	RCALL	TSTC		; *** QTSTG *** 
+	CPI	A,'"'
+	BRNE	PRRET
+	ADIW	YL,1
+	LDI	TMPH,'"'	; IT IS A " 
+QT1:
+	RCALL	PRTRSTG		; PRINT UNTIL ANOTHER 
+	CPI	A,CR		; WAS LAST ONE A CR?
+	POP	ZH		; RETURN ADDRESS
+	POP	ZL
+	BREQ	JRUNNXL		; WAS CR, RUN NEXT LINE 
+QT2:
+	ADIW	ZL,1		; SKIP NEXT INSTRUCTION ON RETURN
+	IJMP			; RETURN
+;QT3:
+;	RCALL	TSTC		; IS IT A ? 
+;	CPI	A,'?'
+;	BRNE	QT4
+;	ADIW	YL,1
+;	LDI	A,39		; YES, DO SAME
+;	RJMP	QT1		; AS IN " 
+;QT4:
+;	RCALL	TSTC		; IS IT BACK-ARROW? 
+;	CPI	A,95
+;	BRNE	QT5	;.DB	10Q
+;	ADIW	YL,1
+;	LDI	A,141		; YES, CR WITHOUT LF!!
+;	RCALL	OUTC		; 
+;	POP	XL		; RETURN ADDRESS
+;	POP	XH
+;	RJMP	QT2
+;QT5:
+;	RET			; NONE OF ABOVE 
+
+JRUNNXL:
+	RJMP	RUNNXL	; WAS CR, RUN NEXT LINE 
+
+;* 
+PRTNUM:
+PN1:
+	LDI	ZH,HIGH(PWR10*2) ; POINT AT POWERS OF TEN TABLE
+	LDI	ZL,LOW(PWR10*2)
+	CLR	R0		; LEADING ZERO DETECTION FLAG
+	TST	XH		; NEGATIVE NUMBER?
+	BRPL	PN2
+	COM	XL		; YES -> MAKE IT POSITIVE
+	COM	XH
+	ADIW	XL,1
+	LDI	A,'-'		; AND PRINT NEGATIVE SIGN
+	RCALL	OUTC
+PN2:
+	LDI	A,0xFF		; INITIALIZE COUNTER
+	LPM	TMPH,Z+		; READ POWER OF TEN
+	LPM	TMPL,Z+
+	TST	TMPH		; END OF TABLE?
+	BREQ	PN6		; YES -> EXIT
+PN3:
+	INC	A		; THIS WILL EXIT LOOP WITH A=0 IF TMP>X (LEADING ZEROS)
+	SUB	XL,TMPH		; SUBTRACT FROM X
+	SBC	XH,TMPL
+	BRPL	PN3		; POSITIVE? KEEP LOOPING
+
+	ADD	XL,TMPH		; OTHERWISE, ADD BACK REMAINDER
+	ADC	XH,TMPL
+	TST	A
+	BREQ	PN4
+	INC	R0		; ELSE INDICATE NON-ZERO DIGIT DETECTED
+PN4:
+	TST	R0
+	BREQ	PN2		; SKIP LEADING ZEROS
+
+	LDI	F,0x30
+	ADD	A,F		; CONVERT COUNT TO ASCII
+	RCALL	OUTC		; AND PRINT THE DIGIT 
+	RJMP	PN2
+PN6:
+	MOV	A,XL
+	LDI	F,0x30
+	ADD	A,F
+	RJMP	OUTC
+
+PRTSTG:				; *** PRTSTG ***
+	LPM	A,Z+		; GET A CHARACTER FROM FLASH
+	RCALL	OUTC		; PRINT IT
+;	CPI	A,CR		; WAS IT A CR?
+	BRNE	PRTSTG		; NO, REPEAT WITH NEXT CHAR
+PRRET:
+	RET			; YES, RETURN
+
+;* 
+PRTLN:				; *** PRTLN *** 
+	PUSH	XH
+	PUSH	XL
+	LD	XL,Y+		; LOW ORDER LINE #
+	LD	XH,Y+		; HIGH ORDER
+	RCALL	PRTNUM
+	POP	XL
+	POP	XH
+	LDI	A,' '		; FOLLOWED BY A BLANK 
+	RCALL	OUTC
+PRTLN2:
+	LD	A,Y+		; Check for token
+	TST	A
+	BREQ	PN7
+	BRPL	PRTLN3
+	RCALL	PrintTokenString ; It is, so print the token
+PRTLN3:
+	RCALL	OUTC		; Else print the text
+;	CPI	A,CR
+	BRNE	PRTLN2
+PN7:
+	RET
+
+PrintTokenString:
+	LDI	ZH,HIGH(TOKTAB*2)	; Point at command table
+	LDI	ZL,LOW(TOKTAB*2)
+FindTokenLoop:
+	CPI	A,0x80		; Find A'th string in command table
+	BREQ	PrintToken	; Found it, so print it out
+
+FindEOT2:			; else find end of token string
+	LPM	F,Z+		; 
+	SBRS	F,7		; End is flagged by bit 7
+	RJMP	FindEOT2
+	DEC	A
+	RJMP	FindTokenLoop
+
+PrintToken:
+	LPM	A,Z+
+	TST	A
+	BRMI	PrintTokenX
+	RCALL	CONOUT
+	RJMP	PrintToken
+PrintTokenX:
+	ANDI	A,0x7F
+	RET
+
+
+;**************************************************************
+; 
+; RESTORE - Resets DATPTR to first DATA statement in program
+; DATPTR = 0 if no DATA statement found
+; TBD: add optional line number after RESTORE statement
+RESTORE:
+;	RCALL	TSTNUM		; TEST IF THERE IS A #
+	PUSH	YH
+	PUSH	YL
+	LDI	YL,LOW(TXTBGN)	; POINT TO START OF BASIC
+	LDI	YH,HIGH(TXTBGN)
+;	TST	B
+;	BREQ	RE1		; NO NUMBER
+;	RCALL	FNDLN		; FIND THIS LINE
+;	BRNE	JPWHAT		; LINE NOT FOUND
+RE1:
+	RCALL	FindDataToken	; FIND DATA STATEMENT AND RESET DATPTR
+	POP	YL		; RESTORE TEXT POINTER
+	POP	YH
+	RCALL	FINISH		; FINISH COMMAND
+
+FNDDAT:
+	LDI	YL,LOW(TXTBGN)	; POINT TO START OF BASIC
+	LDI	YH,HIGH(TXTBGN)
+FindDataToken:			; Search for Data token
+	LDS	A,TXTUNF
+	CP	YL,A		; END OF BASIC?
+	LDS	A,TXTUNF+1
+	CPC	YH,A
+	BRCC	NoDataToken	; NO DATA STATEMENT FOUND
+	ADIW	YL,2		; SKIP PAST LINE NUMBER
+	LD	A,Y		; Look at current char
+	CPI	A,DATTOK	; DATA token?
+	BREQ	DataTokenFound
+	RCALL	FindEOS
+	RJMP	FindDataToken
+
+NoDataToken:
+	LDI	YH,0		; NO DATA STATEMENT FOUND
+	LDI	YL,0		; SO DATPTR WILL EQUAL ZERO
+
+DataTokenFound:			; DATA STATEMENT FOUND
+	ADIW	YL,1		; Move past data token
+	MOVW	DATPTL,YL	; SET DATPTR
+	RET
+
+FindEOS:			; Find End of Statement (Carraige return or Colon)
+	LD	A,Y+		; 
+	CPI	A,CR		; CR?
+	BREQ	ExitEOS		; 
+	CPI	A,':'		; COLON?
+	BRNE	FindEOS		; Keep searching until one is found
+ExitEOS:
+	RET
+
+JPQWHAT:
+	RJMP	QWHAT
+
+;**************************************************************
+;
+; READ xx
+; Read variable data from DATA list
+
+READ:
+	RCALL	TSTV		; *** SETVAL ***
+;	BRVS	READ0
+	BRCS	JPQWHAT		; "WHAT?" NO VARIABLE 
+READ0:
+	PUSH	YH		; SAVE CURRENT TEXT POINTER
+	PUSH	YL
+	PUSH	XH		; SAVE ADDRESS OF VAR.
+	PUSH	XL
+
+	MOVW	YL,DATPTL	; READ DATA POINTER
+	CPI	YL,0		; DATA POINTER INITIALIZED YET?
+	CPC	YH,ZERO
+	BRNE	READ1		; NOT ZERO, SO SKIP AHEAD
+	RCALL	FNDDAT		; SEE IF ANY DATA STATMENTS EXIST
+	CP	DATPTL,ZERO
+	CPC	DATPTH,ZERO
+	BREQ	JPQWHAT		; NO -> ERROR. NO DATA STATEMENT FOUND
+;(from SETVAL):
+READ1:
+	RCALL	EXPR		; EVALUATE EXPR.
+	POP	ZL		; GET VARIABLE ADDRESS
+	POP	ZH
+	ST	Z,XL		; SAVE VALUE
+	STD	Z+1,XH
+
+	RCALL	TSTC		; SKIP ANY WHITE SPACE
+	CPI	A,CR		; END OF STATEMENT?
+	BREQ	READ2		; YES -> FIND NEXT DATA STATEMENT
+	CPI	A,':'		; IF IT EXISTS
+	BREQ	READ2
+	CPI	A,','		; COMMA?
+	BRNE	RD1		; No -> Error
+	ADIW	YL,1		; BUMP PAST COMMA
+	RJMP	READ3
+READ2:
+	ADIW	YL,1		; BUMP PAST CR/COLON
+	RCALL	FindDataToken
+READ3:
+	MOV	DATPTH,YH
+	MOV	DATPTL,YL
+	POP	YL		; RESTORE TEXT POINTER
+	POP	YH
+	RCALL	TSTC		; ANY MORE VARIABLES TO READ?
+	CPI	A,','
+	BRNE	RD1		; NO -> EXIT
+	ADIW	YL,1
+	RJMP	READ		; ITEM BY ITEM
+RD1:
+	RCALL	FINISH		; UNTIL FINISH
+
+;* 
+;**************************************************************
+;* 
+;* *** MVUP *** MVDOWN *** POPA *** & PUSHA ***
+;* 
+;* 'MVUP' MOVES A BLOCK UP FROM HERE DE-> TO WHERE BC-> UNTIL 
+;* DE = HL 
+;* 
+;* 'MVDOWN' MOVES A BLOCK DOWN FROM WHERE DE-> TO WHERE HL-> 
+;* UNTIL DE = BC 
+;* 
+;* 'POPA' RESTORES THE 'FOR' LOOP VARIABLE SAVE AREA FROM THE
+;* STACK 
+;* 
+;* 'PUSHA' STACKS THE 'FOR' LOOP VARIABLE SAVE AREA INTO THE 
+;* STACK 
+;* 
+MVUP:				; *** MVUP ***
+	CP	XL,YL		; COMPARE HL WITH DE
+	CPC	XH,YH		; RETURN CORRECT C AND Z FLAGS 
+
+	BREQ	MVRET		; DE = HL, RETURN 
+	LD	A,Y+		; GET ONE BYTE
+	ST	Z+,A		; MOVE IT 
+				; INCREASE BOTH POINTERS
+	RJMP	MVUP		; UNTIL DONE
+MVRET:
+	RET
+;* 
+MVDOWN:				; *** MVDOWN ***
+	CP	YL,C		; TEST IF Y = BC 
+	CPC	YH,B		; NO, GO MOVE 
+	BREQ	MVRET		; YES, RETURN 
+MD1:				; MOVE A BYTE
+				; BUT FIRST DECREASE
+	LD	A,-Y		; BOTH POINTERS AND 
+	ST	-X,A		; THEN DO IT
+	RJMP	MVDOWN		; LOOP BACK 
+;* 
+POPA:
+	POP	ZH
+	POP	ZL		; Z = RETURN ADDR. 
+	POP	XL		; RESTORE LOPVAR, BUT 
+	POP	XH
+	STS	LOPVAR,XL	; =0 MEANS NO MORE
+	STS	LOPVAR+1,XH
+	CPI	XL,0
+	CPC	XH,ZERO
+	BREQ	PP1		; YES, GO RETURN
+	POP	XL		; NO, RESTORE OTHERS 
+	POP	XH
+	STS	LOPINC,XL
+	STS	LOPINC+1,XH
+	POP	XL
+	POP	XH
+	STS	LOPLMT,XL
+	STS	LOPLMT+1,XH
+	POP	XL
+	POP	XH
+	STS	LOPLN,XL
+	STS	LOPLN+1,XH
+	POP	XL
+	POP	XH
+	STS	LOPPT,XL
+	STS	LOPPT+1,XH
+PP1:
+	IJMP			; Z = RETURN ADDR
+
+;* 
+PUSHA:
+	LDI	XL,LOW(STKLMT)	; *** PUSHA ***  !!! Change to TXTUNF?
+	LDI	XH,HIGH(STKLMT)
+	RCALL	CHGSGN
+	POP	ZH
+	POP	ZL		; Z=RETURN ADDRESS 
+	IN	A,SPL
+	ADD	XL,A		; IS STACK NEAR THE TOP?
+	IN	A,SPH
+	ADC	XH,A
+	BRCS	PU0
+	RJMP	QSORRY		; YES, SORRY FOR THAT.
+PU0:
+	LDS	XL,LOPVAR	; ELSE SAVE LOOP VAR.S
+	LDS	XH,LOPVAR+1
+	CPI	XL,0		; BUT IF LOPVAR IS 0
+	CPC	XH,ZERO		; THAT WILL BE ALL
+	BREQ	PU1
+	LDS	XL,LOPPT	; ELSE, MORE TO SAVE
+	LDS	XH,LOPPT+1
+	PUSH	XH
+	PUSH	XL
+	LDS	XL,LOPLN
+	LDS	XH,LOPLN+1
+	PUSH	XH
+	PUSH	XL
+	LDS	XL,LOPLMT
+	LDS	XH,LOPLMT+1
+	PUSH	XH
+	PUSH	XL
+	LDS	XL,LOPINC
+	LDS	XH,LOPINC+1
+	PUSH	XH
+	PUSH	XL
+	LDS	XL,LOPVAR
+	LDS	XH,LOPVAR+1
+PU1:
+	PUSH	XH
+	PUSH	XL
+PU2:
+	IJMP			; Z=RETURN ADDRESS
+
+;* 
+
+;**************************************************************
+;* 
+;* *** OUTC *** & CHKIO ***
+;!
+;* THESE ARE THE ONLY I/O ROUTINES IN TBI. 
+;* 'OUTC' IS CONTROLLED BY A SOFTWARE SWITCH 'ECHO'.  IF ECHO=0
+;* 'OUTC' WILL JUST RETURN TO THE CALLER.  IF ECHO IS NOT 0, 
+;* IT WILL OUTPUT THE BYTE IN A.  IF THAT IS A CR, A LF IS ALSO
+;* SEND OUT.  ONLY THE FLAGS MAY BE CHANGED AT RETURN, ALL REG.
+;* ARE RESTORED. 
+;* 
+;* 'CHKIO' CHECKS THE INPUT.  IF NO INPUT, IT WILL RETURN TO 
+;* THE CALLER WITH THE Z FLAG SET.  IF THERE IS INPUT, Z FLAG
+;* IS CLEARED AND THE INPUT BYTE IS IN A.  HOWERER, IF THE 
+;* INPUT IS A CONTROL-O, THE 'ECHO' SWITCH IS COMPLIMENTED, AND
+;* Z FLAG IS RETURNED.  IF A CONTROL-C IS READ, 'CHKIO' WILL 
+;* RESTART TBI AND DO NOT RETURN TO THE CALLER.
+;* 
+CRLF:
+	LDI	A,CR		; *** CRLF ***
+OUTC:
+	RCALL	CONOUT		; OUTPUT CHAR TO CONSOLE
+	CPI	A,CR		; WAS IT A 'CR'?
+;	BRNE	DONE		; NO, DONE
+;	MOV	TMPL,A		; ELSE APPEND LF
+;	LDI	A,LF		; GET LINEFEED CHARACTER
+;	RCALL	CONOUT		; OUTPUT TO CONSOLE
+;	MOV	A,TMPL		; RESTORE CONTENTS OF A
+DONE:
+	RET			; DONE AT LAST
+;*
+CHKIO:
+	RCALL	CONST		; CHARACTER READY? (CONSOLE IN STATUS)
+	BREQ	DONE		; IF NOT READY, RETURN
+	RCALL	CONIN		; READ CHARACTER FROM CONSOLE
+
+	CPI	A,LF		; Linefeed?
+	BREQ	DONE		; Yes -> Ignore it
+
+	CPI	A,3		; IS IT CONTROL-C?
+	BRNE	DONE		; RETURN AND RESTORE IF NOT
+	RJMP	RSTART		; YES, RESTART TBI
+;*
+
+;*
+; Output char in A to UART
+CONOUT:
+#ifndef __VIDEO__
+#ifdef _M8515DEF_INC_
+	SBIS UCSRA,UDRE	; Wait for tx ready
+	RJMP CONOUT
+	OUT  UDR,A
+#else
+	LDS	TMPREG,UCSR0A
+	SBRS TMPREG,UDRE0	; Wait for tx ready
+	RJMP	CONOUT
+	STS	UDR0,A
+#endif
+	RET
+#else
+	CPI A,0x09
+	BRNE VIDO
+	LDI A,' '
+VIDO:
+	RJMP	VIDOUT
+#endif
+
+CONST:
+;#ifndef __VIDEO__
+#ifdef _M8515DEF_INC_
+	IN	A,UCSRA
+	LDI A,1 << RXC
+	ANDI	A,1 << RXC
+#else
+	LDS	A,UCSR0A
+	ANDI	A,1 << RXC0
+#endif
+	RET
+;#endif
+
+; Read char from UART
+CONIN:
+;#ifndef __VIDEO__
+#ifdef _M8515DEF_INC_
+	IN	A,UDR
+#else
+	LDS	A,UDR
+#endif
+;	MOV ZH,R4
+;	MOV ZL,R5
+CON2:
+;	LPM A,Z+
+;	TST A
+;	BREQ CON2
+;	MOV R4,ZH
+;	MOV R5,ZL
+	RET
+;#endif
+
+
+DIR:
+	RCALL	FNDDIR		; Find next directory page
+DIRLOOP:
+	BRCC	DIRX		; Done, so exit
+	RCALL	SPI		; Read next page byte
+	LDI	F,0x10
+DIRNAME:
+	RCALL	SPI		; Read filename byte
+	CPI	A,0xFF		; FF? -> No char
+	BRNE	DIR2
+	LDI	A,' '		; Print space instead of FF
+DIR2:
+	RCALL	CONOUT		; Print it
+	DEC	F
+	BRNE	DIRNAME
+
+	LDI	A,0x09		; Print a tab
+	RCALL	CONOUT
+	RCALL	SPI		; Read file length
+	MOV	XH,A
+	RCALL	SPI
+	MOV	XL,A
+	RCALL	PRTNUM		; Print the number
+	RCALL	CRLF		; Print carraige return
+	RCALL	NXTDIR		; Next block
+	RJMP	DIRLOOP
+DIRX:
+	SBI	PORTB,CS	; Deselect flash
+	RCALL	FINISH
+
+MAKEFILE:
+	RCALL	NULLBLK		; Find empty block
+	BRCC	DHOW		; Error
+	LDI	A,0
+	PUSH	A		; Next page = 0 (default)
+	PUSH	A
+	CPI	XL,DIRSIZE-1	; Will file fit in first page?
+	CPC	XH,ZERO
+	BRCS	MAKEF2		; Yes -> Skip ahead
+	MOV	R0,NXTPGL
+	MOV	R1,NXTPGH
+	RCALL	NXTNULL		; Otherwise find next null block
+	BRCC	DHOW		; Error: Out of storage space
+	POP	A
+	POP	A
+	PUSH	NXTPGL
+	PUSH	NXTPGH
+	MOV	NXTPGL,R0
+	MOV	NXTPGH,R1
+MAKEF2:
+	RCALL	WRITEFLASH	; Send write command
+	POP	A		; Send next page pointer
+	MOV	NXTPGH,A
+	ORI	A,0x80		; Set MSB to show this is a directory page
+	RCALL	SPI
+	POP	A
+	MOV	NXTPGL,A
+	RCALL	SPI
+	LDI	F,0x10		; No more than 16 chars in filename
+MAKEF3:
+	LD	A,Y+		; Read next byte of file name
+	CPI	A,0x22		; Is it a quote?
+	BREQ	MAKEF4		; Yes -> End of name, so skip ahead
+	RCALL	SPI		; Send character to flash
+	DEC	F
+	BRNE	MAKEF3		; Loop until all bytes sent
+	RJMP	MAKEF5
+MAKEF4:
+	LDI	A,0xFF
+	RCALL	SPI		; Fill rest of name with FF
+	DEC	F
+	BRNE	MAKEF4
+MAKEF5:
+	MOV	A,XH		; Write file length
+	RCALL	SPI
+	MOV	A,XL
+	RCALL	SPI
+	RET			; Done creating file entry
+
+DLOAD:
+	RCALL	GETFILE
+	BRCC	DHOW		; Not found
+
+	PUSH	YH
+	PUSH	YL
+	LDI	ZL,LOW(TXTBGN)	; POINT TO BEGINNING OF BASIC TEXT
+	LDI	ZH,HIGH(TXTBGN)
+	LDI	YH,HIGH(DIRSIZE); Size of directory page
+	LDI	YL,LOW(DIRSIZE)
+	RCALL	READB2
+	BREQ	LOAD2
+LOAD:
+	LDI	YH,HIGH(PGSIZE) ; Number of bytes in a page
+	LDI	YL,LOW(PGSIZE)
+	RCALL	READBLK		; READ BLOCK INTO Z
+	BRNE	LOAD		; NOT DONE, READ MORE
+LOAD2:
+	STS	TXTUNF,ZL	; SAVE NEW END OF BASIC PTR
+	STS	TXTUNF+1,ZH
+	POP	YL
+	POP	YH
+	RCALL	FINISH		; FINISH
+DHOW:
+	RJMP	QHOW
+;*
+GETFILE:
+	RCALL   SKPSPC		; IGNORE BLANKS
+	CPI	A,0x22		; QUOTE MARK?
+	BRNE	DHOW		; NO -> ERROR
+	ADIW	YL,1
+	RCALL	FNDFIL		; FIND FILE. RETURNS LENGTH IN X
+	RET
+
+DSAVE:
+	RCALL	GETFILE
+	BRCS	DHOW		; File already exists
+	LDS	XL,TXTUNF	; Z=END OF BASIC
+	LDS	XH,TXTUNF+1
+	LDI	ZL,LOW(TXTBGN)
+	LDI	ZH,HIGH(TXTBGN)
+	SUB	XL,ZL
+	SBC	XH,ZH
+	RCALL	MAKEFILE	; NOT THERE. CAN WE CREATE IT
+SAVE1:
+;	LDI	ZL,LOW(TXTBGN)	; POINT TO BEGINNING OF BASIC TEXT
+;	LDI	ZH,HIGH(TXTBGN)
+;	LDS	XL,TXTUNF	; Z=END OF BASIC
+;	LDS	XH,TXTUNF+1
+;	SUB	XL,ZL
+;	SBC	XH,ZH
+	LDI	TMPH,HIGH(DIRSIZE) ; Number of bytes in directory page
+	LDI	TMPL,LOW(DIRSIZE)
+	RCALL	SAVEB2		; Finish writing directory page
+	BREQ	SAVE2		; Done writing, so exit
+SAVE:
+	RCALL	SAVEBLK		; WRITE BLOCK FROM Z
+	BRNE	SAVE		; LOOP UNTIL ALL BYTES DONE
+SAVE2:
+;	BRCC	DHOW		; IF CARRY SET AND Z SET, ERROR
+;	RCALL	CLOSEFILE	; CLOSE THE FILE
+	RCALL	FINISH		; FINISH
+
+SAVEBLK:
+	LDI	A,0
+	PUSH	A
+	PUSH	A
+	CPI	XH,0		; Will the remaining bytes fit in this page?
+	BREQ	SAVEB1
+	CPI	XL,7
+	BRCS	SAVEB1
+SAVEB0:
+	MOV	R0,NXTPGL	; Save current value
+	MOV	R1,NXTPGH
+	RCALL	NXTNULL		; Find next empty page
+	BRCC	DHOW		; Out of storage space
+	POP	A
+	POP	A
+	PUSH	NXTPGL
+	PUSH	NXTPGH		; New page pointer
+	MOV	NXTPGL,R0
+	MOV	NXTPGH,R1
+SAVEB1:
+	RCALL	WRITEFLASH	; Write command
+	POP	A		; Write next page pointer
+	MOV	NXTPGH,A
+	RCALL	SPI
+	POP	A
+	MOV	NXTPGL,A
+	RCALL	SPI
+	LDI	TMPH,HIGH(PGSIZE)
+	LDI	TMPL,LOW(PGSIZE)
+SAVEB2:
+	LD	A,Z+		; Read byte from memory
+	RCALL	SPI		; Write to flash
+	SBIW	XL,1		; One less byte to write
+	BREQ	SAVEB3
+	SBIW	TMPL,1
+	BRNE	SAVEB2		; Loop until all bytes written
+	CLZ			; Z clear if not done
+	RJMP	SAVEB4
+SAVEB3:
+	SBIW	TMPL,1
+	BREQ	SAVEB4
+	LDI	A,0xFF		; Fill rest of buffer with FF
+	RCALL	SPI
+	RJMP	SAVEB3
+SAVEB4:
+	SBI	PORTB,CS	; Deselect dataflash
+	RET
+;
+FNDFIL:				; FIND FILE IN DATAFLASH
+	RCALL	FNDDIR
+	BRCC	SAVEB3		; Exit on error
+BLKFND:
+	PUSH	A		; SAVE VALUE OF CURRENT PAGE
+	RCALL	SPI
+	PUSH	A
+BLKFND2:
+	MOVW	XL,YL		; POINT TO START OF FILENAME
+	LDI	TMPL,0x10
+BLKFND3:
+	LD	F,X+		; READ NEXT BYTE OF FILENAME
+	CPI	F,0x22		; IS IT THE END QUOTE?
+	BREQ	FILEFND		; YES. FILE FOUND
+	RCALL	SPI		; READ NEXT BYTE
+	DEC	TMPL		; DECREMENT NUM CHARS TO CHECK
+	BREQ	FF2
+	CP	A,F		; COMPARE FILENAMES
+	BREQ	BLKFND3
+	POP	A
+	POP	A
+	RCALL	NXTDIR		; Find next dir entry
+	BRCC	SAVEB3
+	RJMP	BLKFND		; NO MATCH -> CHECK NEXT PAGE
+FILEFND:
+	TST	TMPL
+	BREQ	FF2
+FF1:
+	RCALL	SPI		; Read extra chars after name
+	DEC	TMPL
+	BRNE	FF1
+FF2:
+	MOVW	YL,XL		; Point Y to end of string
+	RCALL	SPI		; READ NEXT WORD AFTER FILENAME
+	MOV	XH,A		; X = LENGTH OF FILE
+	RCALL	SPI
+	MOV	XL,A
+	POP	NXTPGL
+	POP	NXTPGH
+	SEC
+	RET
+;FNDERR:
+;	SEC
+;	RET
+
+SETPAGE:
+	MOV	TMPH,NXTPGH
+	MOV	TMPL,NXTPGL
+	LSL	TMPL		; Shift page data
+	ROL	TMPH
+	MOV	A,TMPH
+	RCALL	SPI		; Send start page
+	MOV	A,TMPL
+	RCALL	SPI
+	LDI	A,0		; Send a zero for the start byte
+	RCALL	SPI
+	RET
+
+READBLK:			; Read block from flash to Z
+	RCALL	READFLASH	; Send read command
+	RCALL	SPI		; Next next page pointer
+	MOV	NXTPGH,A	; And save it
+	RCALL	SPI
+	MOV	NXTPGL,A
+READB2:
+	RCALL	SPI		; Read byte
+	ST	Z+,A		; Save to RAM
+	SBIW	XL,1		; Sent all bytes of file?
+	BREQ	READB3
+	SBIW	YL,1		; Decrement length
+	BRNE	READB2		; Loop until page read
+	CLZ			; Return with Z clear if not done
+READB3:
+	SBI	PORTB,CS	; Deselect dataflash
+	RET
+
+WAITRDY:			; Wait for flash to be ready
+	CBI	PORTB,CS	; Select dataflash
+	LDI	A,0x57		; Send Get Status command
+	RCALL	SPI
+WAIT2:
+	RCALL	SPI		; Read status register
+	TST	A
+	BRPL	WAIT2		; Wait until ready
+	SBI	PORTB,CS	; Deselect dataflash
+	RET
+
+WRITEFLASH:			; Send write command
+	RCALL	WAITRDY
+	LDI	A,0x82
+	CBI	PORTB,CS	; Select dataflash
+	RCALL	SPI
+	RCALL	SETPAGE		; Set flash page
+	RET
+
+READFLASH:			; Send read command
+	RCALL	WAITRDY
+	LDI	A,0x68		; Read command
+	CBI	PORTB,CS	; Select dataflash
+	RCALL	SPI
+	RCALL	SETPAGE		; Set flash page
+	LDI	A,0		; Send a zero for the start byte
+	RCALL	SPI		; Send 32 bits of don't cares
+	LDI	A,0		; Send a zero for the start byte
+	RCALL	SPI
+	LDI	A,0		; Send a zero for the start byte
+	RCALL	SPI
+	LDI	A,0		; Send a zero for the start byte
+	RCALL	SPI
+	RET
+
+NULLBLK:			; Find empty page
+	LDI	A,0xFF
+	MOV	NXTPGL,A	; Start from first page
+	MOV	NXTPGH,A
+NXTNULL:
+	SBI	PORTB,CS	; Deselect dataflash
+	MOV	TMPL,NXTPGL
+	MOV	TMPH,NXTPGH
+	ADIW	TMPL,1		; Point to next page
+	CPI	TMPH,MAXPAGE
+	BREQ	NULLX		; End of flash. Error on exit (carry clear)
+	MOV	NXTPGL,TMPL
+	MOV	NXTPGH,TMPH
+	RCALL	READFLASH
+	RCALL	SPI		; Read first byte
+	CPI	A,0xFF
+	BRNE	NXTNULL		; Not blank, so keep looping
+	SEC
+NULLX:				; Carry set if found
+	SBI	PORTB,CS
+	RET
+
+FNDDIR:				; Find directory page
+	LDI	A,0xFF
+	MOV	NXTPGL,A	; Start from first page
+	MOV	NXTPGH,A
+NXTDIR:
+	SBI	PORTB,CS	; Deselect dataflash
+	MOV	TMPL,NXTPGL
+	MOV	TMPH,NXTPGH
+	ADIW	TMPL,1		; Point to next page
+	CPI	TMPH,MAXPAGE
+	BREQ	NDX		; End of flash. Error on exit (carry clear)
+	MOV	NXTPGL,TMPL
+	MOV	NXTPGH,TMPH
+	RCALL	READFLASH
+	RCALL	SPI		; Read first byte
+	CPI	A,0xFF		; Empty block
+	BREQ	NXTDIR		; Keep looping
+	TST	A
+	BRPL	NXTDIR		; Not a directory page, so keep looping
+	SEC
+NDX:				; Carry set if found
+	RET
+
+SPI:
+#ifdef _M8515DEF_INC_
+	OUT	SPDR,A
+SPI2:
+	SBIS	SPSR,SPIF
+	RJMP	SPI2		; WAIT FOR SPI READY
+	IN	A,SPDR
+#else
+	OUT	SPDR,A
+WaitSPI:
+	IN	TMPREG,SPSR
+	SBRS	TMPREG,SPIF
+	RJMP	WaitSPI		; WAIT FOR SPI READY
+	IN	A,SPDR
+#endif
+	RET
+
+; Bulk erase Dataflash
+FORMAT:
+        LDI     TMPH,0x07       ; Page to erase
+        LDI     TMPL,0xF0
+FMTLOOP:
+        RCALL   WAITRDY         ; Wait for dataflash ready
+	CBI	PORTB,CS	; Select dataflash
+        LDI     A,0x50          ; Command to Erase block of 8 pages
+        RCALL   SPI
+        MOV     A,TMPH          ; Page to erase
+        RCALL   SPI
+        MOV     A,TMPL
+        RCALL   SPI
+        RCALL   SPI             ; 8 bits of don't cares
+	SBI	PORTB,CS	; Deselect dataflash
+        SBIW    TMPL,0x10       ; Next group of 8
+        BRCC    FMTLOOP         ; Loop until all pages erased
+	RCALL	FINISH
+
+LSTROM:				; END OF ROM
+
+
+#ifdef __VIDEO__
+; Video functions
+GetParams:			; Get parameters
+	RCALL	EXPR		; Get 1st parameter
+	PUSH	XL
+	RCALL	TSTC
+	CPI	A,','
+	BRNE	GP2
+	ADIW	YL,1
+	RCALL	EXPR		; Get second
+	MOV	F,XL		; Put into F
+	POP	XL		; X = 1st
+
+	RCALL	TSTC		; Must end with a ')'
+	CPI	A,')'
+	BRNE	GP2
+	ADIW	YL,1
+	RET
+GP2:
+	RJMP	QWHAT		; Error
+#endif
+
+; Set location on screen
+; Position = X/2 + (Y/3)*32
+; Character # = 0x80 + 2^((Y % 3) << 2) + (X & 1)
+CMD_SET:
+#ifdef __VIDEO__
+	RCALL	PRS_Common
+	OR	TMPL,A
+CMD_SET2:
+	ORI	TMPL,0x80
+	ST	X,TMPL		; Put character on display
+	RCALL	FINISH
+#endif
+
+; Clear location on screen
+CMD_RESET:
+#ifdef __VIDEO__
+	RCALL	PRS_Common
+	COM	TMPL
+	AND	TMPL,A		; Clear bit
+	RJMP	CMD_SET2
+
+PRS_Common:
+	RCALL	GetParams
+	CPI	XL,64
+	BRCC	GP2		; Too large
+	CPI	F,48
+	BRCC	GP2		; Too large
+
+	MOV	TMPL,XL		; Save X position
+
+				; Compute position on screen
+	MOV	A,XL
+	LSR	A		; X/2
+	LDI	XH,HIGH(VIDRAM)
+	LDI	XL,LOW(VIDRAM)
+	ADD	XL,A
+
+	LDI	A,0
+DIV3:				; A=F/3
+	TST	F
+	BREQ	D3X2
+	SUBI	F,3
+	BRCS	D3X
+	INC	A
+	RJMP	DIV3
+
+D3X:
+;	LDI	TMPH,3
+;	ADD	F,TMPH
+	SUBI	F,0xFD		; F = F + 3
+D3X2:
+;	ANDI	A,0x0F		; Result will never be more than 15
+	SWAP	A		; A=A*32 (=A << 5)
+	LSL	A
+	LDI	TMPH,0
+	ROL	TMPH		; Carry into TMPH
+	OR	XL,A		
+	ADD	XH,TMPH		; X points to position on screen
+
+				; Determine character code
+	LSL	F		; Code = 0x80 + 2^(remainder << 2 | (x & 1))
+	ANDI	TMPL,0x01	; Mask off bit
+	OR	F,TMPL		; F = bit #
+	INC	F		; bit # + 1
+	LDI	TMPL,0
+	SEC
+BITPOS:
+	ROL	TMPL
+	DEC	F
+	BRNE	BITPOS
+
+	LD	A,X		; A = current character there
+	TST	A
+	BRMI	PRS2
+	LDI	A,0
+PRS2:
+	RET
+
+; Test location on screen to see if it is set or reset
+FX_POINT:
+#endif
+
+CMD_CLS:			; *** CLS(CR) *** 
+#ifdef __VIDEO__
+	RCALL	CLRSCR
+#endif
+	RCALL	FINISH
+
+CLRSCR:
+#ifdef __VIDEO__
+	LDI	XH,HIGH(VIDRAM)	; Point to start of video RAM
+	LDI	XL,LOW(VIDRAM)
+	LDI	TMPH,HIGH(VIDSIZE) ; Number of bytes to clear
+	LDI	TMPL,LOW(VIDSIZE)
+	LDI	A,0x20		; Fill screen with spaces
+FILLRAM:
+	ST	X+,A		; Clear RAM location
+	SBIW	TMPL,1		; Decrement number of bytes to clear
+	BRNE	FILLRAM		; Loop until all bytes done
+	LDI	CURSORH,0	; Reset cursor position
+	LDI	CURSORL,0
+	LDI CharPos,0
+#endif
+	RET
+
+#ifdef __VIDEO__
+VIDOUT:				; Display character in A at next cursor position
+	PUSH	A
+	PUSH	YH
+	PUSH	YL
+	LDI	YH,HIGH(VIDRAM)
+	LDI	YL,LOW(VIDRAM)
+	ADD	YL,CURSORL
+	ADC	YH,CURSORH	; Position cursor
+	CPI	A,CR		; Carraige return?
+	BREQ	VIDCRLF		; Yes -> Move to next line
+	ST	Y,A		; Display character
+	INC CharPos
+	INC	CURSORL		; Bump cursor position
+	BRNE	VIDOUT2
+	INC	CURSORH
+VIDOUT2:
+;	CPI CharPos,LINESIZE
+	LDI	A,0x1F		; Check for end of line
+	AND	A,CURSORL
+	BREQ	VIDCRLF2	; End of line reached, so move to next one
+VIDOUT3:
+	POP	YL
+	POP	YH
+	POP	A
+	RET
+
+VIDCRLF:
+	LDI	A,LINESIZE	; Add one line to cursor position
+	ADD	CURSORL,A
+	ADC	CURSORH,ZERO
+	ANDI	CURSORL,0xE0	; Point to start of line
+	CLR	CharPos
+VIDCRLF2:
+	CPI CURSORL,LOW(VIDSIZE)
+	BRNE	VIDOUT3
+	CPI	CURSORH,HIGH(VIDSIZE)	; End of VRAM?
+	BRNE	VIDOUT3
+	CALL	SCROLLUP	; Yes -> Scroll display
+	JMP	VIDOUT3
+
+
+; Move memory backwards from VIDRAM+LINESIZE to VIDRAM
+SCROLLUP:			; Scroll display up
+	SUBI	CURSORL,0x20	; Move up one line
+	SBC	CURSORH,ZERO
+	PUSH	XH
+	PUSH	XL
+	PUSH	ZH
+	PUSH	ZL
+	LDI	XH,HIGH(VIDRAM+VIDSIZE)	; End point
+	LDI	XL,LOW(VIDRAM+VIDSIZE)
+	LDI	YH,HIGH(VIDRAM+LINESIZE) ; Source
+	LDI	YL,LOW(VIDRAM+LINESIZE)
+	LDI	ZH,HIGH(VIDRAM) ; Destination
+	LDI	ZL,LOW(VIDRAM)
+	CALL	MVUP		; Move block of memory
+	LDI	XL,LINESIZE	; Clear bottom row
+	LDI	A,' '
+SCRL2:
+	ST	Z+,A
+	DEC	XL
+	BRNE	SCRL2
+
+	POP	ZL
+	POP	ZH
+	POP	XL
+	POP	XH
+	RET
+
+
+T1CMPA:
+	PUSH R16
+	PUSH R17
+	IN	R16,SREG
+	PUSH R16
+	; Save all registers
+;  horzline++;
+	
+;  if (horzline == START_BLANKING)	// Invert PWM
+;  {
+;    TCCR1A = (1 << COM1A1) | (1 << WGM11);
+;    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS10);
+;  }
+;  else if (horzline == STOP_BLANKING)	// Restore normal PWM
+;  {
+;    TCCR1A = (1 << COM1A1) | (1 << WGM11);
+;    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS10);
+;  }
+
+	LDS	R16,LINE
+	ANDI	R16,0xFC	; Invert pulses?
+	CPI	R16,0xF8
+	BRNE	NORMALSYNC
+	SBI	PORTD,SYNC	; Invert sync pulse
+;    TCCR1A = (1 << COM1A1) | (1 << WGM11);
+;	LDI	R16,(1 << COM1A1) | (1 << COM1A0) | (1 << WGM11)
+;	OUT	TCCR1A,R16
+;    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS10);
+;	LDI	R16,(1 << WGM13) | (1 << WGM12) | (1 << CS10)
+;	OUT	TCCR1B,R16	
+	RJMP	T1CMPA1
+NORMALSYNC:
+;    TCCR1A = (1 << COM1A1) | (1 << WGM11);
+;	LDI	R16,(1 << COM1A1) | (1 << WGM11)
+;	OUT	TCCR1A,R16
+;    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS10);
+;	LDI	R16,(1 << WGM13) | (1 << WGM12) | (1 << CS10)
+;	OUT	TCCR1B,R16
+	CBI	PORTD,SYNC
+	RJMP	T1CMPA1		; Even things out
+T1CMPA1:
+	LDS	R16,LINE
+	LDS	R17,LINEH
+	INC	R16
+	BRNE	T1CMPA2
+	INC	R17
+T1CMPA2:	
+	CPI	R17,0
+	BREQ	T1CMPA_EXIT
+	
+T1_LINE263:
+	CPI	R16,7		; End of frame at line 263
+	BRNE T1CMPA_EXIT
+	LDI	R16,1		; Reset line counter
+	CLR	R17
+
+;	LDI	XH,HIGH(VIDRAM)	; Reset RAM pointer during vsync
+;	STS	RAMPTR,XH
+;	LDI	XL,LOW(VIDRAM)
+;	STS	RAMPTR+1,XL
+
+T1CMPA_EXIT:
+	STS	LINE,R16	; Save value for line counter
+	STS	LINEH,R17
+
+	LDI	R16,6		; 10
+T1CM2:
+	DEC	R16
+	BRNE	T1CM2
+
+	IN	R17,PORTD	; Flip sync back to previous state
+	LDI	R16,1 << SYNC
+	EOR	R17,R16
+	OUT	PORTD,R17
+
+	LDS	R16,LINE		; Read line counter
+	CPI	R16,$28			; Ignore first 40 lines
+	BREQ	PUSHREGS
+	BRCS VIDRET
+	CPI	R16,$A8			; And everything beyond line 168
+	BREQ POPREGS
+	BRCC VIDRET
+	RJMP	VIDGEN2
+VIDRET:
+	POP	R16
+	OUT SREG,R16
+	POP	R17
+	POP	R16
+	RETI
+
+
+PUSHREGS:
+	PUSH	R0
+	PUSH	R1
+	PUSH	R2
+	PUSH	R3
+	PUSH	R4
+	PUSH	R5
+	PUSH	R6
+	PUSH	R7
+	PUSH	R8
+	PUSH	R9
+	PUSH	R10
+	PUSH	R11
+	PUSH	R12
+	PUSH	R13
+	PUSH	R14
+	PUSH	R15
+;	PUSH	R16
+;	PUSH	R17
+	PUSH	R18
+	PUSH	R19
+	PUSH	R20
+	PUSH	R21
+	PUSH	R22
+	PUSH	R23
+	PUSH	R24
+	PUSH	R25
+	PUSH	R26
+	PUSH	R27
+	PUSH	R28
+	PUSH	R29
+	PUSH	R30
+	PUSH	R31
+	SEI
+WAIT:
+	SLEEP
+	RJMP	WAIT
+
+POPREGS:
+	POP	R16	; Pop the last three values from the stack
+	POP	R16
+	POP	R16
+
+	POP	R16	; Remove return address from stack
+	POP	R16
+
+	POP	R31
+	POP	R30
+	POP	R29
+	POP	R28
+	POP	R27
+	POP	R26
+	POP	R25
+	POP	R24
+	POP	R23
+	POP	R22
+	POP	R21
+	POP	R20
+	POP	R19
+	POP	R18
+;	POP	R17
+;	POP	R16
+	POP	R15
+	POP	R14
+	POP	R13
+	POP	R12
+	POP	R11
+	POP	R10
+	POP	R9
+	POP	R8
+	POP	R7
+	POP	R6
+	POP	R5
+	POP	R4
+	POP	R3
+	POP	R2
+	POP	R1
+	POP	R0
+	RJMP	VIDRET
+
+VIDGEN2:
+
+	CLR	R17
+
+	LDI	ZH,HIGH(CHRTAB*2)	; ZH = Table offset
+	MOV	ZL,R16			; + line number
+	ANDI	ZL,7
+	ADD	ZH,ZL
+
+	SUBI R16,$28		; Subtract off start line number
+	LDI	 YH,HIGH(VIDRAM)		; Point to current character line in RAM
+	LDI	 YL,LOW(VIDRAM)
+
+	ANDI R16,0xF8
+	LSL	R16
+	ROL R17
+	LSL	R16
+	ROL R17
+;	LSL	R16
+;	ROL R17
+;	LDI	R18,LINESIZE
+;	MUL	R16,R18
+	ADD	 YL,R16
+	ADC	 YH,R17		; Result of mul instruction
+
+	LD	 ZL,Y+
+	LPM	 R16,Z
+	LD	 ZL,Y+			; Read next character from RAM buffer into LSB
+	LPM	 R0,Z			; Look it up
+	LD	 ZL,Y+			; Fill all 32 registers
+	LPM	 R1,Z
+	LD	 ZL,Y+
+	LPM	 R2,Z
+	LD	 ZL,Y+
+	LPM	 R3,Z
+	LD	 ZL,Y+
+	LPM	 R4,Z
+	LD	 ZL,Y+
+	LPM	 R5,Z
+	LD	 ZL,Y+
+	LPM	 R6,Z
+	LD	 ZL,Y+
+	LPM	 R7,Z
+	LD	 ZL,Y+
+	LPM	 R8,Z
+	LD	 ZL,Y+
+	LPM	 R9,Z
+	LD	 ZL,Y+
+	LPM	 R10,Z
+	LD	 ZL,Y+
+	LPM	 R11,Z
+	LD	 ZL,Y+
+	LPM	 R12,Z
+	LD	 ZL,Y+
+	LPM	 R13,Z
+	LD	 ZL,Y+
+	LPM	 R14,Z
+	LD	 ZL,Y+
+	LPM	 R15,Z
+	LD	 ZL,Y+
+	LPM	 R17,Z
+	LD	 ZL,Y+
+	LPM	 R18,Z
+	LD	 ZL,Y+
+	LPM	 R19,Z
+	LD	 ZL,Y+
+	LPM	 R20,Z
+	LD	 ZL,Y+
+	LPM	 R21,Z
+	LD	 ZL,Y+
+	LPM	 R22,Z
+	LD	 ZL,Y+
+	LPM	 R23,Z
+	LD	 ZL,Y+
+	LPM	 R24,Z
+	LD	 ZL,Y+
+	LPM	 R25,Z
+	LD	 ZL,Y+
+	LPM	 R26,Z
+	LD	 ZL,Y+
+	LPM	 R27,Z
+	LD	 ZL,Y+				; Want to preserve YH & YL for now
+	LPM	 ZL,Z
+	STS	 TMP_YL,ZL
+	LD	 ZL,Y+
+	LPM	 ZL,Z
+	STS	 TMP_YH,ZL
+	LD	 ZL,Y+
+	LPM	 ZL,Z
+	STS	 TMP_ZL,ZL			; Also want to preserve ZL
+	LD	 ZL,Y+
+	LPM	 ZH,Z
+	LDS	 ZL,TMP_ZL			; Load up YH, YL, and ZL
+	LDS	 YL,TMP_YL
+	LDS	 YH,TMP_YH	
+
+; Start shifting out to the screen
+	SHIFTREG2VID R16
+
+	MOV  R16,R0
+	SHIFTREG2VID R16
+
+	MOV  R16,R1
+	SHIFTREG2VID R16
+
+	MOV  R16,R2
+	SHIFTREG2VID R16
+
+	MOV R16,R3
+	SHIFTREG2VID R16
+
+	MOV R16,R4
+	SHIFTREG2VID R16
+
+	MOV R16,R5
+	SHIFTREG2VID R16
+
+	MOV R16,R6
+	SHIFTREG2VID R16
+
+	MOV R16,R7
+	SHIFTREG2VID R16
+
+	MOV R16,R8
+	SHIFTREG2VID R16
+
+	MOV R16,R9
+	SHIFTREG2VID R16
+
+	MOV R16,R10
+	SHIFTREG2VID R16
+
+	MOV R16,R11
+	SHIFTREG2VID R16
+
+	MOV R16,R12
+	SHIFTREG2VID R16
+
+	MOV R16,R13
+	SHIFTREG2VID R16
+
+	MOV R16,R14
+	SHIFTREG2VID R16
+
+	MOV R16,R15
+	SHIFTREG2VID R16
+
+	SHIFTREG2VID R17
+	SHIFTREG2VID R18
+	SHIFTREG2VID R19
+	SHIFTREG2VID R20
+	SHIFTREG2VID R21
+	SHIFTREG2VID R22
+	SHIFTREG2VID R23
+	SHIFTREG2VID R24
+	SHIFTREG2VID R25
+	SHIFTREG2VID R26
+	SHIFTREG2VID R27
+	SHIFTREG2VID R28
+	SHIFTREG2VID R29
+	SHIFTREG2VID R30
+	SHIFTREG2VID R31
+;	NOP
+;	IN R16,SPDR
+;	LDI R16,0x00
+;	OUT SPDR,R16
+
+	CBI	VIDPORT,7
+	POP	R16		; Clear off SREG
+	STS	SREG,R16
+	POP	R17
+	POP	R16
+	RETI
+
+	.org 0x1000
+
+.include "font.inc"
+
+
+#endif
