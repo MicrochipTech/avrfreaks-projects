@@ -1,0 +1,114 @@
+
+The robot sees the world as a 2-dimensional grid with it's starting point (i.e.) charger station
+as coordinate 0,0. The Y-axis is the 0 degree line (north) on the compass module.
+
+A target can be specified as a set of X-Y coordinates or as a distance plus a compass angle.
+The latter type will be internally converted to it's X-Y coordinates.
+
+The unit of measurement is a state-change on the wheelencoder. This is appr 0,9162 mm
+
+The program uses 16-bit signed numbers to avoid extensive floating point programming.
+
+sin & cos are multiplied by 32768. This number is chosen as it delivers optimal precision
+under the selected criteria. Only tan is multiplied by 512 to make the result fit in a 16 bit
+signed number. 
+
+The final results are divided by these amounts to achieve the correct outcome.
+
+Design limits:
+A signed 2-dimensional grid that uses 2-byte wide variables to store X and Y coordinates 
+imposes a maximum distance in any direction from the point of origin. 
+This number equals 2^15 or 32768 units. (300,22m)
+
+To make the calculations with the desired precision, the use of 4-byte variables is required.
+
+
+Variables:
+
+T	= target
+Tx	= target X-coordinate
+Ty	= target Y-coordinate
+
+Px(n)	= map-point X-coordinate of next point to be reached
+Py(n)	= map-point Y-coordinate		,,
+D(n)	= travelled distance in current interval
+@(n)	= alfa(n), compass angle for current interval
+
+Px(n-1)	= map-point X-coordinate of last point reached
+Py(n-1)	= map-point Y-coordinate		,,
+
+ODO(n)   = current ODO-reading
+ODO(n-1) = last ODO-reading (saved on the last position calculation)
+
+
+Formulae
+
+Grid position:
+
+Px(n) = (D(n) x (sin @(n)*32768))/32768 + Px(n-1)
+Py(n) = (D(n) x (cos @(n)*32768))/32768 + Py(n-1)
+
+
+Heading to target:
+
+Tx - Px(n)/Ty - Py(n)= tan (compass angle to destination)
+This will give two solutions that differ 180deg.
+We can use the sign of Tx - Px(n) & Ty - Py(n) to distinguish
+
+If Tx - Px(n)>0 AND Ty - Py(n)>0 angle = 0-90
+If Tx - Px(n)>0 AND Ty - Py(n)<0 angle = 90-180
+If Tx - Px(n)<0 AND Ty - Py(n)<0 angle = 180-270
+If Tx - Px(n)<0 AND Ty - Py(n)>0 angle = 270-360
+
+This can also be used to limit the search range to one quadrant.
+
+
+;distance to target 
+;(Tx - Px(n)*32768) / (sin (angle to destination)*32768)
+;	or
+;(Ty - Py(n)*32768) / (cos (angle to destination)*32768)
+
+;dividend must be a 32bit number to keep the resolution
+
+
+
+Machine coding
+
+Target lists
+
+Tx,Ty			4 bytes for each target, maximum 8 consequetive targets
+
+Current grid point storage
+Px(n),Py(n)		4 bytes
+
+Last grid point storage
+Px(n-1),Py(n-1)		4 bytes
+
+
+compass reports angles in 10th of degrees. angles are rounded off to nearest degree
+31,1 till 31,5 =31
+31,6 till 31,9 =32
+
+add 5 to reported angle, then divide by ten using avr200.asm.
+the result is a 16-bit offset to the location (address) where the required value can be found.
+
+
+Goniotable:
+sin/cos * 32768, one word per degree. if sin or cos equals 1, rounded off to 32767
+
+tan * 512. tan 90 and tan 270 are infinite. rounded off to 32767
+
+To increase precision, straight line moves are recalculated using the original starting point. 
+When the compass heading remains the same, the wheel displacement is added to 
+navodols00/navodors00. the originating grid position is also saved.
+to detemine if the heading remains the same, we use the raw compass course + or - a configurable
+number (navcompdiff)  preset at 16 (+-1.6 degree)
+this fairly large margin also partially accounts for sudden deviations of the compass. 
+when the compass angle changes beyond the treshold, the position that is previous to the new 
+course is calculated first. 
+
+
+
+
+
+
