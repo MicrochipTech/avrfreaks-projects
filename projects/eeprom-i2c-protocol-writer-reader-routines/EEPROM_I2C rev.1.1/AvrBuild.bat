@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Programmi\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "C:\Documents and Settings\Ganzerla\Documenti\EEPROM_I2C\labels.tmp" -fI -W+ie -o "C:\Documents and Settings\Ganzerla\Documenti\EEPROM_I2C\EEPROM_I2C.hex" -d "C:\Documents and Settings\Ganzerla\Documenti\EEPROM_I2C\EEPROM_I2C.obj" -e "C:\Documents and Settings\Ganzerla\Documenti\EEPROM_I2C\EEPROM_I2C.eep" -m "C:\Documents and Settings\Ganzerla\Documenti\EEPROM_I2C\EEPROM_I2C.map" "C:\Documents and Settings\Ganzerla\Documenti\EEPROM_I2C\EEPROM_I2C.asm"
