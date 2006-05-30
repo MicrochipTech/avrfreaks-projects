@@ -1,0 +1,145 @@
+/*! \mainpage Library for AVR(TM) U(S)ART
+\author Artur Lipowski <LAL@pro.onet.pl>
+\version 3.0
+\date May 27 2006
+
+Copyright 2003-2006 Artur Lipowski<br>
+No guarantees, warrantees, or promises, implied or otherwise.
+May be used for hobby or commercial purposes provided copyright
+notice remains intact.
+
+
+\section intro Introduction
+
+This is library for using U(S)ART in Atmel AVR microcontrollers.<br>
+Its main part is written in assembler and its core size is only about 380 bytes 
+(receiver 192 and transmitter 190).<br>
+You don't need take care about any U(S)ART interrupts handling.<br>
+Input and output are buffered in ring buffers (separate for TX and RX and for each USART).
+Buffers length can be changed at compilation time separately for TX and RX side
+(it speeds up and simplify runtime code) to any value between 2 and 255 (default is 8).
+Of course it can be used only with microcontrollers with SRAM on board.<br>
+It is true library (from linker point of view) and only used code will be included 
+in the final FLASH image (eg. only transmitting or receiving part).<br>
+There are also provides a "glue" functions which allows to use UART as input and/or
+output stream for the standard IO functions like fprintf, puts, fgets etc. 
+See: \ref example_io<br>
+Look into \ref example_echo, \ref example_simple and \ref example_makefile sections 
+to see how simple you can start using U(S)ART library in your projects.<br>
+This library is build using avr-binutils, avr-gcc and avr-libc packages. Starting 
+from version 3.0 the only supported versions of the avr-libc are 1.4.x and up. I will
+not perform regression tests with older avr-libc versions.<br>
+<br>
+Some numbers:
+	- RAM usage (in bytes): TX buffer(s) size + RX buffer(s) size + 
+	3 * number of all buffers + 1 (if UART_get is used)
+	- stack usage: 4 bytes RX ISR, 5 bytes TX ISR
+	- worst case of delay beetwen data is ready and data is received 
+	is 9 + interrupt start (4) clocks
+	- whole (worst case) RX ISR is about 52 + interrupt start (4) clocks
+	- whole (worst case) TX ISR is about 49 + interrupt start (4) clocks
+
+\section support Supported Devices
+
+With two USARTs:
+	- m128, m161, m162, m164, m324, m640, m1280, m1281, m64
+
+With one U(S)ART:
+	- m32, m323, m325, m3250, m644, m645, m6450,
+     m16, m169, m8, m48, m88, m165, m168, AT90PWM2, AT90PWM3,
+     m8515, m8535, m103, 43USB320, 8535, 8515, 4434, 4414, 2313
+
+Note: as you can see there are missing ones eg. m163 - this is due to the madness
+8-) with names used for U(S)ART registers and bits, if somebody want to 
+add a support for these devices I will very appreciate this.
+
+
+\section install Installation
+
+Mainly for size efficiency, all tunable parameters are fixed at compile time.
+It means that if you want to change buffer(s) size, number of USART or device type you 
+have to compile another version of U(S)ART library. But don't afraid compilation even 
+on very slow machine takes only a couple of seconds.<br>
+
+Installation steps:
+	-# Unzip archive.<br>
+	-# Into newly created \c uart directory edit \c Makefile (see \ref lib_makefile).
+		You can (should) change following variables and defines:
+		- \c MCU_TARGET  - this is a compiler switch for choosing what AVR device will
+            be used, eg. at90s8515
+		- \c USE_UART0 and/or \c USE_UART1 to enable/disable given 
+			U(S)ART device, these defines have to be set also when user code 
+			is compiled (see \ref example_makefile)
+		- \c UART0_TX_BUFSIZE \c UART0_RX_BUFSIZE \c UART1_TX_BUFSIZE
+			\c UART1_RX_BUFSIZE to define the length of the appopriate buffer
+		- \c SKIP_DEVNO_CHECK if defined and there is only one used U(S)ART then
+			\c device parameter value will be not checked and thus
+			smaller code will be generated
+		- \c OPTIMIZE practically no effect because main part is written in assembler
+	-# Next issue \c make command.<br>
+		This should produce (among others) \c libuart_yourmcu.a file.<br>
+	-# Use this file and \c uart.h and optionally \c uart_util.h
+		in your projects (look into \ref example_simple and \ref example_io below).<br>
+
+Don't afraid about the library size (the *.a file), it contains a full debug info and in
+the final bin or hex files all of that will be removed automatically.
+ 
+\section lib_makefile Library Makefile
+
+A few first lines from the library Makefile which shows "tunable" parameters.
+
+\dontinclude uart/Makefile
+\until OPTIMIZE
+
+
+\section example_echo The simplest usage
+
+This example shows the simplest usage of the U(S)ART library. It just echoes received bytes.
+
+\include example/example_echo.c
+
+
+\section example_simple A simple example
+
+This example shows various functions from the U(S)ART library used for transmitting
+characters trough serial line. It does not use a standard IO stuff.
+
+\include example/example_simple.c
+
+
+\section example_io Example of standard IO & U(S)ART
+
+This example shows how to use the U(S)ART library with standard IO from avr-libc.<br>
+Note: using standard IO facilities costs some resources - mainly FLASH and SRAM space.
+If you plan to use it only for simple functionality (like puts, gets etc.) you should consider
+using "plain" U(S)ART functions. An example presented in the \ref example_simple section 
+uses much more function calls but resulting code is smaller.<br>
+Functionality of the example is very simple:
+    -# Output welcome message
+    -# Output "prompt" string
+    -# Wait for input (up to 20 characters or Enter)
+    -# Output just read string
+    -# Wait until above transmission is ended
+    -# Go to 2
+
+\include example/example_io.c
+
+
+\section example_makefile Makefile for example projects
+
+\include example/Makefile
+
+\section loopback_test Loopback test
+
+This is a simple test for testing compiled library binaries. It can be also used
+as some kind of benchmark.<br>
+Before running test you need to connect RX and TX pins of the U(S)ART and 
+attach a multimeter or LED to the "indicator" pin (you can easly redefine it).
+If tests passed without problems then it will be 0V on the indicator pin.
+Otherwise you should notice short (about 0.5s) voltage pulses. 
+The number of pulses shows at which stage test failed.
+You could easly change test parameters just by changeing defines at the begin 
+of the \c loop.c file.
+
+*/
+
