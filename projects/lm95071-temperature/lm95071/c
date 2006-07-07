@@ -1,0 +1,92 @@
+//******************************************
+//***  Temperature Reading with LM95071	 ***
+//*** 									 ***
+//***  We use it in SPI mode by PORT B.	 ***
+//*** 	 								 ***
+//***  1 LSB = 0.03125°C				 ***
+//***									 ***
+//*** file:LM95071.c					 ***
+//***									 ***
+//*** (C)2006 by AL Development			 ***
+//***									 ***
+//*** Ref.1.00			Creator: Alex	 ***
+//******************************************
+
+
+#include <avr/io.h>
+#include "mega48.h"
+
+void LM95071_Reveive(void)
+{
+	temperature = 0;						//Reset temperature register
+	PORTD &=~(1<<PD5);						//Reset Error LED
+	PORTD &=~(1<<PD4);						//Set off Transmission Led
+	PORTC &=~(1<<PC1);						//Set clock disabled
+	PORTC &=~(1<<PC0);					 	//Make CS low so LM70 starts to send data
+	for (mask=(1<<15); mask!=0; mask>>=1)	//read 16 bits
+	{
+	PORTC |=(1<<PC1);						//Clock high
+	__asm__ __volatile__ ("nop"::);
+	if (PINC &(1<<PC2))						//Sample data bit
+	temperature |= mask;					//Must be a one
+	PORTC &=~(1<<PC1);						//Clock low
+	__asm__ __volatile__ ("nop"::);
+	}
+	PORTC |= (1<<PC0);						//Make CS high so LM70 stops sending data
+	if (temperature == 0x0000)				//If received temperature = 0x0000 something is wrong so error led.
+	{
+	error = 1;
+	PORTD |=(1<<PD5); 						//PORTD |= (1<<PD5); Error led
+	}
+	++q;									//Send the temperature once every interval.
+	if (q == interval)
+	{
+	temp_calc();
+	create_msg();							//Create message and send away.
+	q = 0;									//Reset Counter i
+	}
+}
+
+// HERE!: We have to make the raw temperature into a normal temperature
+
+void temp_calc(void)
+{
+unsigned long ltemp, mask; 
+unsigned whole, frac, i; 
+	mask = 0x8000;
+	/* First of all do bit mask on MSB.	
+	   If MSB = 0, temperature is positive so LM95071_flag = 0
+	   If MSB = 1, temperature is negative so LM95071_flag = 1
+	   Then shift out the first 2 LSB bits. They are not important.
+	   If LM95071_flag = 0 do nothing with 'temperature' and go on with the ASCII conversion.
+	   If LM95071_flag = 1 then invert 'temperature', add 1 binary (or hex) and go with the calculation.
+	   When LM95071_flag = 1 then in the messaging add '-' before temperature reading.
+     */
+	LM95071_flag = 0;								//Default value = positive temp.
+	if (temperature & mask)							//Check if temperature is positive or negative
+		{											//When negative LM95071_flag = 1
+		LM95071_flag = 1;
+		}
+	temperature=(temperature>>2);					//Shift out first 2 LSB bits.
+	
+	if (LM95071_flag==1)							//When flag is set
+		{
+		temperature =~ temperature;					//Invert temperature
+		temperature =(temperature+0x01);			//Aad 1 bit for correct temperature
+		}
+
+//**** Convert 'temperature' to ASCII so it can be read by hyperterminal.
+	
+	ltemp = (temperature * SCALE)/32; 				//SCALE*0.03125 
+	whole = ltemp/SCALE;       						//whole number  
+	itoa(whole, wbuf, 10);     						/* to ascii */ 
+	frac = ltemp - whole*SCALE; 					/* fraction */ 
+	itoa(frac, fbuf, 10);      						/* to ascii */ 
+	cp = wbuf+strlen(wbuf);    						/* point to end of whole-number string */ 
+	*cp++ = ',';               						/* decimal point */ 
+	for (i = strlen(fbuf); i < SCALEDIGITS ; ++i)  	/* fill in */ 
+    *cp++ = '0';            						/* leading zeroes in fraction part */ 
+	strcpy(cp, fbuf);          						/* copy the rest of the fraction part */ 
+//**** HERE!: 'wbuf' holds the temperature message.
+}
+
