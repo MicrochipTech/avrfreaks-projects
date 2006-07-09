@@ -1,0 +1,1924 @@
+
+AVRASM ver. 2.1.7  S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm Sat Jul 08 22:25:22 2006
+
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(45): Including file 'C:\Program Files\Atmel\AVR Tools\AvrAssembler2\Appnotes\2313def.inc'
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(121): warning: Register r26 already defined by the .DEF directive
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(122): warning: Register r27 already defined by the .DEF directive
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(124): warning: Register r28 already defined by the .DEF directive
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(125): warning: Register r29 already defined by the .DEF directive
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(126): warning: Register r30 already defined by the .DEF directive
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(130): Including file 'S:\Projects\AVR_asm\AVR_DDS\Include\Delay-Macros.inc'
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(923): Including file 'S:\Projects\AVR_asm\AVR_DDS\Include\Bin2BCD.asm'
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(974): Including file 'S:\Projects\AVR_asm\AVR_DDS\sine.asm'
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(975): Including file 'S:\Projects\AVR_asm\AVR_DDS\square.asm'
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(976): Including file 'S:\Projects\AVR_asm\AVR_DDS\triangle.asm'
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(977): Including file 'S:\Projects\AVR_asm\AVR_DDS\sawtooth.asm'
+S:\Projects\AVR_asm\AVR_DDS\AVR_DDS.asm(984): Including file 'S:\Projects\AVR_asm\AVR_DDS\Include\EEProm_Data.inc'
+                 
+                 
+                 ;
+                 ; Copyright (C) 2000 Jesper Hansen <jesperh@telia.com>.
+                 ;
+                 ;*******************************************************************
+                 ;
+                 ;Description
+                 ;
+                 ;Poor-mans DDS Synthesizer
+                 ;
+                 ;Original Author 	= Jesper Hansen
+                 ;Target 			= AT90S2313
+                 ;Date   			= 2001-02-15
+                 ;
+                 ;Heavily Modified by: Kenneth-Scott: Vitale, a sovran man
+                 ;Target 			= AT90S2313
+                 ;Date   			= 2006-0625
+                 ;
+                 ;PB0..7 = D/A Data out
+                 ;
+                 ;PD0		RXD
+                 ;PD1		TXD
+                 ;PD2		INT0 - used to wake up AVR once a terminial is connected (active low)
+                 ;PD6		Enable charge-pump for +5V supply
+                 ;PD3..5	not used
+                 ;
+                 
+                 ;*******************************************************************
+                 ;*******************************************************************
+                 ;
+                 ;Output frequency (using 24 bit accumulator) :
+                 ;
+                 ;	f = deltaPhase * fClock/2^24
+                 ;
+                 ;  fClock is in this case the CPU clock divided by the
+                 ;	number of cycles to output the data ( 9 cycles )
+                 ;
+                 ;	f = addrl/addrm/addrh * (10000000/9)/16777216
+                 ;
+                 ;	f = addrl/addrm/addrh * 0.0662274 Hz resolution
+                 ;
+                 ;	fMax (theoretical) = 0.5 * fClock
+                 ;
+                 .list
+                 ;
+                 ;******************************************************************************
+                 ;set some values
+                 ;******************************************************************************
+                 .equ	test	= 0					;"0" for normal operation
+                 .equ	tblset	= 1					;wavetable set 0 or 1 
+                 
+                 ;.equ	fclk 	= 10000000			;system clock frequency
+                 .equ	fclk 	= 10002926			;Actual Measured system clock frequency
+                 ;.equ	fclk	= 3701342			;CPU Oscillator	(Actual Measured STK500 Clock Source)
+                 
+                 .equ	baud 	= 9600				;desired baud rate
+                 .equ	uartclk	= fclk/16			;the UART clock
+                 .equ	baudclk	= (uartclk/baud)-1	;get the UBRR value
+                 
+                 .equ	zero	= 0					;create a zero
+                 
+                 .equ	cr		= 0x0d				;carriage character
+                 .equ	lf		= 0x0a				;line feed character
+                 .equ	space	= 0x20				;ASCII space character
+                 .equ	colon	= 0x3a				;ASCII colon character
+                 .equ	frmfd	= 0x0c				;ASCII formfeed (clear screen)
+                 
+                 .equ	loopcyc	= 10				;9 instruction cycles per main loop
+                 ;									;cummulative add/subtract values
+                 .equ	_1Hz	= (1*loopcyc*EXP2(24)/fclk)
+                 .equ	_10Hz	= (10*loopcyc*EXP2(24)/fclk)
+                 .equ	_100Hz	= (100*loopcyc*EXP2(24)/fclk)
+                 .equ	_1KHz	= (1000*loopcyc*EXP2(24)/fclk)
+                 .equ	_10KHz	= (10000*loopcyc*EXP2(24)/fclk)
+                 .equ	_100KHz	= (100000*loopcyc*EXP2(24)/fclk)
+                 
+                 .equ	f_pu	= 1					;power-up frequency in KHz
+                 .equ	s_pu	= 2					;power-up waveform type
+                 
+                 									;1=sine, 2=square, 3=triangle, 4=ramp
+                 .equ	wavtbl	= 0x200				;start address of wavetable
+                 
+                 .equ	DACPort	= PORTB				;Port B is for DAC
+                 .equ	DAC_DR	= DDRB				;data direction register for DAC port
+                 
+                 .equ	CtlDR	= DDRD				;data direction register for control port
+                 .equ	CtlOut	= PORTD				;Port we use for controlling hardware
+                 .equ	CtlIn	= PIND				;Input Port for controlling hardware
+                 .equ	CP_En	= PIND6				;pin for charge-pump enable
+                 .equ	Wake	= PIND2				;pin to wake us up
+                 
+                 .def	dec1s	= r2				;register defs to hold decimal digits
+                 .def	dec10s	= r3
+                 .def	dec100s	= r4
+                 .def	dec1ks	= r5
+                 .def	dec10ks	= r6
+                 .def	dec100ks= r7
+                 
+                 .def	al		= r11				;storage for BIN2BCD routine
+                 .def	ah		= r12
+                 
+                 .def	EEdata	= r14				;data byte read from EEPROM
+                 .def	EEaddr	= r15				;address low byte to read from
+                 
+                 .def	temp	= r16				;set temporary registers
+                 .def	temp2	= r17
+                 
+                 .def	bcd0	= r18				;packed BCD of frequency lsd to msd
+                 .def	bcd1	= r19
+                 .def	bcd2	= r20
+                 
+                 .def	bcdt	= r21				;packed BCD temp register
+                 
+                 .def	addrl	= r22				;setup adder low-byte
+                 .def	addrm	= r23				;setup adder mid-byte
+                 .def	addrh	= r24				;setup adder high-byte
+                 
+                 .def	bcd0a	= r25				;packed BCD adder registers (are temporary)
+                 .def	bcd1a	= r26
+                 .def	bcd2a	= r27
+                 
+                 .def	accl	= r28				;phase accumulator low-byte
+                 .def	accm	= r29				;phase accumulator mid-byte
+                 .def	acch	= r30				;phase accumulator high-byte
+                 
+                 ;************************************************************************
+                 ;MACRO Definitions
+                 .include	"Include\Delay-Macros.inc"
+                 
+                 
+                 ;**********************************************************
+                 ;   PRECISION DELAY ROUTINES(FUNCTION FORMAT MACROS)                       
+                 ;   ASSEMBLER:AVR ASM1
+                 ;   IDE:AVR STUDIO 4.12
+                 ;   AUTHOR: OMID KOMPANI    
+                 ;           TEHRAN-IRAN
+                 ;           30/10/05  ---- 1384/8/8
+                 ;**********************************************************
+                 
+                 
+                 
+                 
+                 ;***********************************************************************
+                 ;MAKES A DELAY WITH uS TIME BASE
+                 ;***********************************************************************
+                 
+                 .MACRO	_WAIT_uS
+                 
+                 	LDI		R29,((@0/1000000)*@1/4)
+                 WAIT_uS_LOOP1:
+                 	DEC		R29		
+                 	NOP
+                 	BRNE	WAIT_uS_LOOP1
+                 
+                 .ENDMACRO
+                 
+                 ;***********************************************************************
+                 ;MAKES A DELAY WITH 5uS TIME BASE
+                 ;***********************************************************************
+                 
+                 .MACRO	_WAIT_5us
+                 
+                 	LDI		R29,((@0/1000000)*@1/8)
+                 WAIT_5uS_LOOP1:
+                 	LDI		R28,9
+                 WAIT_5uS_LOOP2:
+                 	DEC		R28	
+                 	NOP
+                 	BRNE	WAIT_5uS_LOOP2
+                 	DEC		R29
+                 	NOP
+                 	BRNE	WAIT_5uS_LOOP1
+                 
+                 .ENDMACRO
+                 
+                 ;***********************************************************************
+                 ;MAKES A DELAY WITH 10uS TIME BASE
+                 ;***********************************************************************
+                 
+                 .MACRO	_WAIT_10us
+                 	
+                 	LDI		R29,((@0/1000000)*@1/8)
+                 WAIT_10uS_LOOP1:
+                 	LDI		R28,19
+                 WAIT_10uS_LOOP2:
+                 	DEC		R28	
+                 	NOP
+                 	BRNE	WAIT_10uS_LOOP2
+                 	DEC		R29
+                 	NOP
+                 	BRNE	WAIT_10uS_LOOP1
+                 
+                 .ENDMACRO
+                 
+                 ;***********************************************************************
+                 ;MAKES A DELAY WITH mS TIME BASE
+                 ;***********************************************************************
+                 
+                 .MACRO	_WAIT_mS
+                 
+                 	LDI		R29,(@0/1000000)* @1
+                 WAIT_mS_LOOP1:
+                 	LDI		R28,249
+                 WAIT_mS_LOOP2:	
+                 	DEC		R28		
+                 	NOP				
+                 	BRNE	WAIT_mS_LOOP2		
+                 	DEC		R29		
+                 	NOP
+                 	BRNE	WAIT_mS_LOOP1
+                 	
+                 .ENDMACRO
+                 
+                 ;***********************************************************************
+                 ;MAKES A DELAY WITH 10mS TIME BASE
+                 ;***********************************************************************
+                 .MACRO	_WAIT_10mS
+                 
+                 	LDI		R29,(@0/1000000)*@1
+                 WAIT_10mS_LOOP1:
+                 	LDI		R28,243
+                 WAIT_10mS_LOOP2:	
+                 	DEC		R28		
+                 	NOP
+                 	NOP
+                 	NOP
+                 	NOP
+                 	BRNE	WAIT_10mS_LOOP2		
+                 	LDI		R28,255
+                 WAIT_10mS_LOOP3:
+                 	DEC		R28		
+                 	NOP
+                 	NOP
+                 	NOP
+                 	BRNE	WAIT_10mS_LOOP3	
+                 	LDI		R28,252
+                 WAIT_10mS_LOOP4:
+                 	DEC		R28		
+                 	NOP
+                 	NOP
+                 	NOP
+                 	NOP
+                 	BRNE	WAIT_10mS_LOOP4
+                 	BRTS	WAIT_10mS_LOOP5
+                 	SET
+                 	RJMP	WAIT_10mS_LOOP1
+                 WAIT_10mS_LOOP5:
+                 	DEC		R29
+                 	CLT
+                 	BRNE	WAIT_10mS_LOOP1
+                 	
+                 .ENDMACRO
+                 ;	Usage:
+                 ;		_WAIT_uS	CPU_FREQUENCY,8		;MAKES 8uS DELAY
+                 ;		_WAIT_5uS	CPU_FREQUENCY,8		;MAKES 40uS DELAY
+                 ;		_WAIT_10uS	CPU_FREQUENCY,8		;MAKES 80uS DELAY
+                 ;		_WAIT_mS	CPU_FREQUENCY,8		;MAKES 8mS DELAY
+                 ;		_WAIT_10mS	CPU_FREQUENCY,8		;MAKES 80mS DELAY
+                 ;
+                 
+                 ;************************************************************************
+                 ;Data Segment Definitions
+                 ; in RAM
+                 ;************************************************************************
+                 ;.dseg
+                 ;.org	0x0
+                 
+                 ;bcd0:	.byte	1					;packed BCD of frequency lsd to msd
+                 ;bcd1:	.byte	1
+                 ;bcd2:	.byte	1
+                 
+                 ;bcd0a:	.byte	1					;packed BCD adder registers (are temporary)
+                 ;bcd1a:	.byte	1
+                 ;bcd2a:	.byte	1
+                 
+                 ;bcdt:	.byte	1					;packed BCD overflow/underflow register
+                 
+                 ;******************************************************************************
+                 ;start of code
+                 ;******************************************************************************
+                 
+                 .cseg
+                 .org	0
+                 ;set up interupt vectors
+000000 c00a      	rjmp	RESET				;reset vector
+000001 c055      	rjmp	EXT_INT0			;IRQ0 Handler
+                 ;	rjmp	EXT_INT1			;IRQ1 Handler
+000002 9518      	reti
+                 ;	rjmp	TIM_CAPT1			;Timer1 Capture Handler
+000003 9518      	reti
+                 ;	rjmp	TIM_COMP1			;Timer1 Compare Handler
+000004 9518      	reti
+                 ;	rjmp	TIM_OVF1			;Timer1 Overflow Handler
+000005 9518      	reti
+                 ;	rjmp	TIM_OVF0			;Timer0 Overflow Handler
+000006 9518      	reti
+000007 c054      	rjmp	UART_RXC			;UART RX Complete Handler
+                 ;	rjmp	UART_DRE			;UDR Empty Handler
+000008 9518      	reti
+                 ;	rjmp	UART_TXC			;UART TX Complete Handler
+000009 9518      	reti
+                 ;	rjmp	ANA_COMP			;Analog Comparator Handler
+00000a 9518      	reti
+                 
+                 ;******************************************************************************
+                 ;code
+                 ;******************************************************************************
+                 
+                 RESET:
+                 INIT_Machine:
+                 ;Set the stack pointer to 025F, stack grows down. 
+                 ;Can't call any subroutines till we have a stack!
+                 ;
+00000b ed0f      	ldi		temp, RAMEND
+00000c bf0d      	out		SPL, temp			;setup stack pointer
+                 
+                 ;Set Watchdog Inactive  Databook 5-43
+                 ;Gotta handle this before it gets a chance to bite me.
+                 ;  
+00000d e10f      	ldi		TEMP,$1F				;00011011   
+00000e bd01      	out		WDTCR,TEMP
+00000f e107      	ldi 	TEMP,$17				;00010111
+                 			;XXX1XXXX Watch dog turn off enable, must be 1 to wrt D3
+                 			;XXXX0XXX WDE 0=disable 1=enable
+                 			;XXXXX111 000 =   16mS WD prescaler bits
+                 			;        001 =   32mS
+                 			;    010 =   64mS
+                 			;    011 =  128mS
+                 			;    100 =  256mS
+                 			;    101 =  512mS
+                 			;    110 = 1024mS
+                 			;        111 = 2048mS
+                 
+000010 bd01      	out		WDTCR,TEMP
+                 ;
+                 ;This section allows ints which are apparently 
+                 ;caused by reset, to occur harmlessly.
+                 ;Databook 5-23, 5-29
+                 
+000011 e400      	ldi		TEMP,$40
+                 								;0XXXXXXX 1= enable int 1
+                 								;X1XXXXXX 1= enable int 0
+000012 bf0b      	out		GIMSK,TEMP			;Enable int 0,1
+                    
+000013 e002      	ldi		TEMP,$02
+                 									;0XXXXXXX TC1 overflow int enable
+                 									;X0XXXXXX TC1 OCA Match int enable
+                 									;XX0XXXXX TC1 OCB Match int enable
+                 									;XXX0XXXX Reserved =0
+                 									;XXXX0XXX TC1 input capture int enable
+                 									;XXXXX0XX Reserved =0
+                 									;XXXXXX1X TC0 overflow int enable
+                 									;XXXXXXX0 Reserved =0
+000014 bf09      	out		TIMSK,TEMP				;Enable all timer ints
+                    
+000015 b70f      	in		TEMP,SREG				;(5-23)
+000016 6800      	ori		TEMP,$80				;Global int enable
+000017 bf0f      	out		SREG,TEMP
+000018 0000      	nop
+000019 0000      	nop
+00001a 0000      	nop								;Let the ints happen, so they
+00001b 0000      	nop								;clear out
+00001c 0000      	nop
+00001d 0000      	nop
+00001e 0000      	nop								;NOTE: I have not exhaustively researched the need 
+00001f 0000      	nop								;for this EI-NOP-DI section, but it is working well.
+000020 0000      	nop
+                 
+000021 b70f      	in		TEMP,SREG
+000022 770f      	andi	TEMP,$7F				;Turn off all ints (5-23)
+000023 bf0f      	out		SREG,TEMP
+                 
+000024 e000      	ldi		TEMP,$00				;Disable all timer ints (5-29)
+000025 bf09      	out		TIMSK,TEMP
+                 
+000026 e000      	ldi		TEMP,$00				;Disable all ints. (5-29)
+                 									;1XXXXXXX enable int 1
+                 									;X1XXXXXX enable int 0
+                 
+000027 bf0b      	out		GIMSK,TEMP
+                 
+                 ;At this point, we should have a clean machine, in that there
+                 ;are no bogus pending ints from powerup. Later, when we enable
+                 ;various ints for real, they will only trigger after an event 
+                 ;has occured, rather than because the int logic was scrambled
+                 ;at powerup.
+                 
+000028 2700      	clr		temp				;set all ports to inputs
+000029 bb07      	out		DAC_DR,temp
+00002a bb01      	out		CtlDR,temp
+00002b 9a92      	sbi 	CtlOut,Wake			;enable pull-up on INT0
+                 
+                 ;	sbic 	CtlIn,Wake			;skip if we need to power up	
+                 ;	rjmp	Power_Off			;Power Off the unit
+00002c c007      	rjmp	Power_On			;Power Up the unit
+                 
+                 
+                 ;**********************************************************;
+                 ;main loop
+                 ;
+                 ;	accl,accm,ZL is the phase accumulator
+                 ; 	addrl,addrm,addrh is the adder value determining frequency
+                 ;
+                 ;	add value to accumulator
+                 ;	load byte from current table in ROM
+                 ;	output byte to port
+                 ;	repeat 
+                 ;
+                 MAIN:
+00002d 0fc6      	add		accl,addrl				;1
+00002e 1fd7      	adc		accm,addrm				;1
+00002f 1fe8      	adc		ZL,addrh				;1
+000030 95c8      	lpm								;3
+000031 ba08      	out		DACPort,r0				;1
+000032 0000      	nop								;1 (needed because otherwise we get more jitter and frequency is off)
+000033 cff9      	rjmp	MAIN					;2 => 10 cycles
+                 
+                 ;--------------------------------------- 
+                 ;Power unit on
+                 ;--------------------------------------- 
+                 POWER_ON:
+000034 ed0f      	ldi		temp, RAMEND
+000035 bf0d      	out		SPL, temp				;setup stack pointer
+                 
+                 ;	rjmp	BCDsub
+                 
+                 ;setup ports
+000036 ef0f      	ser		temp					;
+000037 bb07      	out		DAC_DR,temp				;set all DACPort bits as output
+                 	
+000038 9a8e      	sbi		CtlDR,CP_En				;enable charge-pump pin as output
+000039 9a96      	sbi		CtlOut,CP_En			;enable charge pump
+00003a 9a92      	sbi 	CtlOut,Wake				;enable pull-up on INT0
+                 
+                 ;clear accumulators 
+00003b 27cc      	clr 	accl					;clear accumulators 
+00003c 27dd      	clr 	accm
+00003d 27ee      	clr 	acch
+                 
+                 ;setup UART
+00003e e400      	ldi		temp,baudclk			;set uart speed
+00003f b909      	out		UBRR,temp
+                 
+                 ;enable RXint and enable tx/rx
+000040 e908      	ldi		temp,1<<RXCIE|1<<RXEN|1<<TXEN
+000041 b90a      	out		UCR,temp
+                 
+                 ;enable INT0 interupts on rising edge, no sleep mode
+000042 e003      	ldi		temp,1<<ISC00|1<<ISC01|0<<SE|0<<SM
+000043 bf05      	out		MCUCR,Temp
+000044 e400      	ldi		temp,1<<INT0			;ensure INT0 interupts
+000045 bf0b      	out		GIMSK,Temp
+                 
+000046 9478      	sei								;global enable interrupts
+                 
+000047 d15d      	rcall	RE_INIT					;initialize the counters
+                 
+000048 cfe4      	rjmp	MAIN
+                 
+                 ;--------------------------------------- 
+                 ;Power unit off
+                 ;--------------------------------------- 
+                 POWER_OFF:
+000049 2700      	clr		temp
+00004a bb01      	out		CtlDR,Temp				;set direction register, all inputs
+00004b bb02      	out		CtlOut,Temp				;set outputs all low, no pullups
+                 ;	sbi 	CtlOut,Wake				;enable pull-up on INT0
+                 
+00004c 9a8e      	sbi		CtlDR,CP_En				;enable charge-pump pin as output
+00004d 9896      	cbi		CtlOut,CP_En			;disable charge pump
+                 
+                 ;disable RXint tx/rx
+00004e e000      	ldi		temp,0<<RXCIE|0<<RXEN|0<<TXEN
+00004f b90a      	out		UCR,temp
+                 
+                 ;set sleep mode to "Power-Down and INT0 = low-level
+000050 e300      	ldi		temp,0<<ISC00|0<<ISC01|1<<SE|1<<SM
+000051 bf05      	out		MCUCR,Temp
+                 
+000052 e400      	ldi		temp,1<<INT0			;ensure INT0 interupts
+000053 bf0b      	out		GIMSK,Temp
+                 
+000054 9478      	sei								;ensure interupts enabled
+                 
+000055 9588      	sleep							;sleep and power down
+000056 cfd6      	rjmp	MAIN					;go back to main loop
+                 
+                 ;*************************************************************
+                 ;Interrupt routine for serial link connected
+                 ;
+                 EXT_INT0:							;IRQ0 Handler
+000057 d17d      	rcall	DELAY250				;delay 250ms
+                 
+000058 9b82      	sbis 	CtlIn,Wake				;skip if we need to power off	
+000059 cfda      	rjmp	Power_On				;Power Up the unit
+00005a cfee      	rjmp	Power_Off				;Power Off the unit
+                 
+00005b 9518      	reti							;should never arrive here!
+                 
+                 ;*************************************************************
+                 ;Interrupt routine for incoming bytes on the RS232 link
+                 ;
+                 	
+                 UART_RXC:							;UART RX Complete Handler
+00005c 930f      	push	temp					;save registers
+00005d b10c      	in 		temp,UDR
+                 
+00005e 2799      	clr		BCD0a					;clear temp registers
+00005f 27aa      	clr		BCD1a
+000060 27bb      	clr		BCD2a
+                 
+                 tx_10:
+000061 320b      	cpi		temp,'+'				;up one
+000062 f429      	brne	tx_11
+000063 e20a      	ldi		temp,MSG_U1				;set string pointer
+000064 d08a      	rcall	send_string				;spit it out
+000065 e091      	ldi		BCD0a,0x01
+                 ;	ldi		BCD1a,0x00
+                 ;	ldi		BCD2a,0x00
+000066 d0f6      	rcall	BCDadd					;add "1" to the current count 
+000067 c05a      	rjmp	tx_98		
+                 tx_11:
+000068 3404      	cpi		temp,'D'				;up ten
+000069 f429      	brne	tx_12
+00006a e300      	ldi		temp,MSG_U10			;set string pointer
+00006b d083      	rcall	send_string				;spit it out
+00006c e190      	ldi		BCD0a,0x10
+                 ;	ldi		BCD1a,0x00
+                 ;	ldi		BCD2a,0x00
+00006d d0ef      	rcall	BCDadd					;add "10" to the current count 
+00006e c053      	rjmp	tx_98		
+                 tx_12:
+00006f 3403      	cpi		temp,'C'				;up hundred
+000070 f429      	brne	tx_13
+000071 e307      	ldi		temp,MSG_U100			;set string pointer
+000072 d07c      	rcall	send_string				;spit it out
+                 ;	ldi		BCD0a,0x00
+000073 e0a1      	ldi		BCD1a,0x01
+                 ;	ldi		BCD2a,0x00
+000074 d0e8      	rcall	BCDadd					;add "10" to the current count 
+000075 c04c      	rjmp	tx_98		
+                 tx_13:
+000076 340b      	cpi		temp,'K'				;up thousand
+000077 f429      	brne	tx_20
+000078 e30f      	ldi		temp,MSG_U1000			;set string pointer
+000079 d075      	rcall	send_string				;spit it out
+                 ;	ldi		BCD0a,0x00
+00007a e1a0      	ldi		BCD1a,0x10
+                 ;	ldi		BCD2a,0x00
+00007b d0e1      	rcall	BCDadd					;add "1000" to the current count 
+00007c c045      	rjmp	tx_98		
+                 
+                 tx_20:
+00007d 320d      	cpi		temp,'-'				;down one
+00007e f429      	brne	tx_21
+00007f e406      	ldi		temp,MSG_D1				;set string pointer
+000080 d06e      	rcall	send_string				;spit it out
+000081 e091      	ldi		BCD0a,0x01
+                 ;	ldi		BCD1a,0x00
+                 ;	ldi		BCD2a,0x00
+000082 d102      	rcall	BCDsub					;subtract "1" from the current count 
+000083 c03e      	rjmp	tx_98		
+                 tx_21:
+000084 3604      	cpi		temp,'d'				;down ten
+000085 f429      	brne	tx_22
+000086 e40c      	ldi		temp,MSG_D10			;set string pointer
+000087 d067      	rcall	send_string				;spit it out
+000088 e190      	ldi		BCD0a,0x10
+                 ;	ldi		BCD1a,0x00
+                 ;	ldi		BCD2a,0x00
+000089 d0fb      	rcall	BCDsub					;subtract "10" from the current count 
+00008a c037      	rjmp	tx_98		
+                 tx_22:
+00008b 3603      	cpi		temp,'c'				;down hundred
+00008c f429      	brne	tx_23
+00008d e503      	ldi		temp,MSG_D100			;set string pointer
+00008e d060      	rcall	send_string				;spit it out
+                 ;	ldi		BCD0a,0x00
+00008f e0a1      	ldi		BCD1a,0x01
+                 ;	ldi		BCD2a,0x00
+000090 d0f4      	rcall	BCDsub					;subtract "100" from the current count 
+000091 c030      	rjmp	tx_98		
+                 tx_23:
+000092 360b      	cpi		temp,'k'				;down thousand
+000093 f429      	brne	tx_70
+000094 e50b      	ldi		temp,MSG_D1000			;set string pointer
+000095 d059      	rcall	send_string				;spit it out
+                 ;	ldi		BCD0a,0x00
+000096 e1a0      	ldi		BCD1a,0x10
+                 ;	ldi		BCD2a,0x00
+000097 d0ed      	rcall	BCDsub					;subtract "1000" from the current count 
+000098 c029      	rjmp	tx_98		
+                 
+                 tx_70:
+000099 3502      	cpi		temp,'R'
+00009a f411      	brne	tx_80
+00009b d109      	rcall	RE_INIT					;re-init the counters
+00009c c025      	rjmp	tx_98		
+                 
+                 tx_80:
+00009d 3703      	cpi		temp,'s'				;direct frequency setting
+00009e f011      	breq	tx_80a
+00009f 3503      	cpi		temp,'S'
+0000a0 f429      	brne	tx_90
+                 tx_80a:
+0000a1 e10c      	ldi		temp,MSG_SET			;set string pointer
+0000a2 d04c      	rcall	send_string				;spit it out
+0000a3 d03a      	rcall	read_6		
+0000a4 d05f      	rcall	send_crlf				;send CR/LF
+0000a5 c01c      	rjmp	tx_98		
+                 
+                 ;set wavetable outputs
+                 tx_90:	
+0000a6 3301      	cpi		temp,'1'				;request sinewave output
+0000a7 f429      	brne	tx_91
+0000a8 e0f4      	ldi		ZH,HIGH(2*sine)			;setup Z pointer hi
+0000a9 e0e0      	ldi		ZL,LOW(2*sine)			;setup Z pointer lo
+0000aa e602      	ldi		temp,MSG_SINE			;set string pointer
+0000ab d043      	rcall	send_string				;spit it out
+0000ac c016      	rjmp	tx_99
+                 tx_91:
+0000ad 3302      	cpi		temp,'2'				;request square output
+0000ae f429      	brne	tx_92
+0000af e0f5      	ldi		ZH,HIGH(2*square)		;setup Z pointer hi
+0000b0 e0e0      	ldi		ZL,LOW(2*square)		;setup Z pointer lo
+0000b1 e608      	ldi		temp,MSG_SQUARE			;set string pointer
+0000b2 d03c      	rcall	send_string				;spit it out
+0000b3 c00f      	rjmp	tx_99
+                 tx_92:
+0000b4 3303      	cpi		temp,'3'				;request triangle output
+0000b5 f429      	brne	tx_93
+0000b6 e0f6      	ldi		ZH,HIGH(2*triangle)		;setup Z pointer hi
+0000b7 e0e0      	ldi		ZL,LOW(2*triangle)		;setup Z pointer lo
+0000b8 e60e      	ldi		temp,MSG_TRI			;set string pointer
+0000b9 d035      	rcall	send_string				;spit it out
+0000ba c008      	rjmp	tx_99
+                 tx_93:
+0000bb 3304      	cpi		temp,'4'				;request sawtooth output
+0000bc f429      	brne	tx_94
+0000bd e0f7      	ldi		ZH,HIGH(2*sawtooth)		;setup Z pointer hi
+0000be e0e0      	ldi		ZL,LOW(2*sawtooth)		;setup Z pointer lo
+0000bf e704      	ldi		temp,MSG_RAMP			;set string pointer
+0000c0 d02e      	rcall	send_string				;spit it out
+0000c1 c001      	rjmp	tx_99
+                 tx_94:
+                 ;	cpi		temp,'5'				;request sawtooth output
+                 ;	brne	tx_95
+                 ;	ldi		ZH,HIGH(2*revsawtooth)	;setup Z pointer hi
+                 ;	ldi		ZL,LOW(2*revsawtooth)	;setup Z pointer lo
+                 ;	ldi		temp,MSG_REVRAMP		;set string pointer
+                 ;	rcall	send_string				;spit it out
+                 ;	rjmp	tx_99
+                 tx_95:
+                 ;	cpi		temp,'4'				;random "white noise" output
+                 ;	brne	tx_99
+                 ;	ldi		ZH,HIGH(2*white)		;setup Z pointer hi
+                 ;	ldi		ZL,LOW(2*white)			;setup Z pointer lo
+                 ;	ldi		temp,MSG_NOISE			;set string pointer
+                 ;	rcall	send_string				;spit it out
+                 ;	rjmp	tx_99
+                 
+                 tx_98:
+0000c2 d044      	rcall	SET_FREQ				;set up registers for new frequency
+                 
+                 ;unknown command, just ignore it
+                 tx_99:
+0000c3 d002      	rcall	send_data				;always reply with the current frequency
+                 
+                 tx_exit:
+0000c4 910f      	pop		temp
+0000c5 9518      	reti
+                 
+                 ;**********************************************************************
+                 ;communication functionality
+                 ;**********************************************************************
+                 ;
+                 ;send the current frequency to the PC
+                 ;as a 7-byte sequence :
+                 ;'FRQ: ' folowed by a 6-digit ASCII of phase accumulator value and " Hz"
+                 ;
+                 send_data:
+0000c6 e201      	ldi		temp,MSG_FRQ			;set string pointer
+0000c7 d027      	rcall	send_string				;spit it out
+0000c8 d004      	rcall	send_6					;spit out all 6 digits
+                 
+0000c9 e206      	ldi		temp,MSG_HZ				;set string pointer
+0000ca d024      	rcall	send_string				;spit it out
+                 
+0000cb d038      	rcall	send_crlf				;send CR/LF
+                 
+0000cc 9508      	ret
+                 
+                 ;read the 6-digit packed BCD in registers bcd0, bcd1 and bcd2
+                 ;and convert to 6 ASCII characters sending to the serial 
+                 ;link (char stored in 'temp')
+                 send_6:
+0000cd 2f04      	mov		temp,bcd2				;get high-digits
+0000ce d005      	rcall	send_2BCD				;send them
+                 
+0000cf 2f03      	mov		temp,bcd1				;get middle-digits
+0000d0 d003      	rcall	send_2BCD				;send them
+                 
+0000d1 2f02      	mov		temp,bcd0				;get low-digits
+0000d2 d001      	rcall	send_2BCD				;send them
+                 
+0000d3 9508      	ret
+                 
+                 ;convert "digits" stored in 'temp' to two ASCII BCD digits and send 
+                 ;  them out the serial link
+                 send_2BCD:
+0000d4 930f      	push	temp					;save a copy
+0000d5 7f00      	andi	temp,0xf0				;strip off low-nibble
+0000d6 9502      	swap	temp					;put into low-nibble
+0000d7 5d00      	subi	temp,-(0x30)			;make it ASCII
+0000d8 d024      	rcall	send_char				;send 10's digit
+0000d9 910f      	pop		temp					;retrieve the copy
+0000da 700f      	andi	temp,0x0f				;strip off low-nibble
+0000db 5d00      	subi	temp,-(0x30)			;make it ASCII
+0000dc d020      	rcall	send_char				;send 1's digit
+0000dd 9508      	ret
+                 ;
+                 ;read in 6 characters from the serial link (char stored in 'temp')
+                 ;and convert to 6-digit packed BCD
+                 ;in registers bcd0, bcd1 and bcd2
+                 read_6:
+0000de d006      	rcall	read_2BCD				;convert to packed BCD
+0000df 2f40      	mov		bcd2,temp				;store the digit
+                 
+0000e0 d004      	rcall	read_2BCD				;convert to packed BCD
+0000e1 2f30      	mov		bcd1,temp				;store the digit
+                 
+0000e2 d002      	rcall	read_2BCD				;convert to packed BCD
+0000e3 2f20      	mov		bcd0,temp				;store the digit
+                 
+0000e4 9508      	ret
+                 
+                 ;Read two ASCII digits in the serial link and convert them into 
+                 ;  packed BCD.  Returns in 'temp2'
+                 read_2BCD:
+0000e5 d012      	rcall	get_char				;read upper digit position
+0000e6 d016      	rcall	send_char				;echo it back
+0000e7 5300      	subi	temp,0x30				;strip ASCII
+0000e8 9502      	swap	temp					;put into high-nibble
+0000e9 2f10      	mov		temp2,temp				;save it
+0000ea d00d      	rcall	get_char				;read lower digit position
+0000eb d011      	rcall	send_char				;echo it back
+0000ec 5300      	subi	temp,0x30				;strip ASCII
+0000ed 2b01      	or		temp,temp2				;combine with prior digit
+0000ee 9508      	ret
+                 
+                 ;***********************************************************
+                 ;Send String.  Pointer in temp.  Data from EEPROM returned 
+                 ;  in "temp" register.  Null terminates string
+                 ;
+                 send_string:
+0000ef 2ef0      	mov 	EEaddr,temp				;set string pointer
+                 send_string1:
+0000f0 d100      	rcall	EERead_seq				;get the byte
+0000f1 20ee      	tst		EEdata					;check for null terminator
+0000f2 f021      	breq	send_string99			;null, end of string
+0000f3 2d0e      	mov		temp,EEdata				;put the data byte into "temp"
+0000f4 d008      	rcall	send_char				;send it
+0000f5 94f3      	inc		EEaddr					;next character
+0000f6 cff9      	rjmp	send_string1			;loop
+                 send_string99:
+0000f7 9508      	ret
+                 ;
+                 ;get char in temp
+                 ;
+                 get_char:
+0000f8 b10b      	in 		temp,USR				;wait for a byte to be ready
+0000f9 ff07      	sbrs	temp,7					;ready ?
+0000fa cffd      	rjmp	get_char				;no, wait some more
+0000fb b10c      	in		temp,UDR				;get the byte
+0000fc 9508      	ret								;and return
+                 ;
+                 ;send char in temp
+                 ;
+                 send_char:
+0000fd 930f      	push	temp					;save temp
+                 send_c2:
+0000fe b10b      	in 		temp,USR				;wait for the transmitter to be ready
+0000ff ff05      	sbrs	temp,UDRE				;ready ? 
+000100 cffd      	rjmp	send_c2					;no, wait some more
+000101 910f      	pop		temp					;restore temp
+000102 b90c      	out		UDR,temp				;send char
+000103 9508      	ret								;ans return
+                 
+                 ;sends a CR/LF
+                 send_crlf:
+000104 e109      	ldi		temp,MSG_CRLF			;set string pointer
+000105 dfe9      	rcall	send_string				;spit it out
+000106 9508      	ret
+                 
+                 ;***************************************************************************
+                 ;* "set_freq" - sets up the frequency registers once 6-digit frequency 
+                 ;*  is entered from the serial link
+                 ;***************************************************************************
+                 
+                 SET_FREQ:							;set up registers for new frequency
+000107 2766      	clr		addrl					;zero the frequency registers
+000108 2777      	clr		addrm
+000109 2788      	clr		addrh
+                 
+00010a ef00      	ldi		temp,0xf0				;set up "striper"
+00010b 2e10      	mov		r1,temp
+                 
+                 SET_FREQ100KHZ:
+00010c 2e04      	mov		r0,BCD2					;get upper digits, 100K and 10K
+00010d 2001      	and		r0,r1					;strip low nible
+00010e 9402      	swap	r0						;and swap nible, 100K
+                 SET_FREQ100KHZa:
+00010f 2000      	tst		r0						;check for zero
+000110 f041      	breq	SET_FREQ10KHZ			;is zero, so skip
+000111 ea9e      	ldi		BCD0a,LOW(_100KHz)		;add up the count values
+000112 1f69      	adc		addrl,BCD0a
+000113 e9a7      	ldi		BCD1a,BYTE2(_100KHz)
+000114 1f7a      	adc		addrm,BCD1a
+000115 e1b9      	ldi		BCD2a,BYTE3(_100KHz)
+000116 1f8b      	adc		addrh,BCD2a
+000117 940a      	dec		r0						;dec register
+000118 cff6      	rjmp	SET_FREQ100KHZa			;and loop till zero
+                 
+                 SET_FREQ10KHZ:
+000119 2e04      	mov		r0,BCD2					;get upper digits, 100K and 10K
+00011a 9412      	swap	r1
+00011b 2001      	and		r0,r1					;strip high nible, 10K
+                 SET_FREQ10KHZa:
+00011c 2000      	tst		r0						;check for zero
+00011d f041      	breq	SET_FREQ1KHZ			;is zero, so skip
+00011e e29b      	ldi		BCD0a,LOW(_10KHz)		;add up the count values
+00011f 1f69      	adc		addrl,BCD0a
+000120 e8af      	ldi		BCD1a,BYTE2(_10KHz)
+000121 1f7a      	adc		addrm,BCD1a
+000122 e0b2      	ldi		BCD2a,BYTE3(_10KHz)
+000123 1f8b      	adc		addrh,BCD2a
+000124 940a      	dec		r0						;dec register
+000125 cff6      	rjmp	SET_FREQ10KHZa			;and loop till zero
+                 
+                 SET_FREQ1KHZ:
+000126 2e03      	mov		r0,BCD1					;get middle digits, 1K and 100
+000127 9412      	swap	r1
+000128 2001      	and		r0,r1					;strip low nible
+000129 9402      	swap	r0						;and swap nible, 1K
+                 SET_FREQ1KHZa:
+00012a 2000      	tst		r0						;check for zero
+00012b f041      	breq	SET_FREQ100HZ			;is zero, so skip
+00012c e894      	ldi		BCD0a,LOW(_1KHz)		;add up the count values
+00012d 1f69      	adc		addrl,BCD0a
+00012e e4a1      	ldi		BCD1a,BYTE2(_1KHz)
+00012f 1f7a      	adc		addrm,BCD1a
+000130 e0b0      	ldi		BCD2a,BYTE3(_1KHz)
+000131 1f8b      	adc		addrh,BCD2a
+000132 940a      	dec		r0						;dec register
+000133 cff6      	rjmp	SET_FREQ1KHZa			;and loop till zero
+                 
+                 SET_FREQ100HZ:
+000134 2e03      	mov		r0,BCD1					;get upper digits, 1K and 100
+000135 9412      	swap	r1
+000136 2001      	and		r0,r1					;strip high nible, 100
+                 SET_FREQ100HZa:
+000137 2000      	tst		r0						;check for zero
+000138 f041      	breq	SET_FREQ10HZ			;is zero, so skip
+000139 e89d      	ldi		BCD0a,LOW(_100Hz)		;add up the count values
+00013a 1f69      	adc		addrl,BCD0a
+00013b e0a6      	ldi		BCD1a,BYTE2(_100Hz)
+00013c 1f7a      	adc		addrm,BCD1a
+00013d e0b0      	ldi		BCD2a,BYTE3(_100Hz)
+00013e 1f8b      	adc		addrh,BCD2a
+00013f 940a      	dec		r0						;dec register
+000140 cff6      	rjmp	SET_FREQ100HZa			;and loop till zero
+                 
+                 SET_FREQ10HZ:
+000141 2e02      	mov		r0,BCD0					;get low digits, 10 and 1
+000142 9412      	swap	r1
+000143 2001      	and		r0,r1					;strip low nible
+000144 9402      	swap	r0						;and swap nible, 10
+                 SET_FREQ10HZa:
+000145 2000      	tst		r0						;check for zero
+000146 f041      	breq	SET_FREQ1HZ			;is zero, so skip
+000147 ea97      	ldi		BCD0a,LOW(_10Hz)		;add up the count values
+000148 1f69      	adc		addrl,BCD0a
+000149 e0a0      	ldi		BCD1a,BYTE2(_10Hz)
+00014a 1f7a      	adc		addrm,BCD1a
+00014b e0b0      	ldi		BCD2a,BYTE3(_10Hz)
+00014c 1f8b      	adc		addrh,BCD2a
+00014d 940a      	dec		r0						;dec register
+00014e cff6      	rjmp	SET_FREQ10HZa			;and loop till zero
+                 
+                 SET_FREQ1HZ:
+00014f 2e02      	mov		r0,BCD0					;get upper digits, 10 and 1
+000150 9412      	swap 	r1
+000151 2001      	and		r0,r1					;strip high nible, 1
+                 SET_FREQ1HZa:
+000152 2000      	tst		r0						;check for zero
+000153 f041      	breq	SET_FREQ_OUT			;is zero, so skip
+000154 e190      	ldi		BCD0a,LOW(_1Hz)			;add up the count values
+000155 1f69      	adc		addrl,BCD0a
+000156 e0a0      	ldi		BCD1a,BYTE2(_1Hz)
+000157 1f7a      	adc		addrm,BCD1a
+000158 e0b0      	ldi		BCD2a,BYTE3(_1Hz)
+000159 1f8b      	adc		addrh,BCD2a
+00015a 940a      	dec		r0						;dec register
+00015b f7b1      	brne	SET_FREQ1HZa			;and loop till zero
+                 
+                 SET_FREQ_OUT:
+00015c 9508      	ret
+                 
+                 ;***************************************************************************
+                 ;* "BCDadd" - 6-digit packed BCD addition
+                 ;*
+                 ;* This subroutine adds the two unsigned 6-digit BCD numbers held in 
+                 ;*   "BCD0a", "BCD1a" and "BCD2a" to those in "BCD0", "BCD1", and "BCD2".
+                 ;* The result is returned in "BCD0", "BCD1" and "BCD2".  The overflow
+                 ;*   carry in "BCDt".
+                 ;***************************************************************************
+                 
+                 BCDadd:
+00015d 2755      	clr		BCDt					;clear the overflow bit
+00015e e006      	ldi		temp,6					;value to be added later
+00015f 2e00      	mov		r0,temp					;save it in r0
+000160 2f02      	mov		temp,BCD0				;set up for LSD
+000161 2f19      	mov		temp2,BCD0a
+000162 d00e      	rcall	BCDadd_10				;call the routine
+000163 2f20      	mov		BCD0,temp				;put the new digit back
+                 
+000164 9402      	swap	r0						;restore add value
+000165 0fa5      	add		BCD1a,BCDt				;we need to add the carry from the prior operation
+000166 2f03      	mov		temp,BCD1				;set up for MMD digit
+000167 2f1a      	mov		temp2,BCD1a
+000168 d008      	rcall	BCDadd_10				;call the routine
+000169 2f30      	mov		BCD1,temp				;put the new digit back
+                 
+00016a 9402      	swap	r0						;restore add value
+00016b 0fb5      	add		BCD2a,BCDt				;we need to add the carry from the prior operation
+00016c 2f04      	mov		temp,BCD2				;set up for MSD
+00016d 2f1b      	mov		temp2,BCD2a
+00016e d002      	rcall	BCDadd_10				;call the routine
+00016f 2f40      	mov		BCD2,temp				;put the new digit back
+                 
+000170 9508      	ret
+                 
+                 BCDadd_10:
+000171 0f01      	add		temp,temp2				;add the numbers binary
+000172 2755      	clr		BCDt					;clear BCD carry
+000173 f408      	brcc	BCDadd_11				;if carry not clear
+000174 e051      	ldi		BCDt,1					;set BCD carry
+                 BCDadd_11:
+000175 f025      	brhs	BCDadd_12				;if half carry not set
+000176 0d00      	add		temp,r0					;add 6 to LSD
+000177 f01d      	brhs	BCDadd_13				;if half carry not set (LSD <= 9)
+000178 5006      	subi	temp,6					;restore value
+000179 c001      	rjmp	BCDadd_13				;else
+                 BCDadd_12:
+00017a 0d00      	add		temp,r0					;add 6 to LSD
+                 BCDadd_13:
+00017b f408      	brcc	BCDadd_14
+00017c e051      	ldi		BCDt,1	
+                 BCDadd_14:
+00017d 9402      	swap	r0
+00017e 0d00      	add		temp,r0					;add 6 to MSD
+00017f f018      	brcs	BCDadd_15				;if carry not set (MSD <= 9)
+000180 ff50      	sbrs	BCDt,0					;if previous carry not set
+000181 5600      	subi	temp,$60				;restore value
+000182 c001      	rjmp	BCDadd_16				;next set of digits
+                 BCDadd_15:
+000183 e051      	ldi		BCDt,1					;set BCD carry
+                 BCDadd_16:
+000184 9508      	ret
+                 
+                 ;***************************************************************************
+                 ;*
+                 ;* "BCDsub" - 6-digit packed BCD subtraction
+                 ;*
+                 ;* This subroutine subtracts the two unsigned 6-digit BCD numbers held in 
+                 ;*   "BCD0a", "BCD1a" and "BCD2a" from those in "BCD0", "BCD1", and "BCD2".
+                 ;* The result is returned in "BCD0", "BCD1" and "BCD2".  The underflow
+                 ;*   carry is in "BCDt".
+                 ;***************************************************************************
+                 
+                 BCDsub:
+000185 2755      	clr		BCDt					;clear the underflow bit
+000186 2f02      	mov		temp,BCD0				;set up for LSD
+000187 2f19      	mov		temp2,BCD0a
+000188 d00f      	rcall	BCDsub_10				;call the routine
+000189 2f20      	mov		BCD0,temp				;put the new digit back
+00018a 0fa5      	add		BCD1a,BCDt				;add borrow to next digit
+                 
+00018b 2f03      	mov		temp,BCD1				;set up for MMD digit
+00018c 2f1a      	mov		temp2,BCD1a
+00018d d00a      	rcall	BCDsub_10				;call the routine
+00018e 2f30      	mov		BCD1,temp				;put the new digit back
+00018f 0fb5      	add		BCD2a,BCDt				;add borrow to next digit
+                 
+000190 2f04      	mov		temp,BCD2				;set up for MSD
+000191 2f1b      	mov		temp2,BCD2a
+000192 d005      	rcall	BCDsub_10				;call the routine
+000193 2f40      	mov		BCD2,temp				;put the new digit back
+                 
+000194 2799      	clr		BCD0a					;clear add/subract regs
+000195 27aa      	clr		BCD1a
+000196 27bb      	clr		BCD2a
+                 
+000197 9508      	ret
+                 
+                 BCDsub_10:
+000198 1b01      	sub		temp,temp2				;subtract the numbers binary
+000199 2755      	clr		BCDt
+00019a f408      	brcc	BCDsub_11				;if carry not clear
+00019b e051      	ldi		BCDt,1					;store carry in BCD0t, bit 0
+                 BCDsub_11:
+00019c f40d      	brhc	BCDsub_12				;if half carry not clear
+00019d 5006      	subi	temp,0x06				;LSD = LSD - 6
+                 BCDsub_12:
+00019e ff50      	sbrs	BCDt,0					;if previous carry set
+00019f c004      	rjmp	BCDsub_13
+0001a0 5600      	subi	temp,0x60				;subtract 6 from MSD
+0001a1 e051      	ldi		BCDt,1					;set underflow carry
+0001a2 f408      	brcc	BCDsub_13				;if carry not clear
+0001a3 e051      	ldi		BCDt,1					;clear underflow carry	
+                 BCDsub_13:	
+0001a4 9508      	ret
+                 
+                 ;***********************************************************************
+                 ;Re-Initializes the counters then returns
+                 ;***********************************************************************
+                 RE_INIT:
+                 ;set power-up waveform output as default
+0001a5 e0f4      	ldi		ZH,HIGH(2*sine)			;setup Z pointer hi
+0001a6 e0e0      	ldi		ZL,LOW(2*sine)			;setup Z pointer lo
+                 
+0001a7 e020      	ldi		BCD0,0x00				;set default frequency count
+0001a8 e130      	ldi		BCD1,0x10
+0001a9 e040      	ldi		BCD2,0x00
+0001aa df5c      	rcall	SET_FREQ				;set the frequency registers
+                 
+0001ab e000      	ldi		temp,MSG_HELLO			;set string pointer
+0001ac df42      	rcall	send_string				;spit it out
+                 
+0001ad 9508      	ret
+                 
+                 ;***********************************************************************
+                 ;Include the Bin2BCD routine
+                 ;***********************************************************************
+                 .include	"Include\Bin2BCD.asm"
+                 
+                 ;Converts a 24-bit binary number in Addr (AddrH,AddrM, AddrL) into 
+                 ;packed bcd in bcd2, bcd1, bcd0.  For example, if AddrH=BYTE3(12345),
+                 ;AddrM=high(12356), AddrL=low(12356)calling to the routine will 
+                 ;produce bcd2=$01, bcd1=$23, bcd0=$45.
+                 ;
+                 bin2bcd:
+0001ae 936f      	push	addrl					;save registers
+0001af 937f      	push	addrm
+0001b0 938f      	push	addrh
+0001b1 9488      	clc
+0001b2 e108      	ldi		temp,24
+0001b3 2722      	clr		bcd0
+0001b4 2733      	clr		bcd1
+0001b5 2744      	clr		bcd2
+                 bitloop:
+0001b6 1f66      	rol		addrl
+0001b7 1f77      	rol		addrm
+0001b8 1f88      	rol		addrh
+0001b9 1f22      	rol		bcd0
+0001ba 1f33      	rol		bcd1
+0001bb 1f44      	rol		bcd2
+0001bc 950a      	dec		temp
+0001bd f421      	brne	bitadj
+                 
+0001be 918f      	pop		addrh					;restore registers
+0001bf 917f      	pop		addrm
+0001c0 916f      	pop		addrl
+0001c1 9508      	ret
+                 
+                 bitadj:
+0001c2 2f12      	mov		temp2,bcd0
+0001c3 d008      	rcall	adjbit
+0001c4 2f21      	mov		bcd0,temp2
+0001c5 2f13      	mov		temp2,bcd1
+0001c6 d005      	rcall	adjbit
+0001c7 2f31      	mov		bcd1,temp2
+0001c8 2f14      	mov		temp2,bcd2
+0001c9 d002      	rcall	adjbit
+0001ca 2f41      	mov		bcd2,temp2
+0001cb cfea      	rjmp	bitloop
+                 
+                 adjbit:
+0001cc 2f51      	mov		bcdt,temp2
+0001cd 5f5d      	subi	bcdt,-3					;add 3
+0001ce fd53      	sbrc	bcdt,3
+0001cf 2f15      	mov		temp2,bcdt
+0001d0 2f51      	mov		bcdt,temp2
+0001d1 5d50      	subi	bcdt,-(0x30)			;add 0x30
+0001d2 fd57      	sbrc	bcdt,7
+0001d3 2f15      	mov		temp2,bcdt
+0001d4 9508      	ret
+                 
+                 ;***********************************************************************
+                 ;DELAYS 100mS AND THEN RETURNS - USES NO INTERUPTS
+                 ;***********************************************************************
+                 DELAY250:
+0001d5 efda
+0001d6 efc3
+0001d7 95ca
+0001d8 0000
+0001d9 0000
+0001da 0000
+0001db 0000
+0001dc f7d1
+0001dd efcf
+0001de 95ca
+0001df 0000
+0001e0 0000
+0001e1 0000
+0001e2 f7d9
+0001e3 efcc
+0001e4 95ca
+0001e5 0000
+0001e6 0000
+0001e7 0000
+0001e8 0000
+0001e9 f7d1
+0001ea f016
+0001eb 9468
+0001ec cfe9
+0001ed 95da
+0001ee 94e8
+0001ef f731      	_WAIT_10mS	fclk,25				;Delay 250ms
+                 DELAY250_OUT:
+0001f0 9508      	ret								;return from subroutine
+                 
+                 ;***********************************************************************
+                 ;Reads Sequential "Message" data from EEPROM.
+                 ; Address pointer is in register "EEaddr"
+                 ; returns data in EEdata
+                 ;***********************************************************************
+                 EERead_seq:
+0001f1 bafe      	out		EEAR,EEaddr				;output address low byte
+0001f2 9ae0      	sbi		EECR,EERE				;set EEPROM Read strobe
+                 									;This instruction takes 4 clock cycles since
+                 									;it halts the CPU for two clock cycles
+0001f3 b2ed      	in		EEdata,EEDR				;get data
+0001f4 9508      	ret
+                 
+                 ;--------------------------------------- 
+                 ;Interrupt Handlers
+                 ;--------------------------------------- 
+                 EXT_INT1:						;IRQ1 Handler
+                 ;	reti
+                 TIM_CAPT1:						;Timer1 Capture Handler
+                 ;	reti
+                 TIM_COMP1:						;Timer1 Compare Handler
+                 ;	reti
+                 TIM_OVF1:						;Timer1 Overflow Handler
+                 ;	reti
+                 TIM_OVF0:						;Timer0 Overflow Handler
+                 ;	reti
+                 UART_DRE:						;UDR Empty Handler
+                 ;	reti
+                 UART_TXC:						;UART TX Complete Handler
+                 ;	reti
+                 ANA_COMP:						;Analog Comparator Handler
+                 ;	reti
+                 NO_VEC:	
+                 ;	reti
+                 
+                 ;******************************************************************************
+                 ;Include Waveform Data Tables
+                 ;******************************************************************************
+                 
+                 .org	wavtbl
+                 ;.include "datatable.asm"		;Waveform data tables
+                 .include "sine.asm"				;Waveform data tables
+                 
+000200 827f
+000201 8885
+000202 8f8b
+000203 9592
+000204 9b98
+000205 a19e
+000206 a7a4
+000207 adaa
+000208 b3b0
+000209 b8b6
+00020a bebb
+00020b c3c1
+00020c c8c6
+00020d cdcb
+00020e d2d0
+00020f d7d5
+000210 dbd9
+000211 e0dd
+000212 e4e2
+000213 e7e5
+000214 ebe9
+000215 eeec
+000216 f1ef
+000217 f4f2
+000218 f6f5
+000219 f8f7
+00021a faf9
+00021b fbfb
+00021c fdfc
+00021d fefd
+00021e fefe
+00021f fefe
+000220 feff
+000221 fefe
+000222 fefe
+000223 fdfd
+000224 fbfc
+000225 fafb
+000226 f8f9
+000227 f6f7
+000228 f4f5
+000229 f1f2
+00022a eeef
+00022b ebec
+00022c e7e9
+00022d e4e5
+00022e e0e2
+00022f dbdd
+000230 d7d9
+000231 d2d5
+000232 cdd0
+000233 c8cb
+000234 c3c6
+000235 bec1
+000236 b8bb
+000237 b3b6
+000238 adb0
+000239 a7aa
+00023a a1a4
+00023b 9b9e
+00023c 9598
+00023d 8f92
+00023e 888b
+00023f 8285
+000240 7c7f
+000241 7679
+000242 6f73
+000243 696c
+000244 6366
+000245 5d60
+000246 575a
+000247 5154
+000248 4b4e
+000249 4648
+00024a 4043
+00024b 3b3d
+00024c 3638
+00024d 3133
+00024e 2c2e
+00024f 2729
+000250 2325
+000251 1e21
+000252 1a1c
+000253 1719
+000254 1315
+000255 1012
+000256 0d0f
+000257 0a0c
+000258 0809
+000259 0607
+00025a 0405
+00025b 0303
+00025c 0102
+00025d 0001
+00025e 0000
+00025f 0000
+000260 0000
+000261 0000
+000262 0000
+000263 0101
+000264 0302
+000265 0403
+000266 0605
+000267 0807
+000268 0a09
+000269 0d0c
+00026a 100f
+00026b 1312
+00026c 1715
+00026d 1a19
+00026e 1e1c
+00026f 2321
+000270 2725
+000271 2c29
+000272 312e
+000273 3633
+000274 3b38
+000275 403d
+000276 4643
+000277 4b48
+000278 514e
+000279 5754
+00027a 5d5a
+00027b 6360
+00027c 6966
+00027d 6f6c
+00027e 7673
+00027f 7c79      .db	0x7F,0x82,0x85,0x88,0x8B,0x8F,0x92,0x95,0x98,0x9B,0x9E,0xA1,0xA4,0xA7,0xAA,0xAD,0xB0,0xB3,0xB6,0xB8,0xBB,0xBE,0xC1,0xC3,0xC6,0xC8,0xCB,0xCD,0xD0,0xD2,0xD5,0xD7,0xD9,0xDB,0xDD,0xE0,0xE2,0xE4,0xE5,0xE7,0xE9,0xEB,0xEC,0xEE,0xEF,0xF1,0xF2,0xF4,0xF5,0xF6,0                 .include "square.asm"			;Waveform data tables
+                 
+000280 ffff
+000281 ffff
+000282 ffff
+000283 ffff
+000284 ffff
+000285 ffff
+000286 ffff
+000287 ffff
+000288 ffff
+000289 ffff
+00028a ffff
+00028b ffff
+00028c ffff
+00028d ffff
+00028e ffff
+00028f ffff
+000290 ffff
+000291 ffff
+000292 ffff
+000293 ffff
+000294 ffff
+000295 ffff
+000296 ffff
+000297 ffff
+000298 ffff
+000299 ffff
+00029a ffff
+00029b ffff
+00029c ffff
+00029d ffff
+00029e ffff
+00029f ffff
+0002a0 ffff
+0002a1 ffff
+0002a2 ffff
+0002a3 ffff
+0002a4 ffff
+0002a5 ffff
+0002a6 ffff
+0002a7 ffff
+0002a8 ffff
+0002a9 ffff
+0002aa ffff
+0002ab ffff
+0002ac ffff
+0002ad ffff
+0002ae ffff
+0002af ffff
+0002b0 ffff
+0002b1 ffff
+0002b2 ffff
+0002b3 ffff
+0002b4 ffff
+0002b5 ffff
+0002b6 ffff
+0002b7 ffff
+0002b8 ffff
+0002b9 ffff
+0002ba ffff
+0002bb ffff
+0002bc ffff
+0002bd ffff
+0002be ffff
+0002bf ffff
+0002c0 0000
+0002c1 0000
+0002c2 0000
+0002c3 0000
+0002c4 0000
+0002c5 0000
+0002c6 0000
+0002c7 0000
+0002c8 0000
+0002c9 0000
+0002ca 0000
+0002cb 0000
+0002cc 0000
+0002cd 0000
+0002ce 0000
+0002cf 0000
+0002d0 0000
+0002d1 0000
+0002d2 0000
+0002d3 0000
+0002d4 0000
+0002d5 0000
+0002d6 0000
+0002d7 0000
+0002d8 0000
+0002d9 0000
+0002da 0000
+0002db 0000
+0002dc 0000
+0002dd 0000
+0002de 0000
+0002df 0000
+0002e0 0000
+0002e1 0000
+0002e2 0000
+0002e3 0000
+0002e4 0000
+0002e5 0000
+0002e6 0000
+0002e7 0000
+0002e8 0000
+0002e9 0000
+0002ea 0000
+0002eb 0000
+0002ec 0000
+0002ed 0000
+0002ee 0000
+0002ef 0000
+0002f0 0000
+0002f1 0000
+0002f2 0000
+0002f3 0000
+0002f4 0000
+0002f5 0000
+0002f6 0000
+0002f7 0000
+0002f8 0000
+0002f9 0000
+0002fa 0000
+0002fb 0000
+0002fc 0000
+0002fd 0000
+0002fe 0000
+0002ff 0000      .db 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0                 .include "triangle.asm"			;Waveform data tables
+                 
+000300 0200
+000301 0604
+000302 0a08
+000303 0e0c
+000304 1210
+000305 1614
+000306 1a18
+000307 1e1c
+000308 2220
+000309 2624
+00030a 2a28
+00030b 2e2c
+00030c 3230
+00030d 3634
+00030e 3a38
+00030f 3e3c
+000310 4240
+000311 4644
+000312 4a48
+000313 4e4c
+000314 5250
+000315 5654
+000316 5a58
+000317 5e5c
+000318 6260
+000319 6664
+00031a 6a68
+00031b 6e6c
+00031c 7270
+00031d 7674
+00031e 7a78
+00031f 7e7c
+000320 8280
+000321 8684
+000322 8a88
+000323 8e8c
+000324 9290
+000325 9694
+000326 9a98
+000327 9e9c
+000328 a2a0
+000329 a6a4
+00032a aaa8
+00032b aeac
+00032c b2b0
+00032d b6b4
+00032e bab8
+00032f bebc
+000330 c2c0
+000331 c6c4
+000332 cac8
+000333 cecc
+000334 d2d0
+000335 d6d4
+000336 dad8
+000337 dedc
+000338 e2e0
+000339 e6e4
+00033a eae8
+00033b eeec
+00033c f2f0
+00033d f6f4
+00033e faf8
+00033f fefc
+000340 fdff
+000341 f9fb
+000342 f5f7
+000343 f1f3
+000344 edef
+000345 e9eb
+000346 e5e7
+000347 e1e3
+000348 dddf
+000349 d9db
+00034a d5d7
+00034b d1d3
+00034c cdcf
+00034d c9cb
+00034e c5c7
+00034f c1c3
+000350 bdbf
+000351 b9bb
+000352 b5b7
+000353 b1b3
+000354 adaf
+000355 a9ab
+000356 a5a7
+000357 a1a3
+000358 9d9f
+000359 999b
+00035a 9597
+00035b 9193
+00035c 8d8f
+00035d 898b
+00035e 8587
+00035f 8183
+000360 7d7f
+000361 797b
+000362 7577
+000363 7173
+000364 6d6f
+000365 696b
+000366 6567
+000367 6163
+000368 5d5f
+000369 595b
+00036a 5557
+00036b 5153
+00036c 4d4f
+00036d 494b
+00036e 4547
+00036f 4143
+000370 3d3f
+000371 393b
+000372 3537
+000373 3133
+000374 2d2f
+000375 292b
+000376 2527
+000377 2123
+000378 1d1f
+000379 191b
+00037a 1517
+00037b 1113
+00037c 0d0f
+00037d 090b
+00037e 0507
+00037f 0103      .db 0x00,0x02,0x04,0x06,0x08,0x0A,0x0C,0x0E,0x10,0x12,0x14,0x16,0x18,0x1A,0x1C,0x1E,0x20,0x22,0x24,0x26,0x28,0x2A,0x2C,0x2E,0x30,0x32,0x34,0x36,0x38,0x3A,0x3C,0x3E,0x40,0x42,0x44,0x46,0x48,0x4A,0x4C,0x4E,0x50,0x52,0x54,0x56,0x58,0x5A,0x5C,0x5E,0x60,0x62,0                 .include "sawtooth.asm"			;Waveform data tables
+                 
+000380 0100
+000381 0302
+000382 0504
+000383 0706
+000384 0908
+000385 0b0a
+000386 0d0c
+000387 0f0e
+000388 1110
+000389 1312
+00038a 1514
+00038b 1716
+00038c 1918
+00038d 1b1a
+00038e 1d1c
+00038f 1f1e
+000390 2120
+000391 2322
+000392 2524
+000393 2726
+000394 2928
+000395 2b2a
+000396 2d2c
+000397 2f2e
+000398 3130
+000399 3332
+00039a 3534
+00039b 3736
+00039c 3938
+00039d 3b3a
+00039e 3d3c
+00039f 3f3e
+0003a0 4140
+0003a1 4342
+0003a2 4544
+0003a3 4746
+0003a4 4948
+0003a5 4b4a
+0003a6 4d4c
+0003a7 4f4e
+0003a8 5150
+0003a9 5352
+0003aa 5554
+0003ab 5756
+0003ac 5958
+0003ad 5b5a
+0003ae 5d5c
+0003af 5f5e
+0003b0 6160
+0003b1 6362
+0003b2 6564
+0003b3 6766
+0003b4 6968
+0003b5 6b6a
+0003b6 6d6c
+0003b7 6f6e
+0003b8 7170
+0003b9 7372
+0003ba 7574
+0003bb 7776
+0003bc 7978
+0003bd 7b7a
+0003be 7d7c
+0003bf 7f7e
+0003c0 8180
+0003c1 8382
+0003c2 8584
+0003c3 8786
+0003c4 8988
+0003c5 8b8a
+0003c6 8d8c
+0003c7 8f8e
+0003c8 9190
+0003c9 9392
+0003ca 9594
+0003cb 9796
+0003cc 9998
+0003cd 9b9a
+0003ce 9d9c
+0003cf 9f9e
+0003d0 a1a0
+0003d1 a3a2
+0003d2 a5a4
+0003d3 a7a6
+0003d4 a9a8
+0003d5 abaa
+0003d6 adac
+0003d7 afae
+0003d8 b1b0
+0003d9 b3b2
+0003da b5b4
+0003db b7b6
+0003dc b9b8
+0003dd bbba
+0003de bdbc
+0003df bfbe
+0003e0 c1c0
+0003e1 c3c2
+0003e2 c5c4
+0003e3 c7c6
+0003e4 c9c8
+0003e5 cbca
+0003e6 cdcc
+0003e7 cfce
+0003e8 d1d0
+0003e9 d3d2
+0003ea d5d4
+0003eb d7d6
+0003ec d9d8
+0003ed dbda
+0003ee dddc
+0003ef dfde
+0003f0 e1e0
+0003f1 e3e2
+0003f2 e5e4
+0003f3 e7e6
+0003f4 e9e8
+0003f5 ebea
+0003f6 edec
+0003f7 efee
+0003f8 f1f0
+0003f9 f3f2
+0003fa f5f4
+0003fb f7f6
+0003fc f9f8
+0003fd fbfa
+0003fe fdfc
+0003ff fffe      .db	0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0                 ;.include "rev-sawtooth.asm"		;Waveform data tables
+                 ;.include "white.asm"			;Waveform data tables
+                 
+                 ;******************************************************************************
+                 ;Include Message Data Tables in EEPROM
+                 ;******************************************************************************
+                 .include	"Include\EEProm_Data.inc"
+                 
+                 ; ASCII messages stored in EEPROM
+                 ;******************************************************************************
+                 	.eseg
+                 
+                 MSG_HELLO:
+000000 0d
+000001 0a
+000002 4d
+000003 69
+000004 6e
+000005 69
+000006 44
+000007 44
+000008 53
+000009 20
+00000a 56
+00000b 31
+00000c 2e
+00000d 30
+00000e 0d
+00000f 0a
+000010 4a
+000011 75
+000012 6e
+000013 27
+000014 30
+000015 36
+000016 0d
+000017 0a
+000018 00        	.db	cr,lf,"MiniDDS V1.0",cr,lf,"Jun'06",cr,lf,0
+                 MSG_CRLF:
+000019 0d
+00001a 0a
+00001b 00        	.db	cr,lf,0
+                 MSG_SET:
+00001c 53
+00001d 45
+00001e 54
+00001f 3a
+000020 00        	.db	"SET:",0
+                 MSG_FRQ:
+000021 46
+000022 52
+000023 51
+000024 3a
+000025 00        	.db	"FRQ:",0
+                 MSG_HZ:
+000026 20
+000027 48
+000028 7a
+000029 00        	.db	" Hz",0
+                 MSG_U1:
+00002a 2b
+00002b 31
+00002c 48
+00002d 7a
+00002e 20
+00002f 00        	.db	"+1Hz ",0
+                 MSG_U10:
+000030 2b
+000031 31
+000032 30
+000033 48
+000034 7a
+000035 20
+000036 00        	.db	"+10Hz ",0
+                 MSG_U100:
+000037 2b
+000038 31
+000039 30
+00003a 30
+00003b 48
+00003c 7a
+00003d 20
+00003e 00        	.db	"+100Hz ",0
+                 MSG_U1000:
+00003f 2b
+000040 31
+000041 4b
+000042 48
+000043 7a
+000044 20
+000045 00        	.db	"+1KHz ",0
+                 MSG_D1:
+000046 2d
+000047 31
+000048 48
+000049 7a
+00004a 20
+00004b 00        	.db	"-1Hz ",0
+                 MSG_D10:
+00004c 2d
+00004d 31
+00004e 30
+00004f 48
+000050 7a
+000051 20
+000052 00        	.db	"-10Hz ",0
+                 MSG_D100:
+000053 2d
+000054 31
+000055 30
+000056 30
+000057 48
+000058 7a
+000059 20
+00005a 00        	.db	"-100Hz ",0
+                 MSG_D1000:
+00005b 2d
+00005c 31
+00005d 4b
+00005e 48
+00005f 7a
+000060 20
+000061 00        	.db	"-1KHz ",0
+                 MSG_SINE:
+000062 53
+000063 69
+000064 6e
+000065 0d
+000066 0a
+000067 00        	.db	"Sin",cr,lf,0
+                 MSG_SQUARE:
+000068 53
+000069 71
+00006a 72
+00006b 0d
+00006c 0a
+00006d 00        	.db	"Sqr",cr,lf,0
+                 MSG_TRI:
+00006e 54
+00006f 72
+000070 69
+000071 0d
+000072 0a
+000073 00        	.db	"Tri",cr,lf,0
+                 MSG_RAMP:
+000074 52
+000075 6d
+000076 70
+000077 0d
+000078 0a
+000079 00        	.db	"Rmp",cr,lf,0
+                 ;MSG_REVRAMP:
+                 ;	.db	"RRmp",cr,lf,0
+                 ;MSG_NOISE:
+                 ;	.db	"Rnd",cr,lf,0
+                 MSG_BYE:
+00007a 42
+00007b 79
+00007c 65
+00007d 0d
+00007e 0a
+00007f 00        	.db	"Bye",cr,lf,0
+                 
+                 ;******************************************************************************
+                 ;end of file	
+                 ;******************************************************************************
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+AT90S2313 register use summary:
+r0 :  35 r1 :  12 r2 :   0 r3 :   0 r4 :   0 r5 :   0 r6 :   0 r7 :   0 
+r8 :   0 r9 :   0 r10:   0 r11:   0 r12:   0 r13:   0 r14:   3 r15:   3 
+r16: 134 r17:  20 r18:  13 r19:  13 r20:  13 r21:  24 r22:  11 r23:  11 
+r24:  11 r25:  20 r26:  22 r27:  18 r28:   8 r29:   4 r30:   7 r31:   5 
+x  :   0 y  :   0 z  :   0 
+Registers used: 20 out of 35 (57.1%)
+
+AT90S2313 instruction use summary:
+adc   :  20 add   :   9 adiw  :   0 and   :   6 andi  :   3 asr   :   0 
+bclr  :   0 bld   :   0 brbc  :   0 brbs  :   0 brcc  :   4 brcs  :   1 
+breq  :   8 brge  :   0 brhc  :   1 brhs  :   2 brid  :   0 brie  :   0 
+brlo  :   0 brlt  :   0 brmi  :   0 brne  :  20 brpl  :   0 brsh  :   0 
+brtc  :   0 brts  :   1 brvc  :   0 brvs  :   0 bset  :   0 bst   :   0 
+cbi   :   1 cbr   :   0 clc   :   1 clh   :   0 cli   :   0 cln   :   0 
+clr   :  21 cls   :   0 clt   :   1 clv   :   0 clz   :   0 com   :   0 
+cp    :   0 cpc   :   0 cpi   :  15 cpse  :   0 dec   :  11 eor   :   0 
+icall :   0 ijmp  :   0 in    :   7 inc   :   1 ld    :   0 ldd   :   0 
+ldi   :  84 lds   :   0 lpm   :   1 lsl   :   0 lsr   :   0 mov   :  45 
+neg   :   0 nop   :  21 or    :   1 ori   :   1 out   :  25 pop   :   6 
+push  :   6 rcall :  58 ret   :  19 reti  :  10 rjmp  :  36 rol   :   6 
+ror   :   0 sbc   :   0 sbci  :   0 sbi   :   6 sbic  :   0 sbis  :   1 
+sbiw  :   0 sbr   :   0 sbrc  :   2 sbrs  :   4 sec   :   0 seh   :   0 
+sei   :   2 sen   :   0 ser   :   1 ses   :   0 set   :   1 sev   :   0 
+sez   :   0 sleep :   1 st    :   0 std   :   0 sts   :   0 sub   :   1 
+subi  :  10 swap  :  13 tst   :   7 wdr   :   0 
+Instructions used: 45 out of 100 (45.0%)
+
+AT90S2313 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x000800   1002   1024   2026    2048  98.9%
+[.dseg] 0x000060 0x000060      0      0      0     128   0.0%
+[.eseg] 0x000000 0x000080      0    128    128     128 100.0%
+
+Assembly complete, 0 errors, 5 warnings
