@@ -1,0 +1,873 @@
+// Prerequisite for undersanding this file:
+//    "Primer on SX-Forth - a Tom Napier article commented by Valter Foresto.pdf"
+//    ... please read it carefully !
+
+//    ... This is a editor added comments
+
+AVR SX-Forth 20060712 [V.Foresto - Comm.SEC]
+
+>words
+CALL        // call a C function using it's name as string in the Top Of Stack
+!           // store 16 bits (or 32 on 16/32 bits architecture) on memories
+!B          // store 8 bits byte (architecture independent) on memories
+@           // fetch 16 bits (or 32 on 16/32 bits architecture) from memories
+@B          // fetch 8 bits byte (architecture independent) from memories
+.           // print TOS
+.C          // print TOS as an ASCII character
+."          // print TOS as an ASCII string pointer
+CLR_STKS    // clear data and return stacks
+?S          // non destructive print of data stack
+?R          // non destructive print of return stack
+CR          // print a Carriage Return ASCII character
+DUP         // duplicate TOS
+SWAP        // swap TOS with TOS-1 contents
+DROP        // discard TOS
++1          // increment TOS
+-1          // decrement TOS
+NOT         // unary TOS negation
+ABS         // unary TOS unsigned transformation
+OR          // bynary OR of TOS and TOS-1
+XOR         // bynary XOR of TOS and TOS-1
+AND         // bynary AND of TOS and TOS-1
++           // bynary ADD of TOS and TOS-1
+-           // bynary SUB of TOS and TOS-1
+*           // bynary MULT of TOS and TOS-1
+/           // bynary DIV of TOS and TOS-1
+*/          // trinary SCALING of TOS, TOS-1 and TOS-2 (fixed point mathematics)
+MOD         // bynary MODulo of TOS and TOS-1
+LSH         // bynary Left SHift of TOS and TOS-1
+RSH         // bynary Rigth SHift of TOS and TOS-1
+==          // EQUAL binary comparison
+<>          // NOT EQUAL binary comparison
+>           // GREATHER binary comparison
+>=          // GREATHER or EQUAL binary comparison
+<           // LOWER binary comparison
+<=          // LOWER or EQUAL binary comparison
+I           // address of buil-in I variable
+I!          // store TOS on I variable
+I@          // fetch on TOS the I variable
+I.          // print value of I variable
+I+          // increment the I variable
+I-          // decrement the I variable
+J           // address of buil-in J variable
+J!          // store TOS on J variable
+J@          // fetch on TOS the J variable
+J.          // print value of J variable
+J+          // increment the J variable
+J-          // decrement the J variable
+@I          // fetch the memory word indirectly addressed by I variable
+@IB         // fetch the memory byte indirectly addressed by I variable
+!I          // store TOS to memory word indirectly addressed by I variable
+!IB         // store TOS to memory byte indirectly addressed by I variable
+@I+         // fetch the memory word indirectly addressed by I variable, then increment I
+@IB+        // fetch the memory byte indirectly addressed by I variable, then increment I
+!I+         // store TOS to memory word indirectly addressed by I variable, then increment I
+!IB+        // store TOS to memory byte indirectly addressed by I variable, then increment I
+==0_EXIT    // if TOS is 0 EXIT the interpreted string script
+USER_ENTRY  // ask and get a TOS word from the user
+IF          // TOS test for TRUE
+ELSE        // ... executed if TOS is FALSE
+ENDIF       // end of TOS test
+DO          // TOS iteration test for > 0
+LOOP        // ... end of TOS iteration test
+==0_BREAK   // exit DO ... LOOP iteration i current TOS is 0
+DEC         // set DECimal base for numbers
+HEX         // set HEXadecimal base for numbers
+DBG+        // set DeBuG mode of Forth
+DBG-        // clear DeBuG mode of Forth
+RAM         // use RAM memory
+EEPROM      // use EEPROM memory
+FLASH       // use FLASH memory
+RAM_USER    // set RAM memory, push on TOS RAM_USER memory pointer
+PAUSE       // ask user for continuation
+?PAUSE      // check if key pressed, PAUSE if any
+STEP+       // set single STEPping and debug mode of Forth interpreter
+STEP-       // clear single STEPping, stay in debug mode of Forth interpreter
+WORDS       // ... display this list of Forth recognized WORDS (the built-in DICTIONARY)
+DUMP        // source Forth code in FLASH (script) that DUMP memories contents
+DUMP"       // source Forth code in FLASH (script) that DUMP memories contents as string
+FILL        // source Forth code in FLASH (script) that FILL memories contents
+
+// ... using the previous descriptions of WORDS in the built-in DICTIONARY ...
+// ... try to understand the following interactive sessions ...
+// ... and their implications on "interactive firmware development" ...
+
+
+>"Hello_World_! ."
+Hello_World_!
+
+>"Hello World ! ."
+ -> WORD_UNKNOWN
+
+>1 2 3 4 5 6 7 8 ?s
+
+8 7 6 5 4 3 2 1
+
+>+ .
+F
+
+>+ .
+B
+
+>?s
+
+4 3 2 1
+
+>dec + + + .
+10
+
+>10 hex .
+A
+
+>0A DEC .
+10
+
+>"Words_can_be_entered_case_insensitive ."
+Words_can_be_entered_case_insensitive
+
+>DEC 10 5 2 */ .
+25
+
+>10 5 2 ?S
+
+2 5 10
+
+>* .
+10
+
+>10 5 2 ?S
+
+2 5 10
+
+>* DUP .
+10
+
+>?S
+
+10 10
+
+>7 / .
+1
+
+>10 5 2 */ .
+25
+
+>Hex "Forth_Word_are_CASE_INSENSITIVE
+
+
+>?S
+
+18D
+
+>"AAAAAAAAAAAAA ." "BBBBBBB ?S ."
+AAAAAAAAAAAAA
+19B BBBBBBB
+
+>DBG+
+
+
+>HEX 7F 3 AND .
+
+[HEX]
+[7F]
+[3]
+[AND]
+[.] 3
+
+>10 3 OR .
+
+[10]
+[3]
+[OR]
+[.] 13
+
+>10 3 XOR .
+
+[10]
+[3]
+[XOR]
+[.] 13
+
+>10 NOT .
+
+[10]
+[NOT]
+[.] FFEF
+
+>10 NOT ?S NOT .
+
+[10]
+[NOT]
+[?S]
+FFEF
+[NOT]
+[.] 10
+
+>10 2 LSH .
+
+[10]
+[2]
+[LSH]
+[.] 40
+
+>40 2 RSH .
+
+[40]
+[2]
+[RSH]
+[.] 10
+
+>1 2 == .
+
+[1]
+[2]
+[==]
+[.] 0
+
+>1 1 == .
+
+[1]
+[1]
+[==]
+[.] FFFF
+
+>DEC 1 1 == .
+
+[DEC]
+[1]
+[1]
+[==]
+[.] -1
+
+>HEX 2 2 <> .
+
+[HEX]
+[2]
+[2]
+[<>]
+[.] 0
+
+>2 2 >= .
+
+[2]
+[2]
+[>=]
+[.] FFFF
+
+>2 2 <= .
+
+[2]
+[2]
+[<=]
+[.] FFFF
+
+>3 2 <= .
+
+[3]
+[2]
+[<=]
+[.] 0
+
+>3 2 >
+
+[3]
+[2]
+[>]
+
+>.
+
+[.] FFFF
+
+>1234 1234 == IF "TRUE ." ELSE "false ." endif
+
+[1234]
+[1234]
+[==]
+[IF]
+["TRUE]
+[."] TRUE
+[ELSE]
+["false]
+[."]
+[endif]
+
+>dbg-
+
+[dbg-]
+
+>2345 1000 <= if -1 else 0 endif .
+0
+
+>2345 1000 > if 0ffff ELSE 0 ENDIF .
+FFFF
+
+>1234 1234 == .
+FFFF
+
+>1234 1234 <> .
+0
+
+>1234 1234 == 1234 ?S 2000 < AND ?S .
+
+1234 FFFF
+FFFF FFFF
+
+>1 1 == 1 AND .
+1
+
+>0FFFF ABS .
+7FFF
+
+>300 ABS .
+300
+
+
+>10 DO PAUSE LOOP
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+ PAUSE: [E] Exit, user -> .
+
+>10 RAM_USER DUMP
+212 0
+213 0
+214 0
+215 0
+216 0
+217 0
+218 0
+219 0
+21A 0
+21B 0
+21C 0
+21D 0
+21E 0
+21F 0
+220 0
+221 0
+
+
+>1234 RAM_USER ! 4 RAM_USER DUMP
+212 34
+213 12
+214 0
+215 0
+
+
+>5 RAM_USER @ .
+1234
+
+>?S
+
+5
+
+>DROP
+
+
+>5 RAM_USER \41 FILL
+
+
+>8 RAM_USER DUMP
+212 41
+213 41
+214 41
+215 41
+216 41
+217 0
+218 0
+219 0
+
+
+>RAM_USER DUMP"
+AAAAA
+
+>\5AA5 I! I@ .
+5AA5
+
+>1234 J! J@ .
+1234
+
+>I+ I.
+5AA6
+
+>I+ I.
+5AA7
+
+>J- J.
+1233
+
+>i .
+252
+
+>1234 i!
+
+
+>i.
+1234
+
+>i @ .
+1234
+
+>i@ .
+1234
+
+>i.
+1234
+
+>0abcd j! j.
+ABCD
+
+>I+ J+ I. J.
+1235 ABCE
+
+>I- I.
+1234
+
+>J- J.
+ABCD
+
+>RAM_USER I!
+
+
+>RAM_USER DUMP
+212 0
+213 0
+214 0
+215 0
+216 0
+217 0
+218 0
+219 0
+
+
+
+>RAM_USER I! I.
+212
+
+>1234 !i
+
+
+>4 RAM_USER DUMP
+212 34
+213 12
+214 0
+215 0
+
+
+>\0FF !IB+ I.
+217
+
+>8 RAM_USER DUMP
+212 34
+213 12
+214 0
+215 0
+216 FF
+217 0
+218 0
+219 0
+
+>10 RAM_USER 0 FILL
+
+
+>10 RAM_USER DUMP
+212 0
+213 0
+214 0
+215 0
+216 0
+217 0
+218 0
+219 0
+21A 0
+21B 0
+21C 0
+21D 0
+21E 0
+21F 0
+220 0
+221 0
+
+
+>I. J.
+222 0
+
+>RAM_USER I! 41 J!
+
+
+>I. J.
+212 41
+
+>DBG+
+
+
+>I. J.
+
+[I.] 212
+[J.] 41
+
+>5 DO J@ !IB+ J+ LOOP
+
+[5]
+[DO]
+[J@]
+[!IB+]
+[J+]
+[LOOP]
+[DO]
+[J@]
+[!IB+]
+[J+]
+[LOOP]
+[DO]
+[J@]
+[!IB+]
+[J+]
+[LOOP]
+[DO]
+[J@]
+[!IB+]
+[J+]
+[LOOP]
+[DO]
+[J@]
+[!IB+]
+[J+]
+[LOOP]
+
+>10 RAM_USER DUMP
+
+[10]
+[RAM_USER]
+[DUMP]
+[I!]
+[DO]
+[I.] 212
+[@IB+]
+[.] 41
+[CR]
+
+[LOOP]
+[DO]
+[I.] 213
+[@IB+]
+[.] 42
+[CR]
+
+[LOOP]
+[DO]
+[I.] 214
+[@IB+]
+[.] 43
+[CR]
+
+[LOOP]
+[DO]
+[I.] 215
+[@IB+]
+[.] 44
+[CR]
+
+[LOOP]
+[DO]
+[I.] 216
+[@IB+]
+[.] 45
+[CR]
+
+[LOOP]
+[DO]
+[I.] 217
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 218
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 219
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 21A
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 21B
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 21C
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 21D
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 21E
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 21F
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 220
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+[DO]
+[I.] 221
+[@IB+]
+[.] 0
+[CR]
+
+[LOOP]
+
+>DBG-
+
+[DBG-]
+
+>10 RAM_USER DUMP
+212 41
+213 42
+214 43
+215 44
+216 45
+217 0
+218 0
+219 0
+21A 0
+21B 0
+21C 0
+21D 0
+21E 0
+21F 0
+220 0
+221 0
+
+
+>RAM_USER ."
+ABCDE
+
+
+
+>1 2 3 4 ?s
+
+4 3 2 1
+
+>clr_stks
+
+4 3 2 1
+
+
+>?s
+
+
+
+>10 do pause "..... ." loop
+ PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+..... PAUSE: [E] Exit, user -> .
+.....
+
+>step+
+ PAUSE: [E] Exit, user -> .
+
+
+>8 do i. i+ loop
+
+[8]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 0  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 1  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 2  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 3  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 4  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 5  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 6  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+[do]  PAUSE: [E] Exit, user -> .
+
+[i.] 7  PAUSE: [E] Exit, user -> .
+
+[i+]  PAUSE: [E] Exit, user -> .
+
+[loop]  PAUSE: [E] Exit, user -> .
+
+
+>
+hex eeprom
+
+[hex]  PAUSE: [E] Exit, user -> .
+
+[eeprom]  PAUSE: [E] Exit, user -> .
+
+
+>step-
+
+[step-]
+
+>dbg-
+
+[dbg-]
+
+>eeprom 10 0 41 fill
+
+
+>eeprom 12 0 dump
+0 41
+1 41
+2 41
+3 41
+4 41
+5 41
+6 41
+7 41
+8 41
+9 41
+A 41
+B 41
+C 41
+D 41
+E 41
+F 41
+10 FF
+11 FF
+
+
+>10 0 !B
+
+>0 41 !
+
+
+>0 @ .
+4110
+
+>10 0 41 fill
+
+
+>12 0 dump
+0 41
+1 41
+2 41
+3 41
+4 41
+5 41
+6 41
+7 41
+8 41
+9 41
+A 41
+B 41
+C 41
+D 41
+E 41
+F 41
+10 FF
+11 FF
+
+
