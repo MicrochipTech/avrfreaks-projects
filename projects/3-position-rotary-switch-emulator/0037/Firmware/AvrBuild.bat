@@ -1,0 +1,3 @@
+@ECHO OFF
+del "d:\projects primer_01\t  i m o t h y projects\0037\firmware\labels.tmp"
+"C:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "d:\projects primer_01\t  i m o t h y projects\0037\firmware\labels.tmp" -fI  -o "d:\projects primer_01\t  i m o t h y projects\0037\firmware\daylight.hex" -d "d:\projects primer_01\t  i m o t h y projects\0037\firmware\daylight.obj" -e "d:\projects primer_01\t  i m o t h y projects\0037\firmware\daylight.eep" -m "d:\projects primer_01\t  i m o t h y projects\0037\firmware\daylight.map" -W+ie   "D:\Projects primer_01\T  i m o t h y projects\0037\Firmware\Daylight.asm"
