@@ -1,0 +1,116 @@
+
+'{$STAMP BS2} 'STAMP directive (specifies a BS2)
+'{$PBASIC 2.5}
+'{$PORT COM2}
+
+'This is an I2C implimentation with a twist.
+' The only timing issue FOR this TO work is the sending device must send bits slow
+'enough for the Basic Stamp to receive the bits. The fastest speed is about
+'3mS per clock cycle. So the delay timer in the sending device should wait 1.5 mS
+'between the seting of the clock HIGH, and setting the clock LOW to give the
+'stamp time to process the data.
+
+'The Stamp acts as a slave to the external device when it releases the SDA line
+'When the SDA Line is held HIGH by this code the external device should wait
+'untill the SDA is released before sending a byte. That way the STAMP has time
+'to OUTPUT the Byte via DEBUG and do any processing it needs to do. This eliminates
+'an arbitrary pause for the sending device. The sending device should also incorporate
+'a TIME OUT condition if this program fails to release the buss in some amount of time.
+' The clock should pulse during the waiting for the SDA to go low to release an endless
+'loop in this codes receive routine. The sending device will not receive the acknowledge
+'at the correct place if an error has occoured and can slow down it's data stream.
+
+'The subroutine readi2c reads one byte from the sending device.
+
+'USE: I use this to output data to the PC for debugging ATMEL devices.
+'The Internal oscollators On the ATMEL chips are not accurate enough to do
+'direct RS232 without using an external clock This allows using 2 wires to output
+'debugging data without worrying about baud rates.
+
+'It also acts as a BREAK in the atmel chip code as the stmel chip will have to wait
+'for the stamp to release the SDA after it outputs a byte. A pushbutton could
+'be attached to another pin on the stamp to act as a step controller on the atmel chip.
+
+'Interrupts on the atmel chip actually can be set up to interrupt every line of code.
+'So a single step debugging tool could be created by sending the Program counter
+'and any other information to the stamp after every line of code.
+
+
+buffer  VAR Byte
+bitmask VAR Byte
+SCL     VAR  IN14
+DIRSCL  VAR DIR14
+OUTSCL  VAR OUT14
+SDA     VAR  IN15
+DIRSDA  VAR DIR15
+OUTSDA  VAR OUT15
+
+
+'setup Pins
+'The DIRSDA (Direction of pin15) is set to output it must be output->LOW
+'Ths OUTSDA must not be set to HIGH or it can not PULL the BUSS low
+'when it is set to OUTPUT. It actually sinks current that pulls the pin LOW
+'because the BUSS is held high with an external PULLUP resistor
+'When the pin is toggled to INPUT, It does not sink any current and the pin
+'then reads HIGH. Same goes for PIN 14 (SCL)
+
+OUTSDA=0                              'No pullup (when output it is LOW)
+OUTSCL=0                              'No Pullup (When output it is low)
+DIRSCL=0                              'SCL is input
+DIRSDA=1                              'Pull SDA buss LOW
+
+MAINLOOP:              '=================================
+
+
+GOSUB readi2c
+
+'Output the byte to the debug display
+DEBUG IHEX2 buffer
+IF buffer > 31 AND buffer < 128 THEN
+ DEBUG "  ",buffer
+ENDIF
+DEBUG CR
+'Any other code can go here
+
+GOTO mainloop          '=================================
+
+
+'================================Subroutines ============================================
+Readi2c:
+DIRSDA=0                             'release SDA allow external chip to send
+buffer=0
+waitbothhigh:
+IF SCL = 0 THEN GOTO waitbothhigh
+IF SDA = 0 THEN GOTO waitbothhigh
+
+waitstart:                          'wait for SDA to go low
+IF SDA = 1 THEN GOTO waitstart      'Low=Start condition
+
+BITmask=128
+WAITSCLlow:                         'Wait for SCL to go low
+IF SCL = 1 THEN GOTO waitscllow
+waitbits:                           'wait for SCL to go high before reading bit
+IF SCL = 0 THEN GOTO waitbits
+IF SDA = 1 THEN                     'if bit is 1 save in buffer
+ buffer=buffer ^ bitmask            'XOR's the bit into the buffer
+ENDIF                               'if bit is 0 do nothing
+bitmask=bitmask/2                   'shift bitmask right to receive next bit
+
+
+IF bitmask>0 THEN GOTO WAITscllow    'if MORE BITS to read loop
+
+DIRSDA=1                              'pull SDA low to Acknowledge
+
+WAITSCLlow1:                         'Wait for SCL to go low last time
+IF SCL = 1 THEN GOTO waitscllow1
+
+'SCA is now low and the external device will read the bit status
+'The external device will pull the clock high once more when it receives the ACK
+
+waitSCLhigh1:
+IF SCL=0 THEN GOTO waitSCLhigh1
+
+'SDA is NOT released untill this routine is ready for next byte.
+
+RETURN
+
