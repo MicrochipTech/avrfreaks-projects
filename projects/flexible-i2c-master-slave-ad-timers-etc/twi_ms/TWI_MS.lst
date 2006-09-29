@@ -1,0 +1,3238 @@
+
+AVRASM ver. 2.1.7  D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm Thu Sep 28 16:26:52 2006
+
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(27): Including file 'C:\Program Files\Atmel\AVR Tools\AvrAssembler2\Appnotes\m128def.inc'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(530): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\pinout.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(531): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\a2d.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(532): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\usart.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(533): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\I2C-polled.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(534): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\timers.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(535): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\SCP-things.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(536): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\i2c-regs.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(537): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\I2C-ms-irq.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(538): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\alarms.asm'
+D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\TWI_MS_main.asm(539): Including file 'D:\Profiles\rcampbel\My Documents\ftax\avr stuff\TWI master-slave src\ctrl-regs.asm'
+                 
+                 
+                 ; Craig's AVR monitor/I2C project, ATmega128 this time.  All timings assume an 8 MHz clock.
+                 
+                 ; The point is to implement a completely reliable master and slave I2C using the AVR
+                 ;	TWI hardware.  Possible applications include use in applications requiring I2C interfaced
+                 ;	smart subsystems, IPMI, etc.
+                 
+                 ; The API for the I2C master transactions is intended to be much easier to use than the Atmel
+                 ;	application note model.  Everything except the UART is interrupt driven with reasonable attention to latency
+                 ;	so that a real application can be supported as well as the I2C interface.  The goal is for the
+                 ;	slave interface to always be active, i.e. no device address NACKs.
+                 ;
+                 ; Serial port 0 is used to implement a simple monitor that allows I2C reads and writes of various types.
+                 ;	 The serial port is configured for 9600 baud, 8 bit, no parity.
+                 ;
+                 ; The I2C slave interface implements a couple of bytes of status register, a couple of bytes of control
+                 ;	register, a fixed version register, and a group of A/D conversions just for fun.
+                 ;
+                 ; To avoid hangs, infinite loops, etc., the WD timer is used rather than implementing timers and escapes
+                 ;	in every loop.  WDR instructions are carefully allocated to avoid putting them where they should not be.
+                 ;
+                 ; 9/27/2006 - this initial version is based on previous project work and has a slave access failure
+                 ;	rate of about 1 in 200,000 accesses when there are device master bursts of about 20 accesses every second.
+                 ;   Failures include device addr NACKs, incorrect read data, and very rarely incorrect write data.
+                 ;
+                 .LIST
+                 ;
+                 ;	This is the software version number that is available from the I2C interface
+                 ;	The monitor startup string below should be edited to match this value
+                 .equ	SW_Version = 0x01
+                 ;
+                 .def Temp = R16 		
+                 .def ASCII_Offset = R17		;just a handy place to keep a constant
+                 .def count = R18
+                 .def T2 = R19
+                 .def T3 = R20
+                 .def T4 = R21
+                 
+                 .def I2C_Data = R8			;Registers used for the I2C master APIs
+                 .def I2C_DataLB = R9
+                 .def I2C_DevAddr = R22
+                 .def I2C_Addr = R10
+                 
+                 .equ ASCII_Num_Offset = 0x30
+                 .equ ASCII_CR = 0x0D
+                 .equ ASCII_LF = 0x0A
+                 
+                 .equ ERROR = 0xFF
+                 
+                 
+                 ;Memory defs
+                 .equ TopofStack = 0x10FF	;Memory address to initialize the top of stack to,
+                 .equ ToS_HB = 0x10			; normally the top of internal memory, in this case for
+                 .equ ToS_LB = 0xFF			; the ATmega128, but this is chip dependant.
+                 
+                 .equ ToDS_HB = 0x0F			;set the top of the Data Stack to 0xFFF, allowing 64B for the call stack
+                 .equ TODS_LB = 0xFF
+                 
+                 ;Variables, starting at lowest SRAM
+                 .DSEG
+                 .org	SRAM_START
+                 
+                 ;Monitor commands
+                 .equ cmd_i2c_write_adr = 'W'
+                 .equ cmd_i2c_write_byte = 'w'
+                 .equ cmd_i2c_read_adr = 'R'
+                 .equ cmd_i2c_read_byte = 'r'
+                 .equ cmd_prt_GIR = 's'
+                 .equ cmd_set_ctrl = 'S'
+                 .equ cmd_prt_AD = 'p'
+                 
+                 .CSEG
+                 .org 0x0000 			;Places the following code from address 0x0000
+                 
+000000 940c 011e 	jmp RESET 			;Take a Relative Jump to the RESET Label
+                 
+                 ; ***** INTERRUPT VECTORS for Mega128 *******************************************
+000002 0000      	nop
+000003 9518      	reti			;	INT0addr	= 0x0002	; External Interrupt Request 0
+000004 0000      	nop
+000005 9518      	reti			;	INT1addr	= 0x0004	; External Interrupt Request 1
+000006 0000      	nop
+000007 9518      	reti			;	INT2addr	= 0x0006	; External Interrupt Request 2
+000008 0000      	nop
+000009 9518      	reti			;	INT3addr	= 0x0008	; External Interrupt Request 3
+00000a 0000      	nop
+00000b 9518      	reti			;	INT4addr	= 0x000a	; External Interrupt Request 4
+00000c 0000      	nop
+00000d 9518      	reti			;	INT5addr	= 0x000c	; External Interrupt Request 5
+00000e 0000      	nop
+00000f 9518      	reti			;	INT6addr	= 0x000e	; External Interrupt Request 6
+000010 0000      	nop
+000011 9518      	reti			;	INT7addr	= 0x0010	; External Interrupt Request 7
+000012 0000      	nop
+000013 9518      	reti			;	OC2addr		= 0x0012	; Timer/Counter2 Compare Match
+000014 0000      	nop
+000015 9518      	reti			;	OVF2addr	= 0x0014	; Timer/Counter2 Overflow
+000016 0000      	nop
+000017 9518      	reti			;	ICP1addr	= 0x0016	; Timer/Counter1 Capture Event
+000018 940c 03c9 	jmp IRQ_1sec	;	OC1Aaddr	= 0x0018	; Timer/Counter1 Compare Match A
+00001a 0000      	nop
+00001b 9518      	reti			;	OC1Baddr	= 0x001a	; Timer/Counter Compare Match B
+00001c 0000      	nop
+00001d 9518      	reti			;	OVF1addr	= 0x001c	; Timer/Counter1 Overflow
+00001e 0000      	nop
+00001f 9518      	reti			;	OC0addr		= 0x001e	; Timer/Counter0 Compare Match
+000020 0000      	nop
+000021 9518      	reti			;	OVF0addr	= 0x0020	; Timer/Counter0 Overflow
+000022 0000      	nop
+000023 9518      	reti			;	SPIaddr		= 0x0022	; SPI Serial Transfer Complete
+000024 0000      	nop
+000025 9518      	reti			;	URXC0addr	= 0x0024	; USART0, Rx Complete
+000026 0000      	nop
+000027 9518      	reti			;	UDRE0addr	= 0x0026	; USART0 Data Register Empty
+000028 0000      	nop
+000029 9518      	reti			;	UTXC0addr	= 0x0028	; USART0, Tx Complete
+00002a 940c 0257 	jmp A2D_ISR		;	ADCCaddr	= 0x002a	; ADC Conversion Complete
+00002c 0000      	nop
+00002d 9518      	reti			;	ERDYaddr	= 0x002c	; EEPROM Ready
+00002e 0000      	nop
+00002f 9518      	reti			;	ACIaddr		= 0x002e	; Analog Comparator
+000030 0000      	nop
+000031 9518      	reti			;	OC1Caddr	= 0x0030	; Timer/Counter1 Compare Match C
+000032 0000      	nop
+000033 9518      	reti			;	ICP3addr	= 0x0032	; Timer/Counter3 Capture Event
+000034 940c 03df 	jmp	IRQ_10ms	;	OC3Aaddr	= 0x0034	; Timer/Counter3 Compare Match A
+000036 0000      	nop
+000037 9518      	reti			;	OC3Baddr	= 0x0036	; Timer/Counter3 Compare Match B
+000038 0000      	nop
+000039 9518      	reti			;	OC3Caddr	= 0x0038	; Timer/Counter3 Compare Match C
+00003a 0000      	nop
+00003b 9518      	reti			;	OVF3addr	= 0x003a	; Timer/Counter3 Overflow
+00003c 0000      	nop
+00003d 9518      	reti			;	URXC1addr	= 0x003c	; USART1, Rx Complete
+00003e 0000      	nop
+00003f 9518      	reti			;	UDRE1addr	= 0x003e	; USART1, Data Register Empty
+000040 0000      	nop
+000041 9518      	reti			;	UTXC1addr	= 0x0040	; USART1, Tx Complete
+                 ;	nop
+                 ;	reti
+000042 940c 0457 	jmp TWI_ISR		;	TWIaddr		= 0x0042	; 2-wire Serial Interface
+000044 0000      	nop
+000045 9518      	reti			;	SPMRaddr	= 0x0044	; Store Program Memory Read
+                 
+                 
+                 ; string constants
+                 ;.CSEG
+                 ;.org FLASH_DATA
+                 
+000046 3249
+000047 2043
+000048 6f4d
+000049 696e
+00004a 6f74
+00004b 2072
+00004c 6556
+00004d 7372
+00004e 6f69
+00004f 206e
+000050 3130
+000051 6620
+000052 726f
+000053 4620
+000054 6572
+000055 6b61
+000056 0d73
+000057 0a0a      str_I2C_MON: .DB	"I2C Monitor Version 01 for Freaks", ASCII_CR, ASCII_LF, ASCII_LF
+000058 7257
+000059 7469
+00005a 2065
+00005b 7942
+00005c 6574
+00005d 7420
+00005e 206f
+00005f 6544
+000060 6976
+000061 6563
+000062 203a
+000063 2020
+000064 2020
+000065 2020
+000066 2020
+000067 2020
+000068 2020
+000069 2020
+00006a 2020
+00006b 7720
+00006c 3c20
+00006d 6564
+00006e 2076
+00006f 6461
+000070 7264
+000071 203e
+000072 643c
+000073 7461
+000074 3e61
+000075 0a0d      			.DB		"Write Byte to Device:                  w <dev addr> <data>", ASCII_CR, ASCII_LF
+000076 7257
+000077 7469
+000078 2065
+000079 7942
+00007a 6574
+00007b 7420
+00007c 206f
+00007d 6544
+00007e 6976
+00007f 6563
+000080 7720
+000081 202f
+000082 6552
+000083 6967
+000084 7473
+000085 7265
+000086 4120
+000087 7264
+000088 203a
+000089 5720
+00008a 3c20
+00008b 6564
+00008c 2076
+00008d 6461
+00008e 7264
+00008f 203e
+000090 723c
+000091 6765
+000092 6120
+000093 6464
+000094 3e72
+000095 3c20
+000096 6164
+000097 6174
+000098 203e
+000099 0a0d      			.DB		"Write Byte to Device w/ Register Adr:  W <dev addr> <reg addr> <data> ", ASCII_CR, ASCII_LF
+00009a 6552
+00009b 6461
+00009c 4220
+00009d 7479
+00009e 2065
+00009f 7266
+0000a0 6d6f
+0000a1 4420
+0000a2 7665
+0000a3 6369
+0000a4 3a65
+0000a5 2020
+0000a6 2020
+0000a7 2020
+0000a8 2020
+0000a9 2020
+0000aa 2020
+0000ab 2020
+0000ac 2020
+0000ad 7220
+0000ae 3c20
+0000af 6564
+0000b0 2076
+0000b1 6461
+0000b2 7264
+0000b3 203e
+0000b4 0a0d      			.DB		"Read Byte from Device:                 r <dev addr> ", ASCII_CR, ASCII_LF
+0000b5 6552
+0000b6 6461
+0000b7 4220
+0000b8 7479
+0000b9 2065
+0000ba 7266
+0000bb 6d6f
+0000bc 4420
+0000bd 7665
+0000be 6369
+0000bf 2065
+0000c0 2f77
+0000c1 5220
+0000c2 6765
+0000c3 7369
+0000c4 6574
+0000c5 2072
+0000c6 6441
+0000c7 3a72
+0000c8 5220
+0000c9 3c20
+0000ca 6564
+0000cb 2076
+0000cc 6461
+0000cd 7264
+0000ce 203e
+0000cf 723c
+0000d0 6765
+0000d1 6120
+0000d2 6464
+0000d3 3e72
+0000d4 0a0d      			.DB		"Read Byte from Device w/ Register Adr: R <dev addr> <reg addr>", ASCII_CR, ASCII_LF
+0000d5 7250
+0000d6 6e69
+0000d7 2074
+0000d8 4947
+0000d9 2052
+0000da 6e61
+0000db 2064
+0000dc 5443
+0000dd 4c52
+0000de 5220
+0000df 6765
+0000e0 7369
+0000e1 6574
+0000e2 7372
+0000e3 203a
+0000e4 7320
+0000e5 0a0d      			.DB		"Print GIR and CTRL Registers:  s", ASCII_CR, ASCII_LF
+0000e6 6553
+0000e7 2074
+0000e8 6f43
+0000e9 746e
+0000ea 6f72
+0000eb 206c
+0000ec 6552
+0000ed 6967
+0000ee 7473
+0000ef 7265
+0000f0 3a73
+0000f1 2009
+0000f2 2020
+0000f3 2020
+0000f4 2020
+0000f5 5320
+0000f6 3c20
+0000f7 736d
+0000f8 3e62
+0000f9 3c20
+0000fa 736c
+0000fb 3e62
+0000fc 0a0d      			.db		"Set Control Registers:	        S <msb> <lsb>", ASCII_CR, ASCII_LF
+0000fd 7250
+0000fe 6e69
+0000ff 2074
+000100 4441
+000101 203a
+000102 2020
+000103 2020
+000104 2020
+000105 2020
+000106 2020
+000107 2020
+000108 2020
+000109 2020
+00010a 2020
+00010b 2020
+00010c 7020
+00010d 0d20
+00010e 000a      			.db		"Print AD:                      p ", ASCII_CR, ASCII_LF, 0
+                 
+00010f 6f4e
+000110 4920
+000111 4332
+000112 4420
+000113 7665
+000114 6369
+000115 2065
+000116 6552
+000117 7073
+000118 6e6f
+000119 6573
+00011a 0d20
+00011b 000a      str_No_Dev:	.DB		"No I2C Device Response ", ASCII_CR, ASCII_LF, 0
+                 
+00011c 0000
+00011d af00      Clk_cal_bytes:	.DB	0,0,0,0xAF		;the place to put clock calibration data in FLASH.  This is a part programmer issue.
+                 
+                 
+                 RESET: 					;Reset Label
+                 
+                 InitSys:
+                 			;Set the stack point to the top of internal RAM,
+                 			;Set the Y register for DataStack use
+                 			;
+00011e e100      	ldi	Temp, ToS_HB	;load the stack pointer
+00011f bf0e      	out SPH, Temp
+000120 ef0f      	ldi	Temp, ToS_LB
+000121 bf0d      	out SPL, Temp
+                 
+000122 e0df      	ldi	YH, ToDS_HB		;Use Y for a data stack
+000123 efcf      	ldi	YL, ToDS_LB
+                 
+000124 b704      	in Temp, MCUCSR
+000125 9300 0122 	sts	Boot_MCSR, Temp		;store the MCSR so we can see the reset reason
+                 
+                 ;	ldi	XH, 1				;if you have slow starting peripherals, you may need to delay a bit here.
+                 ;	ldi	XL, 0
+                 ;Delay:
+                 ;	adiw	XH:XL, 1
+                 ;	cpi	XH, 0
+                 ;	brne	Delay
+                 
+                 .equ WD_Timer_Config = 0x0B		;Watchdog enabled, timeout around 110ms
+                 .equ WD_Change_mask	= 0x10		;the WDCE bit
+                 
+                 ; Init the watchdog timer, assuming safetly level 1
+000127 95a8      	wdr
+000128 e10b      	ldi	Temp, WD_Timer_Config | WD_Change_mask
+000129 bd01      	out	WDTCR, Temp
+00012a 7e0f      	cbr	Temp, WD_Change_mask
+00012b bd01      	out WDTCR, Temp
+                 			
+00012c e310      	ldi ASCII_Offset, ASCII_Num_Offset
+                 
+                 ; Initialize the clock calibration factor, checking for 0 to make sure that it has been programmed before loading it
+                 
+00012d e0f2      	ldi	ZH, HIGH(Clk_cal_bytes<<1)
+00012e e3e8      	ldi	ZL, LOW(Clk_cal_bytes<<1)		;setup the base of the table pointer
+00012f 9633      	adiw	ZH:ZL, 3					;plus the offest to the 8mhz byte
+                 						
+000130 9104      	lpm	Temp, Z							;get the value in Temp
+                 
+000131 3000      	cpi	Temp, 0
+000132 f021      	breq	Skip_cal
+000133 3f0f      	cpi	Temp, 0xff
+000134 f011      	breq	Skip_cal
+                 
+000135 9300 006f 	sts	OSCCAL, Temp
+                 
+                 Skip_cal:
+000137 2700      	clr Temp
+000138 bf0b      	out RAMPZ, Temp
+                 
+000139 d0ea      	rcall	Init_IO		;this inits all of the ports to startup defaults
+                 
+00013a d139      	rcall Init232
+                 
+00013b 940e 041c 	call I2C_Regs_Init
+                 
+00013d d110      	rcall InitA2D
+                 
+00013e d25d      	rcall InitTimer
+                 
+00013f 940e 043a 	call TWI_Init		;this has the side effect of enabling irq's
+                 
+000141 e0f0      	ldi	ZH, HIGH(str_I2C_MON<<1)
+000142 e8ec      	ldi	ZL, LOW(str_I2C_MON<<1)
+000143 d195      	rcall	USART_PStr
+                 
+000144 d19a      	rcall Mon_Prompt	;output the monitor prompt
+                 
+                 ; Here is the main loop, so any application that needs to be done goes here.
+                 
+                 Loop:
+                 
+000145 95a8      	wdr
+000146 9100 0102 	lds	Temp, Test_Chk_Flg		;see if it's time to check something.  This flag is set in the timer
+000148 ff00      	sbrs	Temp, 0				; isr, and is just here as an example of a periodic monitoring with minimal	
+000149 c004      	rjmp	Lp_0				; irq latency.  Obviously there can be lots of these depending on the app.
+                 
+00014a d52c      	rcall	Test_Check
+00014b 2700      	clr	Temp
+00014c 9300 0102 	sts	Test_Chk_Flg, Temp
+                 
+                 
+                 Lp_0:
+00014e 9100 011f 	lds	Temp, CReg_Status			;The two control registers need to be handled whenever they are written
+000150 fd00      	sbrc	Temp, CTRL0_Changed_bit	; over the I2C bus, so they are checked and dealt with here.  The ISR sets
+000151 940e 0678 	call	CTRL0_Change			; the flags and saves the previous values.
+                 
+000153 9100 011f 	lds	Temp, CReg_Status
+000155 fd01      	sbrc	Temp, CTRL1_Changed_bit
+000156 940e 068f 	call	CTRL1_Change
+                 
+000158 940e 0407 	call SCP_Check			;do these things every time through the loop, nothing better to do...
+00015a 940e 0669 	call Alarm_Check
+                 
+00015c 9b5f      	sbis UCSR0A, RXC0		; check for a serial port character received
+00015d cfe7      	rjmp Loop
+                 
+                 ; This is the command interpreter for the serial port monitor...
+                 
+00015e d0c0      	rcall Get_Cmd	;get a monitor command
+                 
+00015f 3507      	cpi Temp, cmd_i2c_write_adr		; write a byte to a dev, reg addr over i2c
+000160 f461      	brne Nxt1
+                 
+000161 d16b      	rcall USART_Space
+000162 d08f      	rcall Get_Hex_Byte
+000163 2f60      	mov	I2C_DevAddr, Temp 			;get device addr,
+000164 d168      	rcall USART_Space
+                 
+000165 d08c      	rcall Get_Hex_Byte
+000166 2ea0      	mov	 I2C_Addr,Temp				;and register addr
+000167 d165      	rcall USART_Space
+                 
+000168 d089      	rcall Get_Hex_Byte
+000169 2e80      	mov	I2C_Data, Temp 				;and data
+                 
+00016a d1a9      	rcall Wr_I2C_Adr_Data			;do it
+                 
+00016b d173      	rcall	Mon_Prompt
+                 
+00016c cfd8      	rjmp	Loop
+                 
+                 
+                 Nxt1:
+00016d 3707      	cpi Temp, cmd_i2c_write_byte		; write a byte to a dev addr over i2c
+00016e f449      	brne Nxt2
+                 
+00016f d15d      	rcall USART_Space
+000170 d081      	rcall Get_Hex_Byte
+000171 2f60      	mov	I2C_DevAddr, Temp 			;get device addr,
+000172 d15a      	rcall USART_Space
+                 
+000173 d07e      	rcall Get_Hex_Byte
+000174 2e80      	mov	I2C_Data, Temp 				;and data
+                 
+000175 d1ad      	rcall Wr_I2C_Data			;do it
+                 
+000176 d168      	rcall	Mon_Prompt
+                 
+000177 cfcd      	rjmp	Loop
+                 
+                 Nxt2:
+000178 3502      	cpi Temp, cmd_i2c_read_adr		; read a byte from i2c with dev and reg addr
+000179 f4a9      	brne Nxt3
+                 
+00017a d152      	rcall USART_Space
+00017b d076      	rcall Get_Hex_Byte
+00017c 2f60      	mov	I2C_DevAddr, Temp			;get device addr,
+00017d d14f      	rcall USART_Space
+                 
+00017e d073      	rcall Get_Hex_Byte
+00017f 2ea0      	mov	I2C_Addr, Temp				;and register addr
+000180 d14c      	rcall USART_Space
+                 
+000181 d1d8      	rcall Rd_I2C_Adr_Byte			;do it
+000182 1700      	cp	Temp, Temp					;this checks for 0 in Temp (OK)
+000183 f449      	brbc	1, Nxt2_1				;if there was an error, skip the printing
+                 
+000184 d148      	rcall USART_Space
+000185 e30a      	ldi	Temp, ':'
+000186 d0f7      	rcall USART_Transmit
+000187 d145      	rcall USART_Space
+                 
+000188 2d08      	mov	Temp, I2C_Data
+000189 d0fa      	rcall	USART_Hex_Tx
+00018a d142      	rcall USART_Space
+00018b 2d08      	mov Temp, I2C_Data
+00018c d157      	rcall	USART_Bin_Tx
+                 Nxt2_1:
+00018d d151      	rcall	Mon_Prompt
+                 
+00018e cfb6      	rjmp	Loop
+                 
+                 Nxt3:
+00018f 3702      	cpi Temp, cmd_i2c_read_byte		; read a byte from i2c device, no reg adr
+000190 f489      	brne Nxt4
+                 
+000191 d13b      	rcall USART_Space
+000192 d05f      	rcall Get_Hex_Byte
+000193 2f60      	mov	I2C_DevAddr, Temp			;get device addr,
+                 
+000194 d1ac      	rcall Rd_I2C_Byte				;do it
+000195 1700      	cp	Temp, Temp					;this checks for 0 in Temp (OK)
+000196 f449      	brbc	1, Nxt3_1				;if there was an error, skip the printing
+                 
+000197 d135      	rcall USART_Space
+000198 e30a      	ldi	Temp, ':'
+000199 d0e4      	rcall USART_Transmit
+00019a d132      	rcall USART_Space
+                 
+00019b 2d08      	mov	Temp, I2C_Data
+00019c d0e7      	rcall	USART_Hex_Tx
+00019d d12f      	rcall USART_Space
+00019e 2d08      	mov Temp, I2C_Data
+00019f d144      	rcall	USART_Bin_Tx
+                 Nxt3_1:
+0001a0 d13e      	rcall	Mon_Prompt
+                 
+0001a1 cfa3      	rjmp	Loop
+                 
+                 Nxt4:
+0001a2 3703      	cpi	Temp, cmd_prt_GIR
+0001a3 f519      	brne	Nxt9
+                 
+0001a4 d12d      	rcall USART_CRLF
+0001a5 d127      	rcall USART_Space
+0001a6 e407      	ldi	Temp, 'G'
+0001a7 d0d6      	rcall 	USART_Transmit
+0001a8 d124      	rcall USART_Space
+0001a9 9100 0107 	lds	Temp, I2C_GIR1
+0001ab d0d8      	rcall	USART_Hex_Tx
+0001ac d120      	rcall USART_Space
+0001ad 9100 0106 	lds	Temp, I2C_GIR0
+0001af d0d4      	rcall	USART_Hex_Tx
+0001b0 d121      	rcall USART_CRLF
+                 
+0001b1 d11b      	rcall USART_Space
+0001b2 e403      	ldi	Temp, 'C'
+0001b3 d0ca      	rcall	USART_Transmit
+0001b4 d118      	rcall USART_Space
+0001b5 9100 010e 	lds	Temp, I2C_CTRL1
+0001b7 d0cc      	rcall	USART_Hex_Tx
+0001b8 d114      	rcall USART_Space
+0001b9 9100 010d 	lds	Temp, I2C_CTRL0
+0001bb d0c8      	rcall	USART_Hex_Tx
+0001bc d115      	rcall USART_CRLF
+                 
+0001bd d10f      	rcall USART_Space
+0001be e40d      	ldi	Temp, 'M'
+0001bf d0be      	rcall	USART_Transmit
+0001c0 d10c      	rcall USART_Space
+0001c1 9100 0122 	lds	Temp, Boot_MCSR
+0001c3 d0c0      	rcall	USART_Hex_Tx
+0001c4 d10d      	rcall USART_CRLF
+                 
+0001c5 d119      	rcall	Mon_Prompt
+0001c6 cf7e      	rjmp	Loop
+                 
+                 Nxt9:
+0001c7 3503      	cpi	Temp, cmd_set_ctrl
+0001c8 f479      	brne	Nxt10
+                 
+0001c9 d103      	rcall USART_Space
+0001ca d027      	rcall Get_Hex_Byte
+0001cb 9300 010e 	sts	I2C_CTRL1, Temp			;get device addr,
+0001cd d0ff      	rcall USART_Space
+                 
+0001ce d023      	rcall Get_Hex_Byte
+0001cf 9300 010d 	sts	I2C_CTRL0, Temp				;and register addr
+                 
+0001d1 9100 011f 	lds	Temp, CReg_Status
+0001d3 6003      	sbr	Temp, CTRL0_Changed_mask | CTRL1_Changed_mask
+0001d4 9300 011f 	sts	CReg_Status, Temp
+                 
+0001d6 d108      	rcall	Mon_Prompt
+0001d7 cf6d      	rjmp	Loop
+                 
+                 Nxt10:
+0001d8 3700      	cpi	Temp, cmd_prt_AD
+0001d9 f499      	brne	Nxt11
+                 
+0001da d0f2      	rcall USART_Space
+0001db 9100 0108 	lds	Temp, I2C_AD0
+0001dd d0bc      	rcall	USART_Dec_Tx
+0001de d0ee      	rcall USART_Space
+0001df 9100 0109 	lds	Temp, I2C_AD1
+0001e1 d0b8      	rcall	USART_Dec_Tx
+0001e2 d0ea      	rcall USART_Space
+0001e3 9100 010a 	lds	Temp, I2C_AD2
+0001e5 d0b4      	rcall	USART_Dec_Tx
+0001e6 d0e6      	rcall USART_Space
+0001e7 9100 010b 	lds	Temp, I2C_AD3
+0001e9 d0b0      	rcall	USART_Dec_Tx
+0001ea d0e7      	rcall USART_CRLF
+                 
+0001eb d0f3      	rcall	Mon_Prompt
+0001ec cf58      	rjmp	Loop
+                 
+                 Nxt11:		;unknown command
+                 
+0001ed d0df      	rcall USART_Space
+0001ee e30f      	ldi	Temp, '?'
+0001ef d08e      	rcall USART_Transmit
+                 
+0001f0 d0ee      	rcall Mon_Prompt
+                 	
+0001f1 cf53      	rjmp Loop
+                 
+                 
+                 	
+                 Get_Hex_Byte:	;two hex digits from serial port, return value in Temp
+                 
+0001f2 d103      	rcall USART_Receive
+0001f3 d08a      	rcall USART_Transmit
+0001f4 2f30      	mov	T2, Temp
+0001f5 1b31      	sub	T2, ASCII_Offset
+0001f6 2f43      	mov T3, T2
+0001f7 303a      	cpi	T2, 10	;if it's greater than 10, deal with upper and lower
+0001f8 f058      	brlo	GHB1
+                 
+0001f9 2f30      	mov	T2, Temp
+0001fa 7d3f      	andi	T2, 0xDF	;make it uppper
+0001fb 3437      	cpi	T2, 'G'
+0001fc f020      	brlo	GHB2
+                 				
+0001fd d0cf      	rcall USART_Space		;we have an invalid hex, so just say so and reset
+0001fe e30f      	ldi	Temp, '?'
+0001ff d07e      	rcall USART_Transmit
+000200 cf1d      	rjmp	RESET
+                 
+                 GHB2:
+000201 7037      	andi	T2, 0x07
+000202 e049      	ldi		T3, 9
+000203 0f43      	add		T3, T2
+                 GHB1:
+000204 0f44      	lsl	T3
+000205 0f44      	lsl	T3
+000206 0f44      	lsl	T3
+000207 0f44      	lsl T3
+                 
+                 GHB3:			;get the second nibble
+000208 d0ed      	rcall USART_Receive
+000209 d074      	rcall USART_Transmit
+00020a 2f30      	mov	T2, Temp
+00020b 1b31      	sub	T2, ASCII_Offset
+00020c 303a      	cpi	T2, 10	;if it's greater than 10, deal with upper and lower
+00020d f058      	brlo	GHB4
+                 
+00020e 2f30      	mov	T2, Temp
+00020f 7d3f      	andi	T2, 0xDF	;make it upper
+000210 3437      	cpi	T2, 'G'
+000211 f020      	brlo	GHB5
+                 				
+000212 d0ba      	rcall USART_Space		;we have an invalid hex, so just say so and just reset
+000213 e30f      	ldi	Temp, '?'
+000214 d069      	rcall USART_Transmit
+000215 cf08      	rjmp	RESET
+                 
+                 GHB5:
+000216 7037      	andi	T2, 0x07
+000217 e009      	ldi		Temp, 9
+000218 0f30      	add		T2, Temp
+                 GHB4:
+000219 2b43      	or	T3, T2
+                 GHB6:
+00021a 2f04      	mov Temp, T3
+00021b 9500      	com Temp
+00021c bb08      	out PORTB, Temp
+                 
+00021d 9500      	com Temp
+00021e 9508      	ret
+                 
+                 Get_Cmd:	;for now, one character from serial port
+00021f d0d6      	rcall	USART_Receive
+000220 930a      	st	-Y, Temp
+000221 d05c      	rcall	USART_Transmit
+000222 9109      	ld	Temp, Y+
+000223 9508      	ret	
+                 
+                 .include "pinout.asm"
+                 
+                 ; These are the ATMega128 I/O pins as an example.
+                 ;	For this TWI project, this is just example stuff and is not important, but is left here so that
+                 ;	 things work with minimal hacking or clean-up.  Please don't get too involved with any of this, it's not
+                 ;	 important for this project.
+                 ;
+                 ; To test inputs, do an IN of the port, followed by an SBRC or SBRS using the bit
+                 ; To set or clear outputs, do an IN of the port, followed by an SBR or CBR of one or more masks, and an OUT
+                 ;
+                 ;	Note that input ports use PINx and output ports use PORTx, so bidirectional pins won't work without directly
+                 ;		dealing with the ports
+                 ;	Note that PortG and PortF are above the IN/OUT address limit, so STS and LDS must be used for them.
+                 
+                 ;PortA are output pins, with 5 OC's and 3 normal outputs, so set it up that way. 
+                 ;	Initialze to enable primary supplies, disable SCP's, no resets.
+                 ;	Most of these are OC driven signals to avoid contension with the secondary PEM and other drivers
+                 ;		so the port is the DDR and written to a 1 with a 0 in the PORT bit to drive low (inverting logic).
+                 ;
+                 .equ	PORTA_DDR = 0x1F ;SCP_Pri_5V_En_mask | SCP_Sec_5V_En_mask | I2C_Reset_mask	;the normal output pins
+                 .equ	PORTA_Init = 0xF0 ;I2C_Reset_mask + the OC bits for pullups
+                 .equ	PORTA_Init_WD = 0xF4 ;Special value for watchdog reset to eliminate SCP power cycle
+                 ;PSA Inhibit	PA0 - AD0	51, drive low to turn off primary supply, otherwise float.  This means writing a 1 to DDR to drive low
+                 .equ PSPri_Inhibit_port = PORTA
+                 .equ PSPri_Inhibit_mask = 0x01
+                 .equ PSPri_Inhibit_bit = 0
+                 ;PSB Inhibit	PA1 - AD1	50, drive low to turn off secondary supply, otherwise float
+                 .equ PSSec_Inhibit_port = PORTA
+                 .equ PSSec_Inhibit_mask = 0x02
+                 .equ PSSec_Inhibit_bit = 1
+                 ;SCP-A 5V Enable	PA2 - AD2	49, drive high to turn on primary SCP
+                 .equ SCP_Pri_5V_En_port = PORTA
+                 .equ SCP_Pri_5V_En_mask = 0x04
+                 .equ SCP_Pri_5V_En_bit = 2
+                 ;SCP-B 5V Enable	PA3 - AD3	48, drive high to turn on secondary SCP
+                 .equ SCP_Sec_5V_En_port = PORTA
+                 .equ SCP_Sec_5V_En_mask = 0x08
+                 .equ SCP_Sec_5V_En_bit = 3
+                 ;I2C Reset	PA4 - AD4	47, drive low to reset/disable bus switch and LEDs
+                 .equ I2C_Reset_port = PORTA
+                 .equ I2C_Reset_mask = 0x10
+                 .equ I2C_Reset_bit = 4
+                 ;System Reset	PA5 - AD5	46, drive low to reset the line cards, otherwise float
+                 .equ Sys_Reset_port = DDRA
+                 .equ Sys_Reset_mask = 0x20
+                 .equ Sys_Reset_bit = 5
+                 ;PWR_GOOD0	PA6 - AD6	45, drive low to indicate primary supply problem, otherwise float
+                 .equ Pwr_Good_Pri_port = DDRA
+                 .equ Pwr_Good_Pri_mask = 0x40
+                 .equ Pwr_Good_Pri_bit = 6
+                 ;PWR_GOOD1	PA7 - AD7	44, drive low to indicate secondary supply problem, otherwise float
+                 .equ Pwr_Good_Sec_port = DDRA
+                 .equ Pwr_Good_Sec_mask = 0x80
+                 .equ Pwr_Good_Sec_bit = 7
+                 
+                 
+                 ;PortB are input pins, so things are easier here.  Go ahead and turn on the weak pullups for all of them.
+                 .equ PORTB_DDR = 0x00
+                 .equ PORTB_Init = 0xFF
+                 ;
+                 ;PSA Present	PB0 - SS	10, low when primary supply is present
+                 .equ PSPri_Present_port = PINB
+                 .equ PSPri_Present_mask = 0x01
+                 .equ PSPri_Present_bit = 0
+                 ;PSA Fail	PB1 - SCK	11, low when primary supply fails
+                 .equ PSPri_Fail_port = PINB
+                 .equ PSPri_Fail_mask = 0x02
+                 .equ PSPri_Fail_bit = 1
+                 ;PSA Degraded	PB2 - MOSI	12, low when primary supply is degraded
+                 .equ PSPri_Degraded_port = PINB
+                 .equ PSPri_Degraded_mask = 0x04
+                 .equ PSPri_Degraded_bit = 2
+                 ;PSB Fail	PB3 - MISO	13, low when secondary supply fails
+                 .equ PSSec_Fail_port = PINB
+                 .equ PSSec_Fail_mask = 0x08
+                 .equ PSSec_Fail_bit = 3
+                 ;PSB Degraded	PB4 - OC0	14, low when secondary supply is degraded
+                 .equ PSSec_Degraded_port = PINB
+                 .equ PSSec_Degraded_mask = 0x10
+                 .equ PSSec_Degraded_bit = 4
+                 ;PSB Present	PB5 - OC1A	15, low when secondary supply is present
+                 .equ PSSec_Present_port = PINB
+                 .equ PSSec_Present_mask = 0x20
+                 .equ PSSec_Present_bit = 5
+                 ;SCP-A Present	PB6 - OC1B	16, low when primary SCP is present
+                 .equ SCP_Pri_Present_port = PINB
+                 .equ SCP_Pri_Present_mask = 0x40
+                 .equ SCP_Pri_Present_bit = 6
+                 ;SCP-B Present	PB7 - OC2/OC1C	17, low when secondary SCP is present
+                 .equ SCP_Sec_Present_port = PINB
+                 .equ SCP_Sec_Present_mask = 0x80
+                 .equ SCP_Sec_Present_bit = 7
+                 
+                 
+                 ;PortC are input pins, so things are easy here.  Go ahead and turn on the weak pullups for all of them.
+                 .equ PORTC_DDR = 0x00
+                 .equ PORTC_Init = 0xFF
+                 ;
+                 ;Alarm_in0	PC0 - A8	35, low when external alarm interface input 1 is active
+                 .equ Alarm_in0_port = PINC
+                 .equ Alarm_in0_mask = 0x01
+                 .equ Alarm_in0_bit = 0
+                 ;Alarm_in1	PC1 - A9	36, low when external alarm interface input 2 is active
+                 .equ Alarm_in1_port = PINC
+                 .equ Alarm_in1_mask = 0x02
+                 .equ Alarm_in1_bit = 1
+                 ;Other PEM Present	PC2 - A10	37, low when the other PEM is present
+                 .equ Other_PEM_Present_port = PINC
+                 .equ Other_PEM_Present_mask = 0x04
+                 .equ Other_PEM_Present_bit = 2
+                 ;PEM ID	PC3 - A11	38, low for PEM0, high for PEM1
+                 .equ PEM_ID_port = PINC
+                 .equ PEM_ID_mask = 0x08
+                 .equ PEM_ID_bit = 3
+                 ;Fan Full	PC4 - A12	39, low when either temp sensor hits thermostat point
+                 .equ Fan_Full_port = PINC
+                 .equ Fan_Full_mask = 0x10
+                 .equ Fan_Full_bit = 4
+                 ;SCP-A 5V Status	PC5 - A13	40, low when the primary  SCP 5V goes over-current
+                 .equ SCP_Pri_5V_Stat_port = PINC
+                 .equ SCP_Pri_5V_Stat_mask = 0x20
+                 .equ SCP_Pri_5V_Stat_bit = 5
+                 ;SCP-B 5V Status	PC6 - A14	41, low when the secondary SCP 5V goes over-current
+                 .equ SCP_Sec_5V_Stat_port = PINC
+                 .equ SCP_Sec_5V_Stat_mask = 0x40
+                 .equ SCP_Sec_5V_Stat_bit = 6
+                 ;Input Fuse Status	PC7 - A15	42, low when either of the input power fuses are blown
+                 .equ In_Fuse_Stat_port = PINC
+                 .equ In_Fuse_Stat_mask = 0x80
+                 .equ In_Fuse_Stat_bit = 7
+                 
+                 
+                 ;UC SCL	PD0 - SCL/INT0	25, I2C/SMB clock
+                 ;UC SDA	PD1 - SDA/INT1	26, I2C/SMB data
+                 .equ TWI_port = PIND
+                 .equ TWI_mask = 0x03
+                 ;UART1 Rx	PD2 - RXD1/INT2	27, serial port 1Rx from other PEM, or IRQ
+                 ;UART1 TX	PD3 - TXD1/INT3	28, serial port 1 Tx to other PEM or IRQ to other PEM
+                 
+                 ;PortD is a mix of special purpose and I/O pins, so things are a bit messy here.
+                 ;	Go ahead and turn on the weak pullups for all of them.
+                 .equ PORTD_DDR = 0xC0
+                 .equ PORTD_Init = 0x7F
+                 .equ PORTD_Init_WD = 0xFF
+                 ;
+                 ;PXB2	PD4 - ICP1	29, extra connection to other PEM's PXB3 signal, let's make this an input for now
+                 .equ PXB2_port = PIND
+                 .equ PXB2_mask = 0x10
+                 .equ PXB2_bit = 4
+                 ;PXB3	PD5 - XCK1	30, extra connection to other PEM's PXB2 signal
+                 .equ PXB3_port = PORTD
+                 .equ PXB3_mask = 0x20
+                 .equ PXB3_bit = 5
+                 ;PEM Present	PD6 - T1	31, drive low to indicate PEM is present and happy, connects to other PEM's Other PEM Present
+                 .equ PEM_Present_port = PORTD
+                 .equ PEM_Present_mask = 0x40
+                 .equ PEM_Present_bit = 6
+                 ;Osc Enable	PD7 - T2	32, drive high to enable the 20MHz osc for the backplane clocks
+                 .equ Osc_Enable_port = PORTD
+                 .equ Osc_Enable_mask = 0x80
+                 .equ Osc_Enable_bit = 7
+                 
+                 
+                 ;UART0 Rx	PE0 - RXD0/PDI	2, serial port 0 Rx from debug header
+                 ;UART0 Tx	PE1 - TXD0/PDO	3, serial port 0 Tx to debug header
+                 ;
+                 ;PortE are all regular output pins, so things are easy here.
+                 .equ PORTE_DDR = 0xFC			;just the upper two are normal outputs
+                 .equ PORTE_Init = 0x00
+                 .equ PORTE_Init_WD = 0x40		;for watchdog resets, don't kill the clock
+                 ;
+                 ;Relay0-0	PE2 - XCK0/AIN0	4, pulse high to reset alarm output relay 0
+                 .equ Alarm_Rly0_Clr_port = PORTE
+                 .equ Alarm_Rly0_Clr_mask = 0x04
+                 .equ Alarm_Rly0_Clr_bit = 2
+                 ;Relay0-1	PE3 - OC3A/AIN1	5, pulse high to set alarm output relay 0
+                 .equ Alarm_Rly0_Set_port = PORTE
+                 .equ Alarm_Rly0_Set_mask = 0x08
+                 .equ Alarm_Rly0_Set_bit = 3
+                 ;Relay1-0	PE4 - OC3B/INT4	6, pulse high to reset alarm output relay 1
+                 .equ Alarm_Rly1_Clr_port = PORTE
+                 .equ Alarm_Rly1_Clr_mask = 0x10
+                 .equ Alarm_Rly1_Clr_bit = 4
+                 ;Relay1-1	PE5 - OC3C/INT5	7, pulse high to set alarm output relay 1
+                 .equ Alarm_Rly1_Set_port = PORTE
+                 .equ Alarm_Rly1_Set_mask = 0x20
+                 .equ Alarm_Rly1_Set_bit = 5
+                 ;Primary Clk Enable	PE6 - T3/INT6	8, drive high to enable primary SCP/SDB clock driver
+                 .equ Pri_Clk_En_port = PORTE
+                 .equ Pri_Clk_En_mask = 0x40
+                 .equ Pri_Clk_En_bit = 6
+                 ;Secondary Clk Enable	PE7 - ICP3/INT7	9, drive high to enable secondary SCP/SDB clock driver
+                 .equ Sec_Clk_En_port = PORTE
+                 .equ Sec_Clk_En_mask = 0x80
+                 .equ Sec_Clk_En_bit = 7
+                 
+                 .equ PORTF_DDR = 0x00
+                 .equ PORTF_Init = 0x00		;make them inputs without pullups, although this shouldn't matter.
+                 ;3.3V Monitor	PF0 - ADC0	61, analog input for 3.3 supply, 2.0V nominal
+                 ;5V Monitor	PF1 - ADC1	60, analog input for 5V supply, 2.0V nominal
+                 ;12V Monitor	PF2 - ADC2	59, analog input for 12V supply, 2.0V nominal
+                 ;SCP-A 5V Monitor	PF3 - ADC3	58, analog input for primary SCP supply, 2.0V
+                 ;SCP-B 5V Monitor	PF4 - ADC4/TCLK	57, analog input for secondary SCP supply, also JTAG TCK, so can not be monitored when JTAG is active
+                 ;TMS	PF5 - ADC5/TMS	56, JTAG TMS to header
+                 ;TDO	PF6 - ADC6/TDO	55, JTAG TDO to header
+                 ;TDI	PF7 - ADC7/TDI	54, JTAG TDI to header
+                 
+                 ;PortG pins are currently not used, so set it up as an input with pullups, driving the enable to the quickswitch low
+                 ;.equ PORTG_DDR = 0x10
+                 .equ PORTG_DDR = 0x11	;xxxxxxx for testing, make XB10 an output
+                 ;.equ PORTG_Init = 0x1F
+                 .equ PORTG_Init = 0x0E	;xxxxxxxx and init it low
+                 ;XB10	PG0 - WR	33, extra bussed line 10 to linecards
+                 .equ XB10_port = PORTG
+                 .equ XB10_mask = 0x01
+                 .equ XB10_bit = 0
+                 ;XB11	PG1 - RD	34, extra bussed line 11 to linecards
+                 .equ XB11_port = PORTG
+                 .equ XB11_mask = 0x02
+                 .equ XB11_bit = 1
+                 ;XB12	PG2 - ALE	43, extra bussed line 12 to linecards
+                 .equ XB12_port = PORTG
+                 .equ XB12_mask = 0x04
+                 .equ XB12_bit = 2
+                 ;XB13	PG3 - TOSC2	18, extra bussed line 13 to linecards
+                 .equ XB13_port = PORTG
+                 .equ XB13_mask = 0x08
+                 .equ XB13_bit = 3
+                 ;XB Enable	PG4 - TSOC1	19, drive low to enable quickswitch for XB lines, init to disabled
+                 .equ XB_En_port = PORTG
+                 .equ XB_En_mask = 0x10
+                 .equ XB_En_bit = 4
+                 
+                 ;
+                 ; Go ahead and initialize all of the I/O pins per the above information
+                 ;
+                 Init_IO:
+                 
+000224 ef00      	ldi	Temp, PORTA_Init
+000225 b734      	in T2, MCUCSR
+000226 fd33      	sbrc	T2, WDRF
+000227 ef04      	ldi	Temp, PORTA_Init_WD
+000228 bb0b      	out PORTA, Temp
+000229 e10f      	ldi	Temp, PORTA_DDR
+00022a bb0a      	out	DDRA, Temp
+                 
+00022b ef0f      	ldi	Temp, PORTB_Init
+00022c bb08      	out	PORTB, Temp
+00022d e000      	ldi	Temp, PORTB_DDR
+00022e bb07      	out DDRB, Temp
+                 
+00022f ef0f      	ldi	Temp, PORTC_Init
+000230 bb05      	out	PORTC, Temp
+000231 e000      	ldi	Temp, PORTC_DDR
+000232 bb04      	out DDRC, Temp
+                 
+000233 e70f      	ldi	Temp, PORTD_Init
+000234 b734      	in T2, MCUCSR
+000235 fd33      	sbrc	T2, WDRF
+000236 ef0f      	ldi	Temp, PORTD_Init_WD
+000237 bb02      	out	PORTD, Temp
+000238 ec00      	ldi	Temp, PORTD_DDR
+000239 bb01      	out DDRD, Temp
+                 
+00023a e000      	ldi	Temp, PORTE_Init
+00023b b734      	in T2, MCUCSR
+00023c fd33      	sbrc	T2, WDRF
+00023d e400      	ldi	Temp, PORTE_Init_WD
+00023e b903      	out	PORTE, Temp
+00023f ef0c      	ldi	Temp, PORTE_DDR
+000240 b902      	out	DDRE, Temp
+                 
+000241 e000      	ldi	Temp, PORTF_Init
+000242 9300 0062 	sts	PORTF, Temp
+000244 e000      	ldi	Temp, PORTF_DDR
+000245 9300 0061 	sts	DDRF, Temp
+                 
+000247 e00e      	ldi	Temp, PORTG_Init
+000248 9300 0065 	sts	PORTG, Temp
+00024a e101      	ldi	Temp, PORTG_DDR
+00024b 9300 0064 	sts	DDRG, Temp
+                 
+00024d 9508      	ret
+                 
+                 .include "a2d.asm"
+                 
+                 
+                 
+                 ;A/D defs (single ended, 8MHz clk, external AREF, left justified)
+                 .equ admux_val = 0xE0	;left justified, internal 2.56V ref, PA0
+                 .equ adcsra_val = 0x8F	;enable things including irqs, clk/128 (62.5KHz),
+                 						; so 208usec per conversion, updating each of the
+                 						; 5 voltage readings about 962 times per second
+                 .equ sfior_mask = 0xF7	;disable the comparitor input stuff (ACME)
+                 .equ AD_start = 0x40	;the missing bit from ADCSRA
+                 .equ ADMux_mask = 0x1F	;mask of the mux bits of ADMUX
+                 .equ AD_Tbl_Max = 3
+                 
+                 InitA2D:
+                 			;Initialize and configure the A/D converter
+                 			;
+                 			;The setup is single ended, left justified, and continuous
+                 			; auto sampling, so the high byte contains all of the data that
+                 			; we care about for the 8 bit displays.
+                 			;
+                 			;Default to PA0 for the input mux
+                 			;
+                 			;go ahead and start conversions at the end
+                 
+00024e ee00      	ldi Temp, admux_val
+00024f b907      	out ADMUX, Temp
+                 
+000250 b500      	in Temp, SFIOR
+000251 7f07      	andi Temp, sfior_mask	;not really necessary since this is 0, but ok form.
+000252 bd00      	out SFIOR, Temp			; note that SFIOR is being overwritten here
+                 
+000253 e80f      	ldi Temp, adcsra_val
+000254 b906      	out ADCSRA, Temp
+                 
+000255 9a36      	sbi ADCSRA, ADSC	;do a first conversion
+                 
+000256 9508      	ret
+                 
+                 ;
+                 ;	So the A2D interrupt service routing just reads the result of the completed conversion,
+                 ;		puts it into the proper I2C register location, goes to the next input looping
+                 ;		around as needed, and starts the next conversion.  This means that the I2C A/D
+                 ;		values should always be very up to date and can be used by any routine that
+                 ;		wants to know.
+                 ;
+                 ;	If needed, since this is much faster than required, we could take multiple readings and
+                 ;	average them (FIR filter) of 4 or 8 samples, but this is probably not needed due to the
+                 ;	filtering cap on the signals.  Might be fun to do sometime though.
+                 ;
+                 A2D_ISR:
+000257 930a      	st	-Y, Temp
+000258 b70f      	in	Temp, SREG
+000259 930a      	st	-Y, Temp
+00025a 933a      	st	-Y, T2
+00025b 93aa      	st	-Y, XL
+00025c 93ba      	st	-Y, XH
+                 
+00025d e0a8      	ldi	XL, low(I2C_AD0)
+00025e e0b1      	ldi	XH,	high(I2C_AD0)	;this is the base of the A/D registers
+                 
+00025f b107      	in	Temp, ADMUX
+000260 710f      	andi	Temp, ADMux_mask	;get the offset for the conversion that just finished from the mux
+000261 2733      	clr	T2
+                 
+000262 0fa0      	add	XL, Temp
+000263 1fb3      	adc	XH, T2					;now we have the pointer
+                 
+000264 b135      	in	T2, ADCH
+000265 933c      	st	X, T2					;write the new value
+                 
+000266 9503      	inc Temp					;go to the next A/D input
+000267 3003      	cpi	Temp, AD_Tbl_Max
+000268 f008      	brlo	A2D_ISR_1
+000269 2700      	clr	Temp					;wrap back around if it's time
+                 
+                 A2D_ISR_1:
+00026a 6e00      	ori	Temp, admux_val
+00026b b907      	out	ADMUX, Temp				;output the new mux value
+                 
+00026c 9a36      	sbi	ADCSRA, ADSC			; and start the next conversion
+                 
+00026d 91b9      	ld	XH, Y+
+00026e 91a9      	ld	XL, Y+
+00026f 9139      	ld	T2, Y+
+000270 9109      	ld	Temp, Y+
+000271 bf0f      	out	SREG, Temp
+000272 9109      	ld	Temp, Y+
+000273 9518      	reti
+                 
+                 	
+                 	
+                 .include "usart.asm"
+                 
+                 ;RS232 defs (assuming 8MHz clock)
+                 .equ usarta_ctl = 0x02	;set the 2x bit of control reg A
+                 .equ usartb_ctl = 0x18	;enable rx and tx, no irqs
+                 .equ usartc_ctl = 0x86	;async, 8 bit, no parity
+                 .equ baud2x_HB = 0
+                 .equ baud2x_LB = 105		;value for UBRR for 9600 baud in 2x mode
+                 
+                 
+                 Init232:
+                 			;This is the serial port initialization routine
+                 			;
+                 			;Currently, it just sets up the port for 9600 baud, 8 bit, no parity
+                 			; assuming that the defs are correct
+000274 e002      	ldi	Temp, usarta_ctl
+000275 b90b      	out UCSR0A, Temp
+                 
+000276 e108      	ldi	Temp,usartb_ctl
+000277 b90a      	out UCSR0B, Temp
+000278 e806      	ldi Temp, usartc_ctl
+000279 e9a5      	ldi XL, UCSR0C
+00027a 930c      	st	X,Temp
+00027b e609      	ldi	Temp, Baud2x_LB
+00027c b909      	out UBRR0L, Temp
+00027d 9508      	ret
+                 
+                 USART_Transmit:
+00027e 95a8      	wdr						; reset the WD once since this should take 1ms, not longer
+                 USART_Transmit_1:
+00027f 9b5d      	sbis UCSR0A,UDRE0		; Wait for empty transmit buffer
+000280 cffe      	rjmp USART_Transmit_1
+                 
+000281 b90c      	out UDR0,Temp		;	 Put data Temp into buffer, sends the data
+000282 9523      	inc count
+000283 9508      	ret
+                 
+                 
+                 USART_Hex_Tx:			;send Temp out the serial port as ascii hex
+000284 2f30      	mov T2, Temp		;save a copy of Temp
+000285 e047      	ldi T3, 7
+000286 7f00      	andi Temp, 0xF0
+000287 9506      	lsr Temp
+000288 9506      	lsr Temp
+000289 9506      	lsr Temp
+00028a 9506      	lsr Temp
+00028b 300a      	cpi	Temp, 10
+00028c f00c      	brlt	U_H_T_1
+00028d 0f04      	add Temp, T3
+                 U_H_T_1:
+00028e 0f01      	add Temp, ASCII_Offset
+00028f 940e 027e 	call USART_Transmit
+000291 2f03      	mov Temp, T2
+000292 700f      	andi Temp, 0x0F
+000293 300a      	cpi Temp, 10
+000294 f00c      	brlt U_H_T_2
+000295 0f04      	add Temp, T3
+                 U_H_T_2:
+000296 0f01      	add Temp, ASCII_Offset
+000297 940e 027e 	call USART_Transmit
+                 
+000299 9508      	ret
+                 
+                 USART_Dec_Tx:			;send Temp out the serial port as ascii decimal (unsigned, 0-255)
+00029a 2f30      	mov T2, Temp		;This is crude, but it works.
+00029b 2f40      	mov	T3, Temp
+00029c 3c08      	cpi	Temp, 200
+00029d f030      	brlo	UDT_1
+                 
+00029e e302      	ldi	Temp, '2'
+00029f dfde      	rcall	USART_Transmit
+0002a0 2f03      	mov Temp, T2
+0002a1 5c08      	subi	Temp, 200
+0002a2 2f30      	mov	T2, Temp
+0002a3 c008      	rjmp UDT_2
+                 UDT_1:
+0002a4 3604      	cpi	Temp, 100
+0002a5 f030      	brlo	UDT_3
+                 
+0002a6 e301      	ldi	Temp, '1'
+0002a7 dfd6      	rcall	USART_Transmit
+0002a8 2f03      	mov Temp, T2
+0002a9 5604      	subi	Temp, 100
+0002aa 2f30      	mov	T2, Temp
+0002ab c000      	rjmp	UDT_2
+                 UDT_3:					;print a leading 0
+                 ;	ldi	Temp, '0'
+                 ;	rcall	USART_Transmit
+                 ;	mov Temp, T2
+                 
+                 UDT_2:					;check for 10's
+0002ac 300a      	cpi	Temp, 10
+0002ad f430      	brsh	UDT_4
+                 
+0002ae 1704      	cp	Temp, T3		;if none, check to see if we already printed something, and if so, print 0
+0002af f071      	breq	UDT_5
+0002b0 e300      	ldi Temp, '0'
+0002b1 dfcc      	rcall	USART_Transmit
+0002b2 2f03      	mov	Temp, T2
+0002b3 c00a      	rjmp	UDT_5
+                 UDT_4:
+0002b4 2744      	clr T3
+                 UDT_4_1:
+0002b5 500a      	subi	Temp, 10	;count the 10's
+0002b6 9543      	inc	T3
+0002b7 300a      	cpi	Temp, 10
+0002b8 f7e0      	brsh	UDT_4_1
+                 
+0002b9 2f30      	mov T2, Temp
+0002ba 2f04      	mov Temp, T3
+0002bb 0f01      	add	Temp, ASCII_Offset
+0002bc dfc1      	rcall	USART_Transmit
+0002bd 2f03      	mov Temp, T2
+                 
+                 UDT_5:
+0002be 0f01      	add Temp, ASCII_Offset	;print the 1's
+0002bf dfbe      	rcall	USART_Transmit
+                 
+0002c0 9508      	ret
+                 
+                 
+                 USART_SDec_Tx:			;send Temp out the serial port as ascii decimal (signed, +-127) without leading 0's
+0002c1 2f30      	mov T2, Temp		;This is crude, but it works.
+                 
+0002c2 fd07      	sbrc	Temp, 7
+0002c3 940c 02c7 	jmp	USDT_1_1
+0002c5 940c 02cb 	jmp USDT_1
+                 USDT_1_1:
+0002c7 e20d      	ldi	Temp, '-'
+0002c8 dfb5      	rcall	USART_Transmit
+0002c9 9531      	neg	T2
+0002ca 2f03      	mov	Temp, T2
+                 USDT_1:	
+0002cb dfce      	rcall USART_Dec_Tx
+                 
+0002cc 9508      	ret
+                 
+                 
+                 USART_Space:
+0002cd 930a      	st	-Y, Temp
+0002ce e200      	ldi	Temp, 0x20	;ascii space
+0002cf dfae      	rcall USART_Transmit
+0002d0 9109      	ld	Temp, Y+
+0002d1 9508      	ret
+                 
+                 USART_CRLF:
+0002d2 930a      	st	-Y, Temp
+                 
+0002d3 e00d      	ldi Temp, ASCII_CR
+0002d4 dfa9      	rcall USART_Transmit
+0002d5 e00a      	ldi Temp, ASCII_LF
+0002d6 dfa7      	rcall USART_Transmit
+                 
+0002d7 9109      	ld	Temp, Y+
+0002d8 9508      	ret
+                 
+                 USART_PStr:				;output the null terminated string pointed to by Z
+0002d9 9105      	lpm	Temp, Z+
+0002da 3000      	cpi	Temp, 0
+0002db f409      	brne	UPS1
+0002dc 9508      	ret
+                 UPS1:
+0002dd dfa0      	rcall	USART_Transmit
+0002de cffa      	rjmp USART_PStr
+                 
+                 Mon_Prompt:
+0002df dff2      	rcall USART_CRLF
+0002e0 e30e      	ldi	Temp, '>'
+0002e1 df9c      	rcall USART_Transmit
+0002e2 dfea      	rcall USART_Space
+0002e3 9508      	ret
+                 
+                 USART_Bin_Tx:	;send Temp out the serial port as ascii binary
+                 						;look at the bits and output "0" or "1"
+0002e4 e038      	ldi T2, 0x8			;bit counter
+0002e5 2f40      	mov T3, Temp		;too many Temps...
+                 
+                 U_A_T_lp:
+0002e6 0f44      	lsl	T3
+0002e7 f010      	brcs U_A_T_1
+0002e8 e300      	ldi Temp, 0x30		;output a "0"
+0002e9 c001      	rjmp U_A_T_nxt
+                 U_A_T_1:
+0002ea e301      	ldi Temp, 0x31
+                 U_A_T_nxt:
+0002eb 940e 027e 	call USART_Transmit
+                 
+0002ed 953a      	dec T2
+0002ee f7b9      	brne U_A_T_lp
+                 
+0002ef e00d      	ldi Temp, ASCII_CR
+0002f0 940e 027e 	call USART_Transmit
+0002f2 e00a      	ldi Temp, ASCII_LF
+0002f3 940e 027e 	call USART_Transmit
+                 
+0002f5 9508      	ret
+                 
+                 
+                 USART_Receive:
+0002f6 95a8      	wdr
+0002f7 9100 0102 	lds	Temp, Test_Chk_Flg
+0002f9 3004      	cpi	Temp, 4
+0002fa f008      	brlo	UR_0
+0002fb ce22      	rjmp	reset			;if we've been sitting here 4 or more Test check intervals, reset ourselves.
+                 UR_0:
+0002fc 9b5f      	sbis UCSR0A, RXC0		; Wait for data to be received
+0002fd cff8      	rjmp USART_Receive
+                 
+0002fe b10c      	in Temp, UDR0			; Get and return received data from buffer
+0002ff 770f      	andi	Temp, 0x7F
+000300 9508      	ret
+                 
+                 .include "I2C-polled.asm"
+                 
+                 ; These are the simple I2C Master access API's.
+                 ;	The specific master cycle type routines simply use the defined registers to fill in
+                 ;	the buffer and byte count as needed by the ISR, waiting for the bus and starting the cycle.
+                 ;
+                 ; It seems to me that the period between the Master_Wait routine and the Master_Send routine that
+                 ;	sends the START is the most dangerous part of the implementation.  It seems impossible so far to
+                 ;	achieve valid slave responses in all cases when doing master cycles, and this is the purpose for
+                 ;	raising this project to others with more knowledge.
+                 ;
+                 ;I2C (TWI) defs (assuming 8MHz clk)
+                 .equ twbr_init = 34		;this is the master clock rate value, and results in a 100KHz clk
+                 .equ twcr_init = 0x04	;set the enable bit
+                 .equ twsr_init = 0		; no multipliers
+                 .equ twar_init = 0xFE	;disable slave more or less
+                 
+                 
+                 .equ TWI_RW_mask = 0x01
+                 .equ TWI_RW_bit = 0
+                 
+                 ;
+                 ;	Wait for the the bus to be available for master, then grab the lock.
+                 ;	Note that this enters with irq's enabled, and exits with them turned off. ** changed to reduce irq latency **
+                 ;
+                 I2C_Master_Wait:
+000301 9100 0130 	lds	Temp, TWI_statusReg
+000303 fd01      	sbrc	Temp, TWI_Stat_Master_bit
+000304 cffc      	rjmp	I2C_Master_Wait					;wait for previous operations to end
+000305 9100 0074 	lds	Temp, TWCR
+000307 fd04      	sbrc	Temp, TWSTO		;make sure the stop bit is also cleared before issuing another access
+000308 cff8      	rjmp	I2C_Master_Wait
+                 
+                 ;***** this stuff is not necessary since there is no I2C stuff allowed in ISRs
+                 ;	cli
+000309 9100 0130 	lds	Temp, TWI_statusReg							;with irq's disabled, make sure there is no stuff again
+                 ;	sbrc	Temp, TWI_Stat_Master_bit		;if someone sneeked in, wait longer
+                 ;	rjmp	I2C_MW_1
+00030b fd02      	sbrc	Temp, TWI_Stat_Slave_bit
+00030c cff4      	rjmp	I2C_Master_Wait
+                 
+00030d e035      	ldi	T2, 0x05
+00030e 9330 0074 	sts	TWCR, T2
+                 
+                 I2C_MW_1:
+                 ;	sei
+                 ;	rjmp I2C_Master_Wait
+                 I2C_MW_0:
+000310 6002      	sbr	Temp, TWI_Stat_Master_mask
+000311 9300 0130 	sts	TWI_statusReg, Temp
+                 ;	sei		;
+000313 9508      	ret
+                 
+                 
+                 ;------------------WRITE I2C Adr-Data---------------------------
+                 ;
+                 ; This writes a single data byte to a device assuming the device addr,
+                 ; register addr (byte), and data are in I2C_DevAddr, I2C_Addr, and I2C_Data
+                 ;
+                 
+                 Wr_I2C_Adr_Data:
+                 
+000314 93ba      	st	-Y, XH
+000315 93aa      	st	-Y, XL
+                 
+000316 dfea      	rcall	I2C_Master_Wait
+                 
+000317 e003      	ldi	Temp, 3			;this is a 3 byte operation
+000318 9300 012d 	sts	TWI_msgSize, Temp
+                 
+00031a e2a3      	ldi	XL, low(TWI_Master_buf)
+00031b e0b1      	ldi	XH, high(TWI_Master_buf)
+                 
+00031c 7f6e      	cbr	I2C_DevAddr, TWI_RW_mask		;make it a write
+00031d 936d      	st	X+, I2C_DevAddr
+00031e 92ad      	st	X+, I2C_Addr
+00031f 928c      	st	X, I2C_Data
+                 
+000320 91a9      	ld	XL, Y+
+000321 91b9      	ld	XH, Y+
+                 
+000322 c24d      	rjmp	TWI_Master_Send
+                 
+                 		
+                 ;------------------WRITE I2C-Data---------------------------
+                 ;
+                 ; This writes a single data byte to a device assuming the device addr,
+                 ; and data are in I2C_DevAddr and I2C_Data.
+                 ;
+                 ; Note that this can be used to set the register address for subseqeunt reads
+                 ; as long as there is a single master talking to the device.
+                 ;
+                 
+                 Wr_I2C_Data:
+                 
+000323 dfdd      	rcall	I2C_Master_Wait
+                 
+000324 93ba      	st	-Y, XH				;save X to avoid trashing the calling routine
+000325 93aa      	st	-Y, XL
+                 
+000326 e002      	ldi	Temp, 2		;this is a 2 byte operation
+000327 9300 012d 	sts	TWI_msgSize, Temp
+                 
+000329 e2a3      	ldi	XL, low(TWI_Master_buf)
+00032a e0b1      	ldi	XH, high(TWI_Master_buf)
+                 
+00032b 7f6e      	cbr	I2C_DevAddr, TWI_RW_mask		;make it a write
+00032c 936d      	st	X+, I2C_DevAddr
+00032d 928c      	st	X, I2C_Data
+                 
+00032e 91a9      	ld	XL, Y+
+00032f 91b9      	ld	XH, Y+
+                 
+000330 c23f      	rjmp	TWI_Master_Send
+                 
+                 
+                 ;------------------WRITE I2C-Word---------------------------
+                 ;
+                 ; This writes a two bytes to a device assuming the device addr, register addr,
+                 ; and data are in I2C_DevAddr, I2C_Addr, and I2C_Data (MSB or first byte) and I2C_DataLB (lsb or second byte).
+                 ;
+                 
+                 Wr_I2C_Word:
+                 
+000331 dfcf      	rcall	I2C_Master_Wait
+                 
+000332 93ba      	st	-Y, XH
+000333 93aa      	st	-Y, XL
+                 
+000334 e004      	ldi	Temp, 4			;this is a 4 byte operation
+000335 9300 012d 	sts	TWI_msgSize, Temp
+                 
+000337 e2a3      	ldi	XL, low(TWI_Master_buf)
+000338 e0b1      	ldi	XH, high(TWI_Master_buf)
+                 
+000339 7f6e      	cbr	I2C_DevAddr, TWI_RW_mask		;make it a write
+00033a 936d      	st	X+, I2C_DevAddr
+00033b 92ad      	st	X+, I2C_Addr
+00033c 928d      	st	X+, I2C_Data
+00033d 929c      	st	X, I2C_DataLB
+                 
+00033e 91a9      	ld	XL, Y+
+00033f 91b9      	ld	XH, Y+
+                 
+000340 c22f      	rjmp	TWI_Master_Send
+                 
+                 
+                 ;------------------Read I2C-BYTE---------------------------
+                 ;
+                 ; This reads a single data byte from a device assuming the device addr is
+                 ; setup and the internal device register pointer is good.  Data is returned
+                 ; in I2C_Data.
+                 ;
+                 
+                 Rd_I2C_Byte:
+                 
+000341 dfbf      	rcall	I2C_Master_Wait
+                 
+000342 93ba      	st	-Y, XH
+000343 93aa      	st	-Y, XL
+                 
+000344 e002      	ldi	Temp, 2			;this is a 2 byte operation
+000345 9300 012d 	sts	TWI_msgSize, Temp
+                 
+000347 e2a3      	ldi	XL, low(TWI_Master_buf)
+000348 e0b1      	ldi	XH, high(TWI_Master_buf)
+                 
+000349 6061      	sbr	I2C_DevAddr, TWI_RW_mask		;make it a read
+00034a 936d      	st	X+, I2C_DevAddr
+                 
+00034b d224      	rcall	TWI_Master_Send		;call so that we come back here
+                 
+00034c dfb4      	rcall	I2C_Master_Wait		;wait for it to complete and hold it so that the data is not overwritten
+                 
+00034d ec05      	ldi	Temp, 0xc5
+00034e 9300 0074 	sts	TWCR, Temp
+                 
+000350 908c      	ld	I2C_Data, X				;get the data byte
+                 
+000351 9100 0130 	lds	Temp, TWI_statusReg
+000353 7f0d      	cbr	Temp, TWI_Stat_Master_mask
+000354 9300 0130 	sts	TWI_statusReg, Temp		;give the bus back
+                 
+000356 9478      	sei
+                 
+000357 91a9      	ld	XL, Y+
+000358 91b9      	ld	XH, Y+
+                 
+000359 9508      	ret
+                 
+                 ;------------------Read I2C_Adr-BYTE---------------------------
+                 ;
+                 ; This reads a single data byte from a device after setting the internal register
+                 ; address.  Data is returned in I2C_Data.
+                 ;	Note that repeated starts are not done here so there is no device lock to prevent
+                 ;	the addr being changed on the device, so if multiple masters are accessing the same device
+                 ;	there may be problems.
+                 ;
+                 
+                 Rd_I2C_Adr_Byte:
+                 
+00035a dfa6      	rcall	I2C_Master_Wait
+                 
+00035b 93ba      	st	-Y, XH
+00035c 93aa      	st	-Y, XL
+                 
+00035d e002      	ldi	Temp, 2			;Start with a 2 byte write to set the addr
+00035e 9300 012d 	sts	TWI_msgSize, Temp
+                 
+000360 e2a3      	ldi	XL, low(TWI_Master_buf)
+000361 e0b1      	ldi	XH, high(TWI_Master_buf)
+                 
+000362 7f6e      	cbr	I2C_DevAddr, TWI_RW_mask		;make it a write
+000363 936d      	st	X+, I2C_DevAddr
+000364 92ac      	st	X, I2C_Addr
+                 
+000365 d20a      	rcall	TWI_Master_Send		;call so that we come back here
+                 
+000366 df9a      	rcall	I2C_Master_Wait		;wait for it to complete and hold it so that the data is not overwritten
+                 
+000367 9711      	sbiw	XH:XL, 1					;now do the read, still 2 byte, set the read bit
+000368 6061      	sbr	I2C_DevAddr, TWI_RW_mask		;make it a read
+000369 936d      	st	X+, I2C_DevAddr
+                 
+00036a d205      	rcall	TWI_Master_Send		;call so that we come back here
+                 
+00036b df95      	rcall	I2C_Master_Wait		;wait for it to complete and hold it so that the data is not overwritten
+                 
+00036c ec05      	ldi	Temp, 0xc5
+00036d 9300 0074 	sts	TWCR, Temp
+                 
+00036f 908c      	ld	I2C_Data, X				;get the data byte
+                 
+000370 9100 0130 	lds	Temp, TWI_statusReg
+000372 7f0d      	cbr	Temp, TWI_Stat_Master_mask
+000373 9300 0130 	sts	TWI_statusReg, Temp		;give the bus back
+                 
+000375 9478      	sei
+                 
+000376 91a9      	ld	XL, Y+
+000377 91b9      	ld	XH, Y+
+                 
+000378 9508      	ret
+                 
+                 ;------------------Read I2C_Adr-Word---------------------------
+                 ;
+                 ; This reads two data bytes from a device after setting the internal register
+                 ; address.  Data is returned in I2C_Data (MSB or first byte) and I2C_DataLB (LSB or second byte).
+                 ;	Note that as above, repeated starts are not done here so there is no device lock to prevent
+                 ;	the addr being changed on the device, so if multiple masters are accessing the same device
+                 ;	there may be problems.
+                 ;
+                 
+                 Rd_I2C_Adr_Word: 
+                 
+000379 df87      	rcall	I2C_Master_Wait
+                 
+00037a 93ba      	st	-Y, XH
+00037b 93aa      	st	-Y, XL
+                 
+00037c e002      	ldi	Temp, 2			;Start with a 2 byte write to set the addr
+00037d 9300 012d 	sts	TWI_msgSize, Temp
+                 
+00037f e2a3      	ldi	XL, low(TWI_Master_buf)
+000380 e0b1      	ldi	XH, high(TWI_Master_buf)
+                 
+000381 7f6e      	cbr	I2C_DevAddr, TWI_RW_mask		;make it a write
+000382 936d      	st	X+, I2C_DevAddr
+000383 92ac      	st	X, I2C_Addr
+                 
+000384 d1eb      	rcall	TWI_Master_Send		;call so that we come back here
+                 
+000385 df7b      	rcall	I2C_Master_Wait		;get the bus back after the read completes
+                 
+000386 e003      	ldi	Temp, 3
+000387 9300 012d 	sts	TWI_msgSize, Temp
+000389 9711      	sbiw	XH:XL, 1					;do the read, now 3 byte, set the read bit
+00038a 6061      	sbr	I2C_DevAddr, TWI_RW_mask		;make it a read
+00038b 936d      	st	X+, I2C_DevAddr
+                 
+00038c d1e3      	rcall	TWI_Master_Send		;call so that we come back here
+                 
+00038d df73      	rcall	I2C_Master_Wait		;wait for it to complete and hold it so that the data is not overwritten
+                 
+00038e ec05      	ldi	Temp, 0xc5
+00038f 9300 0074 	sts	TWCR, Temp
+                 	
+000391 908d      	ld	I2C_Data, X+			;get the first data byte
+000392 909c      	ld	I2C_DataLB, X			;and second
+                 
+000393 9100 0130 	lds	Temp, TWI_statusReg
+000395 7f0d      	cbr	Temp, TWI_Stat_Master_mask
+000396 9300 0130 	sts	TWI_statusReg, Temp		;give the bus back
+                 
+000398 9478      	sei
+                 
+000399 91a9      	ld	XL, Y+
+00039a 91b9      	ld	XH, Y+
+                 
+00039b 9508      	ret
+                 .include "timers.asm"
+                 
+                 ;  assuming 8MHz clocking
+                 ;  So count up, prescaler of /256
+                 ;  CTC mode using OCR1A and a count of 31,250 for a 1 sec period
+                 ;  and OCR3A set to 312 for the 10ms irq,
+                 ;
+                 ;	Note: the Wait_x10ms routine should not be called from within an IRQ, as it's not re-entrant
+                 
+                 
+                 .equ tc1_ctrlA = 0x00		;disconnect the outputs
+                 .equ tc1_ctrlB = 0x0C		;clock prescaler /256, CTC mode using OCR1A
+                 .equ tc1_ctrlC = 0x00		;no need to mess with force-compares
+                 .equ tc_imask = 0x10		;use output compare A, note that this should be OR'ed in
+                 
+                 .equ tc3_ctrlA = 0x00		;disconnect the outputs
+                 .equ tc3_ctrlB = 0x0C		;clock prescaler /256, CTC mode using OCR3A
+                 .equ tc3_ctrlC = 0x00		;no need to mess with force-compares
+                 .equ tc_etimask = 0x10		;use output compares A & B, note that this should be OR'ed in
+                 
+                 .equ count_1sec = 31250		;count value for 1 second
+                 .equ count_10ms = 312		;count value for 100ms
+                 
+                 .equ Test_Chk_Interval = 5	;wait 5 seconds between test check calls
+                 
+                 .dseg					;some sram variables
+000100 00        Second_Ctr:	.DB	0x00		;used by timer interrupts
+000101 00        Test_Period_Ctr:	.DB	0
+000102 00        Test_Chk_Flg:	.DB 0
+000103 00        VMon_Chk_Flg:	.db 0
+000104 00        Wait_Ctr:	.DB 0		;counter for 100ms wait intervals
+000105 00        Waiting_Flg:	.db 0	;flag to indicate we are in the wait routine
+                 
+                 .cseg
+                 InitTimer:
+00039c b70f      	in Temp, SREG			;save the status reg for a bit
+00039d 930a      	st	-Y, Temp
+00039e 94f8      	cli						;and disable irqs so that word writes are safe
+                 
+00039f e70a      	ldi Temp, HIGH(count_1sec)
+0003a0 bd0b      	out	OCR1AH, Temp
+0003a1 e102      	ldi	Temp, LOW(count_1sec)
+0003a2 bd0a      	out OCR1AL, Temp
+                 
+0003a3 e001      	ldi	Temp, HIGH(count_10ms)
+0003a4 9300 0087 	sts OCR3AH, Temp
+0003a6 e308      	ldi	Temp, LOW(count_10ms)
+0003a7 9300 0086 	sts OCR3AL, Temp
+                 
+0003a9 e000      	ldi	Temp, tc1_ctrlA
+0003aa bd0f      	out TCCR1A, Temp
+0003ab e00c      	ldi	Temp, tc1_ctrlB
+0003ac bd0e      	out TCCR1B, Temp
+0003ad b707      	in	Temp, TIMSK
+0003ae 6100      	ori	Temp, tc_imask
+0003af bf07      	out	TIMSK, Temp
+                 
+0003b0 e000      	ldi	Temp, tc3_ctrlA
+0003b1 9300 008b 	sts TCCR3A, Temp
+0003b3 e00c      	ldi	Temp, tc3_ctrlB
+0003b4 9300 008a 	sts TCCR3B, Temp
+0003b6 9100 007d 	lds	Temp, ETIMSK
+0003b8 6100      	ori	Temp, tc_etimask
+0003b9 9300 007d 	sts	ETIMSK, Temp
+                 
+0003bb 2700      	clr	Temp
+0003bc 9300 0100 	sts	Second_Ctr, Temp
+0003be 9300 0101 	sts	Test_Period_Ctr, Temp
+0003c0 9300 0102 	sts	Test_Chk_Flg, Temp
+0003c2 9300 0103 	sts	VMon_Chk_Flg, Temp
+0003c4 9300 0105 	sts	Waiting_Flg, Temp
+                 
+0003c6 9109      	ld	Temp, Y+
+0003c7 bf0f      	out SREG, Temp			;restore the status reg (this may re-enable irqs)
+0003c8 9508      	ret
+                 
+                 
+                 IRQ_1sec:			;for now just keep track and call the test check ever Test_Chk_Interval
+0003c9 930a      	st	-Y, Temp			;save what you need to
+0003ca b70f      	in	Temp, SREG
+0003cb 930a      	st	-Y, Temp
+                 
+0003cc 9100 0101 	lds	Temp, Test_Period_Ctr				;look at the period counter to see if it's time for a test check
+0003ce 9503      	inc Temp
+0003cf 9300 0101 	sts	Test_Period_Ctr, Temp
+0003d1 3005      	cpi	Temp, Test_Chk_Interval
+0003d2 f441      	brne	IRQ_1sec_1
+                 
+0003d3 2700      	clr	Temp
+0003d4 9300 0101 	sts	Test_Period_Ctr, Temp				;reset the interval counter
+0003d6 9100 0102 	lds	Temp, Test_Chk_Flg
+0003d8 9503      	inc Temp								;read and incr the flag so that it can be used as a counter
+                 											; to timeout serial wait loops
+0003d9 9300 0102 	sts	Test_Chk_Flg, Temp					;have to set the flag since it's way too nasty to do in an isr
+                 
+                 
+                 IRQ_1sec_1:
+0003db 9109      	ld	Temp, Y+			;restore what you saved
+0003dc bf0f      	out	SREG, Temp
+0003dd 9109      	ld	Temp, Y+
+                 
+0003de 9518      	reti
+                 
+                 IRQ_10ms:  ;set the VMon_chk flag update all of the delay counters
+                 
+0003df 930a      	st	-Y, Temp			;save what you need to
+0003e0 b70f      	in	Temp, SREG
+0003e1 930a      	st	-Y, Temp
+0003e2 933a      	st	-Y, T2
+                 
+0003e3 e001      	ldi	Temp, 1
+0003e4 9300 0103 	sts	VMon_Chk_Flg, Temp
+                 
+0003e6 9100 0105 	lds	Temp, Waiting_Flg		;if we are in the wait loop, do a wdr in this isr
+0003e8 ff00      	sbrs	Temp, 0
+0003e9 c006      	rjmp	IRQ_10ms_1
+                 
+0003ea 95a8      	wdr
+                 
+0003eb 9100 0104 	lds	Temp, Wait_Ctr
+0003ed 9503      	inc Temp
+0003ee 9300 0104 	sts	Wait_Ctr, Temp	;update the wait counter
+                 
+                 IRQ_10ms_1:
+0003f0 9139      	ld	T2, Y+
+0003f1 9109      	ld	Temp, Y+
+0003f2 bf0f      	out	SREG, Temp
+0003f3 9109      	ld Temp, Y+
+0003f4 9518      	reti
+                 
+                 Wait_x10ms:		;wait for the number of 10ms intervals indicated in Temp
+                 					; Note that IRQ's will happen, but no checking or other actions will, so be careful here
+0003f5 933a      	st	-Y, T2
+0003f6 2f30      	mov	T2, Temp
+0003f7 2700      	clr Temp
+0003f8 9300 0104 	sts	Wait_Ctr, Temp	;clear the wait counter
+                 
+0003fa 9503      	inc Temp
+0003fb 9300 0105 	sts	Waiting_Flg, Temp	;set the waiting flag so that the 10ms isr will reset the WD
+                 
+0003fd 9533      	inc T2			;increment the end point to ensure at least time delay
+                 
+                 Wait_Lp:			;
+0003fe 9100 0104 	lds	Temp, Wait_Ctr
+000400 1703      	cp	Temp, T2
+000401 f3e0      	brlo	Wait_Lp
+                 
+000402 2700      	clr Temp
+000403 9300 0105 	sts	Waiting_Flg, Temp	;clear the waiting flag to end the isr WDR's
+                 
+000405 9139      	ld	T2, Y+
+000406 9508      	ret
+                 
+                 .include "SCP-things.asm"
+                 
+                 ;	This is just a filler checking routine called from the main loop.  All it does now is look
+                 ;	 at an input pin and change the GIR when it is seen to go low.
+                 ;
+                 
+                 
+                 SCP_Check:
+000407 d002      	rcall	SCP_Pri_Check
+000408 d00a      	rcall	SCP_Sec_Check
+000409 9508      	ret
+                 
+                 
+                 SCP_Pri_Check:
+00040a b306      	in	Temp, SCP_Pri_Present_port
+00040b fd06      	sbrc	Temp, SCP_Pri_Present_bit	;if the scp is there, check some things
+00040c 9508      	ret
+                 ;update the GIR
+00040d 9100 0106 	lds	Temp, I2C_GIR0
+00040f 6400      	sbr	Temp, GIR0_SCP_Present_Pri_mask
+000410 9300 0106 	sts	I2C_GIR0, Temp
+                 
+000412 9508      	ret									;if the enable bit is not set, no need to do more
+                 
+                 
+                 
+                 SCP_Sec_Check:			;do all of the same things, but for the secondary
+                 
+000413 b306      	in	Temp, SCP_Sec_Present_port
+000414 fd07      	sbrc	Temp, SCP_Sec_Present_bit	;if the scp is there, check some things
+000415 9508      	ret
+                 ;update the GIR
+000416 9100 0106 	lds	Temp, I2C_GIR0
+000418 6800      	sbr	Temp, GIR0_SCP_Present_Sec_mask
+000419 9300 0106 	sts	I2C_GIR0, Temp
+                 	
+00041b 9508      	ret
+                 .include "i2c-regs.asm"
+                 
+                 ;	These are the memory locations that hold the "registers" accessable from the I2C slave space
+                 ;
+                 ;	The bit definitions are mostly just for example, however the read auto-increment bit in CTRL1
+                 ;	 is implemented in the ISR.  Note that offsets 0-6 are read only (write data cycles will not be ACKed)
+                 ;	 and there are 16 locations at the end that behave as normal memory that can be used for testing.
+                 ;	The WD Reset bit of GIR1 is implemented in this code.
+                 ;
+                 .dseg
+                 I2C_Slave_Base:
+000106 00        I2C_GIR0:		.db	0		;offset 0
+000107 00        I2C_GIR1:		.db	0		;offset 1
+000108 00        I2C_AD0:		.db	0		;offset 2
+000109 00        I2C_AD1:		.db	0		;offset 3
+00010a 00        I2C_AD2:		.db	0		;offset 4
+00010b 00        I2C_AD3:		.db	0		;offset 5
+00010c 00        I2C_SWVer:		.db 0		;offset	6
+00010d 00        I2C_CTRL0:		.db 0		;offset 7
+00010e 00        I2C_CTRL1:		.db	0		;offset 8
+00010f 00
+000110 01
+000111 02
+000112 03
+000113 04
+000114 05
+000115 06
+000116 07
+000117 08
+000118 09
+000119 0a
+00011a 0b
+00011b 0c
+00011c 0d
+00011d 0e
+00011e 0f        I2C_RW:	.db	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15		;offsets 9 - 25
+                 
+00011f 00        CReg_Status:	.db 0		;set to indicate which of the control regs have been changed
+000120 00        Prev_CTRL0:		.db 0		;storage for previous values
+000121 00        Prev_CTRL1:		.db 0
+                 
+000122 00        Boot_MCSR:		.db 0		;storage for MSCR read at boot time
+                 
+                 .cseg
+                 
+                 .equ	CTRL0_Changed_bit = 0
+                 .equ	CTRL0_Changed_mask = 0x01
+                 .equ	CTRL1_Changed_bit = 1
+                 .equ	CTRL1_Changed_mask = 0x02
+                 
+                 .equ	I2C_NumRegs = CReg_Status - I2C_Slave_Base
+                 .equ	I2C_RW_Offset = I2C_CTRL0 - I2C_Slave_Base	;writes below this offset are not valid
+                 .equ	CTRL0_offset = I2C_CTRL0 - I2C_Slave_Base
+                 .equ	CTRL1_offset = I2C_CTRL1 - I2C_Slave_Base
+                 
+                 .equ CTRL0_Alrm_Make_mask = 0x01
+                 .equ CTRL0_Alrm_Make_bit = 0
+                 .equ CTRL0_Alrm_Brk_mask = 0x02
+                 .equ CTRL0_Alrm_Brk_bit = 1
+                 .equ CTRL0_SCP_PwrClk_Pri_mask = 0x04
+                 .equ CTRL0_SCP_PwrClk_Pri_bit = 2
+                 .equ CTRL0_SCP_PwrClk_Sec_mask = 0x08
+                 .equ CTRL0_SCP_PwrClk_Sec_bit = 3
+                 .equ CTRL0_SDB_nc1_mask = 0x10
+                 .equ CTRL0_SDB_nc1_bit = 4
+                 .equ CTRL0_SDB_nc2_mask = 0x20
+                 .equ CTRL0_SDB_nc2_bit = 5
+                 .equ CTRL0_SCP_Cyc_Pri_mask = 0x40
+                 .equ CTRL0_SCP_Cyc_Pri_bit = 6
+                 .equ CTRL0_SCP_Cyc_Sec_mask = 0x80
+                 .equ CTRL0_SCP_Cyc_Sec_bit = 7
+                 
+                 .equ CTRL0_Init = CTRL0_SCP_PwrClk_Pri_mask | CTRL0_Alrm_Make_mask
+                 
+                 .equ CTRL1_PS_Inh_Pri_mask = 0x01
+                 .equ CTRL1_PS_Inh_Pri_bit = 0
+                 .equ CTRL1_PS_Inh_Sec_mask = 0x02
+                 .equ CTRL1_PS_Inh_Sec_bit = 1
+                 .equ CTRL1_Fan_Full_In_mask = 0x04
+                 .equ CTRL1_Fan_Full_In_bit = 2
+                 .equ CTRL1_Fan_Full_Ex_Mask = 0x08
+                 .equ CTRL1_Fan_Full_Ex_bit = 3
+                 .equ CTRL1_Sys_Reset_mask = 0x10
+                 .equ CTRL1_Sys_Reset_bit = 4
+                 .equ CTRL1_Adr_AutoInc_mask = 0x20
+                 .equ CTRL1_Adr_AutoInc_bit = 5
+                 .equ CTRL1_ReProg_Mode_mask = 0x40
+                 .equ CTRL1_ReProg_Mode_bit = 6
+                 .equ CTRL1_ReProg_Actv_mask = 0x80
+                 .equ CTRL1_ReProg_Actv_bit = 7
+                 
+                 .equ CTRL1_Init = 0x00
+                 
+                 .equ GIR0_Pwr_Good_Pri_mask = 0x01
+                 .equ GIR0_Pwr_Good_Pri_bit = 0
+                 .equ GIR0_Pwr_Good_Sec_mask = 0x02
+                 .equ GIR0_Pwr_Good_Sec_bit = 1
+                 .equ GIR0_Fan_Good_In_mask = 0x04
+                 .equ GIR0_Fan_Good_In_bit = 2
+                 .equ GIR0_Fan_Good_Ex_mask = 0x08
+                 .equ GIR0_Fan_Good_Ex_bit =3
+                 .equ GIR0_PS_Present_Pri_mask = 0x10
+                 .equ GIR0_PS_Present_Pri_bit = 4
+                 .equ GIR0_PS_Present_Sec_mask = 0x20
+                 .equ GIR0_PS_Present_Sec_bit = 5
+                 .equ GIR0_SCP_Present_Pri_mask = 0x40
+                 .equ GIR0_SCP_Present_Pri_bit = 6
+                 .equ GIR0_SCP_Present_Sec_mask = 0x80
+                 .equ GIR0_SCP_Present_Sec_bit = 7
+                 
+                 .equ GIR1_Alrm_SIP1_mask = 0x01
+                 .equ GIR1_Alrm_SIP1_bit = 0
+                 .equ GIR1_Alrm_SIP2_mask = 0x02
+                 .equ GIR1_Alrm_SIP2_bit = 1
+                 .equ GIR1_PEM_Present_Other_mask = 0x04
+                 .equ GIR1_PEM_Present_Other_bit = 2
+                 .equ GIR1_Temp_Alrm_Rear_mask = 0x08
+                 .equ GIR1_Temp_Alrm_Rear_bit = 3
+                 .equ GIR1_Temp_Alrm_Front_mask = 0x10
+                 .equ GIR1_Temp_Alrm_Front_bit = 4
+                 .equ GIR1_PS_Degraded_Pri_mask = 0x20
+                 .equ GIR1_PS_Degraded_Pri_bit = 5
+                 .equ GIR1_PS_Fail_Pri_mask = 0x40
+                 .equ GIR1_PS_Fail_Pri_bit = 6
+                 .equ GIR1_WatchDog_mask = 0x80
+                 .equ GIR1_WatchDog_bit = 7
+                 
+                 I2C_Regs_Init:
+                 ;
+                 ;	just zero all of them except the control reg, where you enable the primary SCP and clocks,
+                 ;	and the GIR where you deal with the watchdog bit
+                 ;
+00041c e139      	ldi	T2, I2C_NumRegs
+00041d e0a6      	ldi	XL, low(I2C_Slave_Base)
+00041e e0b1      	ldi	XH, high(I2C_Slave_Base)
+00041f 2700      	clr Temp
+                 I2C_Regs_Init_lp:
+000420 930d      	st	X+, Temp
+000421 953a      	dec	T2
+000422 1330      	cpse	T2, Temp
+000423 cffc      	rjmp	I2C_Regs_Init_lp
+                 
+000424 b734      	in T2, MCUCSR
+000425 fd33      	sbrc	T2, WDRF
+000426 6800      	sbr	Temp, GIR1_WatchDog_mask
+                 
+000427 9300 0107 	sts	I2C_GIR1, Temp
+                 
+000429 e005      	ldi	Temp, CTRL0_Init
+00042a 9300 010d 	sts	I2C_CTRL0, Temp
+00042c 9300 0120 	sts	Prev_CTRL0, Temp
+00042e e000      	ldi	Temp, CTRL1_Init
+00042f 9300 010e 	sts I2C_CTRL1, Temp
+000431 9300 0121 	sts	Prev_CTRL1, Temp
+                 
+000433 2700      	clr	Temp
+000434 9300 011f 	sts CReg_Status, Temp
+                 
+000436 e001      	ldi	Temp, SW_Version
+000437 9300 010c 	sts	I2C_SWVer, Temp
+                 
+000439 9508      	ret
+                 .include "I2C-ms-irq.asm"
+                 
+                 ;	Starting with the Atmel C code for multi-master slave...
+                 ;
+                 
+                 
+                 
+                 ;/****************************************************************************
+                 ;  TWI State codes
+                 ;****************************************************************************/
+                 ;// General TWI Master staus codes                      
+                 .equ TWI_START                  = 0x08  ;// START has been transmitted  
+                 .equ TWI_REP_START              = 0x10  ;// Repeated START has been transmitted
+                 .equ TWI_ARB_LOST               = 0x38  ;// Arbitration lost
+                 
+                 ;// TWI Master Transmitter staus codes                      
+                 .equ TWI_MTX_ADR_ACK            = 0x18  ;// SLA+W has been tramsmitted and ACK received
+                 .equ TWI_MTX_ADR_NACK           = 0x20  ;// SLA+W has been tramsmitted and NACK received 
+                 .equ TWI_MTX_DATA_ACK           = 0x28  ;// Data byte has been tramsmitted and ACK received
+                 .equ TWI_MTX_DATA_NACK          = 0x30  ;// Data byte has been tramsmitted and NACK received 
+                 
+                 ;// TWI Master Receiver staus codes  
+                 .equ TWI_MRX_ADR_ACK            = 0x40  ;// SLA+R has been tramsmitted and ACK received
+                 .equ TWI_MRX_ADR_NACK           = 0x48  ;// SLA+R has been tramsmitted and NACK received
+                 .equ TWI_MRX_DATA_ACK           = 0x50  ;// Data byte has been received and ACK tramsmitted
+                 .equ TWI_MRX_DATA_NACK          = 0x58  ;// Data byte has been received and NACK tramsmitted
+                 
+                 ;// TWI Slave Transmitter staus codes
+                 .equ TWI_STX_ADR_ACK            = 0xA8  ;// Own SLA+R has been received; ACK has been returned
+                 .equ TWI_STX_ADR_ACK_M_ARB_LOST = 0xB0  ;// Arbitration lost in SLA+R/W as Master; own SLA+R has been received; ACK has been returned
+                 .equ TWI_STX_DATA_ACK           = 0xB8  ;// Data byte in TWDR has been transmitted; ACK has been received
+                 .equ TWI_STX_DATA_NACK          = 0xC0  ;// Data byte in TWDR has been transmitted; NOT ACK has been received
+                 .equ TWI_STX_DATA_ACK_LAST_BYTE = 0xC8  ;// Last data byte in TWDR has been transmitted (TWEA = “0”); ACK has been received
+                 
+                 ;// TWI Slave Receiver staus codes
+                 .equ TWI_SRX_ADR_ACK            = 0x60  ;// Own SLA+W has been received ACK has been returned
+                 .equ TWI_SRX_ADR_ACK_M_ARB_LOST = 0x68  ;// Arbitration lost in SLA+R/W as Master; own SLA+W has been received; ACK has been returned
+                 .equ TWI_SRX_GEN_ACK            = 0x70  ;// General call address has been received; ACK has been returned
+                 .equ TWI_SRX_GEN_ACK_M_ARB_LOST = 0x78  ;// Arbitration lost in SLA+R/W as Master; General call address has been received; ACK has been returned
+                 .equ TWI_SRX_ADR_DATA_ACK       = 0x80  ;// Previously addressed with own SLA+W; data has been received; ACK has been returned
+                 .equ TWI_SRX_ADR_DATA_NACK      = 0x88  ;// Previously addressed with own SLA+W; data has been received; NOT ACK has been returned
+                 .equ TWI_SRX_GEN_DATA_ACK       = 0x90  ;// Previously addressed with general call; data has been received; ACK has been returned
+                 .equ TWI_SRX_GEN_DATA_NACK      = 0x98  ;// Previously addressed with general call; data has been received; NOT ACK has been returned
+                 .equ TWI_SRX_STOP_RESTART       = 0xA0  ;// A STOP condition or repeated START condition has been received while still addressed as Slave
+                 
+                 ;// TWI Miscellaneous status codes
+                 .equ TWI_NO_STATE               = 0xF8  ;// No relevant state information available; TWINT = “0”
+                 .equ TWI_BUS_ERROR              = 0x00  ;// Bus error due to an illegal START or STOP condition
+                 
+                 .equ TWI_BUFFER_SIZE = 8
+                 
+                 .equ	TWI_Slave_DevAdr = 0xF0
+                 
+                 ;.equ	I2C_sw_config = 0x3D	;enable primary smb and on-board buses, no power supply IPMB's
+                 ;.equ	I2C_sw_config = 0x3C	;dis-enable primary smb for now to aviod driver issue
+                 ;.equ	I2C_sw_DevAdr = 0xE0
+                 
+                 ;union TWI_statusReg                       // Status byte holding flags.
+                 ;{
+                 ;    unsigned char all;
+                  ;   struct
+                 ;    {
+                 ;        unsigned char lastTransOK:1;      
+                 .equ	TWI_Stat_lastTransOK_mask = 0x01
+                 .equ	TWI_Stat_lastTransOK_bit = 0
+                 .equ	TWI_Stat_Master_mask = 0x02		;set this bit when starting a master operation, clear it when done
+                 .equ	TWI_Stat_Master_bit = 1
+                 .equ	TWI_Stat_Slave_mask = 0x04		;set this bit at the start of a slave operation, clear it when done
+                 .equ	TWI_Stat_Slave_bit = 2
+                 ;
+                 .equ	TWI_Stat_RxAdr_mask = 0x08
+                 .equ	TWI_Stat_RxAdr_bit = 3
+                 ;        unsigned char genAddressCall:1;                        // TRUE = General call, FALSE = TWI Address;
+                 .equ	TWI_Stat_genAddressCall_mask = 0x10
+                 .equ	TWI_Stat_genAddressCall_bit = 4
+                 
+                 .equ	TWI_Stat_tryother_mask = 0x20
+                 .equ	TWI_Stat_tryother_bit = 5
+                 ;        unsigned char unusedBits:5;
+                 ;    };
+                 ;};
+                 
+                 .dseg
+000123 00
+000124 00
+000125 00
+000126 00
+000127 00
+000128 00
+000129 00
+00012a 00
+00012b 00
+00012c 00        TWI_Master_Buf:	.DB	0,0,0,0,0,0,0,0,0,0	;TWI_BUFFER_SIZE
+00012d 00        TWI_msgSize:	.db 0
+00012e 00        TWI_State:		.db	0
+00012f 00        TWI_bufPtr:		.db 0
+000130 00        TWI_statusReg:	.db 0
+000131 00        TWI_Last_RegAdr:	.db 0
+                 
+                 .cseg
+                 
+                 /****************************************************************************
+                 Call this function to set up the TWI master/slave interface to its initial standby state.
+                 Remember to enable interrupts from the main application after initializing the TWI.
+                 ****************************************************************************/
+                 TWI_Init:
+                 ;  TWAR = TWI_ownAddress;                            // Set own TWI slave address. Accept TWI General Calls.
+00043a ef00      	ldi	Temp, TWI_Slave_DevAdr
+00043b 9300 0072 	sts	TWAR, Temp
+                 ;  TWDR = 0xFF;                                      // Default content = SDA released.
+00043d 2700      	clr Temp
+00043e 9500      	com Temp
+00043f 9300 0073 	sts	TWDR, Temp
+                 
+                 ; now the other stuff to be done...
+                 
+000441 e202      	ldi Temp, twbr_init
+000442 9300 0070 	sts	TWBR, Temp			; set the baud rate control register
+000444 e000      	ldi	Temp, twsr_init
+000445 9300 0071 	sts	TWSR, Temp
+000447 2700      	clr Temp
+000448 9300 0131 	sts TWI_Last_RegAdr, Temp
+00044a 9300 012e 	sts	TWI_State, Temp
+00044c 9300 0130 	sts	TWI_statusReg, Temp
+00044e 9300 012f 	sts	TWI_bufPtr, Temp
+000450 9300 012d 	sts	TWI_msgSize, Temp
+                 
+                 
+                 ;  TWCR = (1<<TWEN)|                                 // Enable TWI-interface and release TWI pins.
+                 ;         (1<<TWIE)|(1<<TWINT)|                      // Disable TWI Interupt.
+                 ;         (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           // Do not ACK on any requests, yet.
+                 ;         (0<<TWWC);                                 //
+000452 ec05      	ldi	Temp, 0xC5		;put it into passive mode with IRQs
+000453 9300 0074 	sts	TWCR, Temp
+                 
+000455 9478      	sei			;enable interrupts...
+                 
+000456 9508      	ret
+                 ;}
+                 
+                 
+                 ; Now the hard part, the IRQ service routine...
+                 /****************************************************************************
+                 This function is the Interrupt Service Routine (ISR), and called when the TWI interrupt is triggered;
+                 that is whenever a TWI event has occurred. This function should not be called directly from the main
+                 application.
+                 ****************************************************************************/
+                 
+                 TWI_ISR:
+000457 930a      	st	-Y, Temp
+000458 b70f      	in	Temp, SREG
+000459 930a      	st	-Y, Temp
+00045a 933a      	st	-Y, T2
+                 ;	st	-Y, XL
+                 ;	st	-Y, XH
+                 
+00045b 9100 0130 	lds	Temp, TWI_statusReg
+00045d 7d0f      	cbr	Temp, TWI_Stat_tryother_mask
+00045e 9300 0130 	sts	TWI_StatusReg, Temp
+000460 fd02      	sbrc	Temp, TWI_Stat_Slave_bit		;check to see if there is a slave operation going on, and if so, go deal with it
+000461 c005      	rjmp	TWI_SLV
+000462 ff01      	sbrs	Temp, TWI_Stat_Master_bit		;then check for master since slave has priority
+000463 c003      	rjmp	TWI_SLV
+                 								;and fall into slave if neither is set
+000464 93aa      	st	-Y, XL
+000465 93ba      	st	-Y, XH
+000466 c116      	rjmp TWI_MISR
+                 
+                 ;  switch (TWSR)					
+                 ;  {
+                 TWI_SLV:
+000467 9100 0071 	lds	Temp, TWSR
+                 
+                 ;    case TWI_SRX_STOP_RESTART:       // A STOP condition or repeated START condition has been received while still addressed as Slave    
+                 TWI_ISR_7:						;THIS MUST BE AT THE TOP OF THE ISR due to undocumented performance issues with the interface
+000469 ea30      	ldi	T2, TWI_SRX_STOP_RESTART
+00046a 1303      	cpse	Temp, T2
+00046b c016      	rjmp	TWI_ISR_0
+                 
+                 ;	ldi	Temp, 0xC5
+                 ;	sts	TWCR, Temp
+                 
+00046c 9100 0130 	lds	Temp, TWI_statusReg
+00046e 7f03      	cbr	Temp, TWI_Stat_Slave_mask | TWI_Stat_RxAdr_mask
+00046f 9300 0130 	sts	TWI_statusReg, Temp				;done with this transaction, so clear the bit
+                 
+000471 ff01      	sbrs	Temp, TWI_Stat_Master_bit
+000472 c007      	rjmp	TWI_ISR_7_1
+                 
+000473 e00f      	ldi	Temp, 15		;do a little delay so that there is at least 5 usec of idle
+                 lp_7:
+000474 950a      	dec Temp
+000475 f7f1      	brne	lp_7
+                 
+000476 ee05      	ldi	Temp, 0xE5		;xxxx - was A5 send out a start to begin or restart the master operation
+000477 9300 0074 	sts	TWCR, Temp
+000479 c003      	rjmp	TWI_ISR_7_2
+                 
+                 TWI_ISR_7_1:
+                 
+00047a ec05      	ldi	Temp, 0xC5
+00047b 9300 0074 	sts	TWCR, Temp
+                 TWI_ISR_7_2:
+                 
+00047d 9139      	ld	T2, Y+
+00047e 9109      	ld	Temp, Y+		;go ahead and reti quickly here restoring only the minimal regs saved.
+00047f bf0f      	out	SREG, Temp
+000480 9109      	ld	Temp, Y+
+                 
+000481 9518      	reti
+                 
+                 ;      break;
+                 ;	rjmp	TWI_ISR_SLVDONE_BRK
+                 
+                 
+                 TWI_ISR_0:	;    case TWI_STX_ADR_ACK:            // Own SLA+R has been received; ACK has been returned
+000482 93aa      	st	-Y, XL
+000483 93ba      	st	-Y, XH					;save the extra regs used beyond this point
+                 
+000484 ea38      	ldi	T2, TWI_STX_ADR_ACK
+000485 1303      	cpse	Temp, T2
+000486 c028      	rjmp	TWI_ISR_1
+                 
+                 TWI_ISR_0_1:
+                 ;so the right thing to do here is to find out the current read address and load that data,
+                 ;	and may be inc if the flag is set, and point to it.
+                 ;Then go ahead and put the data in to be read out.
+                 
+000487 9100 0130 	lds	Temp, TWI_statusReg
+000489 6004      	sbr	Temp, TWI_Stat_Slave_mask
+00048a 9300 0130 	sts	TWI_statusReg, Temp
+                 
+00048c 9100 0131 	lds	Temp, TWI_Last_RegAdr
+00048e e0a6      	ldi	XL, low(I2C_Slave_Base)
+00048f e0b1      	ldi	XH, high(I2C_Slave_Base)
+000490 2733      	clr	T2
+000491 0fa0      	add	XL, Temp
+000492 1fb3      	adc	XH, T2
+                 
+                 TWI_ISR_0_2:
+000493 910c      	ld	Temp, X
+000494 9300 0073 	sts	TWDR, Temp
+                 ;      TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;             (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to send byte
+                 ;             (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           // 
+                 ;             (0<<TWWC);                                 //  
+000496 ec05      	ldi	Temp, 0xC5
+000497 9300 0074 	sts	TWCR, Temp
+                 
+                 ;if it's a read of CTRLREG1, we need to clear the program_ack bit if it's set
+000499 9100 0131 	lds Temp, TWI_Last_RegAdr
+00049b 3008      	cpi	Temp, CTRL1_offset
+00049c f429      	brne	TWI_ISR_0_3
+                 
+00049d 9100 010e 	lds	Temp, I2C_CTRL1
+00049f 770f      	cbr	Temp, CTRL1_ReProg_Actv_mask
+0004a0 9300 010e 	sts	I2C_CTRL1, Temp
+                 
+                 TWI_ISR_0_3:			;if the autoinc bit is set, inc and wrap if needed the last regadr
+0004a2 9130 010e 	lds	T2, I2C_CTRL1
+0004a4 ff35      	sbrs	T2, CTRL1_Adr_AutoInc_bit
+0004a5 c0c3      	rjmp	TWI_ISR_BRK	;***** this was _0_2, which is an inf. loop if autoinc is not set *****
+0004a6 9503      	inc Temp
+0004a7 9300 0131 	sts	TWI_Last_RegAdr, Temp
+0004a9 3109      	cpi	Temp, I2C_NumRegs
+0004aa f018      	brlo	TWI_ISR_0_4
+0004ab 2700      	clr	Temp
+0004ac 9300 0131 	sts	TWI_Last_RegAdr, Temp
+                 
+                 TWI_ISR_0_4:
+                 ;      break;
+0004ae c0ba      	rjmp	TWI_ISR_BRK
+                 	
+                 
+                 ;    case TWI_STX_DATA_ACK:           // Data byte in TWDR has been transmitted; ACK has been received
+                 TWI_ISR_1:
+0004af eb38      	ldi	T2, TWI_STX_DATA_ACK
+0004b0 1303      	cpse	Temp, T2
+0004b1 c020      	rjmp	TWI_ISR_2
+                 ;      TWDR = TWI_buf[TWI_bufPtr++];
+                 ;so the right thing here is to give it the next data byte, and since this was an ACK, incr the reg adr.
+0004b2 9100 0131 	lds	Temp, TWI_Last_RegAdr
+                 TWI_ISR_1_1:
+0004b4 e0a6      	ldi	XL, low(I2C_Slave_Base)
+0004b5 e0b1      	ldi	XH, high(I2C_Slave_Base)
+0004b6 2733      	clr	T2
+0004b7 0fa0      	add	XL, Temp
+0004b8 1fb3      	adc	XH, T2
+                 
+0004b9 9503      	inc Temp
+0004ba 9300 0131 	sts	TWI_Last_RegAdr, Temp
+0004bc 3109      	cpi	Temp, I2C_NumRegs
+0004bd f018      	brlo	TWI_ISR_1_2
+0004be 2700      	clr	Temp
+0004bf 9300 0131 	sts	TWI_Last_RegAdr, Temp
+                 
+                 TWI_ISR_1_2:
+0004c1 910c      	ld	Temp, X
+0004c2 9300 0073 	sts	TWDR, Temp
+                 
+                 ;if it's a read of CTRLREG1, we need to clear the program_ack bit if it's set
+0004c4 9100 0131 	lds Temp, TWI_Last_RegAdr
+0004c6 950a      	dec	Temp
+0004c7 3008      	cpi	Temp, CTRL1_offset
+0004c8 f429      	brne	TWI_ISR_1_3
+                 
+0004c9 9100 010e 	lds	Temp, I2C_CTRL1
+0004cb 770f      	cbr	Temp, CTRL1_ReProg_Actv_mask
+0004cc 9300 010e 	sts	I2C_CTRL1, Temp
+                 
+                 TWI_ISR_1_3:
+                 ;      TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;             (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to send byte
+                 ;             (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           // 
+                 ;             (0<<TWWC);                                 //  
+0004ce ec05      	ldi	Temp, 0xC5
+0004cf 9300 0074 	sts	TWCR, Temp
+                 ;      break;
+0004d1 c097      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_STX_DATA_NACK:          // Data byte in TWDR has been transmitted; NACK has been received. 
+                 ;                                     // I.e. this is the end of the transmission.
+                 TWI_ISR_2:
+0004d2 ec30      	ldi	T2, TWI_STX_DATA_NACK
+0004d3 1303      	cpse	Temp, T2
+0004d4 c00a      	rjmp	TWI_ISR_3
+                 ;		Store TWI State
+0004d5 9100 0071 	lds Temp, TWSR
+0004d7 9300 012e 	sts	TWI_state, Temp
+                 ;
+0004d9 9100 0130 	lds	Temp, TWI_statusReg
+0004db 7f0b      	cbr	Temp, TWI_Stat_Slave_mask
+0004dc 9300 0130 	sts	TWI_statusReg, Temp				;done with the slave transaction, so clear the bit
+                 
+                 TWI_ISR_2_1:
+                                                             ;// Put TWI Transceiver in passive mode.
+                 ;      TWCR = (1<<TWEN)|                                 // Enable TWI-interface and release TWI pins
+                 ;             (1<<TWIE)|(1<<TWINT)|                  
+                 ;             (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|    
+                 ;             (0<<TWWC);                          
+                 ;	ldi	Temp, 0xC5
+                 ;	sts	TWCR, Temp
+                 ;      break;
+0004de c07c      	rjmp	TWI_ISR_SLVDONE_BRK
+                 
+                 ;    case TWI_SRX_GEN_ACK:            // General call address has been received; ACK has been returned
+                 ;//    case TWI_SRX_GEN_ACK_M_ARB_LOST: // Arbitration lost in SLA+R/W as Master; General call address has been received; ACK has been returned
+                 TWI_ISR_3:
+0004df e730      	ldi	T2, TWI_SRX_GEN_ACK
+0004e0 1303      	cpse	Temp, T2
+0004e1 c009      	rjmp	TWI_ISR_4
+                 ;      TWI_statusReg.genAddressCall = TRUE;
+0004e2 9130 0130 	lds	T2, TWI_statusReg
+0004e4 6130      	sbr	T2, TWI_Stat_genAddressCall_mask
+0004e5 9330 0130 	sts	TWI_StatusReg, T2
+                 ; go back into passive here since we don't support general call stuff
+                                                             ;// Put TWI Transceiver in passive mode.
+                 ;      TWCR = (1<<TWEN)|                                 // Enable TWI-interface and release TWI pins
+                 ;             (1<<TWIE)|(1<<TWINT)|                  
+                 ;             (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|    
+                 ;             (0<<TWWC);                          
+0004e7 ec05      	ldi	Temp, 0xC5
+0004e8 9300 0074 	sts	TWCR, Temp
+                 ;      break;
+0004ea c07e      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_SRX_ADR_ACK:            // Own SLA+W has been received ACK has been returned
+                 TWI_ISR_4:
+0004eb e630      	ldi	T2, TWI_SRX_ADR_ACK
+0004ec 1303      	cpse	Temp, T2
+0004ed c009      	rjmp	TWI_ISR_5
+                 ;
+                 ;so we are getting a write, the first byte is the register addr, so set a flag to indicate this.
+                 ;	we can ignore the current data register, it's just our slave address.
+                 ;                                                        // Dont need to clear TWI_S_statusRegister.generalAddressCall due to that it is the default state.
+                 ;      TWI_statusReg.RxDataInBuf = TRUE;
+                 TWI_ISR_4_0:
+0004ee 9130 0130 	lds	T2, TWI_StatusReg
+0004f0 603c      	sbr	T2, TWI_Stat_RxAdr_mask | TWI_Stat_Slave_mask
+0004f1 9330 0130 	sts	TWI_StatusReg, T2
+                 ;                                                        // Reset the TWI Interupt to wait for a new event.
+                 ;      TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;             (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to send byte
+                 ;             (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           // Expect ACK on this transmission
+                 ;             (0<<TWWC);                                 //
+0004f3 ec05      	ldi	Temp, 0xC5
+0004f4 9300 0074 	sts	TWCR, Temp
+                 ;      break;
+0004f6 c072      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_SRX_ADR_DATA_ACK:       // Previously addressed with own SLA+W; data has been received; ACK has been returned
+                 TWI_ISR_5:
+0004f7 e830      	ldi	T2, TWI_SRX_ADR_DATA_ACK
+0004f8 1303      	cpse	Temp, T2
+                 ;	rjmp	TWI_ISR_6
+                 ;	rjmp	TWI_ISR_5_1
+                 ;    case TWI_SRX_GEN_DATA_ACK:       // Previously addressed with general call; data has been received; ACK has been returned
+                 ;TWI_ISR_6:
+                 ;	ldi	T2, TWI_SRX_GEN_DATA_ACK
+                 ;	cpse	Temp, T2
+0004f9 c045      	rjmp	TWI_ISR_8
+                 
+                 ;TWI_ISR_5_1:
+                 ;      TWI_buf[TWI_bufPtr++]     = TWDR;
+                 ;so this should look at the first recieved byte, and if it's a valid addr, set the last_adr var to it
+                 ;	if it's not the first byte, figure out which byte it is, offset the addr correctly, and put it in,
+                 ;	remembering to check for wraps, RO regs, etc.
+0004fa 9130 0130 	lds	T2, TWI_statusReg
+0004fc ff33      	sbrs	T2, TWI_Stat_RxAdr_bit
+0004fd c00d      	rjmp	TWI_ISR_5_2
+                 
+0004fe 7f37      	cbr	T2, TWI_Stat_RxAdr_mask		;clear the bit since we have the adr byte
+0004ff 9330 0130 	sts	TWI_statusReg, T2
+                 
+000501 9100 0073 	lds	Temp, TWDR					;so this is the first byte, so it's the reg address
+000503 3109      	cpi	Temp, I2C_NumRegs
+000504 f6cc      	brge	TWI_ISR_2_1				;if the addr is over the limit, go into passive mode 
+                 
+000505 9300 0131 	sts	TWI_Last_RegAdr, Temp		;otherwise load the data
+                                                             ;// Put TWI Transceiver in passive mode.
+                 ;      TWCR = (1<<TWEN)|                                 // Enable TWI-interface and release TWI pins
+                 ;             (1<<TWIE)|(1<<TWINT)|                  
+                 ;             (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|    
+                 ;             (0<<TWWC);                          
+000507 ec05      	ldi	Temp, 0xC5
+000508 9300 0074 	sts	TWCR, Temp
+                 ;      break;
+00050a c05e      	rjmp	TWI_ISR_BRK
+                 
+                 TWI_ISR_5_2:
+00050b 9100 0131 	lds	Temp, TWI_Last_RegAdr		;this is really the current regadr...
+00050d 3007      	cpi	Temp, I2C_RW_Offset
+00050e f278      	brlo	TWI_ISR_2_1				;if it's not writeable, go into passive mode
+                 
+00050f e0a6      	ldi	XL, low(I2C_Slave_Base)		;this is a real data byte write, so validate the address for writing
+000510 e0b1      	ldi	XH, high(I2C_Slave_Base)
+000511 2733      	clr T2
+000512 0fa0      	add	XL, Temp
+000513 1fb3      	adc	XH, T2
+                 
+000514 e037      	ldi	T2, CTRL0_offset
+000515 1303      	cpse	Temp, T2
+000516 c001      	rjmp	TWI_ISR_5_5
+000517 c00d      	rjmp	Save_CTRL0
+                 TWI_ISR_5_5:
+000518 9533      	inc	T2
+000519 1303      	cpse	Temp, T2
+00051a c014      	rjmp	TWI_ISR_5_8
+                 
+00051b 9130 010e 	lds	T2, I2C_CTRL1				;this is a write to CTRL1, so save the previous value and set a flag
+00051d 9330 0121 	sts	Prev_CTRL1, T2
+00051f 9130 011f 	lds	T2, CReg_Status
+000521 6032      	sbr	T2, CTRL1_Changed_mask
+000522 9330 011f 	sts	CReg_Status, T2
+000524 c00a      	rjmp	TWI_ISR_5_6
+                 
+                 Save_CTRL0:
+000525 9130 010d 	lds	T2, I2C_CTRL0				;this is a write to CTRL0, so save the previous value and set a flag
+000527 9330 0120 	sts	Prev_CTRL0, T2
+000529 9130 011f 	lds	T2, CReg_Status
+00052b 6031      	sbr	T2, CTRL0_Changed_mask
+00052c 9330 011f 	sts	CReg_Status, T2
+00052e c000      	rjmp	TWI_ISR_5_6
+                 
+                 TWI_ISR_5_8:
+                 ;
+                 ;	this stuff is commented out as it does not apply to the TWI example code....
+                 ;
+                 ;	ldi	T2, Prog_Csum_offset		;check for a cksum write
+                 ;	cpse	Temp, T2
+                 ;	rjmp	TWI_ISR_5_6
+                 
+                 ;	ldi	T2, 1
+                 ;	sts	Prog_Csum_flg, T2			;set the checksum write flag and handle it outside of the ISR
+                 
+                 TWI_ISR_5_6:
+00052f 9503      	inc	Temp						;update the pointer to the next register
+000530 3109      	cpi	Temp, I2C_NumRegs
+000531 f41c      	brge	TWI_ISR_5_4
+                 	
+000532 9300 0131 	sts	TWI_Last_RegAdr, Temp		;save the new register pointer
+000534 c003      	rjmp	TWI_ISR_5_7
+                 TWI_ISR_5_4:
+000535 2733      	clr	T2
+000536 9330 0131 	sts	TWI_Last_RegAdr, T2
+                 
+                 
+                 TWI_ISR_5_7:
+000538 9100 0073 	lds	Temp, TWDR					;get the data
+00053a 930c      	st	X, Temp						;put it in
+                 ;      TWI_statusReg.lastTransOK = TRUE;                 // Set flag transmission successfull.
+                 ;	lds	T2, TWI_statusReg
+                 ;	sbr	T2, TWI_Stat_lastTransOK_mask
+                 ;	sts	TWI_StatusReg, T2
+                 ;                                                        // Reset the TWI Interupt to wait for a new event.
+                 ;      TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;             (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to send byte
+                 ;             (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           // Send ACK after next reception
+                 ;             (0<<TWWC);                                 //
+00053b ec05      	ldi	Temp, 0xC5
+00053c 9300 0074 	sts	TWCR, Temp
+                 ;      break;
+00053e c02a      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_BUS_ERROR:         // Bus error due to an illegal START or STOP condition
+                 ;    default:
+                 TWI_ISR_8:
+00053f e030      	ldi	T2, TWI_BUS_ERROR
+000540 1303      	cpse Temp, T2
+000541 c009      	rjmp TWI_ISR_9
+                 
+000542 9100 0130 	lds Temp, TWI_statusReg
+000544 7f01      	cbr	Temp, TWI_Stat_Slave_mask | TWI_Stat_RxAdr_mask | TWI_Stat_Master_mask
+000545 9300 0130 	sts	TWI_statusReg, Temp
+                 
+000547 ed05      	ldi	Temp, 0xD5				;to clear a bus error and go into active listen slave mode, you have to set the stop bit
+000548 9300 0074 	sts	TWCR, Temp				; see the misc states section of the datasheet for details, no stop is actually sent
+00054a c01e      	rjmp	TWI_ISR_BRK	
+                 
+                 	;    case TWI_SRX_ADR_DATA_NACK:      // Previously addressed with own SLA+W; data has been received; NOT ACK has been returned
+                 ;    case TWI_SRX_GEN_DATA_NACK:      // Previously addressed with general call; data has been received; NOT ACK has been returned
+                 ;    case TWI_STX_DATA_ACK_LAST_BYTE: // Last data byte in TWDR has been transmitted (TWEA = “0”); ACK has been received
+                 ;//    case TWI_NO_STATE              // No relevant state information available; TWINT = “0”
+                 TWI_ISR_9:
+                 ;      TWI_state = TWSR;                                 // Store TWI State as errormessage, operation also clears the Success bit.      
+00054b 9300 012e 	sts	TWI_state, Temp
+                 
+00054d 9100 0130 	lds	Temp, TWI_statusReg
+00054f 7f0b      	cbr	Temp, TWI_Stat_Slave_mask
+000550 9300 0130 	sts	TWI_statusReg, Temp
+000552 fd05      	sbrc	Temp, TWI_Stat_tryother_bit
+000553 c004      	rjmp	TWI_ISR_9_0
+                 
+000554 6200      	sbr	Temp, TWI_Stat_tryother_mask		;go try all of the master codes too
+000555 9300 0130 	sts TWI_StatusReg, Temp
+000557 c025      	rjmp	TWI_MISR
+                 
+                 ;  Oh, go ahead and pretend that things are OK and go passive
+                 TWI_ISR_9_0:
+000558 7d0f      	cbr	Temp, TWI_Stat_tryother_mask
+000559 9300 0130 	sts	TWI_StatusReg, Temp
+                 
+                 ;	ldi	Temp, 0xC5
+                 ;	sts	TWCR, Temp
+                 ;  }
+                 TWI_ISR_SLVDONE_BRK:
+                 						;if the slave operation is done, check to see if there is a master sitting around
+                 						; from an arbitration loss, and if so, go ahead and restart it
+00055b 9100 0130 	lds	Temp, TWI_statusReg
+00055d ff01      	sbrs	Temp, TWI_Stat_Master_bit
+00055e c007      	rjmp	TWI_ISR_SD1_BRK
+                 
+00055f e00f      	ldi	Temp, 15		;do a little delay so that there is at least 5 usec of idle
+                 lp_done:
+000560 950a      	dec Temp
+000561 f7f1      	brne	lp_done
+                 
+000562 ee05      	ldi	Temp, 0xE5		;xxxx - was A5 send out a start to begin or restart the master operation
+000563 9300 0074 	sts	TWCR, Temp
+000565 c003      	rjmp	TWI_ISR_BRK
+                 
+                 TWI_ISR_SD1_BRK:
+000566 ec05      	ldi	Temp, 0xC5
+000567 9300 0074 	sts	TWCR, Temp
+                 
+                 TWI_ISR_BRK:
+000569 91b9      	ld	XH, Y+
+00056a 91a9      	ld	XL, Y+
+00056b 9139      	ld	T2, Y+
+00056c 9109      	ld	Temp, Y+
+00056d bf0f      	out	SREG, Temp
+00056e 9109      	ld	Temp, Y+
+                 
+00056f 9518      	reti
+                 
+                 
+                 ;	Now here is the master code,
+                 
+                 
+                 ; The assumption coming into this routine is that the data and message length has already been loaded into
+                 ;	TWI_Master_buf and TWI_msgSize, so all we have to do is put it into master mode and start the start.
+                 ;	all of the irq race worry is probably not needed since the ISR can handle a concurrent master and slave
+                 ;	operation, but it looks good to do it if anyone is sick enough to read this code.
+                 ;	*** changed to not have irq's off to reduce latency, see TWI_Wait ***
+                 ;
+                 TWI_Master_Send:
+                 
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 high just before sending a start .....
+                 
+                 ;	lds	Temp, TWCR
+                 ;	cbr	Temp, 0x40
+000570 e005      	ldi	Temp, 0x05			;disable the interface until the start command is issued
+000571 9300 0074 	sts	TWCR, Temp
+                 
+000573 9100 0065 	lds	Temp, XB10_port
+000575 6001      	sbr	Temp, XB10_mask
+000576 9300 0065 	sts	XB10_port, Temp
+                 
+                 ;	ldi	Temp, 100
+                 ;TWI_MS_1:
+                 ;	dec Temp
+                 ;	brne	TWI_MS_1		;delay a bit to see if it helps the window...
+                 
+                 ;	lds	Temp, TWI_StatusReg
+                 ;	sbrc	Temp, TWI_Stat_Slave_bit
+                 ;	rjmp	TWI_MS_1
+                 
+                 ;TWI_Master_Send_1:
+                 ;	ldi	T2, 8
+                 ;	wdr
+                 ;TWI_Master_Send_2:
+                 ;	in	Temp, TWI_port
+                 ;	andi	Temp, TWI_mask			;this is to wait for the bus to not be busy, sort of, to try and eliminate a race between slave address recognision and sending a start
+                 ;	cpi	Temp, TWI_mask
+                 ;	brne	TWI_Master_Send_1
+                 ;	dec	T2
+                 ;	brne TWI_Master_Send_2
+                 				
+                 ;  TWCR = (1<<TWEN)|                             // TWI Interface enabled.
+                 ;         (1<<TWIE)|(1<<TWINT)|                  // Enable TWI Interupt and clear the flag.
+                 ;         (0<<TWEA)|(1<<TWSTA)|(0<<TWSTO)|       // Initiate a START condition.
+                 ;         (0<<TWWC);                             //
+000578 ee05      	ldi	Temp, 0xE5	;xxxx was E5
+000579 9300 0074 	sts	TWCR, Temp
+00057b 9478      	sei
+00057c 9508      	ret
+                 
+                 
+                 TWI_MISR:
+                 ;{
+                 ;  static unsigned char TWI_bufPtr;
+                 ;  
+                 ;  switch (TWSR)
+00057d 9100 0071 	lds	Temp, TWSR
+                 ;  {
+                 
+                 ;    case TWI_START:             // START has been transmitted  
+                 ;    case TWI_REP_START:         // Repeated START has been transmitted
+00057f e038      	ldi	T2, TWI_START
+000580 1303      	cpse	Temp, T2
+000581 c001      	rjmp	TWI_MISR_0_2
+000582 c003      	rjmp	TWI_MISR_0_1
+                 TWI_MISR_0_2:
+000583 e130      	ldi	T2, TWI_REP_START
+000584 1303      	cpse	Temp, T2
+000585 c00c      	rjmp	TWI_MISR_1
+                 
+                 TWI_MISR_0_1:
+                 ;      TWI_bufPtr = 0;
+000586 2733      	clr	T2                      ;// Set buffer pointer to the TWI Address location
+000587 9533      	inc T2						;go ahead and inc it to save time later
+000588 9330 012f 	sts	TWI_bufPtr, T2
+                 
+                 ;here we need to go ahead and send the device addr byte out, so do it.
+                 
+                 ;	ldi	XL, low(TWI_Master_Buf)
+                 ;	ldi	XH,	high(TWI_Master_Buf)
+00058a 9130 0123 	lds	T2, TWI_Master_Buf					;offset is 0 so just use the base addr
+00058c 9330 0073 	sts	TWDR, T2
+                 ;        TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;               (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to send byte
+                 ;               (0<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           //
+                 ;               (0<<TWWC);                                 //
+00058e ec05      	ldi	Temp, 0xC5		;xxxx was 85
+00058f 9300 0074 	sts	TWCR, Temp
+000591 cfd7      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_MTX_ADR_ACK:       // SLA+W has been tramsmitted and ACK received
+                 TWI_MISR_1:
+000592 e138      	ldi	T2, TWI_MTX_ADR_ACK
+000593 1303      	cpse	Temp, T2
+000594 c001      	rjmp	TWI_MISR_1_1
+000595 c003      	rjmp	TWI_MISR_1_0
+                 
+                 ;    case TWI_MTX_DATA_ACK:      // Data byte has been tramsmitted and ACK received
+                 TWI_MISR_1_1:
+000596 e238      	ldi	T2, TWI_MTX_DATA_ACK
+000597 1303      	cpse	Temp, T2
+000598 c024      	rjmp	TWI_MISR_2
+                 TWI_MISR_1_0:
+                 ;      if (TWI_bufPtr < TWI_msgSize)
+000599 9100 012f 	lds	Temp, TWI_bufPtr
+00059b 9130 012d 	lds	T2, TWI_msgSize
+00059d 1703      	cp	Temp, T2
+00059e f47c      	brge	TWI_MISR_1_2
+                 ;      {
+                 ;        TWDR = TWI_buf[TWI_bufPtr++];
+00059f e2a3      	ldi	XL, low(TWI_Master_Buf)
+0005a0 e0b1      	ldi	XH,	high(TWI_Master_Buf)
+0005a1 2733      	clr	T2
+0005a2 0fa0      	add	XL, Temp
+0005a3 1fb3      	adc	XH, T2
+0005a4 913c      	ld	T2, X
+0005a5 9330 0073 	sts	TWDR, T2
+0005a7 9503      	inc	Temp
+0005a8 9300 012f 	sts	TWI_bufPtr, Temp
+                 ;        TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;               (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to send byte
+                 ;               (0<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           //
+                 ;               (0<<TWWC);                                 //
+0005aa ec05      	ldi	Temp, 0xC5		;xxxx was 85
+0005ab 9300 0074 	sts	TWCR, Temp
+0005ad cfbb      	rjmp	TWI_ISR_BRK
+                 ;      }else                    // Send STOP after last byte
+                 TWI_MISR_1_2:
+                 ;      {
+                 ;        TWI_statusReg.lastTransOK = TRUE;                 // Set status bits to completed successfully.
+0005ae 9100 0130 	lds	Temp, TWI_statusReg
+0005b0 6001      	sbr	Temp, TWI_Stat_lastTransOK_mask
+0005b1 7f0d      	cbr Temp, TWI_Stat_Master_mask
+0005b2 9300 0130 	sts	TWI_statusReg, Temp 
+                 ;        TWCR = (1<<TWEN)|                                 // TWI Interface enabled 
+                 ;               (1<<TWIE)|(1<<TWINT)|                      // in passive mode so that slave works,
+                 ;               (1<<TWEA)|(0<<TWSTA)|(1<<TWSTO)|           // Initiate a STOP condition.
+                 ;               (0<<TWWC);                                 //
+0005b4 ed05      	ldi	Temp, 0xD5
+0005b5 9300 0074 	sts	TWCR, Temp
+                 
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 low just before sending a stop .....
+0005b7 9100 0065 	lds	Temp, XB10_port
+0005b9 7f0e      	cbr	Temp, XB10_mask
+0005ba 9300 0065 	sts	XB10_port, Temp
+                 
+                 ;      }
+                 ;      break;
+0005bc cfac      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_MRX_DATA_ACK:      // Data byte has been received and ACK tramsmitted
+                 TWI_MISR_2:
+0005bd e530      	ldi	T2, TWI_MRX_DATA_ACK
+0005be 1303      	cpse	Temp, T2
+0005bf c00e      	rjmp	TWI_MISR_2_1
+                 ;      TWI_buf[TWI_bufPtr++] = TWDR;	;put the byte into the buffer
+0005c0 e2a3      	ldi	XL, low(TWI_Master_Buf)
+0005c1 e0b1      	ldi	XH,	high(TWI_Master_Buf)
+0005c2 2733      	clr	T2
+0005c3 9100 012f 	lds	Temp, TWI_bufPtr
+0005c5 0fa0      	add	XL, Temp
+0005c6 1fb3      	adc	XH, T2
+0005c7 9130 0073 	lds	T2, TWDR
+0005c9 933c      	st	X, T2
+                 
+0005ca 9503      	inc	Temp
+0005cb 9300 012f 	sts	TWI_bufPtr, Temp
+0005cd c005      	rjmp	TWI_MISR_2_2
+                 
+                 ;    case TWI_MRX_ADR_ACK:       // SLA+R has been tramsmitted and ACK received
+                 TWI_MISR_2_1:
+0005ce e430      	ldi	T2, TWI_MRX_ADR_ACK
+0005cf 1303      	cpse	Temp, T2
+0005d0 c00f      	rjmp	TWI_MISR_3
+                 
+0005d1 9100 012f 	lds	Temp, TWI_bufPtr
+                 
+                 TWI_MISR_2_2:
+                 
+                 ;      if (TWI_bufPtr < (TWI_msgSize-1) )                  // Detect the last byte to NACK it.
+0005d3 9130 012d 	lds	T2, TWI_msgSize
+0005d5 953a      	dec	T2
+0005d6 1703      	cp	Temp, T2
+0005d7 f424      	brge	TWI_MISR_2_3
+                 ;      {
+                 ;        TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;               (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to read next byte
+                 ;               (1<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           // Send ACK after reception
+                 ;               (0<<TWWC);                                 //
+0005d8 ec05      	ldi	Temp, 0xC5
+0005d9 9300 0074 	sts	TWCR, Temp
+0005db cf8d      	rjmp	TWI_ISR_BRK
+                 ;      }else                    // Send NACK after next reception
+                 TWI_MISR_2_3:
+                 ;      {
+                 ;        TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;               (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag to read next byte
+                 ;               (0<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|           // Send NACK after reception
+                 ;               (0<<TWWC);                                 //
+0005dc e805      	ldi	Temp, 0x85			;xxxx was 85
+0005dd 9300 0074 	sts	TWCR, Temp
+                 ;      }    
+                 ;      break;
+0005df cf89      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_MRX_DATA_NACK:     // Data byte has been received and NACK tramsmitted
+                 TWI_MISR_3:
+0005e0 e538      	ldi	T2, TWI_MRX_DATA_NACK
+0005e1 1303      	cpse	Temp, T2
+0005e2 c019      	rjmp	TWI_MISR_4
+                 
+                 ;      TWI_buf[TWI_bufPtr] = TWDR;
+0005e3 e2a3      	ldi	XL, low(TWI_Master_Buf)
+0005e4 e0b1      	ldi	XH,	high(TWI_Master_Buf)
+0005e5 2733      	clr	T2
+0005e6 9100 012f 	lds	Temp, TWI_bufPtr
+0005e8 0fa0      	add	XL, Temp
+0005e9 1fb3      	adc	XH, T2
+0005ea 9130 0073 	lds	T2, TWDR
+0005ec 933c      	st	X, T2
+                 
+                 ;      TWI_statusReg.lastTransOK = TRUE;                 // Set status bits to completed successfully. 
+0005ed 9100 0130 	lds	Temp, TWI_statusReg
+0005ef 6001      	sbr	Temp, TWI_Stat_lastTransOK_mask
+0005f0 7f0d      	cbr	Temp, TWI_Stat_Master_mask						;and master mode finished
+0005f1 9300 0130 	sts	TWI_statusReg, Temp 
+                 ;      TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;             (1<<TWIE)|(1<<TWINT)|                      // in passive mode so slave works
+                 ;             (1<<TWEA)|(0<<TWSTA)|(1<<TWSTO)|           // Initiate a STOP condition.
+                 ;             (0<<TWWC);                                 //
+0005f3 ed05      	ldi	Temp, 0xD5
+0005f4 9300 0074 	sts	TWCR, Temp
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 high just before sending a start .....
+0005f6 9100 0065 	lds	Temp, XB10_port
+0005f8 7f0e      	cbr	Temp, XB10_mask
+0005f9 9300 0065 	sts	XB10_port, Temp
+                 
+                 ;      break;
+0005fb cf6d      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_ARB_LOST:          // Arbitration lost
+                 TWI_MISR_4:
+0005fc e338      	ldi	T2, TWI_ARB_LOST
+0005fd 1303      	cpse	Temp, T2
+0005fe c00c      	rjmp	TWI_MISR_5
+                 							;If we're master and lose arb, just restart for now, but...
+0005ff 2733      	clr	T2
+000600 9330 012f 	sts	TWI_bufPtr, T2		;reset the buffer pointer so when we get it we start over
+                 
+                 ;      TWCR = (1<<TWEN)|                                 // TWI Interface enabled
+                 ;             (1<<TWIE)|(1<<TWINT)|                      // Enable TWI Interupt and clear the flag
+                 ;             (0<<TWEA)|(1<<TWSTA)|(0<<TWSTO)|           // Initiate a (RE)START condition.
+                 ;             (0<<TWWC);                                 //
+000602 ee05      	ldi	Temp, 0xE5
+000603 9300 0074 	sts	TWCR, Temp
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 high just before sending a start .....
+000605 9100 0065 	lds	Temp, XB10_port
+000607 7f0e      	cbr	Temp, XB10_mask
+000608 9300 0065 	sts	XB10_port, Temp
+                 
+                 ;      break;
+00060a cf5e      	rjmp	TWI_ISR_BRK
+                 
+                 
+                 
+                 
+                 ;//    case TWI_STX_ADR_ACK_M_ARB_LOST: // Arbitration lost in SLA+R/W as Master; own SLA+R has been received; ACK has been returned
+                 TWI_MISR_5:
+00060b eb30      	ldi	T2, TWI_STX_ADR_ACK_M_ARB_LOST
+00060c 1303      	cpse	Temp, T2
+00060d c001      	rjmp	TWI_MISR_5_0
+00060e c003      	rjmp	TWI_MISR_5_1
+                 TWI_MISR_5_0:	
+00060f ea38      	ldi	T2, TWI_STX_ADR_ACK			;this can also happen in a race when the slave address comes in after the master bit is set
+000610 1303      	cpse	Temp, T2
+000611 c00f      	rjmp	TWI_MISR_5_5	
+                 ;	So this is the ugly race problem between master and slave, so the master loses, process the slave request
+                 ;	This generates the state where both master and slave mode are set for the duration of the slave process
+                 TWI_MISR_5_1:
+000612 9100 0130 	lds	Temp, TWI_statusReg
+000614 6004      	sbr	Temp, TWI_Stat_Slave_mask
+000615 9300 0130 	sts	TWI_statusReg, Temp
+                 
+000617 2733      	clr	T2
+000618 9330 012f 	sts	TWI_bufPtr, T2			;reset the Master mode buffer pointer to the start
+                 
+                 ;	ldi	Temp, 0xC5				;do the slave thing
+                 ;	sts	TWCR, Temp
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 high just before sending a start .....
+00061a 9100 0065 	lds	Temp, XB10_port
+00061c 7f0e      	cbr	Temp, XB10_mask
+00061d 9300 0065 	sts	XB10_port, Temp
+                 
+00061f 940c 0487 	jmp	TWI_ISR_0_1			;jump to the right slave code
+                 
+                 ;//    case TWI_SRX_ADR_ACK_M_ARB_LOST: // Arbitration lost in SLA+R/W as Master; own SLA+W has been received; ACK has been returned
+                 TWI_MISR_5_5:
+000621 e638      	ldi	T2, TWI_SRX_ADR_ACK_M_ARB_LOST
+000622 1303      	cpse	Temp, T2
+000623 c001      	rjmp	TWI_MISR_5_6
+000624 c003      	rjmp	TWI_MISR_5_7
+                 TWI_MISR_5_6:
+000625 e630      	ldi	T2, TWI_SRX_ADR_ACK 				;this can also happen when the slave is addressed after master is set
+000626 1303      	cpse	Temp, T2
+000627 c00f      	rjmp	TWI_MISR_6
+                 
+                 ;	So this is the ugly race problem between master and slave, so the master loses, process the slave request
+                 ;	This generates the state where both master and slave mode are set for the duration of the slave process
+                 TWI_MISR_5_7:
+000628 9100 0130 	lds	Temp, TWI_statusReg
+00062a 6004      	sbr	Temp, TWI_Stat_Slave_mask
+00062b 9300 0130 	sts	TWI_statusReg, Temp
+                 
+00062d 2733      	clr	T2
+00062e 9330 012f 	sts	TWI_bufPtr, T2			;reset the Master mode buffer pointer to the start
+                 
+                 ;	ldi	Temp, 0xC5				;do the slave thing
+                 ;	sts	TWCR, Temp
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 high just before sending a start .....
+000630 9100 0065 	lds	Temp, XB10_port
+000632 7f0e      	cbr	Temp, XB10_mask
+000633 9300 0065 	sts	XB10_port, Temp
+                 
+000635 940c 04ee 	jmp	TWI_ISR_4_0			;jump to the right slave code
+                 
+                 ;    case TWI_MTX_ADR_NACK:      // SLA+W has been tramsmitted and NACK received
+                 ;    case TWI_MRX_ADR_NACK:      // SLA+R has been tramsmitted and NACK received 
+                 TWI_MISR_6:
+000637 e230      	ldi	T2, TWI_MTX_ADR_NACK
+000638 1303      	cpse	Temp, T2
+000639 c001      	rjmp	TWI_MISR_6_1
+00063a c003      	rjmp	TWI_MISR_6_0
+                 
+                 TWI_MISR_6_1:
+00063b e438      	ldi	T2, TWI_MRX_ADR_NACK
+00063c 1303      	cpse	Temp, T2
+00063d c00e      	rjmp	TWI_MISR_7
+                 TWI_MISR_6_0:					;so we have addressed a device that's not there, get the state and send a stop
+                 ;        TWI_statusReg.lastTransOK = FALSE;                 // Set status bits to completed unsuccessfully.
+00063e 9100 0130 	lds	Temp, TWI_statusReg
+000640 7f0c      	cbr	Temp, TWI_Stat_lastTransOK_mask | TWI_Stat_Master_mask
+000641 9300 0130 	sts	TWI_statusReg, Temp 
+                 ;        TWCR = (1<<TWEN)|                                 // TWI Interface enabled 
+                 ;               (1<<TWIE)|(1<<TWINT)|                      // in passive mode so that slave works,
+                 ;               (1<<TWEA)|(0<<TWSTA)|(1<<TWSTO)|           // Initiate a STOP condition.
+                 ;               (0<<TWWC);                                 //
+000643 ed05      	ldi	Temp, 0xD5
+000644 9300 0074 	sts	TWCR, Temp
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 high just before sending a start .....
+000646 9100 0065 	lds	Temp, XB10_port
+000648 7f0e      	cbr	Temp, XB10_mask
+000649 9300 0065 	sts	XB10_port, Temp
+                 
+                 ;      }
+                 ;      break;
+00064b cf1d      	rjmp	TWI_ISR_BRK
+                 
+                 ;    case TWI_MTX_DATA_NACK:     // Data byte has been tramsmitted and NACK received
+                 ;//    case TWI_NO_STATE              // No relevant state information available; TWINT = “0”
+                 ;    case TWI_BUS_ERROR:         // Bus error due to an illegal START or STOP condition
+                 ;    default:     
+                 TWI_MISR_7:
+                 ;      TWI_state = TWSR;                                 // Store TWSR and automatically clears noErrors bit.
+00064c 9100 0071 	lds	Temp, TWSR
+00064e 9300 012e 	sts	TWI_state, Temp
+                 
+000650 9100 0130 	lds	Temp,TWI_StatusReg 
+000652 fd05      	sbrc	Temp, TWI_Stat_tryother_bit
+000653 c004      	rjmp	TWI_MISR_7_0
+                 
+000654 6200      	sbr	Temp, TWI_Stat_tryother_mask		;go try all of the slave codes too
+000655 9300 0130 	sts	TWI_StatusReg, Temp
+000657 ce0f      	rjmp	TWI_SLV
+                 
+                 ;  Oh, go ahead and pretend that things are OK and go passive
+                 TWI_MISR_7_0:
+000658 7d0f      	cbr	Temp, TWI_Stat_tryother_mask
+000659 9300 0130 	sts	TWI_StatusReg, Temp
+                 ;                                                        // Send a Stop
+                 ;      TWCR = (1<<TWEN)|                                 // 
+                 ;             (1<<TWIE)|(1<<TWINT)|                      // 
+                 ;             (1<<TWEA)|(0<<TWSTA)|(1<<TWSTO)|           // 
+                 ;             (0<<TWWC);                                 //
+00065b ed05      	ldi	Temp, 0xD5
+00065c 9300 0074 	sts	TWCR, Temp
+                 ;xxxxxxxxxxxxxxxxx
+                 ;	testing code... set XB10 high just before sending a start .....
+00065e 9100 0065 	lds	Temp, XB10_port
+000660 7f0e      	cbr	Temp, XB10_mask
+000661 9300 0065 	sts	XB10_port, Temp
+                 
+000663 9100 0130 	lds	Temp, TWI_statusReg									;clear the state bits 
+000665 7f0c      	cbr	Temp, TWI_Stat_Master_mask  | TWI_Stat_lastTransOK_mask
+000666 9300 0130 	sts	TWI_statusReg, Temp
+                 
+000668 cf00      	rjmp	TWI_ISR_BRK
+                 ;  }
+                 
+                 ;}
+                 
+                 
+                 .include "alarms.asm"
+                 
+                 ; This is just filler stuff as an example of something executed every time through the main loop.
+                 ;	Pretty minimal for now...
+                 
+                 ;	Deal with the input bits
+                 ;
+                 Alarm_Check:
+                 ;	Check the alarm input bits, update the GIR register
+                 ;		For now, we don't know what these inputs mean, so just pass them along, take no other actions
+000669 9130 0107 	lds	T2, I2C_GIR1
+00066b b303      	in	Temp, Alarm_in0_port
+00066c ff00      	sbrs	Temp, Alarm_in0_bit
+00066d 6031      	sbr	T2, GIR1_Alrm_SIP1_mask
+00066e fd00      	sbrc	Temp, Alarm_in0_bit
+00066f 7f3e      	cbr	T2, GIR1_Alrm_SIP1_mask
+                 
+000670 ff01      	sbrs	Temp, Alarm_in1_bit
+000671 6032      	sbr	T2, GIR1_Alrm_SIP2_mask
+000672 fd01      	sbrc	Temp, Alarm_in1_bit
+000673 7f3d      	cbr	T2, GIR1_Alrm_SIP2_mask
+                 
+000674 9330 0107 	sts	I2C_GIR1, T2
+                 
+000676 9508      	ret
+                 
+                 Test_Check:
+000677 9508      	ret
+                 .include "ctrl-regs.asm"
+                 
+                 ;	 so this is where the bits are acted upon.
+                 ;
+                 ;	This code does not do anything in this example, but there is some commented out stuff that gives an idea
+                 ;	 of dealing with some cases that take various actions based on the setting or clearing of control register bits.
+                 ;	 This is obviously based on a real system monitor application, but the specifics of that system are not included here.
+                 ;
+                 CTRL0_Change:
+000678 9100 010d 	lds	Temp, I2C_CTRL0
+00067a 2f40      	mov	T3, Temp
+00067b 9130 0120 	lds	T2, Prev_CTRL0
+00067d 2703      	eor Temp, T2
+00067e 7003      	andi	Temp, (CTRL0_Alrm_Make_mask | CTRL0_Alrm_Brk_mask )
+                 ; The SCP power and power cycle bits are handled by the SCP handling code, so mask them off
+00067f 3000      	cpi	Temp, 0
+000680 f021      	breq C0C_4
+                 
+                 ; Handle all of the changed bits in one pass, so fall through after each case making sure to not mess up regs
+                 ;	Temp has the change mask, T3 has the new value
+                 C0C_0:
+000681 ff00      	sbrs	Temp, CTRL0_Alrm_Make_bit
+000682 c000      	rjmp	C0C_1
+                 
+                 	;fill in the code that handles this bit here...
+                 
+                 ;	st	-Y, Temp						;save Temp since these routines mess it up
+                 ;	sbrc	T3, CTRL0_Alrm_Make_bit
+                 ;	call	Alrm_Set_Make
+                 ;	sbrs	T3, CTRL0_Alrm_Make_bit
+                 ;	call	Alrm_Clr_Make
+                 ;	ld	Temp, Y+						;restore Temp
+                 
+                 C0C_1:
+000683 ff01      	sbrs	Temp, CTRL0_Alrm_Brk_bit
+000684 c000      	rjmp	C0C_4
+                 
+                 	;fill in the code that handles this bit here...
+                 
+                 ;	sbrc	T3, CTRL0_Alrm_Brk_bit
+                 ;	call	Alrm_Set_Break
+                 ;	sbrs	T3, CTRL0_Alrm_Brk_bit
+                 ;	call	Alrm_Clr_Break
+                 ;
+                 C0C_4:
+000685 9100 011f 	lds	Temp, CReg_Status				;clear the changed flag
+000687 7f0e      	cbr	Temp, CTRL0_Changed_mask
+000688 9300 011f 	sts	CReg_Status, Temp
+                 
+00068a 9100 010d 	lds	Temp, I2C_CTRL0					;make a new previous
+00068c 9300 0120 	sts	Prev_CTRL0, Temp
+                 		
+00068e 9508      	ret
+                 
+                 
+                 CTRL1_Change:
+00068f 9100 010e 	lds	Temp, I2C_CTRL1
+000691 2f40      	mov	T3, Temp
+                 
+000692 9130 0121 	lds	T2, Prev_CTRL1
+000694 2703      	eor Temp, T2
+000695 750f      	andi	Temp, (CTRL1_PS_Inh_Pri_mask | CTRL1_PS_Inh_Sec_mask | CTRL1_Sys_Reset_mask | CTRL1_Fan_Full_In_mask | CTRL1_Fan_Full_Ex_mask | CTRL1_ReProg_Mode_mask)
+                 ; The auto-inc bits are handled otherplaces
+000696 3000      	cpi	Temp, 0
+000697 f411      	brne C1C_0
+000698 940c 06a6 	jmp	C1C_5
+                 
+                 ; Handle all of the changed bits in one pass, so fall through after each case making sure to not mess up regs
+                 ;	Temp has the change mask, T3 has the new value
+                 C1C_0:
+00069a ff00      	sbrs	Temp, CTRL1_PS_Inh_Pri_bit
+00069b c000      	rjmp	C1C_1
+                 
+                 	;fill in the code that handles this bit here...
+                 
+                 ;	st	-Y, Temp
+                 ;	sbrs	T3, CTRL1_PS_Inh_Pri_bit
+                 ;	rjmp	C1C_0_0
+                 
+                 ;	in	Temp, PSPri_Inhibit_port
+                 ;	cbr	Temp, PSPri_Inhibit_mask
+                 ;	out PSPri_Inhibit_port, Temp
+                 ;	rjmp	C1C_0_1
+                 ;C1C_0_0:
+                 ;	in	Temp, PSPri_Inhibit_port
+                 ;	sbr	Temp, PSPri_Inhibit_mask
+                 ;	out PSPri_Inhibit_port, Temp
+                 
+                 ;C1C_0_1:
+                 ;	ld	Temp, Y+						;restore Temp
+                 
+                 C1C_1:
+00069c ff01      	sbrs	Temp, CTRL1_PS_Inh_Sec_bit
+00069d c001      	rjmp	C1C_2
+                 
+                 	;fill in the code that handles this bit here...
+                 
+                 ;	st	-Y, Temp						;save Temp since these routines mess it up
+                 ;	sbrs	T3, CTRL1_PS_Inh_Sec_bit
+                 ;	rjmp	C1C_1_0
+                 
+                 ;	in	Temp, PSSec_Inhibit_port
+                 ;	cbr	Temp, PSSec_Inhibit_mask
+                 ;	out PSSec_Inhibit_port, Temp
+                 ;	rjmp	C1C_1_1
+                 ;C1C_1_0:
+                 ;	in	Temp, PSSec_Inhibit_port
+                 ;	sbr	Temp, PSSec_Inhibit_mask
+                 ;	out PSSec_Inhibit_port, Temp
+                 
+                 ;;C1C_1_1:
+00069e 9109      	ld	Temp, Y+						;restore Temp
+                 
+                 C1C_2:
+00069f fd04      	sbrc	Temp, CTRL1_Sys_Reset_bit
+0006a0 c000      	rjmp	C1C_3
+                 
+                 	;fill in the code that handles this bit here...
+                 
+                 ;	sbrs	T3, CTRL1_Sys_Reset_bit
+                 ;	rjmp	C1C_3						;nothing to do if it's written to 0, and it shouldn't happen
+                 
+                 ;	st	-Y, Temp
+                 ;	in	Temp, Sys_Reset_port
+                 ;	sbr	Temp, Sys_Reset_mask
+                 ;	out Sys_Reset_port, Temp
+                 ;	in	Temp, PORTA						;this is necessary in order to ensure a pullup
+                 ;	cbr	Temp, Sys_Reset_mask
+                 ;	out	PORTA, Temp
+                 
+                 ;	ldi	Temp, 50							;reset it for 500ms
+                 ;	rcall	Wait_x10ms
+                 	
+                 ;	in	Temp, PORTA
+                 ;	sbr	Temp, Sys_Reset_mask
+                 ;	out	PORTA, Temp						;this drives high then goes into pullup mode
+                 ;	in	Temp, Sys_Reset_port
+                 ;	cbr	Temp, Sys_Reset_mask
+                 ;	out Sys_Reset_port, Temp
+                 
+                 ;	cbr	T3, CTRL1_Sys_Reset_mask		;clear the register bit
+                 ;	sts	I2C_CTRL1, T3					;and update the memory image
+                 
+                 ;	ld	Temp, Y+
+                 
+                 C1C_3:
+0006a1 ff06      	sbrs	Temp, CTRL1_ReProg_Mode_bit
+0006a2 c003      	rjmp	C1C_5
+                 
+                 	;fill in the code that handles this bit here...
+                 
+                 ;	st	-Y, Temp
+                 ;	ldi	Temp, ReProg_Timeout
+                 ;	sts	ReProg_Timer, Temp
+                 ;	clr	Temp
+                 ;	sts	Page_cntr, Temp
+                 ;	sts Flash_Copy_flg, Temp
+                 ;	ld	Temp, Y+
+                 
+                 C1C_4:
+0006a3 700c      	andi	Temp, CTRL1_Fan_Full_In_mask | CTRL1_Fan_Full_Ex_mask
+0006a4 3000      	cpi	Temp, 0
+0006a5 f001      	breq	C1C_5
+                 	
+                 	;fill in the code that handles this bit here...
+                 
+                 ;	rcall	CR_Fan_Full
+                 
+                 		
+                 C1C_5:
+0006a6 9100 011f 	lds	Temp, CReg_Status				;clear the changed mask
+0006a8 7f0d      	cbr	Temp, CTRL1_Changed_mask
+0006a9 9300 011f 	sts	CReg_Status, Temp
+                 
+0006ab 9100 010e 	lds	Temp, I2C_CTRL1					;make a new previous
+0006ad 9300 0121 	sts	Prev_CTRL1, Temp
+                 		
+0006af 9508      	ret
+                 
+                 	
+                 
+                 
+                 
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATmega128 register use summary:
+r0 :   0 r1 :   0 r2 :   0 r3 :   0 r4 :   0 r5 :   0 r6 :   0 r7 :   0 
+r8 :  12 r9 :   2 r10:   6 r11:   0 r12:   0 r13:   0 r14:   0 r15:   0 
+r16: 603 r17:   7 r18:   1 r19: 178 r20:  21 r21:   0 r22:  20 r23:   0 
+r24:   0 r25:   0 r26:  41 r27:  40 r28:   1 r29:   1 r30:   3 r31:   3 
+x  :  29 y  :  70 z  :   2 
+Registers used: 18 out of 35 (51.4%)
+
+ATmega128 instruction use summary:
+adc   :   7 add   :  15 adiw  :   1 and   :   0 andi  :  12 asr   :   0 
+bclr  :   0 bld   :   0 brbc  :   2 brbs  :   0 brcc  :   0 brcs  :   1 
+break :   0 breq  :   5 brge  :   4 brhc  :   0 brhs  :   0 brid  :   0 
+brie  :   0 brlo  :  12 brlt  :   2 brmi  :   0 brne  :  15 brpl  :   0 
+brsh  :   2 brtc  :   0 brts  :   0 brvc  :   0 brvs  :   0 bset  :   0 
+bst   :   0 call  :  11 cbi   :   0 cbr   :  34 clc   :   0 clh   :   0 
+cli   :   1 cln   :   0 clr   :  26 cls   :   0 clt   :   0 clv   :   0 
+clz   :   0 com   :   3 cp    :   6 cpc   :   0 cpi   :  33 cpse  :  25 
+dec   :   6 elpm  :   0 eor   :   2 fmul  :   0 fmuls :   0 fmulsu:   0 
+icall :   0 ijmp  :   0 in    :  18 inc   :  15 jmp   :  10 ld    :  43 
+ldd   :   0 ldi   : 161 lds   :  89 lpm   :   2 lsl   :   5 lsr   :   4 
+mov   :  36 movw  :   0 mul   :   0 muls  :   0 mulsu :   0 neg   :   1 
+nop   :  30 or    :   1 ori   :   3 out   :  35 pop   :   0 push  :   0 
+rcall : 126 ret   :  33 reti  :  35 rjmp  :  98 rol   :   0 ror   :   0 
+sbc   :   0 sbci  :   0 sbi   :   2 sbic  :   0 sbis  :   3 sbiw  :   2 
+sbr   :  22 sbrc  :  18 sbrs  :  14 sec   :   0 seh   :   0 sei   :   5 
+sen   :   0 ser   :   0 ses   :   0 set   :   0 sev   :   0 sez   :   0 
+sleep :   0 spm   :   0 st    :  56 std   :   0 sts   : 142 sub   :   2 
+subi  :   3 swap  :   0 tst   :   0 wdr   :   5 
+Instructions used: 53 out of 112 (47.3%)
+
+ATmega128 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x000d60   2992    432   3424  131072   2.6%
+[.dseg] 0x000100 0x000132      0     50     50    4096   1.2%
+[.eseg] 0x000000 0x000000      0      0      0    4096   0.0%
+
+Assembly complete, 0 errors, 0 warnings
