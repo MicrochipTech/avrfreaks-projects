@@ -1,0 +1,650 @@
+/*	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation;
+	see to http://www.gnu.org
+
+
+	The Original Code is Copyright (C) by RT-Soft.
+*/
+
+
+
+
+
+/* ----------------------------------------------------------------------- */
+// C++ code template for a VMLAB user defined component
+// Target file must be Windows .DLL (no .EXE !!)
+//
+// Component name: joystick
+/* ----------------------------------------------------------------------- */
+
+#define _DLL
+
+#include <windows.h>
+#include <commctrl.h>
+#include <stdio.h>
+#include <mmsystem.h>
+#pragma hdrstop
+#include "C:\VMLAB\bin\blackbox.h"
+#include "joystick.h"
+int WINAPI DllEntryPoint(HINSTANCE, unsigned long, void*) {return 1;} // is DLL
+
+/* ----------------------------------------------------------------------- */
+// Declare pins here
+/* ----------------------------------------------------------------------- */
+DECLARE_PINS
+	DIGITAL_OUT(CHANNEL1, 1);
+	DIGITAL_OUT(INTCH1, 2);
+	DIGITAL_OUT(CHANNEL2, 3);
+	DIGITAL_OUT(INTCH2, 4);
+	DIGITAL_OUT(OUTSIGNAL, 5);
+END_PINS
+
+/* ----------------------------------------------------------------------- */
+// Declare module global variables here.
+// The reason for this is to keep a set of variables by instance
+// To use a variable, do it through the the macro VAR(...)
+/* ----------------------------------------------------------------------- */
+DECLARE_VAR
+unsigned int	nServoXAxis;	// position transformed to 
+								// width of pulse
+unsigned int	nServoYAxis;	// position transformed to
+								// width of pulse
+
+unsigned int	nXAxis;			// X position
+unsigned int	nYAxis;			// Y position
+
+unsigned int	nMinPulse;		// min limit
+unsigned int	nMaxPulse;		// max limit
+unsigned int	nXCoef;
+unsigned int	nYCoef;
+unsigned int	nOffset;
+
+bool			bXEnable;		// enable X axis
+bool			bKeepXNeutral;	// keep neutral 
+								// independent of joystick movement
+bool			bXSimulate;		// use edited data 
+unsigned int	nXNeutral;		// nominal neutral
+unsigned int	nXSimulate;
+unsigned int	nXOffset;		// offset 
+
+bool			bYEnable;		// enable Y axis
+bool			bKeepYNeutral;	// keep neutral 
+								// independent of joystick movement
+bool			bYSimulate;		// use edited data
+unsigned int	nYNeutral;		// nominal neutral
+unsigned int	nYSimulate;
+unsigned int	nYOffset;		// offset 
+
+bool			bCalibration;	// calibration
+unsigned int	nXMin;
+unsigned int	nXMax;
+unsigned int	nYMin;
+unsigned int	nYMax;
+
+bool			bVMLABSimulate;
+
+unsigned int	nFrequency;
+unsigned int	nXBitMask;
+unsigned int	nYBitMask;		
+of_SIGNAL		ReceiverClock;
+of_SIGNAL		XAxis;
+of_SIGNAL		YAxis;
+END_VAR
+
+FILE			*pFileJoystick = NULL;
+bool			bCounter;
+
+// You can delare also globals variable outside DECLARE_VAR / END_VAR, but if
+// multiple instances of this cell are placed, all these instances will
+// share the same variable.
+//
+
+/* ----------------------------------------------------------------------- */
+// Say here if your component has an associated window or not. Pass as parameter
+// the dialog resource ID (from .RC file) or 0 if no window
+/* ----------------------------------------------------------------------- */
+//USE_WINDOW(0);   // If window USE_WINDOW(WINDOW_USER_1) (for example)
+USE_WINDOW(WINDOW_USER_1);
+
+/* ----------------------------------------------------------------------- */
+// Callback functions. These functions are called by VMLAB at the proper time
+/* ----------------------------------------------------------------------- */
+
+/* ----------------------------------------------------------------------- */
+//	On_create
+//	Perform component creation. It must return NULL if the creation process is
+//	OK, or a message describing the error cause. The message will show in the
+//	Messages window. Typical tasks: check passed parameters, open files,
+//	allocate memory,...
+/* ----------------------------------------------------------------------- */
+const char *On_create()
+{
+	bCounter = true;
+	if(!pFileJoystick)
+	{
+		pFileJoystick = fopen("C:\\VMLAB\\userlib\\Joystick.txt", "r+t");
+	}
+
+	VAR(bVMLABSimulate) = false;
+
+	return NULL;
+}
+
+
+/* ----------------------------------------------------------------------- */
+//	On_window_init
+/* ----------------------------------------------------------------------- */
+void On_window_init(HWND pHandle)
+{
+
+}
+
+
+/* ----------------------------------------------------------------------- */
+//	On_destroy
+//	Destroy component. Free here memory allocated at On_create; close files
+/* ----------------------------------------------------------------------- */
+void On_destroy()
+{
+	if(pFileJoystick)
+	{
+		fclose(pFileJoystick);
+		pFileJoystick = NULL;
+	}
+
+}
+
+/* ----------------------------------------------------------------------- */
+//	On_simulation_begin
+/* ----------------------------------------------------------------------- */
+void On_simulation_begin()
+{
+	char sText[35];
+
+	VAR(bXEnable) = true;
+	VAR(bKeepXNeutral) = false;
+
+	// X enable
+	if(SendMessage(GET_HANDLE(GADGET1), BM_GETCHECK, 0, 0) == BST_CHECKED)
+	{
+		VAR(bXEnable) = true;
+	}
+	else
+	{
+		VAR(bXEnable) = false;
+	}
+
+	// X neutral
+	if(SendMessage(GET_HANDLE(GADGET3), BM_GETCHECK, 0, 0) == BST_CHECKED)
+	{
+		VAR(bKeepXNeutral) = true;
+	}
+	else
+	{
+		VAR(bKeepXNeutral) = false;
+	}
+
+	VAR(bYEnable) = true;
+	VAR(bKeepYNeutral) = false;
+
+	// Y enable
+	if(SendMessage(GET_HANDLE(GADGET2), BM_GETCHECK, 0, 0) == BST_CHECKED)
+	{
+		VAR(bYEnable) = true;
+	}
+	else
+	{
+		VAR(bYEnable) = false;
+	}
+
+	// Y neutral
+	if(SendMessage(GET_HANDLE(GADGET4), BM_GETCHECK, 0, 0) == BST_CHECKED)
+	{
+		VAR(bKeepYNeutral) = true;
+	}
+	else
+	{
+		VAR(bKeepYNeutral) = false;
+	}
+
+
+	VAR(bXSimulate) = false;
+	VAR(bYSimulate) = false;
+
+	// X simulate
+	if(SendMessage(GET_HANDLE(GADGET7), BM_GETCHECK, 0, 0) == BST_CHECKED)
+	{
+		VAR(bXSimulate) = true;
+	}
+	else
+	{
+		VAR(bXSimulate) = false;
+	}
+
+	// Y simulate
+	if(SendMessage(GET_HANDLE(GADGET8), BM_GETCHECK, 0, 0) == BST_CHECKED)
+	{
+		VAR(bYSimulate) = true;
+	}
+	else
+	{
+		VAR(bYSimulate) = false;
+	}
+
+	VAR(bCalibration) = false;
+	// calibration
+	if(SendMessage(GET_HANDLE(GADGET16), BM_GETCHECK, 0, 0) == BST_CHECKED)
+	{
+		VAR(bCalibration) = true;
+	}
+	else
+	{
+		VAR(bCalibration) = false;
+	}
+
+	
+	if(pFileJoystick) fscanf(pFileJoystick, "%d", &VAR(nXMin));
+	else VAR(nXMin) = _N_DEFAULT_MIN_LIMIT;
+	if(pFileJoystick) fscanf(pFileJoystick, "%d", &VAR(nXMax));
+	else VAR(nXMax) = _N_DEFAULT_MAX_LIMIT;
+	if(pFileJoystick) fscanf(pFileJoystick, "%d", &VAR(nYMin));
+	else VAR(nYMin) = _N_DEFAULT_MIN_LIMIT;
+	if(pFileJoystick) fscanf(pFileJoystick, "%d", &VAR(nYMax));
+	else VAR(nYMax) = _N_DEFAULT_MAX_LIMIT;
+
+
+	itoa(VAR(nXMin), sText, 10);
+	SetWindowText(GET_HANDLE(GADGET12), sText);
+	itoa(VAR(nXMax), sText, 10);
+	SetWindowText(GET_HANDLE(GADGET13), sText);
+	itoa(VAR(nYMin), sText, 10);
+	SetWindowText(GET_HANDLE(GADGET14), sText);
+	itoa(VAR(nYMax), sText, 10);
+	SetWindowText(GET_HANDLE(GADGET15), sText);
+
+	VAR(nXCoef) = (VAR(nXMax) - VAR(nXMin)) / _N_DEFAULT_SERVO;
+	VAR(nYCoef) = (VAR(nYMax) - VAR(nYMin)) / _N_DEFAULT_SERVO;
+
+	if(VAR(nXCoef) == 0) VAR(nXCoef) = 1;
+	if(VAR(nYCoef) == 0) VAR(nYCoef) = 1;
+
+	VAR(bVMLABSimulate) = true;
+
+	VAR(nFrequency) = _N_DEFAULT_FREQUENCY;
+	VAR(nXCoef) = _N_DEFAULT_COEFICIENT;
+	VAR(nYCoef) = _N_DEFAULT_COEFICIENT;
+	
+	VAR(nOffset) = _N_OFFSET_SIGNAL;
+	VAR(nXOffset) = 0;
+	VAR(nYOffset) = 0;
+
+	VAR(nXNeutral) = _N_DEFAULT_NEUTRAL;
+	VAR(nYNeutral) = _N_DEFAULT_NEUTRAL;
+
+	VAR(ReceiverClock.nCounter) = _N_RECEIVER_CLOCK;
+	VAR(ReceiverClock.bSignal) = true;
+
+	VAR(XAxis.nCounter) = 0;
+	VAR(XAxis.bSignal) = false;
+
+	VAR(YAxis.nCounter) = 0;
+	VAR(YAxis.bSignal) = false;
+
+	VAR(ReceiverClock.nCounter) = _N_RECEIVER_CLOCK;
+	VAR(ReceiverClock.bSignal) = true;
+
+	VAR(nXBitMask) = _N_DEFAULT_X_BIT_MASK;
+	VAR(nYBitMask) = _N_DEFAULT_X_BIT_MASK;
+}
+
+/* ----------------------------------------------------------------------- */
+//	On_simulation_end
+/* ----------------------------------------------------------------------- */
+void On_simulation_end()
+{
+	VAR(bVMLABSimulate) = false;
+}
+
+/* ----------------------------------------------------------------------- */
+//	On_digital_in_edge
+//	Response to a digital input pin edge. The EDGE type parameter (pEdge) can
+//	be RISE or FALL. Use pin identifers as declared in DECLARE_PINS
+/* ----------------------------------------------------------------------- */
+void On_digital_in_edge(PIN pDigitalIn, EDGE pEdge, double pTime)
+{
+   switch(pDigitalIn) {
+      case CHANNEL1: break;
+      case INTCH1: break;
+      case CHANNEL2: break;
+      case INTCH2: break;
+   }
+}
+
+
+/* ----------------------------------------------------------------------- */
+//	On_voltage_ask
+//	Return voltage as a function of Time for analog outputs that must behave
+//	as a continuous time wave.
+//	SET_VOLTAGE(), SET_LOGIC()etc. not allowed here. Return KEEP_VOLTAGE if
+//	no changes. Use pin identifers as declared in DECLARE_PINS
+/* ----------------------------------------------------------------------- */
+double On_voltage_ask(PIN pAnalogOut, double pTime)
+{
+   return KEEP_VOLTAGE;
+}
+
+
+/* ----------------------------------------------------------------------- */
+//	On_time_step
+//	The analysis at the given time has finished. DO NOT place further actions
+//	on pins (unless they are delayed). Pins values are stable at this point.
+/* ----------------------------------------------------------------------- */
+void On_time_step(double pTime)
+{
+	JOYINFO JoyData;
+	char sText[35];
+
+
+	if(bCounter)
+	{
+		bCounter = !bCounter;
+	}
+	else
+	{
+		bCounter = !bCounter;
+	}
+
+	if(JoystickData(&JoyData))
+	{
+		VAR(nXAxis) = JoyData.wXpos;
+		VAR(nYAxis) = JoyData.wYpos;
+
+		if(!VAR(bCalibration)) JoystickSignal();
+		else
+		{
+			if(VAR(nXAxis) < VAR(nXMin)) VAR(nXMin) = VAR(nXAxis);
+			if(VAR(nXAxis) > VAR(nXMax)) VAR(nXMax) = VAR(nXAxis);
+			if(VAR(nYAxis) < VAR(nYMin)) VAR(nYMin) = VAR(nYAxis);
+			if(VAR(nYAxis) > VAR(nYMax)) VAR(nYMax) = VAR(nYAxis);
+
+			itoa(VAR(nXMin), sText, 10);
+			SetWindowText(GET_HANDLE(GADGET12), sText);
+			itoa(VAR(nXMax), sText, 10);
+			SetWindowText(GET_HANDLE(GADGET13), sText);
+			itoa(VAR(nYMin), sText, 10);
+			SetWindowText(GET_HANDLE(GADGET14), sText);
+			itoa(VAR(nYMax), sText, 10);
+			SetWindowText(GET_HANDLE(GADGET15), sText);
+		}
+	}
+
+	if(VAR(XAxis.bSignal))
+	{
+		if(VAR(XAxis.nCounter) == 0)
+		{
+			VAR(XAxis.bSignal) = false;
+			SET_LOGIC(CHANNEL1, 0);
+			SET_LOGIC(INTCH1, 0);
+		}
+		else VAR(XAxis.nCounter)--;
+	}
+
+	if(VAR(YAxis.bSignal))
+	{
+		if(VAR(YAxis.nCounter) == 0)
+		{
+			VAR(YAxis.bSignal) = false;
+			SET_LOGIC(CHANNEL2, 0);
+			SET_LOGIC(INTCH2, 0);
+		}
+		else VAR(YAxis.nCounter)--;
+	}
+
+	if(VAR(ReceiverClock.bSignal))
+	{
+		if(VAR(ReceiverClock.nCounter) == 0)
+		{
+			ChannelSignal();
+
+			VAR(ReceiverClock.nCounter) = _N_RECEIVER_CLOCK * VAR(nFrequency);
+		}
+		else VAR(ReceiverClock.nCounter)--;
+	}
+}
+
+/* ----------------------------------------------------------------------- */
+//	JoystickData	
+/* ----------------------------------------------------------------------- */
+BOOL JoystickData(JOYINFO *pData)
+{
+	MMRESULT nJoy = joyGetPos(JOYSTICKID1, pData);
+	if(nJoy == JOYERR_NOERROR)
+	{
+		if(VAR(bXSimulate))
+		{
+			pData->wXpos = VAR(nXSimulate);
+		}
+		if(VAR(bYSimulate))
+		{
+			pData->wYpos = VAR(nYSimulate);
+		}
+
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+/* ----------------------------------------------------------------------- */
+//	ChannelSignal
+/* ----------------------------------------------------------------------- */
+void ChannelSignal()
+{
+		if(VAR(bXEnable))
+		{
+			VAR(XAxis.nCounter) = VAR(nServoXAxis);
+			VAR(XAxis.bSignal) = true;
+			SET_LOGIC(CHANNEL1, 1);
+			SET_LOGIC(INTCH1, 1);
+		}
+		if(VAR(bYEnable))
+		{
+			VAR(YAxis.nCounter) = VAR(nServoYAxis);
+			VAR(YAxis.bSignal) = true;
+			SET_LOGIC(CHANNEL2, 1);
+			SET_LOGIC(INTCH2, 1);
+		}
+}
+
+/* ----------------------------------------------------------------------- */
+//	JoystickSignal
+/* ----------------------------------------------------------------------- */
+void JoystickSignal()
+{
+		unsigned int nX;
+		unsigned int nY;
+		char sText[35];
+
+
+		nX = VAR(nXAxis);
+		nY = VAR(nYAxis);
+		nX = nX / VAR(nXCoef);
+		nY = nY / VAR(nYCoef);
+		nX = nX & VAR(nXBitMask);
+		nY = nY & VAR(nYBitMask);
+		if(VAR(bXEnable))
+		{
+			if(VAR(bKeepXNeutral))
+			{
+				nX = VAR(nXNeutral);
+			}
+			nX = nX + VAR(nOffset) + VAR(nXOffset);
+			itoa(nX, sText, 10);
+
+			nX = nX * VAR(nFrequency);
+			VAR(nServoXAxis) = nX;
+
+			if(!VAR(bXSimulate)) SetWindowText(GET_HANDLE(GADGET5), sText);
+		}
+		if(VAR(bYEnable))
+		{
+			if(VAR(bKeepYNeutral))
+			{
+				nY = VAR(nYNeutral);
+			}
+			nY = nY + VAR(nOffset) + VAR(nYOffset);
+			itoa(nY, sText, 10);
+
+			nY = nY * VAR(nFrequency);
+			VAR(nServoYAxis) = nY;
+
+			if(!VAR(bYSimulate)) SetWindowText(GET_HANDLE(GADGET6), sText);
+		}
+}
+
+
+/* ----------------------------------------------------------------------- */
+//	On_remind_me
+//	VMLAB notifies about a previouly sent REMIND_ME() function.
+/* ----------------------------------------------------------------------- */
+void On_remind_me(double pTime, int pData)
+{
+
+}
+
+/* ----------------------------------------------------------------------- */
+//	On_gadget_notify
+//	A window gadget (control) is sending a notification.
+/* ----------------------------------------------------------------------- */
+void On_gadget_notify(GADGET pGadgetId, int pCode)
+{
+	char sText[35];
+	unsigned int nData;
+
+	switch(pGadgetId)
+	{
+		case GADGET1:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bXEnable) = !VAR(bXEnable);	
+		  }
+		break;
+
+		case GADGET2:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bYEnable) = !VAR(bYEnable);	
+		  }
+		break;
+
+		case GADGET3:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bKeepXNeutral) = !VAR(bKeepXNeutral);
+		  }
+		break;
+		
+		case GADGET4:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bKeepYNeutral) = !VAR(bKeepYNeutral);
+		  }
+		break;
+
+		case GADGET7:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bXSimulate) = !VAR(bXSimulate);
+			if(VAR(bXSimulate))
+			{
+				itoa(VAR(nXSimulate), sText, 10);
+				SetWindowText(GET_HANDLE(GADGET5), sText);
+			}
+		  }
+		break;
+
+		case GADGET8:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bYSimulate) = !VAR(bYSimulate);
+			if(VAR(bYSimulate))
+			{
+				itoa(VAR(nYSimulate), sText, 10);
+				SetWindowText(GET_HANDLE(GADGET6), sText);
+			}
+		  }
+		break;
+
+		case GADGET9:
+		  if(pCode == BN_CLICKED)
+		  {
+			if(VAR(bXSimulate))
+			{
+				GetWindowText(GET_HANDLE(GADGET5), sText, 34);
+				nData = atoi(sText);
+				nData = nData - VAR(nOffset);
+				nData = nData * VAR(nXCoef);
+				VAR(nXSimulate) = nData;
+			}
+		  }
+		break;
+
+		case GADGET10:
+		  if(pCode == BN_CLICKED)
+		  {
+			if(VAR(bYSimulate))
+			{
+				GetWindowText(GET_HANDLE(GADGET6), sText, 34);
+				nData = atoi(sText);
+				nData = nData - VAR(nOffset);
+				nData = nData * VAR(nYCoef);
+				VAR(nYSimulate) = nData;
+			}
+		  }
+		break;
+
+		case GADGET11:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bYSimulate) = !VAR(bYSimulate);
+		  }
+		break;
+
+		case GADGET16:
+		  if(pCode == BN_CLICKED)
+		  {
+			VAR(bCalibration) = !VAR(bCalibration);
+		  }
+		  if(!VAR(bCalibration) && (VAR(bVMLABSimulate)))
+		  {
+			  fseek(pFileJoystick, 0, SEEK_SET);
+			  
+			  fprintf(pFileJoystick, "%d\n", VAR(nXMin));
+			  fprintf(pFileJoystick, "%d\n", VAR(nXMax));
+			  fprintf(pFileJoystick, "%d\n", VAR(nYMin));
+			  fprintf(pFileJoystick, "%d\n", VAR(nYMax));
+
+			  PRINT("Calibration data to file");
+
+			  VAR(nXCoef) = (VAR(nXMax) - VAR(nXMin)) / _N_DEFAULT_SERVO;
+			  VAR(nYCoef) = (VAR(nYMax) - VAR(nYMin)) / _N_DEFAULT_SERVO;
+
+			  if(VAR(nXCoef) == 0) VAR(nXCoef) = 1;
+			  if(VAR(nYCoef) == 0) VAR(nYCoef) = 1;
+		  }
+		  if(VAR(bCalibration) && (VAR(bVMLABSimulate)))
+		  {
+			VAR(nXMin) = _N_DEFAULT_MAX_LIMIT / 2;
+			VAR(nXMax) = _N_DEFAULT_MAX_LIMIT / 2;
+			VAR(nYMin) = _N_DEFAULT_MAX_LIMIT / 2;
+			VAR(nYMax) = _N_DEFAULT_MAX_LIMIT / 2;
+		  }
+
+		break;
+
+	}
+}
+
