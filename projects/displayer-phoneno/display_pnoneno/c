@@ -1,0 +1,209 @@
+/*
+  차량용 전화번호 표시기
+  Written by Ian Choi
+  v1.00
+*/
+
+#include<avr/io.h>
+
+volatile char cv[39] = {0x7d, 0x18, 0xb5, 0xb9, 0xd8, 0xe9, 0xcd, 0x78,
+ 						0xfd, 0xf8, 0xfc, 0xcd, 0x65, 0x9d, 0xe5, 0xe4, 
+						0xed, 0xcc, 0x44, 0x1d, 0x4f, 0x45, 0x8e, 0x8c, 
+						0x8d, 0xf4, 0x8f, 0x84, 0xe9, 0x88, 0x0d, 0x5d, 
+						0x0f, 0xde, 0xd4, 0xe9, 0x00, 0x02, 0x80};
+
+void delay_us(unsigned char time_us)      // time delay(us)
+{ 
+    register unsigned char i;
+
+    for(i = 0; i < time_us; i++){       // 4 cycle +
+      asm volatile(" PUSH  R0 ");       // 2 cycle +
+      asm volatile(" POP   R0 ");       // 2 cycle = 8 cycle = 1.0 us for 8.0MHz
+    }
+}
+
+void delay_ms(unsigned int time_ms)       
+{ 
+    register unsigned int i;
+
+    for(i = 0; i < time_ms; i++){ 
+      delay_us(55);
+    }
+
+}
+
+
+void qfnd(char text[])
+{
+/*
+  text[]에 입력된 문자열을 cv 배열에 저장된 fnd값과 matching하여
+  다시, text[]에 쓰고 i/o에 출력하는 함수
+*/
+
+
+/*          (A)
+           ------
+          /    /
+     (F) /    /  (B) 
+        ------
+       / (G)/
+  (E) /    /  (C)
+     ------ o(DP)
+       (D)
+
+
+    A = 0x20;
+    B = 0x10;
+    C = 0x08;
+    D = 0x01;
+    E = 0x04;
+    F = 0x40;
+    G = 0x80;
+    DP= 0x02;
+
+ 
+
+ 	0 = 0x7d
+ 	1 = 0x18
+ 	2 = 0xb5
+ 	3 = 0xb9
+ 	4 = 0xd8
+ 	5 = 0xe9
+ 	6 = 0xcd
+ 	7 = 0x78
+ 	8 = 0xfd
+ 	9 = 0xf8
+ 	A = A + B + C + E + F + G = 0xfc
+ 	B = C + D + E + F + G     = 0xcd
+ 	C = A + D + E + F         = 0x65
+ 	D = B + C + D + E + G     = 0x9d
+ 	E = A + D + E + F + G     = 0xe5
+ 	F = A + E + F + G         = 0xe4
+ 	G = A + C + D + E + F + G = 0xed
+ 	H = C + E + F + G         = 0xcc
+ 	I = C                     = 0x44
+ 	J = B + C + D + E         = 0x1d
+ 	K = C + D + E + F + DP    = 0x4f
+ 	L = D + E + F             = 0x45
+ 	M = C + E + G + DP        = 0x8e
+ 	N = C + E + G             = 0x8c
+ 	O = C + D + E + G         = 0x8d
+ 	P = A + B + E + F + G     = 0xf4
+ 	Q = C + D + E + G + DP    = 0x8f
+ 	R = E + G                 = 0x84
+ 	S = A + C + D + F + G     = 0xe9
+ 	T = C + G                 = 0x88
+ 	U = C + D + E             = 0x0d
+ 	V = B + C + D + E + F     = 0x5d
+ 	W = C + D + E + DP        = 0x0f
+ 	X = B + C + E + F + G + DP= 0xde
+ 	Y = B + E + F + G         = 0xd4
+ 	Z = A + B + D + E + G + DP= 0xe9
+ 
+*/
+
+  	int i, j;
+	
+	for(j=0;j<4;j++){
+ 		// text[]에 입력된 fnd 값을 출력
+  		PORTC = 0x00;
+		for(i=0;i<8;i++){
+    		PORTB = 0x80>>i; // 0b10000000 >> i
+    		PORTD = text[i];
+    		delay_ms(2);
+    		PORTD = 0x00;
+  		} //for(i=0;i<8;i++)
+		PORTB = 0x00;
+		for(i=0;i<4;i++){
+			PORTC = 0x08>>i; // 0b00001000 >> i
+			PORTD = text[i+8];
+    		delay_ms(2);
+    		PORTD = 0x00;
+		}
+	}
+} //void qfnd(char text[])
+
+void display(char text[], int time_delay)
+{
+  	int i, j;
+	char buf_text[13];
+
+ 	// 문자표 cv에서 fnd에 씌여질 값을 일어와서 text[]에 입력
+	for(i=0;i<12;i++){
+		j = 36;
+		if(text[i]>=48 && text[i]<=57) j=text[i]-48;
+		if(text[i]>=65 && text[i]<=90) j=text[i]-65+10;
+		if(text[i]==46) j=37;
+		if(text[i]==45) j=38;
+   		buf_text[i] = cv[j]; 
+	} //for(i=0;i<12;i++)
+   	for(i=0;i<time_delay;i++)
+    	qfnd(buf_text);
+}
+
+void ticker(char text[], int times)
+{
+   char buf_text[13];
+   int i, j, k;
+ 
+	for(k=0;k<times;k++){
+   		for(i=0;i<12;i++)
+        	buf_text[i] = " ";
+     	for(i=1;i<13;i++){
+       		for(j=0;j<i;j++)
+    			buf_text[11-j] = text[i-j-1];
+       		display(buf_text, 4);   
+     	} // for(i=1;i<12;i++){
+ 	} // for(k=0;k<times;k++){
+} // void ticker(char text[], int times)
+
+void main(void)
+{
+
+  	int i;
+   	char text1[] = "010-64557833";
+ 	char text2[] = "HELO...BABY.";
+ 	char text3[] = "PLS CALL.NNE";
+
+
+    DDRB = 0xff;  // port B를 출력으로 사용하고, fnd 제어용으로 사용
+    DDRC = 0xff;  // port C를 출력으로 사용하고, fnd 제어용으로 사용
+   	// Port B 8bit + Port C 4bit를 제어용으로 사용
+   	DDRD = 0xff;  // port D를 출력으로 사용하고, fnd i/o용
+
+    // init fnd
+	display("INIT DISPLAY",100);
+    
+    delay_ms(1000);
+
+
+	while(1){
+	   	display(text1, 100);
+		display(text2, 100);
+		display(text3, 100);
+		ticker(text1, 2);
+		ticker(text2, 1);
+	   	ticker(text3, 1);
+
+		PORTB = 0xff;
+		PORTC = 0x0f;
+		PORTD = 0x20;
+		delay_ms(100);
+		PORTD = 0x10;
+		delay_ms(100);
+		PORTD = 0x08;
+		delay_ms(100);
+		PORTD = 0x01;
+		delay_ms(100);
+		PORTD = 0x04;
+		delay_ms(100);
+		PORTD = 0x40;
+		delay_ms(100);
+		PORTD = 0x80;
+		delay_ms(100);
+		PORTD = 0x02;
+		delay_ms(100);
+    }
+}
+
+
