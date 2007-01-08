@@ -1,0 +1,144 @@
+module CRC16
+
+'include "My_ErrorReporting"
+'include "My_LCD"
+
+' -------------
+' Documentation
+' -------------
+' Version    0.1
+' Author:    Holmes
+' Copyright: © 2010
+' Created:   01/01/2010
+' Modified:  07/02/2010
+' Compiler:  mikroBasic Pro 2.1.0.0
+' Legal:     The mikroBasic code in this module is provided as freeware, provided that:
+'            - It not be offered for sale or used for commercial purposes.
+'            - It may be given to a 3rd party as source code only, provided that the Author,
+'              and Copyright details as shown herein are included in such source code.
+'            - The user is free to delete, modify or add to commented lines or code lines
+'              for that user's use only.
+' Notes:     Echo error code prefix: "E01"
+' Testing:   The test data string for which the CRC is calculated is "123456789".
+'            A test (9-byte block) correctly gave the checksum 0x29B1.
+'            Computation for a 60-byte block took 1.03mS for 16MHz ATMega32 (simulated).
+'            Computation for a 124-byte block took 1.68mS for 20MHz ATMega1284P (simulated).
+'            These timings seem to be about 50% slower than the assembler version of 2007,
+'            which is understandable and acceptable.
+' Modifications:
+'            Legacy included modules and parameter validation code in routine CRC16 have been
+'            commented out. The prospective user is invited to either discard them entirely or
+'            modify them for his/her own use.
+' ------------------------------------------------------------------------------
+' *******************
+' Interface (globals)
+' *******************
+' -----------------------
+' structures declarations
+' -----------------------
+
+' ----------------------
+' variables declarations
+' ----------------------
+
+' ---------------------
+' procedures prototypes
+' ---------------------
+
+' --------------------
+' functions prototypes
+' --------------------
+sub function CRC16(dim byref localCRCblock as byte[128], dim numbytes as word, dim startbyte as byte) as byte[2]
+
+' **************
+' Implementation
+' **************
+implements
+' ----------------------
+' constants declarations
+' ----------------------
+const CRC_Lookup_High as byte[16] = (0x00,0x10,0x20,0x30,0x40,0x50,0x60,0x70,
+                                     0x81,0x91,0xA1,0xB1,0xC1,0xD1,0xE1,0xF1)
+const CRC_Lookup_Low as byte[16] =  (0x00,0x21,0x42,0x63,0x84,0xA5,0xC6,0xE7,
+                                     0x08,0x29,0x4A,0x6B,0x8C,0xAD,0xCE,0xEF)
+' ----------------------
+' variables declarations
+' ----------------------
+dim CRC_High, CRC_Low as byte
+
+' -----------------------
+' procedures declarations
+' -----------------------
+ sub procedure CRC16_Nibble(dim nibble as byte)
+  dim temp as byte
+' extract the 4 MSB's of the CRC register
+  temp = CRC_High >> 4
+
+' XOR in the message data into the extracted bits
+  temp = temp xor nibble
+
+' shift the CRC register left 4 bits
+  CRC_High = (CRC_High << 4) or (CRC_Low >> 4)
+  CRC_Low = CRC_Low << 4
+
+' do the table lookups and XOR the result into the CRC register
+  CRC_High = CRC_High xor CRC_Lookup_High[temp]
+  CRC_Low = CRC_Low xor CRC_Lookup_Low[temp]
+end sub
+
+sub procedure CRC16_Byte(dim inputbyte as byte)
+  CRC16_Nibble(inputbyte >> 4)     ' high nibble
+  CRC16_Nibble(inputbyte and 0x0F) ' low nibble
+end sub
+
+' ----------------------
+' functions declarations
+' ----------------------
+sub function CRC16(dim byref localCRCblock as byte[128], dim numbytes as word, dim startbyte as byte) as byte[2]
+' computes the 16-bit CRC checksum of the numbytes (1-based) bytes,
+' of a byte array beginning at startbyte (1-based)
+  dim databyte as byte
+  dim I as integer
+  dim totalbytes as byte
+  dim CRCbytearray as byte[2]
+
+' Parameter error checking
+'  if localCRCblock[1] = "" then
+'     ErrorReport("W", "My_CRC16", "localCRCblock", "Null parameter")
+'     LCD_EchoError("E0100")
+'     exit
+'  end if
+'  if (numbytes < 1) or (numbytes > 128) then
+'     ErrorReport("E", "My_CRC16", "numbytes", "< 1 or > 64")
+'     LCD_EchoError("E0101")
+'     exit
+'  end if
+'  if (startbyte < 1) or (startbyte > 128) then
+'     ErrorReport("E", "My_CRC16", "startbyte", "< 1 or > 64")
+'     LCD_EchoError("E0102")
+'     exit
+'  end if
+'  totalbytes = startbyte + numbytes - 1
+'  if totalbytes > 128 then
+'      ErrorReport("E", "My_CRC16", "startbyte/numbytes", "extends beyond char 64")
+'      LCD_EchoError("E0103")
+'      exit
+'  end if
+  
+' initialise the 16-bit CRC checksum to 0xFFFF for the CCITT specification
+  CRC_High = 0xFF
+  CRC_Low  = 0xFF
+
+' process the data whose checksum is to be computed, 1 byte at a time
+   for I = (startbyte - 1) to (startbyte + numbytes - 2)
+     databyte =  localCRCblock[I]
+     CRC16_Byte(databyte)
+   next I
+   
+' return the 16-bit CRC checksum
+  CRCbytearray[0] = CRC_High
+  CRCbytearray[1] = CRC_Low
+  result = CRCbytearray
+end sub
+
+end.
