@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "D:\My Documents\Atmel\003 mijn software\dobbelsteen\dobbel_2\labels.tmp" -fI -W+ie -o "D:\My Documents\Atmel\003 mijn software\dobbelsteen\dobbel_2\dobbel.hex" -d "D:\My Documents\Atmel\003 mijn software\dobbelsteen\dobbel_2\dobbel.obj" -e "D:\My Documents\Atmel\003 mijn software\dobbelsteen\dobbel_2\dobbel.eep" -m "D:\My Documents\Atmel\003 mijn software\dobbelsteen\dobbel_2\dobbel.map" "D:\My Documents\Atmel\003 mijn software\dobbelsteen\dobbel_2\dobbel.asm"
