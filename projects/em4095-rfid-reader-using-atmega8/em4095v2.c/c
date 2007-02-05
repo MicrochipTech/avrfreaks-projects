@@ -1,0 +1,694 @@
+// *********************************************** 
+// project : RFID Reader V2.0
+// Target : MEGA8-16AU
+// Crystal: 14.7456 Mhz
+// Input : EM4095 RFID 125KHz
+// Output : RS232C 115200,N,8,1
+// Compiler : ICC-AVR V6.26C
+// Author : leeky@avrtools.co.kr
+// *********************************************** 
+
+// *********************************************** 
+// Pin configuration for ATMEGA8-16AU TQFP32
+// *********************************************** 
+// #30 PD0/RXD <--- RXD (RS232C)
+// #31 PD1/TXD ---> TXD (RS232C)
+// # 9 PD5/T1 <--- TIMER1 EXT-T1 <--- RDY-CLK (EM4095)
+// #10 PD6 ---> SHD (EM4095)
+// #11 PD7 ---> MOD (EM4095)
+
+// #12 PB0/ICAP <--- TIMER1 ICAP <--- DEMOD (EM4095)
+// #13 PB1 ---> LED (Indicator)
+// #14 PB2 ---> BUZZER (Warning)
+// #15 PB3 ---> RELAY (Output)
+// *********************************************** 
+#include <iom8v.h>  // Define for Mega8 MPU																 
+#include <macros.h>	// Define for macro functions
+
+// *********************************************** 
+// Variables for System 
+// *********************************************** 
+unsigned char time_1ms; 
+unsigned int	adc_buff;
+unsigned char rxd_buff;
+ 
+// *********************************************** 
+// Initialize Variables for flags
+// *********************************************** 
+unsigned char flag_1ms =0;    // timer 1 ms	 
+unsigned char flag_adc =0;	 	// end of adc conversion
+unsigned char flag_rxd =0;	 	// serial received
+
+unsigned char flag_err =0;	 	// header error
+unsigned char parity_err =0;	// parity error
+
+// *********************************************** 
+// Constant define
+// *********************************************** 
+#define REL 0x08		// Relay =PB3																  
+#define BUZ 0x04		// Buzzer =PB2																  
+#define LED 0x02		// indicator =PB1
+#define DEM 0x01 		// RF Data input EXT-INT0 from PB0/ICAP
+
+#define RXD 0x01		// PD0/RXD <--- ROUT SP232 <--- PC TXD  
+#define TXD 0x02 		// PD1/TXD ---> TINP SP232 ---> PC RXD
+#define CLK 0x20		// EXT-T1 input for RF read clock =PD5 																			 																	 // External interrupt used to read clock
+
+#define SHD 0x40 		// RF shot down for RF disable =PD6
+#define MOD 0x80		// RF 100% modulation =PD7
+
+// *********************************************** 
+// Global variables for buffer
+// *********************************************** 
+char rf_buff[16];	 		 			// rf buffer  
+char rf_buff_ptr =0;				// rf buffer pointerÍ
+char rf_bit_ptr = 0;				// rf bit pointer
+
+// *********************************************** 
+// Global variables
+// *********************************************** 
+char bit_value =1;				  // received bit value
+char bit_saved =1;					// flag of next bit will be store  
+char edge_dir =1;						// Edge Direction is riging										 
+
+char stable_width =0;	 			// RF uncertainty
+char bit_trans_num =0;			// number of bit stored
+
+int	 old_width =0;					// old width of captured timer1 value
+int  timer_over =0;					// flag of time overflow 
+
+// *********************************************** 
+// Initialize Ports
+// *********************************************** 
+void port_init(void)
+{
+  PORTB = 0x01;      	 // PB3=Relay,PB2=Buzzer,PB1=LED,
+ 	DDRB  = 0xFE;				 // PB7~PB1 =output,PB0=DEMOD input. 
+ 
+ 	PORTC = 0x00;				 // PORTC = adc input (not used) 
+ 	DDRC  = 0x00;		   	 // PC7~PC0 = all input
+
+ 	PORTD = 0xCF;			 	 // PD7=MOD,PD6=SHD,PD5=RDY-CLK(input)
+ 	DDRD  = 0xC0;			 	 // PD7~PD6 =output
+}
+
+// eeprom_init()
+// Initialize internal eeprom
+void eeprom_init(void)
+{
+	EECR = 0x00;					// Disable interrupts
+}
+
+// *********************************************** 
+// ADC initialisation
+// Conversion time: 104uS
+// *********************************************** 
+void adc_init(void)
+{
+  ADCSR = 0x00; 	   //disable adc
+  ADMUX = 0x07; 	   //select adc input 7 only
+  ACSR  = 0x80;
+  ADCSR = 0xEF;
+}
+
+// *********************************************** 
+// Interrupt handler for ADC
+// conversion complete, read value (int) using...
+// value=ADCL; Read 8 low bits first (important)
+// value|=(int)ADCH << 8; 
+// read 2 high bits and shift into top byte
+// *********************************************** 
+#pragma interrupt_handler adc_isr:15
+void adc_isr(void)
+{
+  adc_buff =ADCL;	 	  	  			// get low byte only
+  adc_buff |=(int)ADCH << 8;  	// get high byte and amke int
+  flag_adc =1;	   	  	  			// end of adc convert
+}
+
+// *********************************************** 
+// TIMER2 initialisation - prescale:128
+// WGM: Normal
+// desired value: 1mSec
+// actual value:  0.998mSec (0.2%)
+// *********************************************** 
+void timer2_init(void)
+{
+ 	TCCR2 = 0x00; 			//stop
+ 	ASSR  = 0x00; 			//set async mode
+ 	TCNT2 = 0x8D; 			//setup
+ 	TCCR2 = 0x05; 			//start
+	TIMSK |= 0x40; 			// timer2 interrupt sources
+}
+
+// *********************************************** 
+// Interrupt handler for TIMER2 1ms overflow
+// *********************************************** 
+#pragma interrupt_handler timer2_ovf_isr:5
+void timer2_ovf_isr(void)
+{
+  TCNT2 = 0x8D; 			// reload counter value
+  flag_1ms =1;	   		// flag_1ms =1
+	timer_over++;				// 1ms timer +1
+}
+
+// *********************************************** 
+// Delay for ms
+// *********************************************** 
+void delay_ms(int dly)
+{
+ 	 unsigned int i;
+	 for (i=0; i <dly; i++)		// 1ms *N =N [ms]	
+	 {
+		 while (flag_1ms ==0)		// Stand by 1ms
+		 {
+		 }
+		 flag_1ms =0; 	 				// reset 1 ms timer		  
+	 } 
+}
+ 
+// *********************************************** 
+// UART initialize for 115200,N,8,1
+// char size: 8 bit, parity: Disabled
+// *********************************************** 
+#define F_OSC 14745600	// oscillator-frequency in Hz
+#define BAUD_RATE 57600	// x2 =115,200 bps
+#define BAUD_CALC ((F_OSC)/((BAUD_RATE)*16l)-1)
+
+void uart0_init(void)
+{
+  UCSRB = 0x00; //disable while setting baud rate
+  UCSRA = 0x02; //double baud rate
+  // 0x86 = asynchronous 8N1
+  UCSRC = (1<<URSEL)|(3<<UCSZ0);
+  // set baud rate
+  UBRRH =BAUD_CALC >>8;
+  UBRRL =BAUD_CALC;
+  // 0x90 = Enable receiver and transmitter
+	// enable RX interrupt
+  UCSRB = (1<<RXEN)|(1<<TXEN)|(1<<RXCIE);
+}
+
+// *********************************************** 
+// Interrupt handler for UART0 receiver
+// *********************************************** 
+#pragma interrupt_handler uart0_rx_isr:12
+void uart0_rx_isr(void)
+{
+ //uart has received a character in UDR
+  rxd_buff =UDR;
+  flag_rxd =1;
+}
+
+// *********************************************** 
+// String send to UART
+// wait until UDR ready
+// *********************************************** 
+void uart_putc(unsigned char tx_byte)
+{
+  while(!(UCSRA & (1 << UDRE)));
+  UDR = tx_byte;    // send character
+}
+
+// *********************************************** 
+// loop until *s != NULL
+// *********************************************** 
+void uart_puts (char *str)
+{
+  while (*str)
+  {
+    uart_putc(*str);
+    str++;
+  }
+}
+
+// *********************************************** 
+// TIMER1 initialze for ICP cature 
+// timer1 clock is EXT_T1 from RDY-CLK of EM4095
+// PB0/ICP capture input is DEMOD sinal from EM4095
+// *********************************************** 
+void timer1_init(char edge)
+{
+  TCCR1B = 0x00; 			// stop timer1 
+	TCNT1H = 0x00;
+	TCNT1L = 0x00;			// start from 0000
+
+	ICR1H  = 0x00;
+	ICR1L  = 0x00;			// using timer1 capture
+
+	TCCR1A = 0x00;
+	TCCR1B = 0x00;			// stop timer1, 
+
+	if (edge ==1) TCCR1B = 0x40;  // ICAP capture from T1 riging.
+	else TCCR1B = 0x20;	// ICAP capture from T1 falling. 
+	TIMSK |= 0x24; 			// timer1 capture, overflow interrupt sources
+}
+
+// *********************************************** 
+// TIMER1 overflow interrupt
+// *********************************************** 
+#pragma interrupt_handler timer1_ovf_isr:9
+void timer1_ovf_isr(void)
+{
+  //TIMER1 has overflowed
+ 	TCNT1H = 0x00;				 	// reload counter high value
+ 	TCNT1L = 0x00;				 	// reload counter low value
+}
+
+// *********************************************** 
+// Received bit store by buffer pointer in rf buffer
+// *********************************************** 
+void rf_bit_store(char bit_value)
+{
+  char byte;
+
+	if(!(rf_buff_ptr ==sizeof(rf_buff)))	// not end of buffer?
+  {
+	  byte =rf_buff[rf_buff_ptr];	// get saved byte by pointer
+		byte =(byte << 1);					// shift left
+		
+		if (bit_value) byte |=0x01;	// received bit =1					 
+		else byte &=0xfe;						// received bit =0Â
+		rf_buff[rf_buff_ptr] =byte; // store received bitå
+
+ 		if(++rf_bit_ptr == 8)			// end of bit pointer? ®
+ 		{
+   	  rf_bit_ptr = 0;	 	 			// bit pointer =0Â
+   		++rf_buff_ptr;					// increament byte poiinter 
+ 		}
+	}
+}
+
+// *********************************************** 
+// PB0/ICP cature interrupt 
+// captured 16 bit ICR1 register read 1st low byte
+// current edge direction chage to reverse edge direction
+// *********************************************** 
+#pragma interrupt_handler timer1_capt_isr:6
+void timer1_capt_isr(void)
+{
+ 	int value;							// temporary of catured value
+	int width;							// temporary of width calc. 
+	
+	value =ICR1L;						 // Read low byte first (important)
+	value |=(int)ICR1H << 8; // Read high byte and shift into top byte
+
+  if (edge_dir)	 			 		 // change ICP capture direction of edge. 
+  {
+	  TCCR1B &= ~0x40;
+		TCCR1B |= 0x20;				 // ICP capture direction edge to riging 
+    edge_dir =0;		 		 	 // for next cature direction is falling.    
+  }
+  else
+  {
+	  TCCR1B &= ~0x20;
+		TCCR1B |= 0x40;				 // ICP capture direction edge to falling 
+    edge_dir =1;		 		 	 // for next capture direction is riging
+  }
+
+	width =value -old_width; // width = new captured width - old captured width
+	old_width =value;     	 // updata old captured width for next width calc.
+	
+  // receiving manchester code from RFID card. 
+	// 1st received bit is must be 1 for 1st bit is header after reset, 
+	// if pulse width is more than 40 then received bit to invert.
+  if(width > 40)							// narrow pulse width is under 32,
+	{
+	  if (bit_value) PORTB |=LED;	// debug indictor for input bits
+		else PORTB &= ~LED;
+
+    bit_value = ~bit_value; 	// received bit is inverting
+	  rf_bit_store(bit_value);	// save inverted bit
+	 	++bit_trans_num;					// increament number of saved bits
+  	bit_saved = 0;  					// skip bit store when bit invertedö
+  }
+		
+  if(bit_saved)        				// will be bit store?
+  {
+	  if (bit_value) PORTB |=LED;	// debug indictor for input bits 
+		else PORTB &= ~LED;
+				
+	  rf_bit_store(bit_value);	// bit store in rf buffer
+	 	++bit_trans_num;					// number of stored bits +1
+	}
+	bit_saved = ~bit_saved;  		// skip next store for next bit 
+}
+
+// *********************************************** 
+// RFID Card Reader EM4095 initialize
+// EM4095 output ---> PD5/T1 =RDY-CLK, PB0/ICP =DEMOD
+// EM4095 input <--- PD7 =MOD, PD6 =SHD.
+// *********************************************** 
+void em4095_init()
+{
+	 PORTB |= BUZ;					// Buzzer =on 	 
+	 PORTB |= LED;					// LED =on
+	 delay_ms(100);					// delay 100ms
+
+	 PORTB &= ~BUZ;					// Buzzer =off 	 
+	 PORTB &= ~LED;					// LED =off
+	 delay_ms(100);					// delay 100ms
+
+   PORTD |= SHD;					// EM4095 shot down												 
+   PORTD |= MOD;					// EM4095 max outut
+	 PORTB |= LED;					// LED =on
+	 delay_ms(100);					// delay 100ms
+	 
+   PORTD &= ~SHD;					// EM4095 ready
+   PORTD &= ~MOD;					// EM4095 min output
+	 PORTB &= ~LED;					// LED =off
+	 delay_ms(100);					// delay 100ms
+}
+
+// *********************************************** 
+// Change direction of caturing edge 
+// by PB0/ICP input signal from DEMOD output of EM4095
+// *********************************************** 
+void set_rf_edge(char edge)
+{
+  if(edge)
+	{
+    timer1_init(1);		 		// setup timer1 to rising edge
+    edge_dir =1;					// status =rf_fe_toggle on
+  }
+  else
+  {
+    timer1_init(0); 			// setup timer1 to falling edge
+    edge_dir =0;					// status =rf_fe_toggle off
+  }
+}
+
+// *********************************************** 
+// Receiving 64 bits stream from RFID card at Timer1 capture
+// output is number of saved bit and received 64 bis in rf buffer
+// *********************************************** 
+void get_bits_num(char num_bits, char edge)
+{
+  set_rf_edge(edge);          // change direction of caturing edge¤
+
+	// force save flag =1 for must save 1st received bit.
+	bit_saved =1;      					 
+
+  // If captured width is more than 40 then bit to inverting
+  bit_value =0;								// bit value =0
+
+  rf_buff_ptr	=0;             // byte pointer =0¤
+  rf_bit_ptr =0;             	// bit pointer =0¤
+  bit_trans_num =0;        		// number of save bit =0¤
+  timer_over =0;             	// time over value =0
+  old_width =0;								// old width =0
+
+	TCCR1B = 0x00;							// stop Timer1 from EXT-T1 
+ 	TCNT1H = 0x00;				 							
+ 	TCNT1L = 0x00;							// tiemr0 =0x0000¤
+	TCCR1B = 0x07;							// start timer1  
+	TIMSK |= 0x20; 							// enable timer1 capture interrupt¡
+
+	// If number of saved bit is less than num_bits then receiving bit
+  while(bit_trans_num < num_bits  && timer_over < 60)
+	{
+  } 
+	// If number of saved bit is more than num_bits 
+	// or tiem is more than 60ms then exit receiving bit 
+	TIMSK &= ~0x20; 						// stop timer1 capture interrupt¡
+
+  rf_buff_ptr = 0; 						// reset buffer pointer¤
+  rf_bit_ptr = 0;             // reset bit pointer¤
+}
+
+// *********************************************** 
+// erase all bits in rf buffer
+// *********************************************** 
+void fill_rf_buff(char num_byte)
+{
+   int i;
+
+	 rf_buff_ptr =0;
+	 rf_bit_ptr =0;
+	 
+   for(i =0; i <num_byte; ++i)
+   {
+      rf_buff[i] = 0x00;
+   }
+}
+
+// *********************************************** 
+// Inverting all bits in rf buffer
+// *********************************************** 
+void invert_rf_buff(void)
+{
+   int i;
+
+	 rf_buff_ptr =0;
+	 rf_bit_ptr =0;
+
+   for(i=0; i<sizeof(rf_buff); ++i)
+   {
+      rf_buff[i] = ~rf_buff[i];
+   }
+}
+
+// *********************************************** 
+// get bit from rf buffer
+// Output is TRUE or FALSE (0x01 or 0x00)
+// *********************************************** 
+char get_buff_bit(void)
+{
+  char bit;
+  char byte;
+	
+	if(!(rf_buff_ptr ==sizeof(rf_buff)))
+  {
+		byte =rf_buff[rf_buff_ptr];
+		byte =(byte << rf_bit_ptr);			// bit shift for 0~7
+		byte &=0x80;
+		
+		if (byte ==0x80) bit =0x01;
+		else bit =0x00;			 						// make 1 bit result
+						
+    if(++rf_bit_ptr == 8)						// end of bit pointer?							
+    {
+      rf_bit_ptr = 0;								// bit pointer =0
+      rf_buff_ptr++;	 	 						// byte pointer +1							
+    }
+  }
+  return bit;												// return bit result
+}
+
+// *********************************************** 
+// gte byte from received bufferÙ
+// *********************************************** 
+char get_buff_byte(void)
+{
+  char i;				 		 					// bit counter
+  char bit;			 							// get bit
+	char byte =0;	 							// get byte
+		
+  if(!(rf_buff_ptr ==sizeof(rf_buff)))
+  {
+    for(i=0; i<8; ++i)
+    {
+		 	bit =get_buff_bit();			// get bit from buffer.
+
+			if (bit) byte |=0x01;			// bit =1®
+			else byte &=0xfe;					// bit =0Â
+
+    	byte =(byte <<1);			 	 	// bit shift to left for make byte®
+		}
+  }
+ 	return byte;
+}
+
+// *********************************************** 
+// Find 9 bits header.
+// *********************************************** 
+void find_header(void)
+{
+  char i;				 		 					// bit counterÍ
+  char bit;			 							// get bit
+	
+	rf_buff_ptr =0;
+	rf_bit_ptr =0; 							// start of bufferÛ
+	
+	flag_err =0;								// reset flag of error		
+  for(i =0; i <9; i++)				// for 9 bits testÔ
+  {
+  	bit =get_buff_bit();			// ºñÆ®´Â 0 È¤Àº 1·Î µé¾î¿Â´Ù.
+		if (bit ==0) flag_err =1;	// ÇÏ³ª¶óµµ ºñÆ®°¡ 0ÀÌ¸é ¿À·ù
+	}
+}
+
+// *********************************************** 
+// Check horizontal parity.
+// *********************************************** 
+void checksum_h(void)
+{
+	char j;											// nibble counterÍ
+  char k;				 		 					// bit counterÍ
+  char bit;			 							// get bit
+	char parity;								// ÆÐ¸®Æ¼
+	
+	parity_err =0; 							// reset parity error 
+	for (j=0;	j < 10; j++)			// for 10 of nibblesÙ
+	{
+	  parity =0;								// result =0 for parity calulationÙ
+		for(k =0; k < 4; k++)			// for 4 of bits. 
+		{
+  	  bit =get_buff_bit();		// get bit for 0x00 or 0x01.
+			if (bit) parity ^=0x01;	// calculate parity for 4 bits.
+		}
+
+ 		bit =get_buff_bit();			// 5th bit is parity.
+		if (bit !=parity) parity_err =1;	// not match is found error.
+	}
+}
+
+// *********************************************** 
+// Check vertical parity.
+// *********************************************** 
+void checksum_v(void)
+{
+
+}
+
+// *********************************************** 
+// 64 bits ASCII transmit for binary dispaly.			
+// *********************************************** 
+void tx_buff_bin(void)
+{
+  char bit;
+	char txd;
+	char i,j;
+	 
+	rf_buff_ptr =0;
+	rf_bit_ptr =0;
+	uart_putc(0x0a);	 					// lf =start of text
+
+	for (i =0; i <64; i++)
+	{
+    bit =get_buff_bit();			// get bit from rf_buff
+		if (bit) txd =0x31;				// 0x31 =ascii '1'
+		else txd =0x30;						// 0x30 =ascii '0'
+		uart_putc(txd);						// '0' or '1' to uart
+	}
+	uart_putc(0x0d);	 					// cr =end of text
+}
+	
+// *********************************************** 
+// 10 digit ASCII transmit to UART for hexa dispaly.			
+// *********************************************** 
+void tx_buff_hex(void)
+{
+  char bit;
+	char txd;
+	char i,j;
+	 
+	rf_buff_ptr =1;							// skip 9 bits of header¡
+	rf_bit_ptr =1;							
+	uart_putc(0x0a);	 					// start of text =LF
+
+	for (i =0; i <10; i++)			// 10 of nibbles ³
+	{
+	  for (j =0; j <4; j++)			// for 4 bit®
+		{ 
+			txd = (txd <<1); 				// shift to left for saved bit
+			bit =get_buff_bit();		// get bit from rf_buff
+			if (bit) txd |=0x01;		// save bit to lsb
+			else txd &= 0xfe;
+		}
+
+		txd &= 0x0f;	 						// enable 4bit for nibble¿
+		if (txd < 0x0a) txd +=0x30;
+		else txd +=0x37;					// make ASCII HEX for dispaly¯
+		
+		uart_putc(txd);						// ASCII transmit to UART
+		bit =get_buff_bit();			// get parity and removeÙ
+	}
+	uart_putc(0x0d);	 					// end of text =CR
+}
+
+// *********************************************** 
+// Main routine 
+// *********************************************** 
+void main(void)
+{
+  CLI(); 	   			   					//disable all interrupts
+  MCUCR = 0x00;
+  GICR  = 0x00;
+
+  port_init();
+  eeprom_init();		  				// disable eeprom interrupt
+  adc_init(); 			  				// 10 bit adc #7 (free run)
+
+  timer2_init();		  				// init 10us timer
+  uart0_init();			  	 			// init serial port
+  SEI();  	   			  	 			// re-enable interrupts
+
+  uart_putc(0x0a);			 			// start of string
+  uart_puts("EM4095 RFID Card Reader V2.0");
+  uart_putc(0x0d);				 		// end of string	 
+
+	em4095_init();						 	// init EM4095 RFID reader
+	timer1_init(0);				 			// init timer1 from EXT-T1 (EM4095-CLK)
+	fill_rf_buff(16);			  		// erase rf buffer. 
+
+  while(1)						 
+  {
+		PORTD |=MOD;								// turn off indicatorî
+		delay_ms(20);								// turn off time =20 ms,
+		PORTD &= ~MOD;							// start EM4095 read mode
+		fill_rf_buff(16);			  		// erase rf buffer 16 bytes. 
+
+		// EM type (Read only) data format
+		// 1111 11111 = Header = 9 bit­
+		// xxxxP, xxxxp= Custom #1,#2  = 10 bit
+		// xxxxP,xxxxP = data #1,#2  = 10 bit
+		// xxxxP,xxxxP = data #3,#4  = 10 bit
+		// xxxxP,xxxxP = data #5,#6  = 10 bit
+		// xxxxP,xxxxP = data #7,#8  = 10 bit
+		// PPPP0 = 4 Parity + 1 stop = 5 bit
+		// data 55 bits + header 9 bits =64 bits®
+		
+		// Manchester code detecting method
+		// Header (9 bits)
+		// ______--__--__--__--__--__--__--__--__-- (wave)
+		// 0-0 0-1 0-1 0-1 0-1 0-1 0-1 0-1 0-1 0-1  (edge)
+		// (x) (1) (1) (1) (1) (1) (1) (1) (1) (1)  (code)
+		
+		// Custom-ID (10 bits) 
+		// --__--__--__--__--__--____----__--____-- (wave)
+		// 1-0 1-0 1-0 1-0 1-0 1-0 0-1 1-0 1-0 0-1  (edge)
+		// (0) (0) (0) (0) (0) (0) (1) (0) (0) (1)  (code)
+		//  D7  D6  D5  D4  Pr  D3  D2  D1  D0  Pr  (Pr =parity)
+		      
+		// find manchester pattern in received bits
+		// output is number of received bits =bit_trans_num
+		get_bits_num(64, 0);	 			// receive 64 bits stream within 60ms 	
+		PORTB &= ~LED;	 	 					// Indicator turn offî
+
+		find_header();							// check head is 9 bit =1?
+		checksum_h();								// check horizontal parityË
+		checksum_v();								// check vertical parityË
+		
+		if (flag_err ==0)						// has no head error?
+		{ 
+			if (parity_err ==0)				// has no parity error? 
+			{
+//		  tx_buff_bin();					// 64 binary display code to UART.			
+			  tx_buff_hex();					// 10 hexa dispaly code to UART.			
+		  	PORTB |=REL;						// turn on relay.
+			}
+			else PORTB |=BUZ;					// if error available then turn on buzzer.		
+		}												
+
+		// Total cycle time = reste 20ms + receive 60ms + output 120ms = 200msâ
+		delay_ms(120);							// output time = 120ms								
+		PORTB &= ~BUZ;							// turn off buzzer.
+		PORTB &= ~REL;							// turn off relay.
+	}	
+}
+
+// *********************************************** 
+// ÁÖ ÇÔ¼öÀÇ ³¡
+// *********************************************** 
+
