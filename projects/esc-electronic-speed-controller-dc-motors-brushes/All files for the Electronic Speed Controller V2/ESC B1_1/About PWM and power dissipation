@@ -1,0 +1,94 @@
+************************************************************************************
+Electronic Speed Controller Program Version Beta 1.0 ABOUT PWM AND POWER DISSIPATION
+************************************************************************************
+
+Extensive information about this subject can be found here:
+http://homepages.which.net/~paul.hills/SpeedControl/SpeedControllers.html
+
+            +VBat                  This is the typical FET H-Bridge circuit diagram
+              |                    The H-bridge enables you to reverse a DC motor
+          |-------|                without reversing the battery power.
+  FET AH -|       |- FET BH        When FET AH and FET BL are conducting => Forward
+          |-     -|                When FET BH and FET AL are conducting => Backward
+            |-M-|
+          |-     -|                             AL     AH     BL     BH
+  FET AL -|       |- FET BL         Forward      L      H    PWM  not(PWM)
+          |-------|                 Backward    PWM  not(PWM)  L      H
+              |
+             GND
+
+The Electronic Speed Controller Program uses Pulse Width Mudulation (PWM) to
+controll the speed of the DC motor. Here is how this works:
+Immagine the battery power as a block wave with a frequency F. During a percentage
+(the OnTime) of the period T (=1/F) of that block wave you apply the full battery
+power to the motor and the rest of the period (the Off-time) you apply no battery
+power at all to the motor. It can be proven that the speed of the motor is
+proportional to the on-time of that PWM signal.
+
+FINDING THE IDEAL PWM FREQUENCY
+
+A) Minimum PWM-frequency needed to obtain good controll over the motor's speed ?
+
+A DC motor contains a large coil (the windings). When you apply a voltage over a
+coil the current though the coil will start increasing. When you stop supplying a
+voltage over the coil the current trough the coil will start decreasing.
+So what happens when we apply the battery power as a PWM signal to a DC motor ?
+During the on-time the current through the motor will increase. During the rest of
+the time the current though the motor will be decreasing.
+If the frequency is high enough the current will be almost stable since the coil
+does not get the time to let the current change a lot.
+With the formula here below you can calculate the delta between the lowest current
+and the highest current in a coil (dI%) for a coil with a Resistance (R) and an
+Induction (L) when you apply a PWM-signal with a frequency Fpwm.
+
+                                    -R/(2 * Fpwm * L)
+                   dI% = 100 * (1 - e  )              
+
+For a speed 900 motor with R = 0,03 Ohm and L = 100 µH this gives :
+
+  dI    [%]      10%    9%    8%    7%    6%    5%    4%    3%    2%     1%
+  Fpwm [Hz]    1423  1890  1798  2067  2067  2924  3674  4924  7423  15000
+
+You can obtain good controll over the motor's speed when using Fpwm > 7 kHz.
+
+B) The influence of PWM-frequency on the power discipation in the FET's ?
+
+The power dissipation in a FET can be calculated with : Pd = U * I = R * I^2
+
+When the FET is not conducting the power dissipation is 0 (because I=0).
+
+When the FET is conducting it's resistance is Rds-on (0.004 for a IFR1404 FET)
+and with I=40A the power dissipation in the FET will be 0.004 * 40^2 = 6.4 W.
+
+When the FET is switching between on and off Pd = U/2 * I/2 = 12 * 20 = 240 W.
+However the time that the FET is switching is very short. During 1 period of a PWM-
+signal the FET will switch twice (on->off and off->on) and switching takes about
+2,5 µs in a well designed ESC when using good H-bridge FET drivers.
+
+The power dissipation caused by switching is :
+
+           Pd switching = U/2 * I/2 * 2 * 2.5 * 10^-6 * Fpwm
+
+For U=24V and I=40A the result as a function of Fpwm is:
+
+  Fpwm [kHz]        3  5  8  10  13  15  18  20  23  25  28  30  33
+  Pd switching [W]  4  6  9  12  15  18  21  24  27  30  33  36  39
+
+The lower the PWM-frequency the less power needs to be dissipated in the FET's.
+
+With Fpwm=7 kHz the power dissipation in the FET's will be 6.4 + 7 W = 13.4 W.
+With FPwm=3 kHz the power dissipation in the FET's will be 6.4 + 4 W = 10.4 W
+
+A well cooled IRF 1404 FET can handle about 25 W (P= dT/Rja).
+
+From the above formulas
+
+Ptotal = Rds-on * I^2 + U/2 * I/2 * 2.5 X 10^-6 * Fpwm = 25
+
+What is  Imax for Fpwm = 3 kHz and U = 24V... It's 68A !
+
+So a well de signed ESC using this program with IRF1404 FET's, a good FET driver
+and correct FET-cooling should be able to deliver up to 68A continuous @ 24V.
+
+
+
