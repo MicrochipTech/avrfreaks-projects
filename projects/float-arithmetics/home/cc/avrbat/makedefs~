@@ -1,0 +1,77 @@
+
+MCU     = atmega8535
+# MCU     = atmega32
+
+F_CPU   = 16000000L
+
+OPTIMIZE       = -Os -mcall-prologues
+
+#HOME=C:/
+
+#HJH_IDIR = -I $(HOME)/home/cc/include -I $(HOME)/home/cc/avrinc
+HJH_IDIR = -I /home/cc/include -I /home/cc/avrinc
+
+
+DEFS           = -DNPRGPATH=$(NPRGPATH) -DMCU_CLOCK=$(F_CPU)
+
+CC             = avr-gcc
+
+CFLAGS        = -g -Wall $(OPTIMIZE) -mmcu=$(MCU) $(DEFS)
+LDFLAGS       = -g -Wl,-Map,$(PRG).map
+
+
+
+ASFLAGS = -g  -mmcu=$(MCU)  $(DEFS)
+OBJCOPY        = avr-objcopy
+OBJDUMP        = avr-objdump
+
+
+all: $(PRG).elf lst text eeprom
+	echo  Makefile of qqtsfloa all done
+
+$(PRG).elf: $(OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+clean:
+	rm -rf *.o $(PRG).elf *.eps *.png *.pdf *.bak 
+	rm -rf *.lst *.map *.tmp
+
+lst:  $(PRG).lst
+
+%.lst: %.elf
+	$(OBJDUMP) -h -S $< > $@
+
+# Rules for building the .text rom images
+
+text: hex bin srec
+
+hex:  $(PRG).hex
+bin:  $(PRG).bin
+srec: $(PRG).srec
+
+%.hex: %.elf
+	$(OBJCOPY) -j .text -j .data -O ihex $< $@
+
+%.srec: %.elf
+	$(OBJCOPY) -j .text -j .data -O srec $< $@
+
+%.bin: %.elf
+	$(OBJCOPY) -j .text -j .data -O binary $< $@
+
+# Rules for building the .eeprom rom images
+
+eeprom: ehex ebin esrec
+
+ehex:  $(PRG)_eeprom.hex
+ebin:  $(PRG)_eeprom.bin
+esrec: $(PRG)_eeprom.srec
+
+%_eeprom.hex: %.elf
+	$(OBJCOPY) -j .eeprom --change-section-lma .eeprom=0 -O ihex $< $@
+
+%_eeprom.srec: %.elf
+	$(OBJCOPY) -j .eeprom --change-section-lma .eeprom=0 -O srec $< $@
+
+%_eeprom.bin: %.elf
+	$(OBJCOPY) -j .eeprom --change-section-lma .eeprom=0 -O binary $< $@
+
