@@ -1,0 +1,98 @@
+10MHZ 2313Temper8  version date 20070225
+
+2313Temper8 is an AT90S2313 AVR assembly language program that reads the extended temperature data (good to about 1/16 degrees C) from up to 8 Dallas DS18x20 (DS1820 or DS18S20) temperature sensors.
+
+The DS18x20 is a simple 3-pin device that returns its temperature as a binary number. 
+When commanded, 2313Temper8 reads the indicated DS18S20, converts its temperature data to degrees C and returns this temperature (as an ASCII string) via the '2313's serial port. 
+
+Even though the software provides two significant digits past the decimal point, the DS18S20 isn't quite capable of this accuracy since the extended temperature calculation is limited to 1/16C (0.0625C).
+
+2313Temper8 was originally written for an 8MHZ AT90S2313. The code has been upgraded to run at 10MHZ. It communicates via its serial port at 9600,8,N,1. A TTL <-> RS-232 level converter is required to communicate with a PC.
+
+Commands (not case sensitive):
+R returns the number of devices and their ROM IDs:
+4                                                                       
+0800080007CC0010                                                        
+C000080007728A10                                                        
+0D00080007455E10                                                        
+3300080007B60510                                                        
+0000000000000000                                                        
+0000000000000000                                                        
+0000000000000000                                                        
+0000000000000000  
+
+Tn (where n is a single digit from 0 to 7) returns the device temperature ie:
+t2 returns:
+
+ +023.52C
+
+Vn (where n is a single digit from 0 to 7) returns a verbose reply, with the register contents of the device and the temperature ie:
+
+v1 returns:
+
+3300A199FFFF0810C4
++25.75C
+ 
+The ROM ID codes are read at startup (or reset). If new devices are added after powerup, they will not be recognized. 
+On reset, the program will look for DS18S20s, and if it finds them, reads their ID codes. 
+It'll then send the ROM codes through the serial port. Devices are numbered and listed from 0 to 7.
+                                                      
+The DS1820s are connected to Port B bit 2 (PB2), which is set as a bi-directional I/O pin. 
+This setup is often referred to as the 1-Wire bus.
+
+GND -------- DS18S20 pin 1 (GND)
+PB2 -------- DS18S20 pin 2 (DQ)
++5V -------- DS18S20 pin 3 (VDD)
+
+In most cases, a 4.7K pullup resistor must be connected between the 1-Wire bus (PB2) and +5V. 
+In the code, I enable the internal PB2 pullup resistor every time I read or write to the DS18S20s, so this external pullup resistor is not needed. The code runs fine with the 4.7K resistor installed, though.
+
+Reading multiple devices requires considerable code space and ram storage, so this version of the program will only read up to eight DS18S20s.
+
+The extended temperature (as listed in the DS 1820 data sheet) is calculated using this equation:
+
+Extended Temperature = Temperature_read - 0.25 + ((count_per_c - Count_remain)/count_per_c)
+
+Where Temperature_read is the value read from the device, trucated to 8 bits (shift right by 1 or divide by 2)
+
+The equation can be simplified to:
+
+Temperature = Temperature_read - 0.25 + ((16 - Count_remain)/16)
+
+since the DS1820 family always (double check, for new devices, though) uses 16 for the count_per_c value, this equation can be further simplified by multiplying everything by 16:
+
+16 * Temperature = 16 * Temperature_read + 12 - Count_Remain
+
+Multiplying the result by 25 then dividing by 4 eliminates fixed point values; 25.75 becomes 2575 an easy to deal with integer.
+
+
+
+
+Acknowledgments
+The AVR version of this code was developed on an Atmel STK500 board, using AVRStudio 4.11. 
+The AT902313 code was ported from my AT90S8515 program, 8515Temp8, which is in turn a port from my 68HC11 program, LCDTemper8.                      
+
+The ROMSrch (ROM Search) routine was ported from ML6805,a Public Domain assembly language example from Dallas Semiconductor. 
+It was originally written for the 6805. 
+I also used the code in The Dallas/Maxim Application Note 162: 
+INTERFACING THE DS18X20/DS1822 1-WIRE TEMPERATURE SENSOR IN A MICRO-CONTROLLER ENVIRONMENT as a guide. 
+Several Atmel AVR application notes donated code, and the AVR Freaks web page:
+(http://www.avrfreaks.com) was a great source of good AVR assembly programming styles and methods.
+Randy Ott (K5HJ) has a great collection of AVR code that was very helpful (http://www.qsl.net/k5hj/).
+
+Thanks to Stephan Stadler for pointing out an arithmetic error that was producing incorrect temperature readings!
+
+Feb. 19, 2007
+
+This program was edited and assembled in AVR Studio 4.11
+Files in this zip archive:
+2313Temp8.asm
+2313Temp8.hex
+2313Temp8.txt (this file)
+
+Frank Henriquez <frank@ucla.edu> 
+
+The latest version of this code is at http://frank.bol.ucla.edu/2313Temper8.htm
+<http://frank.bol.ucla.edu/index.htm>
+
+
