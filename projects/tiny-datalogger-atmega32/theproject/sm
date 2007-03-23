@@ -1,0 +1,823 @@
+; ==========================================================================
+; AD converter with ASCII logging to PC via serial port
+; - build in software clock
+; - ATMEGA32 at 16 Mhz
+; (c) A Brussee march 2006
+; ==========================================================================
+
+.include "m32def.inc"
+
+;=======================================================================================================
+; Register definitions
+; ======================================================================================================
+.def automatic = r14
+.def maxchannels = r15
+.def temp = r16								; Use R16 as temp
+.def channelcount = r17						; Use r17 as AD channel counter
+.def ASCII_E = r18							; Use r18..22 to hold result ASCII from bin16 to ASCII conversion 
+.def ASCII_D = r19
+.def ASCII_C = r20
+.def ASCII_B = r21
+.def ASCII_A = r22
+.def hours = r23							; Use r23 to hold the result hours from the clock calculation
+.def minutes = r24							; Use r23 to hold the result minutes from the clock calculation
+.def seconds = r25							; Use r23 to hold the result seconds from the clock calculation
+.def countdown = r26						; Use r30 as a counter for the interval countdown
+.def interval = r27
+.def BIN_ASCII_L = r28						; Use r28 to set the low portion of th 16 bit number to convert tot ASCII
+.def BIN_ASCII_H = r29						; Use r29 to set the high portion of th 16 bit number to convert tot ASCII
+;========================================================================================================
+; Constant definitions
+; =======================================================================================================
+.equ CLOCK = 16000000
+.equ BAUD = 19200
+.equ UBRRVAL = CLOCK/(BAUD*16)-1
+.equ CR = 0x0D
+.equ LF = 0x0A
+.equ CLEAR = 0x0C
+.equ NUL = 0x00
+.equ SPACE = 0x20
+.equ COLON = 0x3A
+.equ COMMA = 0x2C
+; =======================================================================================================
+; Memory and interupts definitions
+; =======================================================================================================
+.cseg
+.org 0x000  								; start program at address 0
+	rjmp init
+	rjmp init
+	rjmp init
+.org OVF1addr								; Timer/Counter1 Overflow interupt pointer
+	rjmp Timer_event	
+.org URXCaddr								; USART, Rx Complete
+	rjmp rxbyte	 
+
+; =====================================================================
+; Main program loop, is doing nothing as rest is interrupt driven
+; ====================================================================
+MAIN:	
+	rjmp MAIN								; stay in main loop
+
+; =============================================================
+; main routine, scanning channels and sending output to UART
+; =============================================================
+mainsub:
+
+new:      
+	;ldi   temp,CR							; CR
+	;call  txbyte    
+	;ldi   temp,LF							; LF
+	;call  txbyte  
+	
+	call output_clock
+	  
+	ldi   channelcount,0            		; start channel 0
+
+chan:     
+	call  adc8
+
+	ldi   temp,COMMA ;SPACE
+	call  txbyte 
+	ldi   temp,SPACE
+	call  txbyte 
+
+	mov temp,ASCII_A						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_B
+	call txbyte
+	mov temp,ASCII_C
+	call txbyte
+	mov temp,ASCII_D
+	call txbyte
+	;mov temp,ASCII_E						; the point was taken out for CO2
+	;call txbyte
+
+	
+	inc   channelcount              		; next channels
+	cp    channelcount,maxchannels   		; channel 1..8
+	brne  chan	
+
+	ldi temp, CR
+	call txbyte
+	ldi temp, LF
+	call txbyte
+
+	ret
+
+;=============================================================
+; AD conversion
+;=============================================================
+adc8:	  
+	out   ADMUX,r17        					; select channel              
+    sbi   ADCSR,ADSC       					; start conversion
+conv:     
+	sbic  ADCSR,ADSC       					; wait for conversion complete
+	rjmp  conv       
+
+	in	BIN_ASCII_L,ADCL
+	in 	BIN_ASCII_H,ADCH
+	rcall adfloat ;bin16_ascii
+	ret
+; ===============================================================
+; Output clock routine
+; ===============================================================
+output_clock:
+
+	mov BIN_ASCII_L, hours
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	
+	ldi   temp,COLON				; :
+	call  txbyte    
+
+	mov BIN_ASCII_L, minutes
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	
+	ldi   temp,COLON					; :
+	call  txbyte    
+	
+	mov BIN_ASCII_L, seconds
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	 
+	ret
+
+; ====================================================================
+; Init routines 
+; ====================================================================
+Init:	
+	ldi temp, low(RAMEND)					; Init Stackpointer 
+	out SPL, temp
+	ldi temp, high(RAMEND)		
+	out SPH, temp
+	; ====================================================================
+	; Timer to create a one second interval
+	; ====================================================================
+	ldi temp, 0b00000100					; Timer 1 on CLOCK prescaler 256 (settings for 16Mhz clockspeed)
+	;ldi temp, 0b00000001					; Timer 1 on CLOCK prescaler 1 (for debugging)
+	out TCCR1B, temp
+
+	ldi temp, 0x0B							; Timer 1 at 0BDB (1 sec by 16Mhz)
+	out TCNT1H, temp
+	ldi temp, 0xDB					
+	out TCNT1L, temp
+
+	ldi temp, 0b00000100					; Timer 1 Interrupt init
+	out TIMSK, temp
+
+	ldi temp, 0b11111111     				; load register temp with all 1's
+    out DDRB, temp           				; configure PORT B for all outputs
+
+	ldi temp, 0b00000000     				; load register r16 with all 0's
+    out PORTB, temp           				; set PORT B to 0
+
+	ldi hours, 10
+	ldi minutes, 0
+	ldi seconds, 0
+	ldi countdown, 0
+											; start reading eeprom for interval	
+	ldi ZL, LOW(s_interval)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(s_interval)
+eeprom_read3:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_read3
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+    sbi EECR, EERE							; Strobe to EEPROM via EERE
+	in temp,EEDR							; read byte from eeprom data register
+	mov interval,temp						; Set default value interval
+	
+											; start reading eeprom for maxchannels	
+  	ldi ZL, LOW(channels)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(channels)
+eeprom_read2:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_read2
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+    sbi EECR, EERE							; Strobe to EEPROM via EERE
+	in temp,EEDR							; read byte from eeprom data register
+	mov maxchannels,temp					; Default value of # channels to 8
+
+  	ldi ZL, LOW(s_automatic)               	; load default in addres pointer register
+    ldi ZH, HIGH(s_automatic)
+eeprom_read4:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_read4
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+    sbi EECR, EERE							; Strobe to EEPROM via EERE
+	in temp,EEDR							; read byte from eeprom data register
+	mov automatic,temp						; Default value of automatic
+
+
+	ldi   temp,0x0C         				; Byte for clear display on async terminal
+	call  txbyte
+	
+	sei 									; Activate Interrupts
+	; ====================================================================
+	; Init of the uart
+	; ====================================================================
+	ldi temp, LOW(UBRRVAL)					; Baudrate initialisation
+	out UBRRL, temp
+	ldi temp, HIGH(UBRRVAL)
+	out UBRRH, temp
+	ldi   temp,(1<<URSEL)|(3<<UCSZ0)		; set frame format:8data,1stop bit
+	out   UCSRC,temp
+	ldi   temp,(1<<RXEN)|(1<<TXEN)|(1<<RXCIE)			; enable receiver and transmitter
+	out   UCSRB,temp
+  
+	; ====================================================================
+	; Init of the ADC
+	; ====================================================================
+	ldi   temp,(1<<ADEN)|(7<<ADPS0)          
+	out   ADCSR,temp       					; enable ADC
+    ldi ZL, LOW(helptext*2)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(helptext*2)              	 
+	push temp
+	call print
+	pop temp
+	call mainsub							; Do first ADC
+
+	rjmp MAIN								; Start main loop
+	
+; =====================================================================
+; interupt routine for 1 second
+; ====================================================================
+Timer_event:								; Interrupt Routine for counter 1
+	push temp								; Store R16 (temp)
+	ldi temp, 0x0B							; Timer 1 at 0BDB (1 sec by 16Mhz)
+	out TCNT1H, temp
+	ldi temp, 0xDB					
+	out TCNT1L, temp
+	; ======================================================================
+	; create software clock via 1 second interval of the timer
+	;=======================================================================
+	inc seconds
+	cpi seconds, 60
+	brne dominute							; seconds at 60, reset to 0 and inc minutes
+	ldi seconds, 0							
+	inc minutes
+dominute:
+	cpi minutes, 60 	
+	brne dohours							; minutes at 60, reset to 0 and inc hours
+	ldi minutes, 0
+	inc hours
+dohours:
+	cpi hours, 24
+	brne continue							; hours at 24, reset to 0
+	ldi hours, 0
+continue:
+	; ===========================
+	; Call main routine if a certain time is expired
+	; ===========================
+	inc countdown
+	cp countdown, interval
+	brne notyet
+	ldi countdown, 0
+
+	ldi temp , 1							; check if automatic is on/off
+	cp    temp, automatic
+	brne notyet
+	call mainsub 							; do sample when on automatic
+notyet:
+	; ======================================================================= 
+	; switch port B on/off as indication of 1 second interval
+	; =======================================================================
+	in temp, PORTB            				; Read current state of port B output
+ 	cpi   temp,0b11111111	
+	brne  on								; if off then set to on, else set to off
+	ldi temp,0b00000000 
+	out PORTB, temp      					; set to off
+	pop  temp								; restore R16	
+	reti									; return from interupt
+on: ldi temp,0b11111111
+	out PORTB, temp          				; setport B to on
+	pop  temp								; restore R16	
+	reti									; return from interupt
+
+; ======================================================================= 
+; Uart transmit ; wait for empty transmit buffer
+; =======================================================================
+txbyte:   
+
+	sbis  UCSRA,UDRE
+	rjmp  TXBYTE
+	out   UDR,temp		  					; put data (r16) into buffer,sends the data
+	ret
+
+; ======================================================================= 
+; Uart receive ; This routine is interupt driven
+; =======================================================================
+rxbyte:  
+	in   temp,UDR 							; get and return received data from buffer
+	push temp 
+	call begin_case							; check for commands and execute them
+	pop temp
+	reti    	
+
+	; ======================================
+	; case for input commands
+	; - ? == help for commands
+	; - a == automatic on/off 
+	; - h == increment hours by one
+	; - m == increment minutes by one
+	; - s == increment seconds by one
+	; - c == change # channels to measure
+	; - > == increment sample time
+	; - < decrement sample time
+	; when automatic is off, trigger to start a measurement can be given by sending any 
+	; not used command-keystroke to the cpu, this will then output the same data format 
+	; as with automatic 
+	; ======================================
+
+begin_case:
+	
+	cpi temp, 0x3F							; check for ?
+	brne chk2
+	ldi temp, CLEAR
+	call txbyte
+    ldi ZL, LOW(helptext*2)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(helptext*2)              	 
+	call print
+chk2:
+	cpi temp, 0x63							; check for c
+	brne chk3
+	inc maxchannels
+	ldi temp, 9
+	cp maxchannels,temp 
+	brne rdy2
+	ldi temp,1
+	mov maxchannels,temp
+rdy2:
+    ldi ZL, LOW(helptext3*2)               	; load helptext3 in addres pointer register
+    ldi ZH, HIGH(helptext3*2)              	 
+	call print
+	mov BIN_ASCII_L, maxchannels
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_C						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	ldi temp, CR
+	call txbyte
+	ldi temp, LF
+	call txbyte
+
+   	ldi ZL, LOW(channels)               	; load channels in addres pointer register
+    ldi ZH, HIGH(channels)
+eeprom_write2:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_write2
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+	mov temp, maxchannels
+    out EEDR, temp
+	sbi EECR, EEMWE							
+	sbi EECR,EEWE							; Strobe to EEPROM via EEWE
+
+chk3:
+	cpi temp, 0x68							; check for h
+	brne chk5
+	inc hours
+	cpi hours, 24
+	brne chk5
+	ldi hours,0
+chk5:
+	cpi temp, 0x6D							; check for m
+	brne chk6
+	inc minutes
+	cpi minutes, 60
+	brne chk6
+	ldi minutes,0
+chk6:
+	cpi temp, 0x73							; check for s
+	brne chk7
+	inc seconds
+	cpi seconds, 60
+	brne chk7
+	ldi seconds,0
+chk7:
+	cpi temp, 0x3E							; check for >
+	brne chk8
+	dec interval
+	ldi countdown, 0
+
+    ldi ZL, LOW(helptext2*2)               	; load helptext2 in addres pointer register
+    ldi ZH, HIGH(helptext2*2)              	 
+	call print
+	mov BIN_ASCII_L, interval
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_C						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	ldi temp, CR
+	call txbyte
+	ldi temp, LF
+	call txbyte
+
+   	ldi ZL, LOW(s_interval)               	; load interval in addres pointer register
+    ldi ZH, HIGH(s_interval)
+eeprom_write3:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_write3
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+	mov temp, interval
+    out EEDR, temp
+	sbi EECR, EEMWE							
+	sbi EECR,EEWE							; Strobe to EEPROM via EEWE
+	jmp chk_default
+chk8:
+ 	cpi temp, 0x3C							; check for <
+	brne chk9
+	inc interval
+	ldi countdown,0
+
+    ldi ZL, LOW(helptext2*2)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(helptext2*2)              	 
+	call print
+	mov BIN_ASCII_L, interval
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_C						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	ldi temp, CR
+	call txbyte
+	ldi temp, LF
+	call txbyte
+
+   	ldi ZL, LOW(s_interval)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(s_interval)
+eeprom_write4:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_write4
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+	mov temp, interval
+    out EEDR, temp
+	sbi EECR, EEMWE							
+	sbi EECR,EEWE							; Strobe to EEPROM via EEWE
+	jmp chk_default
+
+chk9:
+ 	cpi temp, 0x74							; check for t(testing option for debugging)
+	brne chk10
+	
+    ldi ZL, LOW(helptext4*2)               	; load helptext4 in addres pointer register
+    ldi ZH, HIGH(helptext4*2)              	 
+	call print
+	
+   	ldi ZL, LOW(channels)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(channels)
+eeprom_write:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_write
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+	ldi temp, 2
+    out EEDR, temp
+	sbi EECR, EEMWE							; Strobe to EEPROM via EERE
+	sbi EECR,EEWE
+
+eeprom_read:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_read
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+    sbi EECR, EERE							; Strobe to EEPROM via EERE
+	in temp,EEDR							; read byte from eeprom data register
+
+	mov BIN_ASCII_L, temp
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_C						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	ldi temp, CR
+	call txbyte
+	ldi temp, LF
+	call txbyte
+
+
+chk10:
+ 	cpi temp, 65 						; check for A
+	brne chk11
+
+setauto:
+	ldi temp, 0
+	mov automatic, temp						
+   	;ldi ZL, LOW(helptext5*2)               	; load helptext in addres pointer register
+    ;ldi ZH, HIGH(helptext5*2)              	 
+	;call print
+ 	;ldi temp, 48
+	;call txbyte
+ 	;ldi temp, CR
+	;call txbyte
+	;ldi temp, LF
+	;call txbyte
+	jmp readyautoset
+
+chk11:
+ 	cpi temp, 97							; check for aa
+	brne chk_default
+clearauto:
+	ldi temp, 1
+	mov automatic, temp						; check/change on/off
+   	ldi ZL, LOW(helptext5*2)               	; load helptext in addres pointer register
+    ldi ZH, HIGH(helptext5*2)              	 
+	call print
+ 	ldi temp, 49
+	call txbyte
+ 	ldi temp, CR
+	call txbyte
+	ldi temp, LF
+	call txbyte
+
+readyautoset:
+   	ldi ZL, LOW(s_automatic)               	; 
+    ldi ZH, HIGH(s_automatic)
+eeprom_write5:
+	sbic EECR, EEWE							; wait for possible pending write action
+	rjmp eeprom_write5
+ 	out EEARL, ZL							; put address of byte to fetch in EEAR
+	out EEARH, ZH
+	mov temp, automatic
+    out EEDR, temp
+	sbi EECR, EEMWE							
+	sbi EECR,EEWE							; Strobe to EEPROM via EEWE
+	ret
+
+
+chk_default:
+	call mainsub
+	ret
+
+print:
+    lpm                               		; load byte to r0
+    tst R0                            		; test r0 on a "0" (indicates end of string)
+    breq print_end                    		; if 0 then ready with printing
+    mov temp, r0                       		; copy content r0 to temp
+    call txbyte                    			; send byte via uart
+    adiw ZH:ZL, 1                        		; address pointer increment
+    rjmp print                        		; repeat
+print_end:
+	ret
+
+debug:
+    ldi ZL, LOW(debugtext*2)               	; load helptext4 in addres pointer register
+    ldi ZH, HIGH(debugtext*2)              	 
+	push temp
+	call print
+	pop temp
+	mov BIN_ASCII_L, temp
+	ldi BIN_ASCII_H, 0
+	rcall bin16_ascii
+	mov temp,ASCII_C						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_D						; Write the ASCII result to USART
+	call txbyte
+	mov temp,ASCII_E
+	call txbyte
+	ldi temp, CR
+	call txbyte
+	ldi temp, LF
+	call txbyte
+	ret
+
+
+helptext:  .db CLEAR, "8 channel AD logger - Commands available", CR, LF, "========================================", CR, LF, "? = help", CR, LF,"a = automatic on", CR, LF,"A = automatic off", CR, LF,"c = change # of channels", CR, LF, "h = increment hour", CR, LF, "m = increment minute", CR, LF,"s = increment second", CR, LF, "> = faster sample time", CR, LF, "< = slower sample time", CR, LF,NUL
+helptext2: .db CLEAR, "New interval (seconds): ",NUL
+helptext3: .db CLEAR, "Logging # of channels: ",NUL
+helptext4: .db CLEAR, "Test value: ",NUL
+debugtext: .db "Debug: " , NUL
+helptext5: .db "Automatic: " , NUL
+
+;============================================================
+; Conversion from 16 bit binary to ASCII
+; input in r28(L) and r29(H)  ASCII result == R22,21,20,19,18
+;============================================================
+bin16_ascii:
+		ldi	ASCII_A, -1 + '0'
+_a6:	inc	ASCII_A
+		subi	BIN_ASCII_L, low(10000)		;-10,000
+		sbci	BIN_ASCII_H, high(10000)
+		brcc	_a6
+
+		ldi	ASCII_B, 10 + '0'
+_a7:	dec	ASCII_B
+		subi	BIN_ASCII_L, low(-1000)		;+1000
+		sbci	BIN_ASCII_H, high(-1000)
+		brcs	_a7
+
+		ldi	ASCII_C, -1 + '0'
+_a8:	inc	ASCII_C
+		subi	BIN_ASCII_L, low(100)		;-100
+		sbci	BIN_ASCII_H, high(100)
+		brcc	_a8
+
+		ldi	ASCII_D, 10 + '0'
+_a9:	dec	ASCII_D
+		subi	BIN_ASCII_L, -10			;+10
+		brcs	_a9
+
+		mov	ASCII_E, BIN_ASCII_L
+		subi ASCII_E,-'0'
+		ret
+
+; ===========================================================================
+; conversion of 10 bit AD converter (1024) value to 5.000 (volt) ASCII output
+; ===========================================================================
+adfloat:
+		mov R1,BIN_ASCII_L	; L
+		mov R2,BIN_ASCII_H	; H
+		rcall fpconv10 ; call the conversion routine
+		mov ASCII_A , r5
+		;mov ASCII_B , r6		; we do not use the point in CO2 measurement
+		mov ASCII_B , r7
+		mov ASCII_C , r8
+		mov ASCII_D , r9
+		ret
+
+;
+; Conversion routine wrapper, calls the different conversion steps
+;
+fpconv10:
+	rcall fpconv10c ; Check the input value in R2:R1
+	brcs fpconv10e ; if carry set, set "E.EEE"
+    rcall fpconv10m ; multiplicate by 320,313
+	rcall fpconv10r ; round and divide by 65536
+	rcall fpconv10a ; convert to ASCII string
+	rjmp fpconv10f ; set decimal point and null-termination
+fpconv10e:
+	ldi temp,'E' ; set error condition to result string
+	mov R5,temp
+	mov R7,temp
+	mov R8,temp
+	mov R9, temp
+fpconv10f:
+	ldi temp,'.' ; set decimal point
+	mov R6,temp
+	clr temp ; null-terminate ASCII string
+	mov R10,temp
+	ret ; all done
+;
+; Subroutine inputcheck
+;
+fpconv10c:
+	ldi temp,$03 ; compare MSB with 03
+	cp temp,R2 ; if R2>$03, set carry on return
+	ret
+;
+; Subroutine multiplication by 320,313
+;
+; Starting conditions:
+; +---+---+
+; | R2+ R1|  Input number
+; +---+---+
+; +---+---+---+---+
+; | R6| R5| R4| R3| Multiplicant 320.313 = $00 04 E3 38
+; | 00| 04| E3| 38|
+; +---+---+---+---+
+; +---+---+---+---+
+; |R10| R9| R8| R7| Result
+; | 00| 00| 00| 00|
+; +---+---+---+---+
+;
+fpconv10m:
+	clr R6 ; set the multiplicant to 320.313
+	ldi temp,$04
+	mov R5,temp
+	ldi temp,$E3
+	mov R4,temp
+	ldi temp,$38
+	mov R3,temp
+	clr R10 ; clear the result
+	clr R9
+	clr R8
+	clr R7
+fpconv10m1:
+	mov temp,R1 ; check if the number is clear
+	or temp,R2 ; any bit of the word a one?
+	brne fpconv10m2 ; still one's, go on convert
+	ret ; ready, return back
+fpconv10m2:
+	lsr R2 ; shift MSB to the right (div by 2)
+	ror R1 ; rotate LSB to the right and set bit 7
+	brcc fpconv10m3 ; if the lowest bit was 0, then skip adding
+        add R7,R3 ; add the number in R6:R5:R4:R3 to the result
+	adc R8,R4
+	adc R9,R5
+	adc R10,R6
+fpconv10m3:
+	lsl R3 ; multiply R6:R5:R4:R3 by 2
+	rol R4
+	rol R5
+	rol R6
+	rjmp fpconv10m1 ; repeat for next bit
+;
+; Round the value in R10:R9 with the value in bit 7 of R8
+;
+fpconv10r:
+	clr temp ; put zero to temp
+	lsl R8 ; rotate bit 7 to carry
+	adc R9,temp ; add LSB with carry
+	adc R10,temp ; add MSB with carry
+	mov R2,R10 ; copy the value to R2:R1 (divide by 65536)
+	mov R1,R9
+	ret
+;
+; Convert the word in R2:R1 to an ASCII string in R5:R6:R7:R8:R9:R10
+;
+; +---+---+
+; + R2| R1| Input value 0..5,000
+; +---+---+
+; +---+---+
+; | R4| R3| Decimal divider value
+; +---+---+
+; +---+---+---+---+---+---+
+; | R5| R6| R7| R8| R9|R10| Resulting ASCII string (for input value 5,000)
+; |'5'|'.'|'0'|'0'|'0'|$00| null-terminated
+; +---+---+---+---+---+---+
+;
+fpconv10a:
+	ldi temp,HIGH(1000) ; Set the decimal divider value to 1,000
+	mov R4,temp
+	ldi temp,LOW(1000)
+	mov R3,temp
+	rcall fpconv10d ; get ASCII digit by repeated subtraction
+	mov R5,temp ; set thousands string char
+	clr R4 ; Set the decimal divider value to 100
+	ldi temp,100
+	mov R3,temp
+	rcall fpconv10d ; get the next ASCII digit
+	mov R7,temp ; set hundreds string char
+	ldi temp,10 ; Set the decimal divider value to 10
+    mov R3,temp
+	rcall fpconv10d ; get the next ASCII digit
+	mov R8,temp ; set tens string char
+	ldi temp,'0' ; convert the rest to an ASCII char
+	add temp,R1
+	mov R9,temp ; set ones string char
+	ret
+;
+; Convert binary word in R2:R1 to a decimal digit by substracting
+; the decimal divider value in R4:R3 (1000, 100, 10)
+;
+fpconv10d:
+	ldi temp,'0' ; start with decimal value 0
+fpconv10d1:
+	cp R1,R3 ; Compare word with decimal divider value
+	cpc R2,R4
+	brcc fpconv10d2 ; Carry clear, subtract divider value
+	ret ; done subtraction
+fpconv10d2:
+	sub R1,R3 ; subtract divider value
+	sbc R2,R4
+	inc temp ; up one digit
+	rjmp fpconv10d1 ; once again
+;
+; End of floating point conversion routines
+;
+
+
+; ====================================================================
+; Three register settings are saved to eeprom each time that they are changed
+; - the value of the number of channels to monitor
+; - the value of the interval
+; - if app should start with automatic readings, default - on
+; With each restart these settings are read and used as the starting values
+; ====================================================================
+.eseg
+channels:   .db 0b00001000						; 4 channels default
+s_interval: .db 0b00000010						; 2 seconds default
+s_automatic: .db 0b00000001						; 1 = on 0 = off
+
+
