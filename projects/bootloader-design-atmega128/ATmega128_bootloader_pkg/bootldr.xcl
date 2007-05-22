@@ -1,0 +1,113 @@
+/*
+ *   File:   bootldr.xcl  (modified lnkm128s.xcl)
+ *
+ *   XLINK command file for the ICCAVR C-compiler using the --cpu=m128, -ms
+ *   options. Segments are defined for an ATmega128 whithout external
+ *   memory. It is also possible to "add" external SRAM, EPROM and EEPROM.
+ *
+ *   Usage: xlink your_file(s) -f lnkm128
+ *
+ *   This XLINK command file has been customized for the "AVR Bootloader" code.
+ *   Changes from the standard linker file are:
+ *   Flash memory range: 0x1E000 - 0x1FFFF
+ *   Vector table size reduced from 0x8C to 0x10 (only need reset vector)
+ *   The TINY_ID FLASH section has been removed (-- no flash at addr 0..0xFF).
+ *   The NEAR_ID FLASH section has been removed (-- no flash at addr 0..0xFFFF).
+ *
+ *   Last modified: 27-Mar-2007 MJB
+ *   To suit IAR Embedded Workbench V4.0
+ *
+ *   Refs:  AVR_bootloader_notes.htm and Atmel App Notes AVR230, AVR032
+ */
+
+/*==========================================================================*/
+
+/* Code (flash) segments */
+-D_INTVEC_SIZE=4       /* Vector table (only the reset "vector" is needed) */
+-D_FLASH_BASE=1E000    /* START OF BOOTLOADER BLOCK IN FLASH MEMORY */
+-D_FLASH_TEND=FF       /* End of tiny flash memory */
+-D_FLASH_NEND=FFFF     /* End of near flash memory */
+-D_FLASH_END=1FFFF     /* End of flash memory */
+
+/* Internal data memory */
+-D_SRAM_BASE=100    /* Start of ram memory */
+-D_SRAM_TEND=100    /* End of tiny ram memory */
+-D_SRAM_END=10FF    /* End of ram memory */
+
+/* Internal EEPROM */
+-D_EEPROM_END=FFF   /* End of eeprom memory */
+/*==========================================================================*/
+
+
+/*
+ * Modify the lines below to alter the size of the RSTACK, CSTACK and HEAP
+ * segments. These need to be fine tuned to suit your specific application.
+ */
+-D_CSTACK_SIZE=100  /* 256 bytes for auto variables and saved registers. */
+-D_RSTACK_SIZE=40   /* 64 bytes for return addresses, equivalent to 32 */
+                    /*    levels of calls, including interrupts. */
+-D_HEAP_SIZE=100         /* 256 bytes of heap. */
+-D_NEAR_HEAP_SIZE=100    /* 256 bytes of heap. */
+
+/*
+* The following segments are located in the internal memory of the ATmega128.
+*/
+
+/* Define CPU */
+-ca90
+
+/* Code memory */
+-Z(CODE)INTVEC=_FLASH_BASE-(_FLASH_BASE+_INTVEC_SIZE-1)
+/*** -Z(CODE)TINY_F=_INTVEC_SIZE-_FLASH_TEND ***/
+/*** -Z(CODE)NEAR_F=_INTVEC_SIZE-_FLASH_NEND  ***/
+-Z(CODE)SWITCH,DIFUNCT=(_FLASH_BASE+_INTVEC_SIZE)-_FLASH_END
+-Z(CODE)CODE=(_FLASH_BASE+_INTVEC_SIZE)-_FLASH_END
+/*** -Z(FARCODE)FAR_F=(_FLASH_BASE+_INTVEC_SIZE)-_FLASH_END ***/
+-Z(CODE)FAR_F=(_FLASH_BASE+_INTVEC_SIZE)-_FLASH_END
+-Z(CODE)HUGE_F,INITTAB=(_FLASH_BASE+_INTVEC_SIZE)-_FLASH_END
+/*** -Z(CODE)TINY_ID=_INTVEC_SIZE-_FLASH_TEND ***/
+/*** -Z(CODE)NEAR_ID=_INTVEC_SIZE-_FLASH_NEND ***/
+/*** -Z(CODE)CHECKSUM#_FLASH_END ***/
+
+/* Internal data memory */
+-Z(DATA)TINY_I,TINY_Z,TINY_N=_SRAM_BASE-_SRAM_TEND
+-Z(DATA)NEAR_C,NEAR_I,NEAR_Z=_SRAM_BASE-_SRAM_END
+
+/* Stacks */
+-Z(DATA)RSTACK+_RSTACK_SIZE=_SRAM_BASE-_SRAM_END 
+-Z(DATA)CSTACK+_CSTACK_SIZE=_SRAM_BASE-_SRAM_END 
+
+/* Heap */
+-Z(DATA)HEAP+_HEAP_SIZE=_SRAM_BASE-_SRAM_END
+-Z(DATA)IOSTREAM_N#_SRAM_BASE-_SRAM_END
+-Z(DATA)NEAR_HEAP+_NEAR_HEAP_SIZE=_SRAM_BASE-_SRAM_END
+
+/* Internal eeprom memory -- NOT USED */
+/*** -Z(XDATA)EEPROM_I,EEPROM_N=0-_EEPROM_END ***/
+
+
+/* Select reduced "printf" support to reduce library size.
+   See configuration section in manual concerning printf/sprintf. */
+
+/*Dlib*/
+-e_PrintfSmall=_Printf
+
+/*Clib*/
+-e_small_write=_formatted_write
+-e_small_write_P=_formatted_write_P
+
+/* Disable floating-point support in "scanf" to reduce library size.
+   See configuration section in manual concerning scanf/sscanf */
+
+/*Dlib*/
+-e_ScanfSmall=_Scanf
+
+/*Clib*/
+-e_medium_read=_formatted_read
+-e_medium_read_P=_formatted_read_P
+
+/* Suppress one warning which is not relevant for this processor */
+-w29
+
+/* Select the output file format and address space */
+/* -Ointel-extended,(CODE)=bootldr.a90 */

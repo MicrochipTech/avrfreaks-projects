@@ -1,0 +1,605 @@
+<html>
+
+<head>
+<meta http-equiv="Content-Type"
+content="text/html; charset=iso-8859-1">
+<meta name="GENERATOR" content="Microsoft FrontPage Express 2.0">
+<title>AVR Bootloader Notes</title>
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<p align="center"><font size="3" face="Verdana"><strong>Bootloader
+Design for ATmega128</strong></font></p>
+
+<p align="center"><font size="2" face="Verdana">Author: Michael J.
+Bauer, May 2007<br>
+</font><a href="www.hotkey.net.au/~mjbauer"><font size="2"
+face="Tahoma">www.hotkey.net.au/~mjbauer</font></a></p>
+
+<hr>
+
+<p><font size="2" face="Tahoma">This note describes the
+implementation of a stand-alone bootloader program which resides
+in a dedicated block of flash memory (4k words at 0xF000) in the
+ATmega128 AVR processor. The bootloader provides a convenient
+method to update the main application firmware, in-system, from a
+host computer via a serial connection (on-chip UART or USB
+peripheral chip).</font></p>
+
+<p><font size="2" face="Tahoma">The documentation package (zip
+file) includes example source code files (loader.h, loader.c, spm.h,
+spm.asm) and a linker command file (bootldr.xcl). The source code
+does not comprise a complete bootloader program. However, it
+provides the essential ATmega128 specific flash memory
+programming code (&quot;spm&quot; module) together with a loader
+command processor (&quot;loader&quot; module). Device I/O
+functions need to be added to suit the chosen comm's interface.
+The example code is based on the bootloader functionality
+outlined below...</font></p>
+
+<p><font size="2" face="Tahoma"><u>Bootloader Functionality</u></font></p>
+
+<p><font size="2" face="Tahoma">On device power-on/reset, the
+bootloader is always entered first. The bootloader then decides
+if the main application firmware should be started. Control
+remains with the bootloader if:<br>
+1. the application program is not present or is corrupted (code
+checksum error), or<br>
+2. critical non-volatile data is corrupted (where applicable), or<br>
+3. control is passed to the bootloader from the application
+program by means of a user command.</font></p>
+
+<p><font size="2" face="Tahoma">The bootloader recognizes a small
+set of commands, referred to as &quot;loader&quot; commands or
+&quot;records&quot;. All command and response messages are
+comprised of printable ASCII characters, terminated with a 'newline'
+(0x0A). Each loader command string begins with a command code,
+which is a single ASCII character indicating the action required
+of the Bootloader. Some commands (called &quot;queries&quot;)
+generate a response message.</font></p>
+
+<p><font size="2" face="Tahoma">The loader routine uses the
+Motorola hex object file format, also known as &quot;S-record&quot;
+format, with a 3-byte (24-bit) address field (file extn = .S28).
+The syntax of other loader commands is based on the S-record
+format.</font></p>
+
+<p><font size="2" face="Tahoma">If the bootloader receives a
+command string with first character = 'S', it is assumed to be a
+Motorola S-record; the remainder of the string is parsed
+according to the Motorola S-record transfer protocol. The number
+of program code bytes in an S-record must be a binary multiple
+not exceeding 32. Data in two successive S-records must not cross
+a page boundary in the AVR flash program memory, without a 'Flush'
+command in-between. These constraints help to minimize the size
+of the AVR bootloader code.</font></p>
+
+<p><font size="2" face="Tahoma">Command messages are not queued.
+The bootloader waits for each command to complete before checking
+the input buffer for a new command message. The Bootloader is not
+interrupt-driven; all device I/O is done by polling. This results
+in simplified bootloader architecture.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Loader commands provided in
+the AVR bootloader:</u></font></p>
+<div align="left">
+
+<table border="1" cellpadding="3" cellspacing="0" width="600"
+bordercolor="#808080">
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>Cmd</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma"><strong>Arg.</strong></font></td>
+        <td valign="top"><font size="2" face="Tahoma"><strong>Purpose</strong></font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma"><strong>Response</strong></font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>E</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">&lt;addr&gt;</font></td>
+        <td valign="top"><font size="2" face="Tahoma">Erase --
+        erases flash memory page at the specified address and
+        clears the page buffer (filled with FFh)</font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma">--</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>F</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">X</font></td>
+        <td valign="top"><font size="2" face="Tahoma">Flush --
+        erases flash memory page corresponding to the page buffer,
+        then writes page buffer out to flash</font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma">--</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>S</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">see notes</font></td>
+        <td valign="top"><font size="2" face="Tahoma">S-record --
+        if it's a data record (S2...), writes data to page buffer</font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma">--</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>G</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">X</font></td>
+        <td valign="top"><font size="2" face="Tahoma">Go --
+        starts application program from reset entry point (0), if
+        the entire application code is intact (checksum verified)</font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma">--</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>J</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">&lt;addr&gt;</font></td>
+        <td valign="top"><font size="2" face="Tahoma">Jump --
+        executes program code from specified memory address </font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma">--</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>P</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">&lt;pid&gt;</font></td>
+        <td valign="top"><font size="2" face="Tahoma">Parameter
+        -- returns value of identified bootloader parameter...<br>
+        pid=0: bootloader version number <br>
+        pid=1: device CPU signature (0000A128h)<br>
+        pid=2: flash memory page size (256=100h)<br>
+        pid=3: application code version number<br>
+        pid=9: loader error codes (LS 16 bits)</font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma">8 hex digits</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="5%"><font size="2"
+        face="Tahoma"><strong>R</strong></font></td>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">&lt;addr&gt;</font></td>
+        <td valign="top"><font size="2" face="Tahoma">Read --
+        returns data (4 bytes) at the specified flash memory
+        address</font></td>
+        <td align="center" valign="top" width="15%"><font
+        size="2" face="Tahoma">8 hex digits</font></td>
+    </tr>
+</table>
+</div>
+
+<p><font size="2" face="Tahoma"><u>Firmware reset operation</u></font></p>
+
+<p><font size="2" face="Tahoma">The processor is configured (by
+an MCU &quot;option fuse&quot;) to boot directly from the
+bootloader entry point. The bootloader then reads the MCU control/status
+register (MCUCSR) to determine the reset cause. If it's a
+hardware reset (power-on, external, watchdog, etc), the
+bootloader performs a checksum over the entire application code
+block (code words from 0x0000 to 0xEFFF). The checksum should be
+zero. If it is, the bootloader will clear the hardware reset
+flags (MCUCSR) and then jump to the application code entry point
+(at 0x0000). </font></p>
+
+<p><font size="2" face="Tahoma">If, when the bootloader is
+entered, the hardware reset flags are found to be clear (soft
+reset), then control will remain within the bootloader so that it
+can receive and excute loader commands. Such will be the case
+where the bootloader has been started from the application
+firmware.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Installing the AVR bootloader</u></font></p>
+
+<p><font size="2" face="Tahoma">The bootloader code must be
+installed into the reserved bootloader block, which on the ATmega128
+is 8K bytes at 0x1E000 (i.e. 4K words at 0xF000) in flash memory.
+This can be done using the AVR-ISP module or the JTAG ICE mkII
+module (in ISP mode). The bootloader write-protects itself when
+started. It can be re-loaded only after a full chip erase.</font></p>
+
+<p><font size="2" face="Tahoma">As the bootloader is the first
+thing executed, the processor has to be configured to execute the
+bootloader on hardware reset. This is configurable only by means
+of processor &quot;option fuses&quot;, which can be programmed
+using the ISP module or the JTAG ICE mkII module (in ISP mode)
+driven from AVR-Studio (v4.12 or later). If this is not done, the
+reset vector will remain pointing to location 0x0000.
+Consequently, if the application becomes corrupted, there will be
+no way to enter the bootloader.</font></p>
+
+<p><font size="2" face="Tahoma">Option fuses which need to be set
+when the bootloader is installed:<br>
+[ » ] Reset Vector to start bootloader<br>
+[ » ] Bootloader size = 4K (words at 0xF000) </font></p>
+
+<hr>
+
+<p><font size="2" face="Verdana"><strong>Loader command syntax</strong></font></p>
+
+<p><font size="2" face="Tahoma">Commands other than S-records are
+referred to as &quot;X-records&quot; and all use the general
+syntax:</font></p>
+
+<p><font size="2" face="Tahoma">Xsbbaaaa[aa][aa]cc \n</font></p>
+
+<p><font size="2" face="Tahoma">where ...<br>
+'X' is the command code (see examples below) and all remaining
+chars are hex digits, as follows: <br>
+'s' is a single digit giving the size of the destination address
+(1 = 16 bits, 2 = 24 bits, 3 = 32 bits);<br>
+'bb' is the byte count (number of digit pairs in the record from
+'bb' to 'cc', but not including 'cc');<br>
+'aa' is a byte comprising the address field (MSB first, up to 4
+bytes);<br>
+'cc' is a checksum byte (sum of all byte values included in the
+bytecount, bitwise inverted).</font></p>
+
+<p><font size="2" face="Verdana"><strong>Command set, with
+examples</strong></font></p>
+
+<p><font size="2" face="Tahoma"><u>Load program code into flash
+page buffer (in RAM)</u></font></p>
+
+<p><font size="2" face="Lucida Console">S21400020044010000014000030000460549010000CB</font></p>
+
+<p><font size="2" face="Tahoma">This is a typical S-Record with 3-byte
+(24-bit) address field. <br>
+Bytecount is 0x14 (=20). Destination address is 0x000200. <br>
+Actual number of object code bytes is (20 - 4) = 16.<br>
+Checksum byte is 0xCB.</font></p>
+
+<p><font size="2" face="Tahoma">The destination address
+determines which flash page will be programmed when a subsequent
+'Flush' command is received.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Erase page of flash</u></font></p>
+
+<p><font size="2" face="Lucida Console">E204000000FB</font></p>
+
+<p><font size="2" face="Tahoma">The Erase command erases one 256-byte
+page in the flash memory. The address field determines which page
+is to be erased. The low-order 8 bits of the address are ignored
+(assumed zero). The RAM page buffer will be filled with the
+&quot;blank&quot; value (0xFF), in case a subsequent Flush
+command is received before the page buffer is fully loaded. The
+checksum is obtained by adding the 4 bytes 04+00+00+00 = 0x04,
+then inverting the bits (or subtracting from 0xFF).</font></p>
+
+<p><font size="2" face="Tahoma">The example shown will result in
+the flash memory page beginning at address 0x000000 being erased.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Flush page buffer / Flash
+write</u></font></p>
+
+<p><font size="2" face="Lucida Console">F1030000FD</font></p>
+
+<p><font size="2" face="Tahoma">The flash memory page
+corresponding to the current page buffer is erased prior to
+flushing the buffer. The command address field is ignored. The
+command will write the contents of the (RAM) page buffer to the
+AVR flash memory &quot;cache&quot;, then initiate a page
+programming cycle. The flash page address is assumed to be the
+address of the last data byte loaded into the page buffer (ignoring
+the 8 low-order bits). It is not necessary for the host software
+to erase the page using the 'Erase' (E) command prior to sending
+a 'Flush' command.</font></p>
+
+<p><font size="2" face="Tahoma">The host PC should follow every 'Flush'
+command with the query 'Read Parameter 9' (get loader error
+status) to check that the page write operation was successful;
+also to maintain host-device message synchronization. Depending
+on the implementation of the communications interface, it may be
+necessary for the host to delay a few milliseconds after sending
+a 'Flush' command, before sending a subsequent command or query.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Read 4 bytes of flash</u></font></p>
+
+<p><font size="2" face="Lucida Console">R20500000010EB</font></p>
+
+<p><font size="2" face="Tahoma">Reads 4 successive bytes out of
+flash memory, starting at the specified address (0x000010), and
+returns these as an 8-digit hex ASCII string. The order of bytes
+in the response string is the same as the order in flash memory (i.e.
+byte at lowest address first).</font></p>
+
+<p><font size="2" face="Tahoma"><u>Jump to program location</u></font></p>
+
+<p><font size="2" face="Lucida Console">J203000000FC</font></p>
+
+<p><font size="2" face="Tahoma">Execute from the specified
+program address, unconditionally. The address in this command is
+a BYTE-oriented address; a value suitable for assigning to a
+variable of type 'pointer-to-function'. In this example, the
+bootloader would jump to 0x000000, which would attempt to start
+the application program regardless of its integrity.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Read Parameter (0 = Bootloader
+version number)</u></font></p>
+
+<p><font size="2" face="Lucida Console">P1030000FC</font></p>
+
+<p><font size="2" face="Tahoma">Response format: &quot;mm nn bbbb\n&quot;
+(no spaces), where 'mm' is major version, 'nn' is minor version,
+'bbbb' is build number, all encoded in ASCII hexadecimal digits.
+The build number 'bbbb' is formatted LSB first.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Read Parameter (1 = CPU
+signature)</u></font></p>
+
+<p><font size="2" face="Lucida Console">P1030001FB</font></p>
+
+<p><font size="2" face="Tahoma">Response format: &quot;0000A128&quot;
+(indicating ATmega128).</font></p>
+
+<p><font size="2" face="Tahoma"><u>Read Parameter (2 = Flash page
+size (bytes))</u></font></p>
+
+<p><font size="2" face="Lucida Console">P1030002FA</font></p>
+
+<p><font size="2" face="Tahoma">Response format: &quot;00000100&quot;,
+i.e. decimal value 256 encoded in ASCII hexadecimal.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Read Parameter (3 =
+Application firmware version number)</u></font></p>
+
+<p><font size="2" face="Lucida Console">P1030003F9</font></p>
+
+<p><font size="2" face="Tahoma">Response format: &quot;mm nn bbbb\n&quot;
+(no spaces), where 'mm' is major version, 'nn' is minor version,
+'bbbb' is build number, all encoded in ASCII hexadecimal digits.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Read Parameter (9 = Loader
+error flags)</u></font></p>
+
+<p><font size="2" face="Lucida Console">P1030009F3</font></p>
+
+<p><font size="2" face="Tahoma">Response format: &quot;0000nnnn&quot;,
+where 'nnnn' is a 16 bit number, encoded in ASCII hexadecimal
+digits, representing the loader error flags word. Error flags
+defined so far are:</font></p>
+<div align="left">
+
+<table border="1" cellpadding="2" cellspacing="0" width="500"
+bordercolor="#808080">
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma"><strong>BIT</strong></font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma"><strong>ERROR
+        FLAG</strong></font></td>
+        <td width="55%"><font size="2" face="Tahoma"><strong>DESCRIPTION</strong></font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">0</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_COMMAND_UNK</font></td>
+        <td width="55%"><font size="2" face="Tahoma">Unrecognized
+        command code</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">1</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_ERASE_FAIL</font></td>
+        <td width="55%"><font size="2" face="Tahoma">Erase
+        function failed</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">2</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_WRITE_FAIL</font></td>
+        <td width="55%"><font size="2" face="Tahoma">Page write
+        failed (did not verify)</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">3</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_ADDR_RANGE</font></td>
+        <td width="55%"><font size="2" face="Tahoma">Destination
+        address out of range</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">4</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_APPL_CORRUPT</font></td>
+        <td width="55%"><font size="2" face="Tahoma">Application
+        code corrupt ('Go' cmd failed)</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">5</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_RESET_ADDR</font></td>
+        <td width="55%"><font size="2" face="Tahoma">(Not used)</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">6</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_SREC_CKSM</font></td>
+        <td width="55%"><font size="2" face="Tahoma">Data (S-record)
+        checksum error</font></td>
+    </tr>
+    <tr>
+        <td align="center" valign="top" width="10%"><font
+        size="2" face="Tahoma">7</font></td>
+        <td valign="top" width="35%"><font size="2" face="Tahoma">LDR_ERR_XREC_CKSM</font></td>
+        <td width="55%"><font size="2" face="Tahoma">Command (X-record)
+        checksum error</font></td>
+    </tr>
+</table>
+</div>
+
+<p><font size="2" face="Tahoma"><u>Go to Application</u></font></p>
+
+<p><font size="2" face="Lucida Console">G1030000FC</font></p>
+
+<p><font size="2" face="Tahoma">Transfers control to application
+firmware (at 0x0000), subject to conditions described elsewhere
+in this document. The address field is ignored.</font></p>
+
+<hr>
+
+<p><font size="2" face="Verdana"><strong>Bootloader Development</strong></font></p>
+
+<p><font size="2" face="Tahoma"><u>AVR program memory addressing</u></font></p>
+
+<p><font size="2" face="Tahoma">The AVR processor architecture
+segregates the program code memory (Flash ROM) from the data
+memory (RAM). Program memory is word-oriented. Data memory is
+byte-oriented. Data may be transferred from the program space to
+the data space, and vice-versa, by means of special 'move'
+instructions.</font></p>
+
+<p><font size="2" face="Tahoma">In normal operation, i.e. program
+execution, the flash memory is organised as 64K x 16-bits. Each
+instruction consists of one or two 16-bit words. When moving data
+from program space to data space, or while programming the flash
+memory, however, the program space is byte-addressable. Flash
+memory is organised into a number of 256-byte (128-word) pages.
+To program the flash array, it is necessary first to write into a
+256-byte page buffer (or &quot;cache&quot;), implemented in
+dedicated RAM. For this purpose, a byte-addressing scheme is
+enabled, so the flash memory is regarded as 128K bytes. Loader
+addresses are therefore BYTE addresses. </font></p>
+
+<p><font size="2" face="Tahoma">The hex object code file also
+assumes a byte addressing scheme, i.e. the address field of an S-record
+contains a BYTE address. Code words are formatted as little-endian,
+i.e. LSB first.</font></p>
+
+<p><font size="2" face="Tahoma">The ATmega128 is typical of AVR
+processors having a program memory space larger than 64KB. As the
+bootloader firmware resides in the upper half of the ATmega128
+flash memory, steps must be taken to avoid use of the lower 64KB
+of the program address space. Pointers accessing code or data in
+the program memory must be qualified as __farflash or __hugeflash.
+These pointer types are allocated 24 bits (3 bytes) of data
+memory.</font></p>
+
+<p><font size="2" face="Tahoma">In the IAR development
+environment, a pointer to anything in the flash program memory
+space contains a BYTE address. This applies also to function
+address (i.e. pointer to function), despite the fact that the MCU
+Program Counter (PC register) contains a WORD address. The least
+significant bit of a function address (pointer value) is
+therefore discarded. </font></p>
+
+<p><font size="2" face="Tahoma"><u>IAR EWAVR Compiler/Linker
+configuration</u></font></p>
+
+<p><font size="2" face="Tahoma">The IAR compiler places data
+initializers (values for non-zero initialized global and static
+data) in the NEAR_ID section (lower half of flash program space
+at 0..0x0FFFF) by default. The IAR startup module copies this
+data to the respective RAM variables, before calling main().
+Since the NEAR_ID section is outside of the bootloader block
+address range, non-zero initialized global or static data cannot
+be used in the bootloader! Similarly, the NEAR_F segment is used
+for &quot;aggregate data initializers&quot; for local variables.
+To avoid use of NEAR_F segment, turn off the compiler option
+&quot;Place aggregate data initializers in flash&quot;, and use
+the 'Normal DLIB' library, not CLIB.</font></p>
+
+<p><font size="2" face="Tahoma">Constant data (strings, arrays
+and structures) must be declared using the __farflash type
+qualifier. This forces constant data into the FAR_F (CODE)
+section, which the linker can locate anywhere in the CODE space (flash
+memory), as specified in the linker command file. This data may
+be copied to RAM variables for manipulation, if required, by
+functions in the firmware. Library functions are provided for
+this purpose; e.g. strcpy_P(), strlen_P(), memcpy_P(), etc. The
+suffix _P indicates that one or more function arguments access
+program memory space, i.e. __farflash data.</font></p>
+
+<p><font size="2" face="Tahoma">To get the XLINK linker to locate
+the bootloader code at the required address requires a customized
+linker command file (example: bootldr.xcl). The linker file
+content is taken largely from the default file (lnkm128s.xcl,
+supplied with the compiler). The IAR IDE project must be
+configured to use the custom linker command file. The file name (bootldr.xcl)
+is specified under Project/Options/Linker/Config/Linker Command
+File. Tick the box [Override Default].</font></p>
+
+<p><font size="2" face="Tahoma"><u>Summary of IAR EWAVR project
+options for the bootloader build:</u></font></p>
+
+<p><font size="2" face="Tahoma">General Options / ...<br>
+... Target [ATmega128]<br>
+... Target / Memory model / Small<br>
+... Target / [No] Configure system using dialogues ^<br>
+... Library Configration / Library: [Normal DLIB]<br>
+... System / [Yes] Enable bit def's in I/O header files</font></p>
+
+<p><font size="2" face="Tahoma">C Compiler / ...<br>
+... Code / Memory utilization [None] -- (uncheck all 3 options)<br>
+... Optimizations / Speed: [None]<br>
+... Optimizations / Size: [None]</font></p>
+
+<p><font color="#000000" size="2" face="Tahoma">Linker / ...<br>
+... Output / Format / [Yes] Other / Output format: [intel-extended]<br>
+... Config / Linker command file / [Yes] Override default [C:\AVR_boot\bootldr.xcl]</font></p>
+
+<p><font color="#000000" size="2" face="Tahoma">^ Directs the
+linker to use the linker command file (bootldr.xcl) instead of
+the IDE dialogue boxes.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Installing the AVR bootloader</u></font></p>
+
+<p><font size="2" face="Tahoma">The bootloader code must be
+installed into the reserved bootloader block, which on the ATmega128
+is 8K bytes at 0x1E000 (i.e. 4K words at 0xF000) in flash memory.
+This can be done using the AVR-ISP module or the JTAG ICE mkII
+module (in ISP mode). The bootloader write-protects itself when
+started. It can be re-loaded only after a full chip erase.</font></p>
+
+<p><font size="2" face="Tahoma">As the bootloader is the first
+thing executed, the processor has to be configured to execute the
+bootloader on hardware reset. This is configurable only by means
+of processor &quot;option fuses&quot;, which can be programmed
+using the ISP module or the JTAG ICE mkII module (in ISP mode)
+driven from AVR-Studio (v4.12 or later). If this is not done, the
+reset vector will remain pointing to location 0x0000.
+Consequently, if the application becomes corrupted, there will be
+no way to enter the bootloader.</font></p>
+
+<p><font size="2" face="Tahoma">Option fuses which need to be set
+when the bootloader is installed:<br>
+[ » ] Reset Vector to start bootloader<br>
+[ » ] Bootloader size = 4K (words at 0xF000) </font></p>
+
+<p><font size="2" face="Tahoma">Note: The (jump) instruction at 0x0000
+always enters the application firmware, not the bootloader.</font></p>
+
+<p><font size="2" face="Tahoma"><u>Wormholes into application
+firmware</u></font></p>
+
+<p><font size="2" face="Tahoma">The application firmware release
+number may be embedded in the flash program memory at a reserved
+location. The location used in the example code is 0x1DFF0 (byte
+addressing mode). This is a 4 byte value, encoded as follows:</font></p>
+
+<p><font size="2" face="Tahoma">Byte #1 = Major release number<br>
+Byte #2 = Minor release number<br>
+Byte #3 = Build version number (LSB of word)<br>
+Byte #4 = Build version number (MSB of word)</font></p>
+
+<p><font size="2" face="Tahoma">Values for these version numbers
+may be defined in a header file (e.g. &quot;buildver.h&quot;).
+The &quot;build&quot; version number may be incremented
+automatically by a pre-build utility whenever a &quot;Rebuild All&quot;
+or &quot;Make&quot; operation is executed.</font></p>
+
+<hr>
+
+<p><font size="2" face="Tahoma">Last revised: </font><font
+color="#0000FF" size="2" face="Tahoma">08-May-2007</font><font
+size="2" face="Tahoma"> MJB</font></p>
+</body>
+</html>
