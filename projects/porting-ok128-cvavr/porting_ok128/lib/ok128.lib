@@ -1,0 +1,622 @@
+/****************************************************************************************
+*	DISCLAIMER:
+*	
+*	This library was ported from original code written by Duck-Yong Yoon in 2005.
+*	The original platform was for AvrEdit and ported to CVAVR.
+*	The purpose of this is for educational only, I am not
+*	responsible for any damages caused by this library.
+*	
+*	These files ok128.lib and ok128.h are actually was ported (also added) and written
+*	for specific use for OK128 ATMEGA128 toolbox kit from www.ohm.co.kr, and was used in
+*	Mechatronics and Experiments in our lab robot.gsnu.ac.kr
+*	
+*	OK128, CVAVR and AVREDIT are both belong to their respective owner.
+*	
+*	Bondhan Novandy
+*	http://bono02.wordpress.com/ 
+*	
+*	NOTE: - Copy ok128.lib into drive:\>cvavr\lib, and ok128.h  into drive:\>cvavr\inc 
+*	      - Don't forget to set the external memory to 61184 bytes in project settings
+*	
+****************************************************************************************/
+
+#include <ok128.h>
+#include <mega128.h>
+#include <delay.h>
+#include <math.h>
+ 
+void MCU_initialize(void)			/* initialize ATmege128 MCU */
+{    
+  MCUCR = 0x80;					// enable external memory and I/O
+  XMCRA = 0x44;					// 0x1100-0x7FFF=1 wait, 0x8000-0xFFFF=0 wait
+  XMCRB = 0x80;					// enable bus keeper, use PC0-PC7 as address
+
+  DDRB = 0xFF;						// PORTB = output (D/A, LED1-4, matrix LED)
+  PORTB = 0x00;
+  DDRD = 0xFF;						// PORTD = output (matrix LED)
+  PORTD = 0x00;
+  DDRE = 0x0C;						// PORTE = output for PE3, PE2
+  PORTE = 0x00;
+  DDRF = 0x00;						// PORTF = input (KEY1-4)
+
+  DIG_SELECT = 0x00;				// clear 7-segment LED
+}
+
+void Beep(void)					/* beep for 50 ms */
+{ 
+  PORTE |= _BV(2);					// buzzer on   equal with PORTE = 0x04;  
+  delay_ms(50);					// delay 50 ms
+  PORTE &= ~_BV(2);					// buzzer off equal with PORTE = 0x00;  
+}
+
+void LCD_command(unsigned char command)	/* write a command(instruction) to text LCD */
+{
+  LCD_CONTROL = 0x00;				// E = 0, Rs = 0
+  LCD_DATABUS = command;				// output command
+  LCD_CONTROL = 0x01;				// E = 1
+  #asm (" PUSH  R0 ")				// delay for about 250 ns
+  #asm (" POP   R0 ")
+  LCD_CONTROL = 0x00;				// E = 0
+  delay_us(50);
+}
+
+void LCD_data(unsigned char data)		/* display a character on text LCD */
+{
+  LCD_CONTROL = 0x02;				// E = 0, Rs = 1
+  LCD_DATABUS = data;				// output data
+  LCD_CONTROL = 0x03;				// E = 1
+  #asm (" PUSH  R0 ")				// delay for about 250 ns
+  #asm (" POP   R0 ")
+  LCD_CONTROL = 0x02;				// E = 0
+  delay_us(50);
+}
+
+void LCD_string(unsigned char command, char flash *string) /* display a string on LCD */
+{
+  LCD_command(command);				// start position of string
+  while(*string != '\0')				// display string
+    { LCD_data(*string);
+       string++;
+    }
+}             
+
+void LCD_putsf(char flash *string) 	/* display a string on LCD */
+{
+  while(*string != '\0')				// display string
+    { LCD_data(*string);
+       string++;
+    }
+}             
+
+void LCD_puts(char *string) 			/* display a string on LCD */
+{
+  while(*string != '\0')				// display string
+    { LCD_data(*string);
+       string++;
+    }
+}             
+
+int LCD_putchar(char c)				/* print a character to LCD */
+{
+  if((c < 0x20) | (c > 0x7E))           // check from 0x20 to 0x7E
+    return 0;
+
+  LCD_data(c);
+  return 0;
+}
+
+int LCD_putanychar(char c)		     /* print a character to LCD */
+{
+  LCD_data(c);
+  return 0;
+}
+
+int LCD_clear(void)
+{
+	LCD_command(0x01);
+	delay_ms(2);
+}
+
+void LCD_initialize(void)			/* initialize text LCD module */
+{
+  LCD_CONTROL = 0x03;				// E = 1, Rs = 1 (dummy write)
+  LCD_CONTROL = 0x02;				// E = 0, Rs = 1
+  delay_ms(2);
+
+  LCD_command(0x38);				// function set(8 bit, 2 line, 5x7 dot)
+  LCD_command(0x0C);				// display control(display ON, cursor OFF)
+  LCD_command(0x06);				// entry mode set(increment, not shift)
+  LCD_command(0x01);				// clear display
+  delay_ms(2);
+}
+
+unsigned char key_flag = 0;
+
+unsigned char key_input(void)			/* input key SW1 - SW4 */
+{ 
+  unsigned char key;
+
+  key = PINF & 0xF0;				// any key pressed ?
+  if(key == 0xF0)					// if no key, check key off
+    { if(key_flag == 0)
+        return key;
+      else
+        { delay_ms(20);
+          key_flag = 0;
+          return key;
+        }
+    }
+  else							// if key input, check continuous key
+    { if(key_flag != 0)				// if continuous key, treat as no key input
+        return 0xF0;
+      else						// if new key, beep and delay for debounce
+        { Beep();
+          key_flag = 1;
+          return key;
+        }
+    }
+}
+
+void LCD_8bin(unsigned char number)	/* display 8-bit binary number */
+{
+  LCD_data((number >> 7) + '0');
+  LCD_data(((number >> 6) & 0x01) + '0');
+  LCD_data(((number >> 5) & 0x01) + '0');
+  LCD_data(((number >> 4) & 0x01) + '0');
+  LCD_data(((number >> 3) & 0x01) + '0');
+  LCD_data(((number >> 2) & 0x01) + '0');
+  LCD_data(((number >> 1) & 0x01) + '0');
+  LCD_data((number & 0x01) + '0');
+}
+
+void LCD16_gotxy_ok128(int x, int y)
+{
+	//For LCD 2-4 lines 8 bytes in each line, not for 4x40
+	//Tested on 8 characters 2 lines LCD on OK128
+		
+	if (y == 0)		//first line start at
+	{    
+		LCD_command(0x80+x);
+		delay_ms(2);
+	}
+	else if(y == 1)
+	{
+		LCD_command(0xc0+x);	
+		delay_ms(2);
+	}	
+}
+
+void LCD_SetFont(void)                             /* set user character font */
+{ 
+  /*
+		example character 0, look at 
+		what the ones, thet are shaping 
+		an arrow to the right:
+		
+		00001000	          //0x10
+		00001100            //0x18
+		00001110            //0x1c
+		00001111            //0x1e
+		00001110            //0x1c
+		00001100            //0x18
+		00001000            //0x10
+		00000000			//0x00
+  */
+  
+  unsigned char i;
+  unsigned char font[] = {
+    0x10, 0x18, 0x1C, 0x1E, 0x1C, 0x18, 0x10, 0x00,   // character 0	
+    0x0F, 0x09, 0x09, 0x09, 0x09, 0x09, 0x0F, 0x00,   // character 1 
+    0x08, 0x08, 0x08, 0x0E, 0x08, 0x08, 0x08, 0x00,   // character 2 
+    0x01, 0x02, 0x04, 0x08, 0x00, 0x00, 0x0F, 0x00,   // character 3
+    0x10, 0x08, 0x04, 0x02, 0x00, 0x00, 0x1E, 0x00,   // character 4
+    0x0F, 0x08, 0x08, 0x0F, 0x08, 0x08, 0x0F, 0x00,   // character 5
+    0x04, 0x04, 0x04, 0x1C, 0x04, 0x04, 0x04, 0x00,   // character 6
+    0x01, 0x03, 0x07, 0x0F, 0x07, 0x03, 0x01, 0x00 }; // character 7
+
+  LCD_command(0x40);                            // set CGRAM address
+  for(i=0; i<64; i++)                           // download font data
+     LCD_data(font[i]);
+}
+
+void LCD_2d(unsigned char number)               /* display 2-digit decimal number */
+{ unsigned char i;
+
+  i = number/10;                                // 10^1
+  if(i == 0) LCD_data(' ');
+  else       LCD_data(i + '0');
+
+  i = number % 10;                              // 10^0
+  LCD_data(i + '0');
+}
+
+void LCD_3d(unsigned int number)                /* display 3-digit decimal number */
+{ unsigned int i;
+  unsigned char flag;
+
+  flag = 0;
+  i = number/100;                               // 10^2
+  if(i == 0) LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  number = number % 100;                        // 10^1
+  i = number/10;
+  if((i == 0) && (flag == 0))
+             LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  i = number % 10;                              // 10^0
+  LCD_data(i + '0');
+}
+
+void LCD_4d(unsigned int number)                /* display 4-digit decimal number */
+{ unsigned int i;
+  unsigned char flag;
+
+  flag = 0;
+  i = number/1000;                              // 10^3
+  if(i == 0) LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  number = number % 1000;                       // 10^2
+  i = number/100;
+  if((i == 0) && (flag == 0))
+             LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  number = number % 100;                        // 10^1
+  i = number/10;
+  if((i == 0) && (flag == 0))
+             LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  i = number % 10;                              // 10^0
+  LCD_data(i + '0');
+}
+
+void LCD_2hex(unsigned char number)             /* display 2-digit hex number */
+{ unsigned char i;
+
+  i = (number >> 4) & 0x0F;                     // 16^1
+  if(i <= 9) LCD_data(i + '0');
+  else       LCD_data(i - 10 + 'A');
+
+  i = number & 0x0F;                            // 16^0
+  if(i <= 9) LCD_data(i + '0');
+  else       LCD_data(i - 10 + 'A');
+}
+
+void LCD_4hex(unsigned int number)              /* display 4-digit hex number */
+{ unsigned int i;
+
+  i = number >> 12;                             // 16^3
+  if(i <= 9) LCD_data(i + '0');
+  else       LCD_data(i - 10 + 'A');
+
+  i = (number >> 8) & 0x000F;                   // 16^2
+  if(i <= 9) LCD_data(i + '0');
+  else       LCD_data(i - 10 + 'A');
+
+  i = (number >> 4) & 0x000F;                   // 16^1
+  if(i <= 9) LCD_data(i + '0');
+  else       LCD_data(i - 10 + 'A');
+
+  i = number & 0x000F;                          // 16^0
+  if(i <= 9) LCD_data(i + '0');
+  else       LCD_data(i - 10 + 'A');
+}
+
+
+void LCD_1d1(float number)		     /* floating-point number x.x */
+{ unsigned int i, j;
+
+  j = (int)(number*10. + 0.5);
+  i = j / 10;						// 10^0
+  LCD_data(i + '0');
+  LCD_data('.');
+  i = j % 10;						// 10^-1
+  LCD_data(i + '0');
+}
+
+void LCD_2d2(float number)		     /* floating-point number xx.xx */
+{ unsigned int i, j;
+
+  j = (int)(number*100. + 0.5);
+  i = j / 1000;					// 10^1
+  if(i == 0) LCD_data(' ');
+  else       LCD_data(i + '0');
+
+  j = j % 1000;					// 10^0
+  i = j / 100;
+  LCD_data(i + '0');
+  LCD_data('.');
+
+  j = j % 100;						// 10^-1
+  i = j / 10;
+  LCD_data(i + '0');
+
+  i = j % 10;						// 10^-2
+  LCD_data(i + '0');
+}
+
+void LCD_5d(unsigned int number)        /* display 5-digit decimal number */
+{ unsigned int i;
+  unsigned char flag;
+
+  flag = 0;
+  i = number/10000;                     // 10^4
+  if(i == 0) LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  number = number % 10000;              // 10^3
+  i = number/1000;
+  if((i == 0) && (flag == 0))
+             LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  number = number % 1000;               // 10^2
+  i = number/100;
+  if((i == 0) && (flag == 0))
+             LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  number = number % 100;                // 10^1
+  i = number/10;
+  if((i == 0) && (flag == 0))
+             LCD_data(' ');
+  else {     LCD_data(i + '0');
+             flag = 1;
+       }
+
+  i = number % 10;                      // 10^0
+  LCD_data(i + '0');
+}
+
+unsigned char Bin2LED(unsigned char number)     /* convert binary to LED pattern */
+{
+  if(number == 0)       return 0xFC;
+  else if(number == 1)  return 0x60;
+  else if(number == 2)  return 0xDA;
+  else if(number == 3)  return 0xF2;
+  else if(number == 4)  return 0x66;
+  else if(number == 5)  return 0xB6;
+  else if(number == 6)  return 0xBE;
+  else if(number == 7)  return 0xE4;
+  else if(number == 8)  return 0xFE;
+  else if(number == 9)  return 0xF6;
+  else if(number == 10) return 0xEE;
+  else if(number == 11) return 0x3E;
+  else if(number == 12) return 0x9C;
+  else if(number == 13) return 0x7A;
+  else if(number == 14) return 0x9E;
+  else if(number == 15) return 0x8E;
+  else if(number == '-') return 0x02;
+  else if(number == '.') return 0x01;
+  else return 0x00;
+}
+
+void LCD_2d1(float number)		/* floating-point number xx.x */
+{ unsigned int i, j;
+
+  j = (int)(number*10. + 0.5);
+  i = j / 100;					// 10^1
+  if(i == 0) LCD_data(' ');
+  else       LCD_data(i + '0');
+
+  j = j % 100;					// 10^0
+  i = j / 10;
+  LCD_data(i + '0');
+  LCD_data('.');
+
+  i = j % 10;					// 10^-1
+  LCD_data(i + '0');
+}
+
+void LCD_s1d2(float number)		/* floating-point number x.xx */
+{ unsigned int i, j;
+
+  if(number >= 0.) LCD_data('+');  // sign +/-
+  else LCD_data('-');
+
+  j = (int)(fabs(number)*100. + 0.5);
+  i = j / 100;					// 10^0
+  LCD_data(i + '0');
+  LCD_data('.');
+
+  j = j % 100;					// 10^-1
+  i = j / 10;
+  LCD_data(i + '0');
+
+  i = j % 10;					// 10^-2
+  LCD_data(i + '0');
+}
+
+void Dsp_voltage(unsigned char number)          /* display D/A voltage */
+{ unsigned char i;
+  unsigned int j;
+
+  LCD_command(0xC2);                            // display in HEX
+  LCD_2hex(number);
+
+  LCD_command(0xC7);                            // display sign of voltage
+  if(number >= 0x80)                            //   and calculate absolute value
+    { LCD_data('+');
+      i = number - 0x80;
+    }
+  else
+    { LCD_data('-');
+      i = 0x80 - number;
+    }
+
+  j = i*100/128;                                // voltage = (absolute/128)*10
+  i = j/100;
+  if(i == 0) LCD_data(' ');                     // 10^1
+  else       LCD_data(i + '0');
+  i = j%100;
+  LCD_data(i/10 + '0');                         // 10^0
+  LCD_data('.');
+  LCD_data(i%10 + '0');                         // 10^-1
+}
+
+
+void temperature(void)
+{
+  unsigned int i = 0;
+  unsigned sum = 0;
+  
+  ADMUX = 0x02;                                 // select ADC2 with external AREF
+  ADCSRA = 0x87;                                // ADC enable, 125kHz
+
+  //ADMUX = 0x09;                                 // diffrential ADC1, gain 10
+  //ADCSRA = 0x87;                                // ADC enable, 125kHz
+  delay_us(200);
+
+  sum = 0;
+ for(i=0; i<16; i++)                       // read ADC by 16 times
+ { 
+ 	ADCSRA = 0xD7;                        // ADC start
+ 	while((ADCSRA & 0x10) != 0x10);
+	sum += ADCL + ADCH*256;               // add A/D result 16 times
+	delay_ms(1);
+ }
+
+ sum = sum >> 4;                           // divide sum by 16
+
+ LCD_command(0xC1);                        // display in HEX
+ LCD_4hex(sum);
+ LCD_command(0xC9);                        // display in temperature(XX.X)
+//LCD_2d1(sum*50./512.);                    // Temp = sum*50/512
+ LCD_2d1(sum*100./1024.);                  // Temp = sum*100/1024
+
+  
+ delay_ms(500);                           // delay 1 sec
+  
+}
+
+void dimmer(void)  				//will dim the light on and off
+{            
+	int j, k, p = 0;
+                    
+                    			
+	DDRB = 0xF0; 				//PORTB as output;
+                    			
+ 	for ( j = 0; j < 1000; j++)
+     {
+     	for ( p = 1000; p > j; p--)
+          {	
+          	PORTB &= 0x00;      //OFF
+           }
+                    				
+           for (k = 0; k < j; k++)
+           {
+           	PORTB |= 0xF0;		//ON         						
+		 }          					          							          				          
+   	 }
+                    			
+      delay_ms(50);
+                    									
+      for ( j = 0; j < 1000; j++)
+      {
+      	for ( p = 1000; p > j; p--)
+          {
+          	PORTB |= 0xF0;		//ON         						
+          }
+                    				
+          for (k = 0; k < j; k++)
+          {
+          	PORTB &= 0x00;      //OFF	
+          }
+       }
+}
+
+void running_7segmen(void)
+{
+  	unsigned char i, j, k, digit;
+      for(i=0; i<250; i++)                      // display for 2 sec
+        for(j=0,digit=0x80; j<=7; j++)          // display from 0 to 7
+          { LCD_DATABUS = Bin2LED(j);
+            DIG_SELECT = digit;
+            digit = digit>>1;
+            delay_ms(1);
+          }
+
+      for(i=0; i<250; i++)                      // display for 2 sec
+        for(j=8,digit=0x80; j<=15; j++)         // display from 8 to F
+          { LCD_DATABUS = Bin2LED(j);
+            DIG_SELECT = digit;
+            delay_ms(1);
+            digit = digit>>1;
+          }
+      for(k=0; k<=8; k++)                       // display shift left
+        for(i=0; i<125; i++)                    // display for 1 sec
+          for(j=0,digit=0x80; j<=7; j++)
+            { LCD_DATABUS = Bin2LED(k+j) + 0x01;
+              DIG_SELECT = digit;
+              delay_ms(1);
+              digit = digit>>1;
+            }
+
+      DIG_SELECT = 0x00;                        // clear 7-segment LED
+}
+
+void ambulance(void)
+{
+	unsigned char i, glitch;
+  
+     TCCR3A = 0x40;                                // CTC mode(12), use OC3A
+     TCCR3B = 0x1A;                                // f(OC3A) = 16MHz/8/2/(1+N)
+     TCCR3C = 0x00;
+     TCNT3H = 0x00;                                // clear Timer/Counter3TCNT3L = 0x00;
+     
+     TCCR3A = 0x40;                                // CTC mode(12), use OC3A
+     TCCR3B = 0x1A;                                // f(OC3A) = 16MHz/8/2/(1+N)
+     TCCR3C = 0x00;
+     TCNT3H = 0x00;                                // clear Timer/Counter3
+     TCNT3L = 0x00;
+     
+	for(i=0; i<5; i++)
+        { TCCR3B = 0x1A;                        // speaker on
+          do{ glitch = TCNT3L;                  // protect glitch
+              glitch = TCNT3H;
+             } while(glitch >= (2082 >> 8));
+          ICR3H = (2082 >> 8);                  // 480 Hz
+          ICR3L = 2082 & 0xFF;
+          delay_ms(500);                        // delay for 500 ms
+
+          do{ glitch = TCNT3L;                  // protect glitch
+              glitch = TCNT3H;
+             } while(glitch >= (2777 >> 8));
+          ICR3H = (2777 >> 8);                  // 360 Hz
+          ICR3L = 2777 & 0xFF;
+          delay_ms(500);                        // delay for 500 ms
+        }
+
+      TCCR3B = 0x18;                            // speaker off
+      delay_ms(1000);                           // delay for 1 sec
+       
+}
+
+void kedip(void)
+{
+	DDRB=0xFF;
+	PORTB = 0X00;
+	delay_ms(50);
+	PORTB = 0XFF;
+	delay_ms(50);
+}
