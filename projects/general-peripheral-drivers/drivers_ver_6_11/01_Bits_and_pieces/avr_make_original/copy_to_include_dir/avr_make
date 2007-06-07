@@ -1,0 +1,79 @@
+# GCC-AVR standard Makefile part 3
+# Based on Volker Oth's makefiles of jan.2000
+# Modified and merged by AVRfreaks.net for smoother integration with AVR Studio,
+# and easier comprehension for the average user (nov.2001). Minor errors corrected.
+
+# ---------- Included from make1 !!! -----------
+###### define some variables based on the AVR base path in $(AVR) #######
+	CC	= avr-gcc
+	AS	= avr-gcc -x assembler-with-cpp	
+	RM	= rm -f
+	RN	= mv
+	BIN	= avr-objcopy
+	SIZE	= avr-size
+	INCDIR	= .
+	LIBDIR	= $(AVR)/avr/lib
+	SHELL   = $(AVR)/bin/sh.exe
+
+###### output format can be srec, ihex (avrobj is always created) #######
+	FORMAT = ihex	
+# ------------------------------------------	
+
+#define all project specific object files
+	OBJ	= $(ASRC:.s=.o) $(SRC:.c=.o) 
+	CPFLAGS += -mmcu=$(MCU)
+	ASFLAGS += -mmcu=$(MCU)
+	LDFLAGS += -mmcu=$(MCU)
+  
+# --- this defines the aims of the make process ---
+all:	$(TRG).obj $(TRG).elf $(TRG).hex $(TRG).eep $(TRG).ok 
+
+
+# --- compile: instructions to create assembler and/or object files from C source ---
+%.o : %.c 
+	$(CC) -c $(CPFLAGS) -I$(INCDIR) $< -o $@
+
+%.s : %.c
+	$(CC) -S $(CPFLAGS) -I$(INCDIR) $< -o $@
+
+# --- assemble: instructions to create object file from assembler files ---
+%.o : %.s
+	$(AS) -c $(ASFLAGS) -I$(INCDIR) $< -o $@
+
+# --- link: instructions to create elf output file from object files ---
+%.elf: $(OBJ)
+	$(CC) $(OBJ) $(LIB) $(LDFLAGS) -o $@
+
+# --- create avrobj file from elf output file ---
+%.obj: %.elf
+	$(BIN) -O avrobj -R .eeprom $< $@
+
+# --- create bin (.rom and .eep) files from elf output file ---
+%.hex: %.elf
+	$(BIN) -O $(FORMAT) -R .eeprom $< $@
+
+%.eep: %.elf
+	$(BIN) -j .eeprom --set-section-flags=.eeprom="alloc,load" --change-section-lma .eeprom=0 -O $(FORMAT) $< $@
+
+# --- If all other steps compile ok then echo "Errors: none" ---
+# --- Necessary for AVR Studio to understand that everything went ok ---
+%ok:
+	@echo "Errors: none" 
+
+# --- make instruction to delete created files ---
+clean:
+	$(RM) $(OBJ)
+	$(RM) $(SRC:.c=.s)
+	$(RM) $(SRC:.c=.lst)
+	$(RM) $(TRG).map
+	$(RM) $(TRG).elf
+
+	$(RM) $(TRG).obj
+	$(RM) $(TRG).a90
+	$(RM) $(TRG).hex	
+	$(RM) *.bak
+	$(RM) *.log
+	
+size:
+	$(SIZE) $(TRG).elf
+	

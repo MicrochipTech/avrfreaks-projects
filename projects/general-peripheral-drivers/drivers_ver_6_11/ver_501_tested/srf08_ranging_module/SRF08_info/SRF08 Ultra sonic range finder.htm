@@ -1,0 +1,595 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<!-- saved from url=(0054)http://www.robot-electronics.co.uk/htm/srf08tech.shtml -->
+<HTML><HEAD><TITLE>SRF08 Ultra sonic range finder</TITLE>
+<META http-equiv=Content-Type content="text/html; charset=windows-1253">
+<META content="MSHTML 6.00.2600.0" name=GENERATOR></HEAD>
+<BODY>
+<P align=center><B><FONT size=5>SRF08 Ultra sonic range finder </FONT><FONT 
+size=3><BR>Technical Specification</FONT></B></P>
+<P align=left>Communication with the SRF08 ultrasonic rangefinder is via the I2C 
+bus. This is available on popular controllers such as the OOPic and Stamp BS2p, 
+as well as a wide variety of micro-controllers. To the programmer the SRF08 
+behaves in the same way as the ubiquitous 24xx series eeprom's, except that the 
+I2C address is different. The default shipped address of the SRF08 is 0xE0. It 
+can be changed by the user to any of 16 addresses E0, E2, E4, E6, E8, EA, EC, 
+EE, F0, F2, F4, F6, F8, FA, FC or FE, therefore up to 16 sonar's can be used. In 
+addition to the above addresses, all sonar's on the I2C bus will respond to 
+address 0 - the General Broadcast address. This means that writing a ranging 
+command to I2C address 0 (0x00) will start all sonar's ranging at the same time. 
+This should be useful in ANN Mode (See below). The results must be read 
+individually from each sonar's real address. We have <A 
+href="http://www.robot-electronics.co.uk/htm/examples.shtml">examples</A> of 
+using the SRF08 module with a wide range of popular controllers.</P>
+<P align=left><B>Connections<BR></B>The "Do Not Connect" pin should be left 
+unconnected. It is actually the CPU MCLR line and is used once only in our 
+workshop to program the PIC16F872 on-board after assembly, and has an internal 
+pull-up resistor. The SCL and SDA lines should each have a pull-up resistor to 
++5v somewhere on the I2C bus. You only need one pair of resistors, not a pair 
+for every module. They are normally located with the bus master rather than the 
+slaves. The SRF08 is always a slave - never a bus master. If you need them, I 
+recommend 1.8k resistors. Some modules such as the OOPic already have pull-up 
+resistors and you do not need to add any more. &nbsp;</P>
+<P align=center><IMG height=232 
+src="SRF08 Ultra sonic range finder_files/srf08con.jpg" width=302 border=0></P>
+<P align=left><B>Registers</B><BR>&nbsp;The SRF08 appears as a set of 36 
+registers.</P>
+<DIV align=center>
+<CENTER>
+<TABLE cellSpacing=0 cellPadding=0 width="53%" bgColor=#ffffcc border=1>
+  <TBODY>
+  <TR>
+    <TD width="24%">
+      <P align=center>Location</P></TD>
+    <TD width="32%">
+      <P align=center>Read</P></TD>
+    <TD width="44%">
+      <P align=center>Write</P></TD></TR>
+  <TR>
+    <TD width="24%">
+      <P align=center>0</P></TD>
+    <TD width="32%">
+      <P align=center>Software Revision</P></TD>
+    <TD width="44%">
+      <P align=center>Command Register</P></TD></TR>
+  <TR>
+    <TD width="24%">
+      <P align=center>1</P></TD>
+    <TD width="32%">
+      <P align=center>Light Sensor</P></TD>
+    <TD width="44%">
+      <P align=center>Max Gain Register (default 31)&nbsp;</P></TD></TR>
+  <TR>
+    <TD width="24%">
+      <P align=center>2</P></TD>
+    <TD width="32%">
+      <P align=center>1st Echo High Byte</P></TD>
+    <TD width="44%">
+      <P align=center>Range Register (default 255)</P></TD></TR>
+  <TR>
+    <TD width="24%">
+      <P align=center>3</P></TD>
+    <TD width="32%">
+      <P align=center>1st Echo Low Byte</P></TD>
+    <TD width="44%">
+      <P align=center>N/A</P></TD></TR>
+  <TR>
+    <TD width="24%">
+      <P align=center>~~~~</P></TD>
+    <TD width="32%">
+      <P align=center>~~~~</P></TD>
+    <TD width="44%">
+      <P align=center>~~~~</P></TD></TR>
+  <TR>
+    <TD width="24%">
+      <P align=center>34</P></TD>
+    <TD width="32%">
+      <P align=center>17th Echo High Byte</P></TD>
+    <TD width="44%">
+      <P align=center>N/A</P></TD></TR>
+  <TR>
+    <TD width="24%">
+      <P align=center>35</P></TD>
+    <TD width="32%">
+      <P align=center>17th Echo Low Byte</P></TD>
+    <TD width="44%">
+      <P align=center>N/A</P></TD></TR></TBODY></TABLE></CENTER></DIV>
+<P align=left>Only locations 0, 1 and 2 can be written to. Location 0 is the 
+command register and is used to start a ranging session. It cannot be read. 
+Reading from location 0 returns the SRF08 software revision.&nbsp; By default, 
+the ranging lasts for 65mS, but can be changed by writing to the range register 
+at location 2. If you do so, then you will likely need to change the analogue 
+gain by writing to location 1. See the <B>Changing Range</B> and <B>Analogue 
+Gain</B> sections below.</P>
+<P align=left>Location 1 is the onboard light sensor. This data is updated every 
+time a new ranging command has completed and can be read when range data is 
+read. The next two locations, 2 and 3, are the 16bit unsigned result from the 
+latest ranging - high byte first. The meaning of this value depends on the 
+command used, and is either the range in inches, or the range in cm or the 
+flight time in uS. A value of zero indicates that no objects were detected. 
+There are up to a further 16 results indicating echo's from more distant 
+objects.&nbsp;</P>
+<P align=left><B>Commands</B><BR>The are three commands to initiate a ranging 
+(80 to 82), to return the result in inches, centimeters or microseconds. There 
+is also an ANN mode (Artificial Neural Network) mode which is described later 
+and a set of commands to change the I2C address.</P>
+<DIV align=center>
+<CENTER>
+<TABLE cellSpacing=0 cellPadding=0 width="77%" bgColor=#ffffcc border=1>
+  <TBODY>
+  <TR>
+    <TD align=middle width="34%" colSpan=2>Command</TD>
+    <TD align=middle width="94%" rowSpan=2>Action</TD></TR>
+  <TR>
+    <TD align=middle width="16%">Decimal</TD>
+    <TD align=middle width="18%">Hex</TD></TR>
+  <TR>
+    <TD align=middle width="16%">80</TD>
+    <TD align=middle width="18%">0x50</TD>
+    <TD align=left width="94%">Ranging Mode - Result in inches</TD></TR>
+  <TR>
+    <TD align=middle width="16%">81</TD>
+    <TD align=middle width="18%">0x51</TD>
+    <TD align=left width="94%">Ranging Mode - Result in centimeters</TD></TR>
+  <TR>
+    <TD align=middle width="16%">82</TD>
+    <TD align=middle width="18%">0x52</TD>
+    <TD align=left width="94%">Ranging Mode - Result in micro-seconds</TD></TR>
+  <TR>
+    <TD align=middle width="16%">&nbsp;</TD>
+    <TD align=middle width="18%">&nbsp;</TD>
+    <TD align=left width="94%">&nbsp;</TD></TR>
+  <TR>
+    <TD align=middle width="16%">83</TD>
+    <TD align=middle width="18%">0x53</TD>
+    <TD align=left width="94%">ANN Mode - Result in inches</TD></TR>
+  <TR>
+    <TD align=middle width="16%">84</TD>
+    <TD align=middle width="18%">0x54</TD>
+    <TD align=left width="94%">ANN Mode - Result in centimeters</TD></TR>
+  <TR>
+    <TD align=middle width="16%">85</TD>
+    <TD align=middle width="18%">0x55</TD>
+    <TD align=left width="94%">ANN Mode - Result in micro-seconds</TD></TR>
+  <TR>
+    <TD align=middle width="16%">&nbsp;</TD>
+    <TD align=middle width="18%">&nbsp;</TD>
+    <TD align=left width="94%">&nbsp;</TD></TR>
+  <TR>
+    <TD align=middle width="16%">160</TD>
+    <TD align=middle width="18%">0xA0</TD>
+    <TD align=left width="94%">1st in sequence to change I2C address</TD></TR>
+  <TR>
+    <TD align=middle width="16%">165</TD>
+    <TD align=middle width="18%">0xA5</TD>
+    <TD align=left width="94%">3rd in sequence to change I2C address</TD></TR>
+  <TR>
+    <TD align=middle width="16%">170</TD>
+    <TD align=middle width="18%">0xAA</TD>
+    <TD align=left width="94%">2nd in sequence to change I2C 
+  address</TD></TR></TBODY></TABLE></CENTER></DIV>
+<P align=left><B>Ranging Mode</B><BR>To initiate a ranging, write one of the 
+above commands to the command register and wait the required amount of time for 
+completion and read as many results as you wish. The echo buffer is cleared at 
+the start of each ranging. The first echo range is placed in locations 2,3. the 
+second in 4,5, etc. If a location (high and low bytes) is 0, then there will be 
+no further reading in the rest of the registers. The default and recommended 
+time for completion of ranging is 65mS, however you can shorten this by writing 
+to the range register before issuing a ranging command. Light sensor data at 
+location 1 will also have been updated after a ranging command.&nbsp;</P>
+<P align=left><B>ANN Mode<BR></B>ANN mode (Artificial Neural Network) is 
+designed to provide the multi echo data in a way that is easier to input to a 
+neural network, at least I hope it is - I've not actually done it yet. ANN mode 
+provides a 32 byte buffer (locations 4 to 35 inclusive) where each byte 
+represents the 65536uS maximum flight time divided into 32 chunks of 2048uS each 
+- equivalent to about 352mm of range. If an echo is received within a bytes time 
+slot then it will be set to no-zero, otherwise it will be zero. So if an echo is 
+received from within the first 352mm, location 4 will be non-zero. If an object 
+is detected 3m away the location 12 will be non-zero (3000/352 = 8) (8+4=12). 
+Arranging the data like this should be better for a neural net than the other 
+formats. The input to your network should be 0 if the byte is zero and 1 if its 
+non-zero. I have a SOFM (Self Organizing Feature Map) in mind for the neural 
+net, but will hopefully be useful for any type. </P>
+<DIV align=center>
+<CENTER>
+<TABLE cellSpacing=0 cellPadding=0 width="71%" bgColor=#ffffcc border=1>
+  <TBODY>
+  <TR>
+    <TD align=middle width="20%">Location 4</TD>
+    <TD align=middle width="20%">Location 5</TD>
+    <TD align=middle width="20%">Location 6</TD>
+    <TD align=middle width="20%">Location 7</TD>
+    <TD align=middle width="20%">Locations 8 - 35</TD></TR>
+  <TR>
+    <TD align=middle width="20%">0 - 352mm</TD>
+    <TD align=middle width="20%">353 - 705mm</TD>
+    <TD align=middle width="20%">706 - 1057mm</TD>
+    <TD align=middle width="20%">1058 - 1410mm</TD>
+    <TD align=middle width="20%">and so on</TD></TR></TBODY></TABLE></CENTER></DIV>
+<P align=left>Locations 2,3 contain the range of the nearest object converted to 
+inches, cm or uS and is the same as for Ranging Mode.</P>
+<P align=left><B>Checking for Completion of Ranging</B><BR>You do not have to 
+use a timer on your own controller to wait for ranging to finish. You can take 
+advantage of the fact that the SRF08 will not respond to any I2C activity whilst 
+ranging. Therefore, if you try to read from the SRF08 (we use the software 
+revision number a location 0) then you will get 255 (0xFF) whilst ranging. This 
+is because the I2C data line (SDA) is pulled high if nothing is driving it. As 
+soon as the ranging is complete the SRF08 will again respond to the I2C bus, so 
+just keep reading the register until its not 255 (0xFF) anymore. You can then 
+read the sonar data. Your controller can take advantage of this to perform other 
+tasks while the SRF08 is ranging.&nbsp;</P>
+<P align=left><B>Changing the Range</B><BR>The maximum range of the SRF08 is set 
+by an internal timer. By default, this is 65mS or the equivalent of 11 metres of 
+range. This is much further than the 6 metres the SRF08&nbsp; is actually 
+capable of. It is possible to reduce the time the SRF08 listens for an echo, and 
+hence the range, by writing to the range register at location 2. The range can 
+be set in steps of about 43mm (0.043m or 1.68 inches) up to 11 
+metres.&nbsp;<BR>The range is ((Range Register x 43mm) + 43mm) so setting the 
+Range Register to 0 (0x00) gives a maximum range of 43mm. Setting the Range 
+Register to 1 (0x01) gives a maximum range of 86mm. More usefully, 24 (0x18) 
+gives a range of 1 metre and 140 (0x8C) is 6 metres. Setting 255 (0xFF) gives 
+the original 11 metres (255 x 43 + 43 is 11008mm). There are two reasons you may 
+wish to reduce the range.<BR>1. To get at the range information quicker<BR>2. To 
+be able to fire the SRF08 at a faster rate.<BR>If you only wish to get at the 
+range information a bit sooner and will continue to fire the SRF08 at 65ms of 
+slower, then all will be well. However if you wish to fire the SRF08 at a faster 
+rate than 65mS, you will definitely need to reduce the gain - see next 
+section.<BR>The range is set to maximum every time the SRF08 is powered-up. If 
+you need a different range, change it once as part of your system initialization 
+code.<BR></P>
+<P align=left><B>Analogue Gain</B><BR>The analogue gain register sets the 
+<I>Maximum</I> gain of the analogue stages. To set the maximum gain, just write 
+one of these values to the gain register at location 1. During a ranging, the 
+analogue gain starts off at its minimum value of 94. This is increased at 
+approx. 70uS intervals up to the maximum gain setting, set by register 
+1.&nbsp;Maximum possible gain is reached after about 390mm of range. The purpose 
+of providing a limit to the maximum gain is to allow you to fire the sonar more 
+rapidly than 65mS. Since the ranging can be very short, a new ranging can be 
+initiated as soon as the previous range data has been read. A potential hazard 
+with this is that the second ranging may pick up a distant echo returning from 
+the previous "ping", give a false result of a close by object when there is 
+none. To reduce this possibility, the maximum gain can be reduced to limit the 
+modules sensitivity to the weaker distant echo, whilst still able to detect 
+close by objects. The maximum gain setting is stored only in the CPU's RAM and 
+is initialized to maximum on power-up, so if you only want do a ranging every 
+65mS, or longer, you can ignore the Range and Gain Registers.<BR><I><B><FONT 
+color=#ff00ff>Note</FONT></B></I> - Effective in Ranging Mode only, in ANN mode, 
+gain is controlled automatically.&nbsp;</P>
+<DIV align=center>
+<CENTER>
+<TABLE height=714 cellSpacing=0 cellPadding=0 width=428 bgColor=#ffffcc 
+border=1>
+  <TBODY>
+  <TR>
+    <TD align=middle width=157 colSpan=2 height=19>Gain Register</TD>
+    <TD align=middle width=265 height=40 rowSpan=2>Maximum Analogue Gain</TD></TR>
+  <TR>
+    <TD align=middle width=77 height=19>Decimal</TD>
+    <TD align=middle width=80 height=19>Hex</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>0</TD>
+    <TD align=middle width=81 height=19>0x00</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 94</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>1</TD>
+    <TD align=middle width=81 height=19>0x01</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 97</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>2</TD>
+    <TD align=middle width=81 height=19>0x02</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+100</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>3</TD>
+    <TD align=middle width=81 height=19>0x03</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+103</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>4</TD>
+    <TD align=middle width=81 height=19>0x04</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+107</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>5</TD>
+    <TD align=middle width=81 height=19>0x05</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+110</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>6</TD>
+    <TD align=middle width=81 height=19>0x06</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+114</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>7</TD>
+    <TD align=middle width=81 height=19>0x07</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+118</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>8</TD>
+    <TD align=middle width=81 height=19>0x08</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+123</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>9</TD>
+    <TD align=middle width=81 height=19>0x09</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+128</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>10</TD>
+    <TD align=middle width=81 height=19>0x0A</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+133</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>11</TD>
+    <TD align=middle width=81 height=19>0x0B</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+139</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>12</TD>
+    <TD align=middle width=81 height=19>0x0C</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+145</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>13</TD>
+    <TD align=middle width=81 height=19>0x0D</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+152</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>14</TD>
+    <TD align=middle width=81 height=19>0x0E</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+159</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>15</TD>
+    <TD align=middle width=81 height=19>0x0F</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+168</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>16</TD>
+    <TD align=middle width=81 height=19>0x10</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+177</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>17</TD>
+    <TD align=middle width=81 height=19>0x11</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+187</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>18</TD>
+    <TD align=middle width=81 height=19>0x12</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+199</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>19</TD>
+    <TD align=middle width=81 height=19>0x13</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+212</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>20</TD>
+    <TD align=middle width=81 height=19>0x14</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+227</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>21</TD>
+    <TD align=middle width=81 height=19>0x15</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+245</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>22</TD>
+    <TD align=middle width=81 height=19>0x16</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+265</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>23</TD>
+    <TD align=middle width=81 height=19>0x17</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+288</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>24</TD>
+    <TD align=middle width=81 height=19>0x18</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+317</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>25</TD>
+    <TD align=middle width=81 height=19>0x18</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+352</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>26</TD>
+    <TD align=middle width=81 height=19>0x20</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+395</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>27</TD>
+    <TD align=middle width=81 height=19>0x21</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+450</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>28</TD>
+    <TD align=middle width=81 height=19>0x22</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+524</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>29</TD>
+    <TD align=middle width=81 height=19>0x23</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+626</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>30</TD>
+    <TD align=middle width=81 height=19>0x24</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+777</TD></TR>
+  <TR>
+    <TD align=middle width=74 height=19>31</TD>
+    <TD align=middle width=81 height=19>0x25</TD>
+    <TD align=middle width=265 height=19>Set Maximum Analogue Gain to 
+  1025</TD></TR></TBODY></TABLE></CENTER></DIV>
+<P align=left>Note that the relationship between the Gain Register setting and 
+the actual gain is not a linear one. Also there is no magic formula to say "use 
+this gain setting with that range setting". It depends on the size, shape and 
+material of the object and what else is around in the room. Try playing with 
+different settings until you get the result you want. If you appear to get false 
+readings, it may be echo's from previous "pings", try going back to firing the 
+SRF08 every 65mS or longer (slower).&nbsp;<BR>If you are in any doubt about the 
+Range and Gain Registers, remember they are automatically set by the SRF08 to 
+their default values when it is powered-up. You can ignore and forget about them 
+and the SRF08 will work fine, detecting objects up to 6 metres away every 65mS 
+or slower.</P>
+<P align=left><B>Light Sensor</B><BR>The SRF08 has a light sensor on-board. A 
+reading of the light intensity is made by the SRF08 each time a ranging takes 
+place in either Ranging or ANN Modes ( The A/D conversion is actually done just 
+before the "ping" whilst the +/- 10v generator is stabilizing). The reading 
+increases as the brightness increases, so you will get a maximum value in bright 
+light and minimum value in darkness. It should get close to 2-3 in complete 
+darkness and up to about 248 (0xF8) in bright light. The light intensity can be 
+read from the Light Sensor Register at&nbsp; location 1 at the same time that 
+you are reading the range data.</P>
+<P align=left><B>LED</B><BR>The red LED is used to flash out a code for the I2C 
+address on power-up (see below). It also gives a brief flash during the "ping" 
+whilst ranging.</P>
+<P align=left><B>Changing the I2C Bus Address</B><BR>To change the I2C address 
+of the SRF08 you must have only one sonar on the bus. Write the 3 sequence 
+commands in the correct order followed by the address. Example; to change the 
+address of a sonar currently at 0xE0 (the default shipped address) to 0xF2, 
+write the following to address 0xE0; (0xA0, 0xAA, 0xA5, 0xF2 ). These commands 
+must be sent in the correct sequence to change the I2C address, additionally, No 
+other command may be issued in the middle of the sequence. The sequence must be 
+sent to the command register at location 0, which means 4 separate write 
+transactions on the I2C bus. When done, you should label the sonar with its 
+address, however if you do forget, just power it up without sending any 
+commands. The SRF08 will flash its address out on the LED. One long flash 
+followed by a number of shorter flashes indicating its address. The flashing is 
+terminated immediately on sending a command the SRF08.</P>
+<DIV align=center>
+<CENTER>
+<TABLE cellSpacing=0 cellPadding=0 width="45%" bgColor=#ffffcc border=1>
+  <TBODY>
+  <TR>
+    <TD align=middle width="45%" colSpan=2>Address</TD>
+    <TD align=middle width="25%" rowSpan=2>Long Flash</TD>
+    <TD align=middle width="30%" rowSpan=2>Short flashes</TD></TR>
+  <TR>
+    <TD align=middle width="23%">Decimal</TD>
+    <TD align=middle width="22%">Hex</TD></TR>
+  <TR>
+    <TD align=middle width="23%">224</TD>
+    <TD align=middle width="22%">E0</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">0</TD></TR>
+  <TR>
+    <TD align=middle width="23%">226</TD>
+    <TD align=middle width="22%">E2</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">1</TD></TR>
+  <TR>
+    <TD align=middle width="23%">228</TD>
+    <TD align=middle width="22%">E4</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">2</TD></TR>
+  <TR>
+    <TD align=middle width="23%">230</TD>
+    <TD align=middle width="22%">E6</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">3</TD></TR>
+  <TR>
+    <TD align=middle width="23%">232</TD>
+    <TD align=middle width="22%">E8</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">4</TD></TR>
+  <TR>
+    <TD align=middle width="23%">234</TD>
+    <TD align=middle width="22%">EA</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">5</TD></TR>
+  <TR>
+    <TD align=middle width="23%">236</TD>
+    <TD align=middle width="22%">EC</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">6</TD></TR>
+  <TR>
+    <TD align=middle width="23%">238</TD>
+    <TD align=middle width="22%">EE</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">7</TD></TR>
+  <TR>
+    <TD align=middle width="23%">240</TD>
+    <TD align=middle width="22%">F0</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">8</TD></TR>
+  <TR>
+    <TD align=middle width="23%">242</TD>
+    <TD align=middle width="22%">F2</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">9</TD></TR>
+  <TR>
+    <TD align=middle width="23%">244</TD>
+    <TD align=middle width="22%">F4</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">10</TD></TR>
+  <TR>
+    <TD align=middle width="23%">246</TD>
+    <TD align=middle width="22%">F6</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">11</TD></TR>
+  <TR>
+    <TD align=middle width="23%">248</TD>
+    <TD align=middle width="22%">F8</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">12</TD></TR>
+  <TR>
+    <TD align=middle width="23%">250</TD>
+    <TD align=middle width="22%">FA</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">13</TD></TR>
+  <TR>
+    <TD align=middle width="23%">252</TD>
+    <TD align=middle width="22%">FC</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">14</TD></TR>
+  <TR>
+    <TD align=middle width="23%">254</TD>
+    <TD align=middle width="22%">FE</TD>
+    <TD align=middle width="25%">1</TD>
+    <TD align=middle width="30%">15</TD></TR></TBODY></TABLE></CENTER></DIV>
+<P align=left>Take care not to set more than one sonar to the same address, 
+there will be a bus collision and very unpredictable results.</P>
+<P align=left><B>Current Consumption</B><BR>Average current consumption measured 
+on our prototype is around 12mA during ranging, and 3mA standby. The module will 
+automatically go to standby mode after a ranging, whilst waiting for a new 
+command on the I2C bus. The actual measured current profile is as follows; </P>
+<DIV align=center>
+<CENTER>
+<TABLE cellSpacing=0 width=400 bgColor=#ffffcc border=1>
+  <TBODY>
+  <TR>
+    <TD align=middle width=253>Operation</TD>
+    <TD align=middle width=62>Current</TD>
+    <TD align=middle width=65>Duration</TD></TR>
+  <TR>
+    <TD align=middle width=253>Ranging command received - Power on</TD>
+    <TD align=middle width=62>275mA</TD>
+    <TD align=middle width=65>3uS</TD></TR>
+  <TR>
+    <TD align=middle width=253>+/- 10v generator Stabilization</TD>
+    <TD align=middle width=62>
+      <P align=center>25mA</P></TD>
+    <TD align=middle width=65>600uS</TD></TR>
+  <TR>
+    <TD align=middle width=253>8 cycles of 40kHz "ping"</TD>
+    <TD align=middle width=62>40mA</TD>
+    <TD align=middle width=65>200uS</TD></TR>
+  <TR>
+    <TD align=middle width=253>Ranging</TD>
+    <TD align=middle width=62>11mA</TD>
+    <TD align=middle width=65>65mS max</TD></TR>
+  <TR>
+    <TD align=middle width=253>Standby</TD>
+    <TD align=middle width=62>3mA</TD>
+    <TD align=middle width=65>indefinite</TD></TR></TBODY></TABLE></CENTER></DIV>
+<P align=left>The above values are for guidance only, they are not tested on 
+production units. </P>
+<P align=left>&nbsp;You can have a&nbsp; look at the <A 
+href="http://www.robot-electronics.co.uk/images/srf08schematic.gif">schematic</A> 
+and <A href="http://www.robot-electronics.co.uk/files/srf08.c">software</A> </P>
+<P align=left>Your feedback/comments/criticisms and wish lists are very welcome, 
+as always.<BR>Regards, Gerry. 
+<BR>gerry@robot-electronics.co.uk</P></BODY></HTML>
