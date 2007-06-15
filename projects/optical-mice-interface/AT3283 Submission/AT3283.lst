@@ -1,0 +1,4058 @@
+
+AVRASM ver. 2.1.9  C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm Mon Aug 07 16:21:11 2006
+
+C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm(79): Including file 'C:\Program Files\Atmel\AVR Tools\AvrAssembler2\Appnotes\m16def.inc'
+C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm(326): Including file 'C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_2.inc'
+C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm(327): Including file 'C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_3.inc'
+C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm(328): Including file 'C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_4.inc'
+C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm(329): Including file 'C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_5.inc'
+C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm(330): Including file 'C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_6.inc'
+C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_1.asm(331): Including file 'C:\Documents and Settings\Chuck\My Documents\AT3283\AT3283_7.inc'
+                 
+                 
+                 ;
+                 ;	Definitions and interrupt vectors
+                 ;
+                 ; ==============================================
+                 ;
+                 ; The famous command language:
+                 ;
+                 ;   commands are case sensitive
+                 ;   acks are '!' and naks are '?'
+                 ;   #'s in the response column are hex digits:
+                 ;       # is one digit, ## is 2, ### is 1 to 6 digits
+                 ;       positions are in 24 bit 2's complement numbers.
+                 ;       if abbreviation is on ('a'), leading zeros and leading F's are
+                 ;         removed (one '-' indicates deleted leading F's)
+                 ;       if abbreviation is off ('A'), 6 digits are always returned
+                 ;   'B' returns bit flags: 000XYLMR where X and Y are overflow flags,
+                 ;     L, M, and R are current state (1 = clicked) of buttons
+                 ;   buttons are L, M, and R; Ports are A-D, Pins are 0-7
+                 ;
+                 ; Command     Example   Response        Comments
+                 ; -------     -------   --------        --------
+                 ; A or a      A         ack             Abbreviate (a, default) or expand (A)
+                 ;                                       numeric position output
+                 ; V           V         VVack		Version number ("VV" is version string)
+                 ; e or E      E         ack		Enable (E) or disable (e) echo
+                 ; 0,1, or 2   0         ack/nak         Select active mouse
+                 ; I           I         ack/nak         Initialize mouse
+                 ; S           S         ack/nak         Set the current location as the origin
+                 ; X,Y, or Z   X         ###ack or nak   Read the current offset
+                 ; *           *         ##ack or nak    Read & reset error report
+                 ;                                       bits: YX###### where YX are overflows,
+                 ;                                       low order is rejected packet count
+                 ;
+                 ; B           B         #ack or nak     Read the buttons
+                 ;                                       Bits: 0LMR, =1 if clicked 
+                 ;
+                 ; xBtn,yBtn,  xL        ###ack or nak   Read the saved offset from when
+                 ; or zBtn     ym                        button last changed. UC button
+                 ;                                       is H->L, LC button is L->H
+                 ;
+                 ; PPort or    PC        ack or nak	Set port (P) or pin (p) to
+                 ; pPortPin    pD2                       input with pullups enabled
+                 ;
+                 ; QPort or    QC        ack or nak	Set port (Q) or pin (q) to
+                 ; qPortPin    qD2                       input with pullups disabled
+                 ;
+                 ; DPort or    DC        ack or nak	Set port (D) or pin (d) to
+                 ; dPortPin    dD2                       output
+                 ;
+                 ; WportPin    WC6       ack or nak      Write a zero (w) or one (W) to the
+                 ; wPortPin    wB1                       specified port/pin
+                 ;
+                 ; Rport       RA        #ack or nak     Read high (R) or low (r) nibble
+                 ; rPort       rC                        from specified port (PINx)
+                 ;
+                 ; Tport       RA        #ack or nak     Read high (R) or low (r) nibble
+                 ; tPort       rC                        from specified port (PORTx)
+                 ;
+                 ; L...        LMC13     ack or nak      Lock a button to a port and pin in
+                 ;                                       the specified mode
+                 ;
+                 ; UBtn        UM	ack or nak      Unlock the specified button
+                 ;
+                 ; The L command specifies the button (L, M, or R), the port (A to D),
+                 ; the pin (0 to 7), and the mode in that order. Implemented modes are:
+                 ;    0  unlock (default, no association to any pin)
+                 ;    1  reflect (pin is 1 if button is pressed, 0 otherwise)
+                 ;    2  invert (pin is 0 if button is pressed, 1 otherwise)
+                 ;    3  toggle (pin toggles when button changes)
+                 ;    4  toggle on click (pin toggles when button is clicked)
+                 ;    5  toggle on release (pin toggles when button is released)
+                 ;
+                 ; The U command unlocks a button (sets its mode to 0).  The same effect
+                 ; can be achieved using the L command for any pin and port with mode 0.
+                 ;
+                 ; ==============================================
+                 .list
+                 
+                 ;	the string "wiring" defines the pins & ports for the mice -- see below
+                 
+                 .set	nak	= '?'			; the negative acknowledge character
+                 .set	ack	= '!'			; the acknowledge character
+                 
+                 
+                 ;	the following are the ucsrb setup values
+                 .set	u_int	= (1<<txen)|(1<<rxen)|(1<<rxcie)|(1<<udrie)
+                 .set	u_noint	= (1<<txen)|(1<<rxen)|(1<<rxcie)
+                 
+                 ;	these determine USART buffer sizes 
+                 .set	rbsize	= 5			; number of bits in receiver head/tail
+                 .set	xbsize	= 7			; number of bits in transmitter head/tail
+                 .set	rbufsize = 1<<rbsize		; size of receiver buffer
+                 .set	xbufsize = 1<<xbsize		; size of transmitter buffer
+                 .set	rmask	= rbufsize - 1		; receive buffer offset mask
+                 .set	xmask	= xbufsize - 1		; transmit buffer offset mask
+                 
+                 ;	these determine the mouse receive buffers sizes
+                 .set	mbsize	= 5			; number of bits in mouse buffer mask
+                 .set	mbufsize = 1<<mbsize		; size of each mouse buffer
+                 .set	mrmask	= mbufsize - 1		; mouse receive buffer head/tail mask
+                 
+                 .set	mblksize = 58			; how big a mouse desriptor block is
+                 ;	the following tell where things are in moff() for each mouse
+                 .set	mo_sts	= 0			; line status
+                 .set	mo_hd	= 1			; head of list in mbuf()
+                 .set	mo_t	= 2			; tail of list in mbuf()
+                 .set	mo_s	= 3			; send character
+                 .set	mo_sp	= 4			; send parity
+                 .set	mo_sc	= 5			; send bit count
+                 .set	mo_r	= 6			; receive character
+                 .set	mo_rp	= 7			; receive parity
+                 .set	mo_rc	= 8			; receive bit count
+                 .set	mo_id	= 9			; mouse ID (0 = normal, 3 = scroll)
+                 .set	mo_but	= 10			; button & overflow status
+                 .set	mo_chg	= 11			; buttons that changed
+                 .set	mo_msgsz = 12			; message size: 3 or 4, 0 = no init
+                 .set	mo_msg	= 13			; start of 4 byte mouse msg buffer
+                 ;	the following is a 4 byte timer block
+                 ;	the following 3 offsets are used in timer0 int handler
+                 .set	ztlo	= 1
+                 .set	zthi	= 2
+                 .set	zerr	= 3
+                 .set	mo_tmode = 17			; timer mode (0=stopped, 1=8 bit, 2=16 bit)
+                 .set	mo_tlo	= mo_tmode+ztlo		; low timeout timer
+                 .set	mo_thi	= mo_tmode+zthi		; high timeout timer
+                 .set	mo_err	= mo_tmode+zerr		; line timing error
+                 
+                 ;	the following 9 bytes need to be in this order
+                 .set	mo_x0	= 21			; low order X offset
+                 .set	mo_x1	= 22			; middle X offset
+                 .set	mo_x2	= 23			; high order X offset
+                 .set	mo_y0	= 24			; low order Y offset
+                 .set	mo_y1	= 25			; middle Y offset
+                 .set	mo_y2	= 26			; high order Y offset
+                 .set	mo_z0	= 27			; low order Z offset
+                 .set	mo_z1	= 28			; middle Z offset
+                 .set	mo_z2	= 29			; high order Z offset
+                 ;	this is 3 sets of 6 byte lock definitions (LMR)
+                 ;	order is: pin, port, ddr, and msk, or msk, mode
+                 .set	mo_llock = 30			; left btn PIN byte
+                 .set	mo_mlock = 36			; middle btn PIN byte
+                 .set	mo_rlock = 42			; right btn PIN byte
+                 ;	the 5 data bytes must be followed by the 5 clock bytes:
+                 .set	wd_pin	= 48			; data line PIN address
+                 .set	wd_port = 49			; data line PORT address
+                 .set	wd_ddr	= 50			; data line DDR address
+                 .set	wd_and	= 51			; data AND mask (1 bit off)
+                 .set	wd_or	= 52			; data OR mask (1 bit on)
+                 .set	wc_pin	= 53			; clock line PIN address
+                 .set	wc_port = 54			; clock line PORT address
+                 .set	wc_ddr	= 55			; clock line DDR address
+                 .set	wc_and	= 56			; clock AND mask (1 bit off)
+                 .set	wc_or	= 57			; clock OR mask (1 bit on)
+                 
+                 
+                 .set	w_pin	= 0			; offsets within subblocks, above.
+                 .set	w_port	= 1			; these are used by unfold2 to get
+                 .set	w_ddr	= 2			; values into the correct places
+                 .set	w_and	= 3			; as define above. those who would
+                 .set	w_or	= 4			; be tempted to alter, don't!
+                 .set	w_mode	= 5			; used only in lock definitions
+                 
+                 ;	the button transition save area is 54 bytes long per mouse
+                 ;	3 bytes per axis, 3 axes per transition, 2 transitions per button,
+                 ;	3 buttons per mouse, 3 mice supported
+                 .set	btblksz	= 9			; one save size (3 * 3 bytes)
+                 .set	btsavsize = 6 * btblksz		; 54 bytes (one mouse)
+                 
+                 ;	these are the timing limits. documentation says a mouse clock is
+                 ;	10 to 16.7 KHz, so an 11 bit character should come in in under a
+                 ;	millisecond.  we make a guess that successive packer bytes are
+                 ;	sent fairly quickly in sequence.  the timers have a millisecond
+                 ;	of slop since a timer can be ready to roll over right when it's set.
+                 .set	pbtval	= 3			; milliseconds from start of
+                 ;					; byte n to start of byte n+1
+                 .set	ptval3	= pbtval * 3		; 3 byte packet timer value
+                 .set	ptval4	= pbtval * 4		; 4 byte packet timer value
+                 
+                 ;	the packet manager uses the following, one per mouse
+                 .set	packsize = 12			; size of a packet definition
+                 .set	psts	= 0			; packet status (0 = init, 1 = idle, 2 = saving)
+                 .set	perr	= 1			; packet error flag
+                 .set	psize	= 2			; packet size (copy of moff(mo_msgsize))
+                 .set	pbytes	= 3			; number of bytes received
+                 .set	phead	= 4			; buffer head save area
+                 .set	preject	= 5			; packet reject count
+                 .set	pready	= 6			; number of packets ready
+                 .set	ptimer	= 7			; packet timer
+                 .set	pbtimer = 8			; packet byte timer
+                 .set	ptrun	= 9			; flag if packet timer is running
+                 .set	pbtrun	= 10			; flag if packet byte timer is running
+                 .set	ptval	= 11			; timer value for packet timer
+                 
+                 .dseg
+                 
+000060           cmdbuf:	.byte	8			; incoming command buffer
+000068           bigcheese: .byte 1			; the active mouse
+                 ;	the button transition save area is 54 bytes long per mouse
+                 ;	order is: left, hi->lo, x0,1,2,y0,1,2,z0,1,2
+                 ;	          left, lo->hi, same order
+                 ;		  middle, hi->lo, etc.
+000069           btsav:	.byte	btsavsize * 3		; button transition save area
+00010b           cbuf:	.byte	50			; output string buffer
+                 ;	xbuf and rbuf are circular buffers, sized to a power to 2
+                 ;	xmask and rmask keep the heads and tails within their sizes
+00013d           xbuf:	.byte	xbufsize		; USART transmit buffer
+0001bd           rbuf:	.byte	rbufsize		; USART receive buffer
+0001dd           xhead:	.byte	1			; transmit buf head offset
+0001de           xtail:	.byte	1			; transmit buf tail offset
+0001df           rhead:	.byte	1			; receive buf head offset
+0001e0           rtail:	.byte	1			; receive buf tail offset
+                 ;	mbuf contains 3 mouse receive circular buffers, int0 first
+                 ;	moff contains 3 sets of the following:
+                 ;		+0 - mouse status
+                 ;			0 - no activity
+                 ;			1 - initiating host to mouse
+                 ;			2 - send in progress
+                 ;			3 - waiting ACK
+                 ;			4 - receiving
+                 ;			5 - within stop bit
+                 ;		+mo_hd - head of buffer offset
+                 ;		+mo_t  - tail of buffer offset
+                 ;		+mo_s  - send byte
+                 ;		+mo_sp - send parity
+                 ;		+mo_sc - send bit count
+                 ;		+mo_r  - receive byte
+                 ;		+mo_rp - receive parity
+                 ;		+mo_rc - receive bit count
+                 ;		data line descriptor (5 bytes, see below)
+                 ;			+wd_XXXX
+                 ;		clock line descriptor (5 bytes)
+                 ;			+wc_XXXX:
+                 ;			    PIN address (incl $20 offset)
+                 ;			    PORT address (incl $20 offset)
+                 ;			    DDR address (incl $20 offset)
+                 ;			    AND mask (1 bit off)
+                 ;			    OR mask (1 bit on)
+                 
+                 ;	mrmask keeps heads and tails within proper sizes
+0001e1           mbuf:	.byte	3 * mbufsize		; 3 mouse buffers
+000241           moff:	.byte	3 * mblksize		; 3 mouse descriptor blocks
+0002ef           pindef:	.byte	5			; unfold2 buffer area
+0002f4           echo232: .byte	1			; echo to host (0 = off)
+0002f5           abbrev:	.byte	1			; abbreviate output (0 = yes)
+0002f6           pnum:	.byte	6			; expansion buffer for numeric output
+0002fc           pack:	.byte	3 * packsize		; packet manager block
+000320           take5:	.byte	1			; special 5 ms timer
+                 
+                 ; ====================== Interrupt vectors ========================
+                 .cseg
+                 .org	0x0000
+000000 940c 008d 	jmp	i_reset			; reset
+000002 940c 040d 	jmp	i_irq0			; external 0
+000004 940c 0418 	jmp	i_irq1			; external 1
+000006 940c 0092 	jmp	i_tim2c			; timer 2 compare
+000008 940c 0092 	jmp	i_tim2o			; timer 2 overflow
+00000a 940c 0092 	jmp	i_tim1cpt		; timer 1 capture
+00000c 940c 0092 	jmp	i_tim1ca		; timer 1 compare a
+00000e 940c 0092 	jmp	i_tim1cb		; timer 1 compare b
+000010 940c 0092 	jmp	i_tim1o			; timer 1 overflow
+000012 940c 0092 	jmp	i_tim0o			; timer 0 overflow
+000014 940c 0092 	jmp	i_spi_tc		; spi xfer complete
+000016 940c 0520 	jmp	i_usartrx		; usart rx complete
+000018 940c 0540 	jmp	i_usartun		; usart udr empty
+00001a 940c 0092 	jmp	i_usarttx		; usart tx complete
+00001c 940c 0092 	jmp	i_adc			; adc complete
+00001e 940c 0092 	jmp	i_eerdy			; eeprom ready
+000020 940c 0092 	jmp	i_anacomp		; analog comparator
+000022 940c 0092 	jmp	i_twsi			; two wire serial
+000024 940c 0424 	jmp	i_irq2			; external 2
+000026 940c 03be 	jmp	i_tim0c			; timer 0 compare
+000028 940c 0092 	jmp	i_spm			; store prog mem rdy
+                 
+                 ; ==============================================
+                 ;
+00002a 3031      version: .db	"10"			; version number (2 chars sent)
+                 
+                 ;	crec defines the command recognition. it consists of pairs of chars,
+                 ;	the first being the command name and the second being the number of
+                 ;	bytes in the command.  the position in the list determines the cmd's
+                 ;	jump table entry (i.e., 'B' is jumptable + 3). '~' ends list.
+00002b 3130
+00002c 3131
+00002d 3132
+00002e 3142
+00002f 3244
+000030 3364
+000031 354c
+000032 3250
+000033 3252
+000034 3272
+000035 3153
+000036 3357
+000037 3377
+000038 3158
+000039 3278
+00003a 3159
+00003b 3279
+00003c 315a
+00003d 327a
+00003e 3149
+00003f 3165
+000040 3145
+000041 3370
+000042 3251
+000043 3371
+000044 3255
+000045 3156
+000046 3141
+000047 3161
+000048 3254
+000049 3274
+00004a 312a
+00004b 7e7e      crec:	.db	"011121B1D2d3L5P2R2r2S1W3w3X1x2Y1y2Z1z2I1e1E1p3Q2q3U2V1A1a1T2t2*1~~"
+                 
+                 ;	wiring defines how the 3 mice are hooked up, 4 bytes per mouse, with separation.
+                 ;	order is: data port, data pin, clock port, clock pin, separator, repeat
+                 ;	the clock pins are fixed (int0,1,& 2), so this must match "--D2.--D3.--B2"
+00004c 3444
+00004d 3244
+00004e 442e
+00004f 4435
+000050 2e33
+000051 3042
+000052 3242      wiring:	.db	"D4D2.D5D3.B0B2"
+                 
+                 ;	these are the mouse initialization strings
+000053 4673
+000054 7246
+000055 4146
+000056 4141
+000057 3030
+000058 7377
+000059 4646
+00005a 4672
+00005b 4141
+00005c 3041
+00005d 7730
+00005e 4673
+00005f 7246
+000060 4146
+000061 4141
+000062 3030
+000063 7877      iseq1:	.db	"sFFrFAAA00wsFFrFAAA00wsFFrFAAA00wx"		; 3 resets
+000064 4673
+000065 7233
+000066 4146
+000067 4373
+000068 7238
+000069 4146
+00006a 4673
+00006b 7233
+00006c 4146
+00006d 3673
+00006e 7234
+00006f 4146
+000070 4673
+000071 7233
+000072 4146
+000073 3573
+000074 7230
+000075 4146
+000076 4673
+000077 7232
+000078 4146
+000079 7869      iseq2:	.db	"sF3rFAsC8rFAsF3rFAs64rFAsF3rFAs50rFAsF2rFAix"	; scroll mouse mode
+00007a 4573
+00007b 7238
+00007c 4146
+00007d 3073
+00007e 7233
+00007f 4146
+000080 4573
+000081 7236
+000082 4146
+000083 4673
+000084 7233
+000085 4146
+000086 3273
+000087 7238
+000088 4146
+000089 4673
+00008a 7234
+00008b 4146
+00008c 7878      iseq3:	.db	"sE8rFAs03rFAsE6rFAsF3rFAs28rFAsF4rFAxx"	; res=3, scale 1:1, samp=40, enable
+                 ;
+                 ; ====================== Reset comes here ========================
+                 
+                 i_reset:
+00008d e004      	ldi	r16,high(RAMEND)	; set up stack pointer
+00008e bf0e      	out	SPH,r16
+00008f e50f      	ldi	r16,low(RAMEND)
+000090 bf0d      	out	SPL,r16
+000091 c001      	rjmp	monster			; main routine
+                 
+                 ; ==============================================
+                 
+                 i_tim2c:		; interrupt: timer 2 compare
+                 i_tim2o:		; interrupt: timer 2 overflow
+                 i_tim1cpt:		; interrupt: timer 1 capture
+                 i_tim1ca:		; interrupt: timer 1 compare a
+                 i_tim1cb:		; interrupt: timer 1 compare b
+                 i_tim1o:		; interrupt: timer 1 overflow
+                 i_tim0o:		; interrupt: timer 0 overflow
+                 i_spi_tc:		; interrupt: spi xfer complete
+                 i_usarttx:		; interrupt: usart tx complete
+                 i_adc:			; interrupt: adc complete
+                 i_eerdy:		; interrupt: eeprom ready
+                 i_anacomp:		; interrupt: analog comparator
+                 i_twsi:			; interrupt: two wire serial
+                 i_spm:			; interrupt: store prog mem rdy
+000092 9518      		reti	; mr. paranoid
+                 
+                 ; ==============================================
+                 
+                 .include	"AT3283_2.inc"
+                 
+                 ;
+                 ;	Command Language Processor
+                 ;
+                 ;
+                 ; ==============================================
+                 ;	monster - main command processing
+                 ;
+                 ;	no registers preserved
+                 
+                 monster:
+000093 d312      	rcall	miscinit	; various initializations
+                 
+000094 2400      mloop:	clr	r0		; mouse 0
+                 	; go grab any incoming messages from the mousies
+000095 d736      	rcall	procmsg		; mouse 0 chk msgs
+000096 9403      	inc	r0
+000097 d734      	rcall	procmsg		; mouse 1 chk msgs
+000098 9403      	inc	r0
+000099 d732      	rcall	procmsg		; mouse 2 chk msgs
+                 
+00009a 9000 0068 	lds	r0,bigcheese	; active mouse
+00009c d248      	rcall	checkcmd	; anything from host?
+00009d 2011      	tst	r1
+00009e f432      	brpl	goodcmd		; yes, and complete
+00009f fc16      	sbrc	r1,6
+0000a0 cff3      	rjmp	mloop		; buffer's empty
+0000a1 fc15      	sbrc	r1,5
+0000a2 cff1      	rjmp	mloop		; command is incomplete
+0000a3 d4bd      	rcall	recv_get	; unknown - dump it
+0000a4 c022      	rjmp	sendnak		; and squawk
+                 
+                 goodcmd:
+0000a5 921f      	push	r1		; the command number
+0000a6 d38a      	rcall	jumptable
+0000a7 c030      	rjmp	cmd_0		; '0' - 1 byte
+0000a8 c033      	rjmp	cmd_1		; '1' - 1 byte
+0000a9 c034      	rjmp	cmd_2		; '2' - 1 byte
+0000aa c035      	rjmp	cmd_3		; 'B' - 1 byte
+0000ab c041      	rjmp	cmd_4		; 'D' - 2 bytes
+0000ac c048      	rjmp	cmd_5		; 'd' - 3 bytes
+0000ad c057      	rjmp	cmd_6		; 'L' - 5 bytes
+0000ae c07a      	rjmp	cmd_7		; 'P' - 2 bytes
+0000af c084      	rjmp	cmd_8		; 'R' - 2 bytes
+0000b0 c087      	rjmp	cmd_9		; 'r' - 2 bytes
+0000b1 c08d      	rjmp	cmd_10		; 'S' - 1 byte
+0000b2 c092      	rjmp	cmd_11		; 'W' - 3 bytes
+0000b3 c0a0      	rjmp	cmd_12		; 'w' - 3 bytes
+0000b4 c0ae      	rjmp	cmd_13		; 'X' - 1 byte
+0000b5 c0b6      	rjmp	cmd_14		; 'x' - 1 byte
+0000b6 c0b9      	rjmp	cmd_15		; 'Y' - 1 byte
+0000b7 c0bc      	rjmp	cmd_16		; 'y' - 1 byte
+0000b8 c0c0      	rjmp	cmd_17		; 'Z' - 1 byte
+0000b9 c0c3      	rjmp	cmd_18		; 'z' - 1 byte
+0000ba c0c6      	rjmp	cmd_19		; 'I' - 1 byte
+0000bb c0d2      	rjmp	cmd_20		; 'e' - 1 byte
+0000bc c0d6      	rjmp	cmd_21		; 'E' - 1 byte
+0000bd c0d7      	rjmp	cmd_22		; 'p' - 3 bytes
+0000be c0ec      	rjmp	cmd_23		; 'Q' - 2 bytes
+0000bf c0f5      	rjmp	cmd_24		; 'q' - 3 bytes
+0000c0 c108      	rjmp	cmd_25		; 'U' - 2 bytes
+0000c1 c110      	rjmp	cmd_26		; 'V' - 1 byte
+0000c2 c118      	rjmp	cmd_27		; 'A' - 1 byte
+0000c3 c11b      	rjmp	cmd_28		; 'a' - 1 byte
+0000c4 c11c      	rjmp	cmd_29		; 'T' - 2 bytes
+0000c5 c11f      	rjmp	cmd_30		; 't' - 2 bytes
+0000c6 c125      	rjmp	cmd_31		; '*' - 1 byte
+                 
+                 sendnak:			; tell them a sad story
+0000c7 e30f      	ldi	r16,nak
+0000c8 930f      snd2:	push	r16		; it's an arg
+0000c9 d4b9      	rcall	xmit_put	; give it to them
+0000ca 9100 02f4 	lds	r16,echo232	; are we echoing?
+0000cc 2300      	tst	r16
+0000cd f409      	brne	ssd
+0000ce cfc5      	rjmp	mloop		; relative branch out of range
+                 
+0000cf e00d      ssd:	ldi	r16,13		; yes - send CRLF
+0000d0 930f      	push	r16
+0000d1 d4b1      	rcall	xmit_put
+0000d2 e00a      	ldi	r16,10		; LF
+0000d3 930f      	push	r16
+0000d4 d4ae      	rcall	xmit_put
+0000d5 cfbe      	rjmp	mloop
+                 
+                 sendack:			; tell them a happy story
+0000d6 e201      	ldi	r16,ack
+0000d7 cff0      	rjmp	snd2			; it's an arg
+                 
+                 ;	--------------------------------
+0000d8 2700      cmd_0:	clr	r16			; '0' 1 byte: set mouse 0
+0000d9 9300 0068 cmd_0a:	sts	bigcheese,r16
+0000db cffa      	rjmp	sendack
+                 ;	--------------------------------
+0000dc e001      cmd_1:	ldi	r16,1			; '1' 1 byte: set mouse 1
+0000dd cffb      	rjmp	cmd_0a
+                 ;	--------------------------------
+0000de e002      cmd_2:	ldi	r16,2			; '2' 1 byte: set mouse 2
+0000df cff9      	rjmp	cmd_0a
+                 ;	--------------------------------
+0000e0 d148      cmd_3:	rcall	chkmouse		; 'B' 1 byte: read switches
+0000e1 f329      	breq	sendnak
+                 	
+0000e2 d61c      	rcall	moff2z
+0000e3 8502      	ldd	r16,Z+mo_but		; buttons and overflows
+0000e4 2e10      	mov	r1,r16			; save. YX---MRL is order
+0000e5 9506      	lsr	r16			; building -----LMR
+0000e6 7003      	andi	r16,0x03		; keep MR
+0000e7 fc10      	sbrc	r1,0
+0000e8 6004      	sbr	r16,0x04		; put L back in
+                 
+0000e9 d418      	rcall	bin2hex
+0000ea 930f      	push	r16			; arg to xmit_put
+0000eb d497      	rcall	xmit_put
+0000ec cfe9      	rjmp	sendack
+                 ;	--------------------------------
+                 ;	for output, set DDR <- 1
+0000ed d1d2      cmd_4:	rcall	prepport		; 'D' 2 bytes: DPort - port to output
+0000ee f0a9      	breq	sendnak4		; zero set means port error
+                 
+0000ef 91a0 02f1 	lds	XL,pindef+w_ddr		; DDR address for this port
+0000f1 27bb      	clr	XH			; they're small addresses
+0000f2 ef0f      	ser	r16
+0000f3 930c      	st	X,r16			; all bits set
+0000f4 cfe1      	rjmp	sendack
+                 ;	--------------------------------
+                 ;	for output, set DDR <- 1
+                 cmd_5:					; 'd' 3 bytes: dPortPin - set pin to output
+0000f5 9010 0061 	lds	r1,cmdbuf+1		; 2nd byte is port
+0000f7 9020 0062 	lds	r2,cmdbuf+2		; 3rd byte is pin
+0000f9 d5c4      	rcall	unfold2			; convert to something useful
+0000fa f049      	breq	sendnak4		; shame on your port and pin
+                 
+0000fb 91a0 02f1 	lds	XL,pindef+w_ddr		; DDR address for this port
+0000fd 27bb      	clr	XH			; they're small addresses
+0000fe 9110 02f3 	lds	r17,pindef+w_or		; the OR mask (force one bit)
+000100 910c      	ld	r16,X			; read DDRx
+000101 2b01      	or	r16,r17			; add in our bit
+000102 930c      	st	X,r16			; put it back with bit
+000103 cfd2      	rjmp	sendack
+                 ;	--------------------------------
+                 sendnak4:				; relative jump out of reach
+000104 cfc2      	rjmp	sendnak
+                 ;	--------------------------------
+000105 d123      cmd_6:	rcall	chkmouse		; 'L' 5 bytes: LBtnPortPinMode
+000106 f3e9      	breq	sendnak4
+                 
+000107 9120 0064 	lds	r18,cmdbuf+4		; 5th byte is mode
+000109 3320      	cpi	r18,'0'			; lower limit
+00010a f3c8      	brcs	sendnak4
+00010b 3325      	cpi	r18,'5'			; upper limit
+00010c f009      	breq	cmd_6c
+00010d f7b0      	brcc	sendnak4
+00010e 702f      cmd_6c:	andi	r18,0x0f		; convert ascii to binary
+                 
+00010f 9010 0062 	lds	r1,cmdbuf+2		; 3rd byte is port
+000111 9020 0063 	lds	r2,cmdbuf+3		; 4th byte is pin
+000113 d5aa      	rcall	unfold2			; get some addresses in pindef
+000114 f379      	breq	sendnak4
+                 
+000115 9100 0061 	lds	r16,cmdbuf+1		; button
+000117 d11b      	rcall	but2lock		; get Z -> lock block
+000118 f359      	breq	sendnak4		; bad button designation
+                 
+000119 e005      	ldi	r16,5			; 5 bytes in pindef
+00011a e0b2      	ldi	XH,high(pindef)
+00011b eeaf      	ldi	XL,low(pindef)
+                 
+00011c 911d      cmd_6b:	ld	r17,X+			; copy pindef() into locks
+00011d 9311      	st	Z+,r17
+00011e 950a      	dec	r16
+00011f f7e1      	brne	cmd_6b
+000120 8320      	st	Z,r18			; and the mode (follows lock info)
+                 
+000121 d5dd      	rcall	moff2z			; go apply the locks now
+000122 8522      	ldd	r18,Z+mo_but		; buttons and overflows
+000123 7027      	andi	r18,0x07		; button bits only
+000124 2e42      	mov	r4,r18
+000125 2433      	clr	r3
+000126 9433      	inc	r3			; r3 = 1 means follow only
+000127 d154      	rcall	applylocks
+000128 cfad      	rjmp	sendack
+                 ;	--------------------------------
+                 ;	for input with pullup, DDR <- 0 then PORT <- 1
+000129 d196      cmd_7:	rcall	prepport		; 'P' 2 bytes: port input with pullup
+00012a f0c9      	breq	sendnak2		; zero set means port error
+                 
+00012b 91a0 02f1 	lds	XL,pindef+w_ddr		; DDR address for this port
+00012d 27bb      	clr	XH			; they're small addresses
+00012e 93bc      	st	X,XH			; zero the DDR
+00012f ef0f      	ser	r16
+000130 91a0 02f0 	lds	XL,pindef+w_port	; the PORT address
+000132 930c      	st	X,r16			; all bits set
+000133 cfa2      	rjmp	sendack
+                 ;	--------------------------------
+000134 d199      cmd_8:	rcall	rdport			; 'R' 2 bytes: RPort - read high nibble
+000135 f071      	breq	sendnak2
+000136 9502      	swap	r16
+000137 c002      	rjmp	cmd_9a
+                 ;	--------------------------------
+000138 d195      cmd_9:	rcall	rdport			; 'r' 2 bytes: rPort - read low nibble
+000139 f051      	breq	sendnak2
+00013a 700f      cmd_9a:	andi	r16,0x0f		; keep low order bits
+00013b d3c6      	rcall	bin2hex			; convert to ascii hex
+00013c 930f      	push	r16
+00013d d445      	rcall	xmit_put		; give them hex digit
+00013e cf97      	rjmp	sendack
+                 ;	--------------------------------
+00013f d0e9      cmd_10:	rcall	chkmouse		; 'S' 1 byte: set origin
+000140 f019      	breq	sendnak2
+                 
+000141 d720      	rcall	setrefpnt
+000142 d51f      	rcall	zerobt
+000143 cf92      	rjmp	sendack
+                 ;	--------------------------------
+                 sendnak2:				; relative jump out of reach
+000144 cf82      	rjmp	sendnak
+                 ;	--------------------------------
+                 cmd_11:					; 'W' 3 bytes: WPortPin - Write 1 to pin
+000145 9010 0061 	lds	r1,cmdbuf+1		; 2nd byte is port
+000147 9020 0062 	lds	r2,cmdbuf+2		; 3rd byte is pin
+000149 d574      	rcall	unfold2			; convert to something useful
+00014a f3c9      	breq	sendnak2		; shame on your port and pin
+00014b 91a0 02f0 	lds	XL,pindef+w_port	; PORT address for this port
+00014d 27bb      	clr	XH			; they're small addresses
+00014e 9110 02f3 	lds	r17,pindef+w_or		; the OR mask (force one bit)
+000150 910c      	ld	r16,X			; read PORTx
+000151 2b01      	or	r16,r17			; add in our bit
+000152 930c      	st	X,r16			; put it back with bit set
+000153 cf82      	rjmp	sendack
+                 ;	--------------------------------
+                 cmd_12:					; 'w' 3 bytes: wPortPin - write 0 to pin
+000154 9010 0061 	lds	r1,cmdbuf+1		; 2nd byte is port
+000156 9020 0062 	lds	r2,cmdbuf+2		; 3rd byte is pin
+000158 d565      	rcall	unfold2			; convert to something useful
+000159 f351      	breq	sendnak2		; shame on your port and pin
+00015a 91a0 02f0 	lds	XL,pindef+w_port	; PORT address for this port
+00015c 27bb      	clr	XH			; they're small addresses
+00015d 9110 02f2 	lds	r17,pindef+w_and	; the AND mask (drops one bit)
+00015f 910c      	ld	r16,X			; read PORTx
+000160 2301      	and	r16,r17			; drop our bit
+000161 930c      	st	X,r16			; put it back with bit reset
+000162 cf73      	rjmp	sendack
+                 ;	--------------------------------
+000163 d0c5      cmd_13:	rcall	chkmouse		; 'X' 1 byte: read current X offset
+000164 f2f9      	breq	sendnak2
+                 
+000165 e105      	ldi	r16,mo_x0
+000166 d598      c_13a:	rcall	moff2z
+000167 0fe0      	add	ZL,r16
+000168 f408      	brcc	c_13b
+000169 95f3      	inc	ZH
+00016a d374      c_13b:	rcall	out3bytenum
+00016b cf6a      	rjmp	sendack
+                 ;	--------------------------------
+00016c d0bc      cmd_14:	rcall	chkmouse		; 'x' 1 byte: read saved X offset
+00016d f051      	breq	sendnak3
+                 	
+00016e 2700      	clr	r16			; x is first
+00016f c095      	rjmp	savsend
+                 ;	--------------------------------
+000170 d0b8      cmd_15:	rcall	chkmouse		; 'Y' 1 byte: read current Y offset
+000171 f031      	breq	sendnak3
+                 
+000172 e108      	ldi	r16,mo_y0
+000173 cff2      	rjmp	c_13a
+                 ;	--------------------------------
+000174 d0b4      cmd_16:	rcall	chkmouse		; 'y' 1 byte: read saved Y offset
+000175 f011      	breq	sendnak3
+                 
+000176 e003      	ldi	r16,3			; y is second (3 bytes in)
+000177 c08d      	rjmp	savsend
+                 ;	--------------------------------
+                 sendnak3:				; relative jump out of reach
+000178 cf4e      	rjmp	sendnak
+                 ;	--------------------------------
+000179 d0af      cmd_17:	rcall	chkmouse		; 'Z' 1 byte: read current Z offset
+00017a f3e9      	breq	sendnak3
+                 
+00017b e10b      	ldi	r16,mo_z0
+00017c cfe9      	rjmp	c_13a
+                 ;	--------------------------------
+00017d d0ab      cmd_18:	rcall	chkmouse		; 'z' 1 byte: read saved Z offset
+00017e f3c9      	breq	sendnak3
+                 
+00017f e006      	ldi	r16,6			; z is third (6 bytes in)
+000180 c084      	rjmp	savsend
+                 ;	--------------------------------
+000181 d6f3      cmd_19:	rcall	initmouse		; 'I' 1 byte: init mouse
+000182 f009      	breq	pass2			; didn't work
+000183 cf52      	rjmp	sendack
+                 
+                 ;	it didn't take on first try.  wait 5 ms, and try again
+000184 e005      pass2:	ldi	r16,5
+000185 9300 0320 	sts	take5,r16		; special timer
+000187 9100 0320 wt5:	lds	r16,take5
+000189 2300      	tst	r16	
+00018a f7e1      	brne	wt5			; wait until it goes to zero
+00018b d6e9      	rcall	initmouse		; try again, once
+00018c f029      	breq	sendnak9
+00018d cf48      	rjmp	sendack
+                 ;	--------------------------------
+00018e 2700      cmd_20:	clr	r16			; 'e' 1 byte: echo off
+00018f 9300 02f4 c_20a:	sts	echo232,r16
+000191 cf44      	rjmp	sendack
+                 ;	--------------------------------
+                 sendnak9:
+000192 cf34      	rjmp	sendnak			; relative branch out of reach
+                 ;	--------------------------------
+000193 ef0f      cmd_21:	ser	r16			; 'E' 1 byte: echo on
+000194 cffa      	rjmp	c_20a
+                 ;	--------------------------------
+                 ;	for input with pullup, DDR <- 0 then PORT <- 1
+                 cmd_22:					; 'p' 3 bytes: pin input, pullup
+000195 9010 0061 	lds	r1,cmdbuf+1		; 2nd byte is port
+000197 9020 0062 	lds	r2,cmdbuf+2		; 3rd byte is pin
+000199 d524      	rcall	unfold2			; convert to something useful
+00019a f2e9      	breq	sendnak3		; shame on your port and pin
+                 
+00019b 91a0 02f1 	lds	XL,pindef+w_ddr		; DDR address for this port
+00019d 27bb      	clr	XH			; they're small addresses
+00019e 9110 02f2 	lds	r17,pindef+w_and	; the AND mask (drop a bit)
+0001a0 910c      	ld	r16,X			; read DDRx
+0001a1 2301      	and	r16,r17			; kill our bit
+0001a2 930c      	st	X,r16			; put it back
+                 
+0001a3 91a0 02f0 	lds	XL,pindef+w_port	; PORT address for this port
+0001a5 910c      	ld	r16,X			; read PORTx
+0001a6 9110 02f3 	lds	r17,pindef+w_or		; the OR mask
+0001a8 2b01      	or	r16,r17			; kill our bit
+0001a9 930c      	st	X,r16			; put it back
+0001aa cf2b      	rjmp	sendack
+                 ;	--------------------------------
+                 ;	for input without pullup, DDR <- 0 then PORT <- 0
+0001ab d114      cmd_23:	rcall	prepport		; 'Q' 2 bytes: port input, no pullup
+0001ac f329      	breq	sendnak9		; zero set means port error
+                 
+0001ad 91a0 02f1 	lds	XL,pindef+w_ddr		; DDR address for this port
+0001af 27bb      	clr	XH			; they're small addresses
+0001b0 93bc      	st	X,XH			; zero the DDR
+0001b1 91a0 02f0 	lds	XL,pindef+w_port	; the PORT address
+0001b3 93bc      	st	X,XH			; zero the PORT
+0001b4 cf21      	rjmp	sendack
+                 ;	--------------------------------
+                 ;	for input without pullup, DDR <- 0 then PORT <- 0
+0001b5 9010 0061 cmd_24:	lds	r1,cmdbuf+1		; 'q' 3 bytes: pin input, no pullup
+0001b7 9020 0062 	lds	r2,cmdbuf+2		; 2nd port, 3rd byte pin
+0001b9 d504      	rcall	unfold2			; convert to something useful
+0001ba f2b9      	breq	sendnak9		; shame on your port and pin
+                 
+0001bb 91a0 02f1 	lds	XL,pindef+w_ddr		; DDR address for this port
+0001bd 27bb      	clr	XH			; they're small addresses
+0001be 9110 02f2 	lds	r17,pindef+w_and	; the AND mask (drop a bit)
+0001c0 910c      	ld	r16,X			; read DDRx
+0001c1 2301      	and	r16,r17			; kill our bit
+0001c2 930c      	st	X,r16			; put it back
+                 
+0001c3 91a0 02f0 	lds	XL,pindef+w_port	; PORT address for this port
+0001c5 910c      	ld	r16,X			; read PORTx
+0001c6 2301      	and	r16,r17			; kill our bit
+0001c7 930c      	st	X,r16			; put it back
+0001c8 cf0d      	rjmp	sendack
+                 ;	--------------------------------
+0001c9 d05f      cmd_25:	rcall	chkmouse		; 'U' 2 bytes: unlock button
+0001ca f1c9      	breq	sendnak5
+                 
+0001cb 9100 0061 	lds	r16,cmdbuf+1
+0001cd d065      	rcall	but2lock		; get Z -> lock block
+0001ce f1a9      	breq	sendnak5		; bad button designation
+                 
+0001cf 2700      	clr	r16			; new mode is 0
+0001d0 8305      	std	Z+w_mode,r16
+0001d1 cf04      	rjmp	sendack
+                 ;	--------------------------------
+0001d2 e0f0      cmd_26:	ldi	ZH,high(version<<1)	; 'V' 1 byte: version number
+0001d3 e5e4      	ldi	ZL,low(version<<1)
+0001d4 9105      	lpm	r16,Z+
+0001d5 930f      	push	r16
+0001d6 d3ac      	rcall	xmit_put
+0001d7 9105      	lpm	r16,Z+
+0001d8 930f      	push	r16
+0001d9 d3a9      	rcall	xmit_put
+0001da cefb      	rjmp	sendack
+                 ;	--------------------------------
+0001db ef0f      cmd_27:	ser	r16			; 'A' 1 byte: suppression off
+0001dc 9300 02f5 c27a:	sts	abbrev,r16
+0001de cef7      	rjmp	sendack
+                 ;	--------------------------------
+0001df 2700      cmd_28:	clr	r16			; 'a' 1 byte: suppression on
+0001e0 cffb      	rjmp	c27a
+                 ;	--------------------------------
+0001e1 d0e4      cmd_29:	rcall	rdportp			; 'T' 2 bytes: TPort - read high nibble
+0001e2 f109      	breq	sendnak5
+0001e3 9502      	swap	r16
+0001e4 c002      	rjmp	c_30a
+                 ;	--------------------------------
+0001e5 d0e0      cmd_30:	rcall	rdportp			; 't' 2 bytes: tPort - read low nibble
+0001e6 f0e9      	breq	sendnak5
+0001e7 700f      c_30a:	andi	r16,0x0f		; keep low order bits
+0001e8 d319      	rcall	bin2hex			; convert to ascii hex
+0001e9 930f      	push	r16
+0001ea d398      	rcall	xmit_put		; give them hex digit
+0001eb ceea      	rjmp	sendack
+                 ;	--------------------------------
+0001ec d512      cmd_31:	rcall	moff2z			; '*' 1 byte: send error report
+0001ed d7e7      	rcall	pack2y
+0001ee 8502      	ldd	r16,Z+mo_but		; buttons and overflows
+0001ef 2f10      	mov	r17,r16
+0001f0 7c00      	andi	r16,0xc0		; keep YX overflow flags
+0001f1 731f      	andi	r17,0x3f		; drop the overflow flags
+0001f2 8712      	std	Z+mo_but,r17		; keep buttons asis
+                 
+0001f3 811d      	ldd	r17,Y+preject		; rejected packet count
+0001f4 731f      	andi	r17,0x3f		; not really necessary
+0001f5 2b10      	or	r17,r16			; r17 now has YX######
+0001f6 2700      	clr	r16
+0001f7 830d      	std	Y+preject,r16		; clear the error count
+                 
+0001f8 2f01      	mov	r16,r17
+0001f9 9502      	swap	r16			; high order first
+0001fa 700f      	andi	r16,0x0f
+0001fb d306      	rcall	bin2hex
+0001fc 930f      	push	r16			; arg to xmit_put
+0001fd d385      	rcall	xmit_put		; send it out
+                 
+0001fe 2f01      	mov	r16,r17			; now do low order
+0001ff 700f      	andi	r16,0x0f
+000200 d301      	rcall	bin2hex
+000201 930f      	push	r16			; arg to xmit_put
+000202 d380      	rcall	xmit_put
+000203 ced2      	rjmp	sendack	
+                 
+                 ;	--------------------------------
+                 sendnak5:				; relative jump out of reach
+000204 cec2      	rjmp	sendnak
+                 
+                 ;	--------------------------------
+                 ;	process x, y, and z commands (not a sub)
+                 ;	r16 has 0, 3 or 6 in it for x, y, or z
+                 ;	r0 has mouse in it
+                 savsend:
+000205 e0f0      	ldi	ZH,high(btsav)
+000206 e6e9      	ldi	ZL,low(btsav)
+000207 2d10      	mov	r17,r0
+000208 3011      	cpi	r17,1			; which mouse?
+000209 f011      	breq	ms1
+00020a f010      	brcs	ms0
+00020b 96f6      	adiw	ZH:ZL,btsavsize		; 54 bytes
+00020c 96f6      ms1:	adiw	ZH:ZL,btsavsize
+00020d 9110 0061 ms0:	lds	r17,cmdbuf+1		; LMR or lmr
+00020f 931f      	push	r17
+000210 d236      	rcall	looktable
+000211 0072
+000212 021f      	.dw	'r',mms5
+000213 0052
+000214 0220      	.dw	'R',mms4
+000215 006d
+000216 0221      	.dw	'm',mms3
+000217 004d
+000218 0222      	.dw	'M',mms2
+000219 006c
+00021a 0223      	.dw	'l',mms1
+00021b 004c
+00021c 0224      	.dw	'L',mms0
+00021d ffff
+00021e 00c7      	.dw	-1,sendnak
+                 
+00021f 9639      mms5:	adiw	ZH:ZL,btblksz		; 'r' is the 6th block
+000220 9639      mms4:	adiw	ZH:ZL,btblksz		; 'R' is the 5th block
+000221 9639      mms3:	adiw	ZH:ZL,btblksz		; 'm' is the 4th block
+000222 9639      mms2:	adiw	ZH:ZL,btblksz		; 'M' is the 3rd block
+000223 9639      mms1:	adiw	ZH:ZL,btblksz		; 'l' is the 2nd block
+000224 0fe0      mms0:	add	ZL,r16			; 'L' is 1st. add x, y, or z
+000225 f408      	brcc	mmsa
+000226 95f3      	inc	ZH
+                 
+000227 d2b7      mmsa:	rcall	out3bytenum
+000228 cead      	rjmp	sendack
+                 
+                 ; ==============================================
+                 ;	chkmouse - see if mouse is initialized
+                 ;
+                 ;	r0 - mouse in question
+                 ;	returns: zero set if not, cleared if OK
+                 
+                 chkmouse:
+000229 93ff      	push	ZH
+00022a 93ef      	push	ZL
+00022b 921f      	push	r1
+                 
+00022c d4d2      	rcall	moff2z
+00022d 8414      	ldd	r1,Z+mo_msgsz
+00022e 2011      	tst	r1
+                 
+00022f 901f      	pop	r1
+000230 91ef      	pop	ZL
+000231 91ff      	pop	ZH
+000232 9508      	ret
+                 
+                 ; ==============================================
+                 ;	but2lock - convert button letter to lock addr
+                 ;
+                 ;	r0 - mouse number
+                 ;	r16 has ascii button ('L', 'M', or 'R')
+                 ;	returns: Z pointing at btn's lock block
+                 ;	         zero flag set if error
+                 
+                 but2lock:
+000233 d4cb      	rcall	moff2z
+000234 340c      	cpi	r16,'L'
+000235 f031      	breq	b25_1
+000236 340d      	cpi	r16,'M'
+000237 f031      	breq	b25_2
+000238 3502      	cpi	r16,'R'
+000239 f439      	brne	b25_3
+                 
+00023a 96ba      	adiw	ZH:ZL,mo_rlock		; right locks
+00023b c003      	rjmp	b25_a
+00023c 967e      b25_1:	adiw	ZH:ZL,mo_llock		; left locks
+00023d c001      	rjmp	b25_a
+00023e 96b4      b25_2:	adiw	ZH:ZL,mo_mlock		; middle locks
+00023f 9498      b25_a:	clz				; clear zero = ok
+000240 9508      	ret
+                 
+000241 9418      b25_3:	sez				; didn't recognize
+000242 9508      	ret
+                 
+                 ; ==============================================
+                 ;	followlocks - apply follow locks for this guy
+                 ;
+                 ;	Y - points at lock definition block
+                 ;	r16 - bit 0 - current state of button
+                 
+                 followlocks:
+000243 931f      	push	r17
+000244 932f      	push	r18
+000245 933f      	push	r19
+000246 93bf      	push	XH
+000247 93af      	push	XL
+                 
+000248 81a9      	ldd	XL,Y+w_port
+000249 27bb      	clr	XH			; X points at our PORT
+00024a 913c      	ld	r19,X			; read the port
+                 
+00024b 811d      	ldd	r17,Y+w_mode		; grab mode of lock
+00024c 3011      	cpi	r17,1			; 1 = follow, 2 = invert
+00024d f039      	breq	mf1			; jump if follow
+00024e 3012      	cpi	r17,2			; check for invert
+00024f f451      	brne	ffrtn			; no - return
+                 
+000250 2300      	tst	r16			; it's an invert
+000251 f029      	breq	ff1			; jump to put out a 1
+000252 812b      ff2:	ldd	r18,Y+w_and		; write 0 - get AND mask
+000253 2332      	and	r19,r18			; drop our bit
+000254 c004      	rjmp	ff3
+                 
+000255 2300      mf1:	tst	r16			; it's a follow
+000256 f3d9      	breq	ff2			; jump to put out a 0
+000257 812c      ff1:	ldd	r18,Y+w_or		; write 1 - get OR mask
+000258 2b32      	or	r19,r18			; turn it on
+000259 933c      ff3:	st	X,r19			; put it back
+                 
+00025a 91af      ffrtn:	pop	XL
+00025b 91bf      	pop	XH
+00025c 913f      	pop	r19
+00025d 912f      	pop	r18
+00025e 911f      	pop	r17
+00025f 9508      	ret
+                 
+                 ; ==============================================
+                 ;	togglelocks - apply toggle locks for this guy
+                 ;
+                 ;	Y - points at lock definition block
+                 ;	r16 - bit 0 - current state of button
+                 ;	r17 - bit 0 - whether it's changed
+                 
+                 togglelocks:
+000260 2311      	tst	r17
+000261 f0c9      	breq	tl_1			; no change = done
+                 
+000262 932f      	push	r18
+000263 812d      	ldd	r18,Y+w_mode		; grab mode of lock
+000264 3023      	cpi	r18,3			; ignore modes 1 & 2
+000265 f0a0      	brcs	tl_3
+000266 93bf      	push	XH
+000267 93af      	push	XL
+000268 933f      	push	r19
+                 
+000269 3024      	cpi	r18,4			; our modes are 3 to 5
+00026a f030      	brcs	togit			; 3 = every chg toggles
+00026b f019      	breq	z21			; 4 = on 0 to 1 
+                 
+00026c 2300      	tst	r16			; 5 = on 1 to 0
+00026d f019      	breq	togit
+00026e c008      	rjmp	tl_2
+                 
+00026f 2300      z21:	tst	r16			; toggle if r16 = 1
+000270 f031      	breq	tl_2
+                 
+                 ;	time to toggle our bit
+000271 81a9      togit:	ldd	XL,Y+w_port
+000272 27bb      	clr	XH			; X points at our PORT
+000273 913c      	ld	r19,X			; read the port
+000274 812c      	ldd	r18,Y+w_or		; get the OR mask
+000275 2732      	eor	r19,r18			; flip that dog
+000276 933c      	st	X,r19			; home, boy
+                 
+000277 913f      tl_2:	pop	r19
+000278 91af      	pop	XL
+000279 91bf      	pop	XH
+00027a 912f      tl_3:	pop	r18
+00027b 9508      tl_1:	ret
+                 
+                 ; ==============================================
+                 ;	applylocks - apply any locks for this guy, part 1
+                 ;
+                 ;	r0 - mouse number
+                 ;	r3 - if bit 0 set, apply modes 1 & 2 (follow & invert)
+                 ;	     if bit 1 set, apply modes 3 - 5 (toggles)
+                 ;	r4 - current button state (bit 2 = M, 1 = R, 0 = L)
+                 ;	r5 - change bits (also MRL, only used for toggles)
+                 
+                 applylocks:
+00027c 93df      	push	YH
+00027d 93cf      	push	YL
+00027e 93ff      	push	ZH
+00027f 93ef      	push	ZL
+000280 930f      	push	r16
+000281 931f      	push	r17
+                 
+000282 d47c      	rcall	moff2z
+                 ;	see if the left button has a lock
+000283 a103      	ldd	r16,Z+mo_llock+w_mode
+000284 2300      	tst	r16
+000285 f069      	breq	nlbtn			; mode = 0 means no locks
+                 
+000286 2fdf      	mov	YH,ZH
+000287 2fce      	mov	YL,ZL
+000288 966e      	adiw	YH:YL,mo_llock		; Y points to left lock defs
+000289 2d04      	mov	r16,r4			; extract current btn bit
+00028a 7001      	andi	r16,0x01		; L bit's at 0
+                 
+00028b fe30      	sbrs	r3,0			; do we want follow locks?
+00028c c001      	rjmp	nofl1			; jump if no
+00028d dfb5      	rcall	followlocks		; go do them
+                 
+00028e fe31      nofl1:	sbrs	r3,1			; do we want toggle locks?
+00028f c003      	rjmp	nlbtn			; jump if no
+                 
+000290 2d15      	mov	r17,r5			; extract change bit
+000291 7011      	andi	r17,0x01
+000292 dfcd      	rcall	togglelocks
+                 
+                 ;	see if the middle button has a lock
+000293 a501      nlbtn:	ldd	r16,Z+mo_mlock+w_mode
+000294 2300      	tst	r16
+000295 f089      	breq	nmbtn			; mode = 0 means no locks
+                 
+000296 2fdf      	mov	YH,ZH
+000297 2fce      	mov	YL,ZL
+000298 96a4      	adiw	YH:YL,mo_mlock		; Y points to middle lock defs
+000299 2d04      	mov	r16,r4			; extract current btn bit
+00029a 9506      	lsr	r16			; M bit's at 2
+00029b 9506      	lsr	r16
+00029c 7001      	andi	r16,0x01		; now at 0
+                 
+00029d fe30      	sbrs	r3,0			; do we want follow locks?
+00029e c001      	rjmp	nofl2			; jump if no
+00029f dfa3      	rcall	followlocks		; go do them
+                 
+0002a0 fe31      nofl2:	sbrs	r3,1			; do we want toggle locks?
+0002a1 c005      	rjmp	nmbtn			; jump if no
+                 
+0002a2 2d15      	mov	r17,r5			; extract change bit
+0002a3 9516      	lsr	r17
+0002a4 9516      	lsr	r17
+0002a5 7011      	andi	r17,0x01
+0002a6 dfb9      	rcall	togglelocks
+                 		
+                 ;	see if the right button has a lock
+0002a7 a507      nmbtn:	ldd	r16,Z+mo_rlock+w_mode
+0002a8 2300      	tst	r16
+0002a9 f079      	breq	nrbtn			; mode = 0 means no locks
+                 
+0002aa 2fdf      	mov	YH,ZH
+0002ab 2fce      	mov	YL,ZL
+0002ac 96aa      	adiw	YH:YL,mo_rlock		; Y points to right lock defs
+0002ad 2d04      	mov	r16,r4			; extract current btn bit
+0002ae 9506      	lsr	r16			; R bit's at 1
+0002af 7001      	andi	r16,0x01		; now at 0
+                 
+0002b0 fe30      	sbrs	r3,0			; do we want follow locks?
+0002b1 c001      	rjmp	nofl3			; jump if no
+0002b2 df90      	rcall	followlocks		; go do them
+                 
+0002b3 fe31      nofl3:	sbrs	r3,1			; do we want toggle locks?
+0002b4 c004      	rjmp	nrbtn			; jump if no
+                 
+0002b5 2d15      	mov	r17,r5			; extract change bit
+0002b6 9516      	lsr	r17
+0002b7 7011      	andi	r17,0x01
+0002b8 dfa7      	rcall	togglelocks
+                 
+0002b9 911f      nrbtn:	pop	r17
+0002ba 910f      	pop	r16
+0002bb 91ef      	pop	ZL
+0002bc 91ff      	pop	ZH
+0002bd 91cf      	pop	YL
+0002be 91df      	pop	YH
+0002bf 9508      	ret
+                 
+                 ; ==============================================
+                 ;	prepport - get addresses for port oriented cmds
+                 ;
+                 ;	port is in cmdbuf + 1
+                 ;	returns zero flag set for bad port
+                 ;	uses r1, r2, & r16
+                 
+                 prepport:
+0002c0 9010 0061 	lds	r1,cmdbuf+1	; 2nd byte is port
+0002c2 e300      	ldi	r16,'0'
+0002c3 2e20      	mov	r2,r16		; any bit will do
+0002c4 d3f9      	rcall	unfold2		; get some addresses
+0002c5 9508      	ret
+                 
+                 ; ==============================================
+                 ;	rdportp - read port PORT data
+                 ;
+                 ;	port is in cmdbuf + 1
+                 ;	returns:
+                 ;	  zero flag set if error (breq)
+                 ;	  r16 has port data otherwise
+                 
+                 rdportp:
+0002c6 dff9      	rcall	prepport
+0002c7 f029      	breq	rdbye2			; zero set means port error
+0002c8 91a0 02f0 	lds	XL,pindef+w_port	; PORT address for this port
+0002ca 27bb      	clr	XH			; they're small addresses
+0002cb 910c      	ld	r16,X			; read PORTx
+0002cc 9498      	clz				; zero reset means ok
+0002cd 9508      rdbye2:	ret
+                 
+                 ; ==============================================
+                 ;	rdport - read port PIN data
+                 ;
+                 ;	port is in cmdbuf + 1
+                 ;	returns:
+                 ;	  zero flag set if error (breq)
+                 ;	  r16 has port data otherwise
+                 
+0002ce dff1      rdport:	rcall	prepport
+0002cf f029      	breq	rdbye		; zero set means port error
+0002d0 91a0 02ef 	lds	XL,pindef+w_pin	; PIN address for this port
+0002d2 27bb      	clr	XH		; they're small addresses
+0002d3 910c      	ld	r16,X		; read PINx
+0002d4 9498      	clz			; zero reset means ok
+0002d5 9508      rdbye:	ret
+                 
+                 ; ==============================================
+                 ;	pullcmd	- read a command into cmdbuf
+                 ;	r19 - number of bytes
+                 ;
+                 ;	we've been assured by reliable sources the bytes are there
+                 
+                 pullcmd:
+0002d6 933f      	push	r19
+0002d7 920f      	push	r0
+0002d8 93ff      	push	ZH
+0002d9 93ef      	push	ZL
+                 
+0002da e0f0      	ldi	ZH,high(cmdbuf)
+0002db e6e0      	ldi	ZL,low(cmdbuf)
+0002dc d284      pulp:	rcall	recv_get
+0002dd 9201      	st	Z+,r0
+0002de 953a      	dec	r19
+0002df f7e1      	brne	pulp
+                 
+0002e0 91ef      	pop	ZL
+0002e1 91ff      	pop	ZH
+0002e2 900f      	pop	r0
+0002e3 913f      	pop	r19
+0002e4 9508      	ret
+                 
+                 ; ==============================================
+                 ;	checkcmd - see if there's a complete command in the buffer
+                 ;
+                 ;	call checkcmd
+                 ;	  tst r1
+                 ;	  brpl ok    r1 has offset of complete command (0 - ?)
+                 ;	r1 bit 7 set (negative) means not a complete command:
+                 ;	  sbr- r1,6  r1 = 0xcf  bit 6 = 1 means empty
+                 ;	  sbr- r1,5  r1 = 0xaf	bit 5 = 1 means incomplete
+                 ;	  sbr- r1,4  r1 = 0x9f  bit 4 = 1 means unknown
+                 ;
+                 ;	if the command is complete, it is read into cmdbuf() and
+                 ;	removed from the receive buffer
+                 
+                 checkcmd:
+0002e5 930f      	push	r16
+0002e6 931f      	push	r17
+                 
+0002e7 9100 01df 	lds	r16,rhead		; see if buffer has anything
+0002e9 9110 01e0 	lds	r17,rtail
+0002eb 1701      	cp	r16,r17			; equal means empty (usually true)
+0002ec f419      	brne	chk1
+                 
+0002ed ec0f      	ldi	r16,0xcf		; 11001111 means empty
+0002ee 2e10      	mov	r1,r16
+0002ef c02e      	rjmp	chk2
+                 
+0002f0 932f      chk1:	push	r18
+0002f1 933f      	push	r19
+0002f2 93ff      	push	ZH
+0002f3 93ef      	push	ZL
+0002f4 93df      	push	YH
+0002f5 93cf      	push	YL
+                 
+0002f6 e0d1      	ldi	YH,high(rbuf)		; point y at recv buffer
+0002f7 ebcd      	ldi	YL,low(rbuf)
+0002f8 0fc1      	add	YL,r17			; add tail offset
+0002f9 f408      	brcc	chk4
+0002fa 95d3      	inc	YH			; carried into high byte
+0002fb 8108      chk4:	ld	r16,Y			; get command in buf
+                 
+                 	; r16 has the incoming command. look down the crec list for
+                 	; a match, noting how many bytes it needs (r19) and how far
+                 	; down the list the match is (r1)
+0002fc 2411      	clr	r1			; r1 is counting
+0002fd e0f0      	ldi	ZH,high(crec<<1)	; point to commands
+0002fe e5e6      	ldi	ZL,low(crec<<1)		; (2 bytes each)
+0002ff 9125      chklp:	lpm	r18,Z+			; next cmd from flash
+000300 9135      	lpm	r19,Z+			; and its byte count
+000301 372e      	cpi	r18,'~'			; end of list
+000302 f099      	breq	chk3			; if we hit it, a problem
+000303 1702      	cp	r16,r18			; is we us?
+000304 f011      	breq	chk5			; yup - go away
+000305 9413      	inc	r1			; we're counting on you
+000306 cff8      	rjmp	chklp			; try again
+                 
+000307 703f      chk5:	andi	r19,0x0f		; convert ascii byte cnt
+                 
+                 	; see if there are enough chars for a complete command
+000308 9110 01df 	lds	r17,rhead		; head offset
+00030a 9120 01e0 	lds	r18,rtail		; tail offset
+00030c 1b12      	sub	r17,r18			; head - tail
+00030d f412      	brpl	chk7			; if positive, no wrap
+00030e e220      	ldi	r18,rbufsize		; size of recv buffer
+00030f 0f12      	add	r17,r18			; take care of wrap
+000310 1713      chk7:	cp	r17,r19			; have vs. need
+000311 f010      	brcs	chk8			; jump if incomplete
+                 
+000312 dfc3      	rcall	pullcmd			; read the command
+000313 c004      	rjmp	chk10
+                 
+000314 ea0f      chk8:	ldi	r16,0xaf		; 10101111 means incomplete
+000315 c001      	rjmp	chk9
+000316 e90f      chk3:	ldi	r16,0x9f		; 10011111 means unknown cmd
+000317 2e10      chk9:	mov	r1,r16
+                 
+000318 91cf      chk10:	pop	YL
+000319 91df      	pop	YH
+00031a 91ef      	pop	ZL
+00031b 91ff      	pop	ZH
+00031c 913f      	pop	r19
+00031d 912f      	pop	r18
+00031e 911f      chk2:	pop	r17
+00031f 910f      	pop	r16
+000320 9508      	ret
+                 
+                 ; ==============================================
+                 ;	savcur - save current location to btsav()
+                 ;
+                 ;	when a button changes, we save the current offset so the
+                 ;	host can read where the mouse was when a button was last
+                 ;	clicked or released.  consequently there are 2 save areas
+                 ;	per button (click & release), 3 buttons per mouse, and 3
+                 ;	mice, or 18 save areas at 9 bytes each (3 x, 3 y, & 3 z).
+                 ;
+                 ;	r0 - mouse number
+                 ;	Z - points to moff()
+                 ;	r17 - low 3 bits have btn chg bits; 1 if changed
+                 ;
+                 ;	we'll load the new msg hdr into r3:
+                 ;	  r3 tells us the type of transistion (H->L or L->H)
+                 ;	  r0 tells us how far into btsav() to offset
+                 ;	  Z tells us where to get our data to copy
+                 ;	  r17 tells us which place(s) in btsav() to copy to
+                 
+000321 923f      savcur:	push	r3
+000322 93bf      	push	XH
+000323 93af      	push	XL
+                 
+000324 8435      	ldd	r3,Z+mo_msg		; new msg header
+000325 e0b0      	ldi	XH,high(btsav)		; X -> mouse 0 save area
+000326 e6a9      	ldi	XL,low(btsav)
+000327 2000      	tst	r0
+000328 f019      	breq	sm0a			; done if mouse 0
+000329 fc01      	sbrc	r0,1
+00032a 96d6      	adiw	XH:XL,btsavsize		; mouse 2 only
+00032b 96d6      	adiw	XH:XL,btsavsize		; mouse 1 or 2
+                 
+                 ;	X points to our save block, left button, H->L transition
+                 ;	now look at the three bits of r17 (MRL) to see whom to save
+00032c ff10      sm0a:	sbrs	r17,0			; bit 0 is left button
+00032d c007      	rjmp	not_l
+00032e 93bf      	push	XH			; left button changed
+00032f 93af      	push	XL			; X already points at left btn
+000330 fc30      	sbrc	r3,0			; look at new value
+000331 9619      	adiw	XH:XL,btblksz		; if our r3 bit is set, it's L->H
+000332 d016      	rcall	copybt
+000333 91af      	pop	XL
+000334 91bf      	pop	XH
+                 
+000335 ff11      not_l:	sbrs	r17,1			; bit 1 is right button
+000336 c008      	rjmp	not_r
+000337 93bf      	push	XH			; right button changed
+000338 93af      	push	XL
+000339 9694      	adiw	XH:XL,4*btblksz		; right button is 36 bytes in
+00033a fc31      	sbrc	r3,1			; look at new value
+00033b 9619      	adiw	XH:XL,btblksz		; if our r3 bit is set, it's L->H
+00033c d00c      	rcall	copybt
+00033d 91af      	pop	XL
+00033e 91bf      	pop	XH
+                 
+00033f ff12      not_r:	sbrs	r17,2			; bit 2 is middle button
+000340 c004      	rjmp	not_m
+000341 9652      	adiw	XH:XL,2*btblksz		; M btn changed; 18 bytes in
+000342 fc32      	sbrc	r3,2			; look at new value
+000343 9619      	adiw	XH:XL,btblksz		; if our r3 bit is set, it's L->H
+000344 d004      	rcall	copybt
+                 
+000345 91af      not_m:	pop	XL
+000346 91bf      	pop	XH
+000347 903f      	pop	r3
+000348 9508      	ret
+                 
+                 ; ==============================================
+                 ;	copybt - save current mouse position
+                 ;
+                 ;	Z - points to moff() for our mouse (preserved)
+                 ;	X - points to destination of move (destroyed)
+                 ;
+000349 93ff      copybt:	push	ZH
+00034a 93ef      	push	ZL
+00034b 931f      	push	r17
+00034c 920f      	push	r0
+                 
+00034d 9675      	adiw	ZH:ZL,mo_x0		; where the current loc is
+00034e e019      	ldi	r17,btblksz		; 9 bytes per location
+00034f 9001      cpylp:	ld	r0,Z+
+000350 920d      	st	X+,r0
+000351 951a      	dec	r17
+000352 f7e1      	brne	cpylp
+                 
+000353 900f      	pop	r0
+000354 911f      	pop	r17
+000355 91ef      	pop	ZL
+000356 91ff      	pop	ZH
+000357 9508      	ret
+                 
+                 .include	"AT3283_3.inc"
+                 
+                 ;
+                 ;	various and sundry support routines
+                 ;
+                 ; ==============================================
+                 ;	gettimer - read a timer error flag
+                 ;
+                 ;	r0 - mouse whose error flag to read
+                 ;	returns: zero set if ok, cleared if error
+                 
+                 gettimer:
+000358 93ff      	push	ZH
+000359 93ef      	push	ZL
+00035a 930f      	push	r16
+                 
+00035b d3a3      	rcall	moff2z
+00035c 8904      	ldd	r16,Z+mo_err
+00035d 2300      	tst	r16
+                 
+00035e 910f      	pop	r16
+00035f 91ef      	pop	ZL
+000360 91ff      	pop	ZH
+000361 9508      	ret
+                 
+                 ; ==============================================
+                 ;	stoptimer - stop the timer
+                 ;
+                 ;	r0 - mouse number
+                 
+                 stoptimer:
+000362 93ff      	push	ZH
+000363 93ef      	push	ZL
+000364 930f      	push	r16
+                 
+000365 d399      	rcall	moff2z
+000366 2700      	clr	r16			; set mode = 0
+000367 8b01      	std	Z+mo_tmode,r16
+                 
+000368 910f      	pop	r16
+000369 91ef      	pop	ZL
+00036a 91ff      	pop	ZH
+00036b 9508      	ret
+                 
+                 ; ==============================================
+                 ;	starttimer - start the timer
+                 ;
+                 ;	r0 - mouse whose timer we're starting
+                 ;	r16 - if positive, number of milliseconds (1 - 127, 0 = 255)
+                 ;	    - if bit 7 set, ms * 256 in low 7 bits
+                 ;	this clears the timer error flag
+                 
+                 starttimer:
+00036c 93ff      	push	ZH
+00036d 93ef      	push	ZL
+00036e 932f      	push	r18
+                 
+00036f d38f      	rcall	moff2z
+000370 2722      	clr	r18
+000371 8b21      	std	Z+mo_tmode,r18		; stop it
+000372 8b24      	std	Z+mo_err,r18		; clear error
+                 
+000373 2300      	tst	r16
+000374 f43a      	brpl	tb8			; jump for 8 bit timer
+                 
+000375 8b22      	std	Z+mo_tlo,r18		; low <- 0
+000376 2f20      	mov	r18,r16
+000377 772f      	andi	r18,0x7f
+000378 f039      	breq	noway			; not that long
+000379 8b23      	std	Z+mo_thi,r18		; high <- low bits of r16
+00037a e022      	ldi	r18,2			; mode = 2 is 16 bit
+00037b c003      	rjmp	tbon
+                 
+00037c 8b02      tb8:	std	Z+mo_tlo,r16		; low <- r16
+00037d 8b23      	std	Z+mo_thi,r18		; high <- 0
+00037e e021      	ldi	r18,1			; mode = 1 is 8 bit
+                 
+00037f 8b21      tbon:	std	Z+mo_tmode,r18		; set mode to start
+                 
+000380 912f      noway:	pop	r18
+000381 91ef      	pop	ZL
+000382 91ff      	pop	ZH
+000383 9508      	ret
+                 
+                 ; ==============================================
+                 ;	killmouse - disable mouse interrupt
+                 ;
+                 ;	r0 - mouse in question
+                 killmouse:
+000384 930f      	push	r16
+000385 931f      	push	r17
+                 
+000386 b71b      	in	r17,gicr		; has int flags
+000387 2d00      	mov	r16,r0
+000388 3001      	cpi	r16,1
+000389 f029      	breq	kill1
+00038a f010      	brcs	kill0
+00038b ed0f      	ldi	r16,0xdf		; bit 5 is int2
+00038c c003      	rjmp	kila
+00038d eb0f      kill0:	ldi	r16,0xbf		; bit 6 is int0
+00038e c001      	rjmp	kila
+00038f e70f      kill1:	ldi	r16,0x7f		; bit 7 is int1
+000390 2310      kila:	and	r17,r16			; drop intx bit
+000391 bf1b      	out	gicr,r17		; and put it back
+                 
+000392 911f      	pop	r17
+000393 910f      	pop	r16
+000394 9508      	ret
+                 
+                 ; ==============================================
+                 ;	revivemouse - enable mouse interrupt
+                 ;
+                 ;	r0 - mouse in question
+                 
+                 revivemouse:
+000395 930f      	push	r16
+000396 931f      	push	r17
+                 
+000397 b71b      	in	r17,gicr		; has int flags
+000398 2d00      	mov	r16,r0
+000399 3001      	cpi	r16,1
+00039a f029      	breq	rev1
+00039b f010      	brcs	rev0
+00039c e200      	ldi	r16,0x20		; bit 5 is int2
+00039d c003      	rjmp	reva
+00039e e400      rev0:	ldi	r16,0x40		; bit 6 is int0
+00039f c001      	rjmp	reva
+0003a0 e800      rev1:	ldi	r16,0x80		; bit 7 is int1
+0003a1 2b10      reva:	or	r17,r16			; set intx bit
+0003a2 bf1b      	out	gicr,r17		; and put it back
+                 
+0003a3 911f      	pop	r17
+0003a4 910f      	pop	r16
+0003a5 9508      	ret
+                 
+                 ; ==============================================
+                 ;	miscinit - miscellaneous initialization
+                 ;
+                 ;	r16 not preserved
+                 
+                 miscinit:
+0003a6 2700      	clr	r16
+0003a7 9300 0320 	sts	take5,r16		; 5 ms timer
+0003a9 9300 02f5 	sts	abbrev,r16		; abbreviate output
+0003ab 9300 0068 	sts	bigcheese,r16		; default to mouse 0
+0003ad 930f      	push	r16			; high baud rate as arg
+0003ae e10a      	ldi	r16,26			; 19200 @ 8MHz
+0003af 930f      	push	r16			; low baud rate arg
+0003b0 d15e      	rcall	usart_init		; init USART
+0003b1 d2c5      	rcall	mr_init			; init mouse bufs & defs
+                 
+0003b2 e00a      	ldi	r16,0x0a		; falling edge on int0 & 1
+                 ;					; int2 is falling by default
+0003b3 bf05      	out	mcucr,r16
+                 
+0003b4 e00d      	ldi	r16,0x0d		; set up timer
+0003b5 bf03      	out	tccr0,r16		; CTC w/ 1K prescaler
+0003b6 e008      	ldi	r16,8			; 8 = 1ms interrupts
+0003b7 bf0c      	out	ocr0,r16		; compare value
+                 
+0003b8 2700      	clr	r16
+0003b9 bf02      	out	tcnt0,r16		; timer counter
+0003ba e002      	ldi	r16,0x02		; turn on ints for compare 0
+0003bb bf09      	out	timsk,r16		; and away we go
+                 
+0003bc 9478      	sei				; interrupts enabled
+0003bd 9508      	ret
+                 
+                 ; ==============================================
+                 ;	timer 0 interrupt handler
+                 ;
+                 ;	we're running an 8Mhz clock with 1K prescaler
+                 ;	with a count of 8 = 1ms interrupts
+                 ;
+                 ;	we have a total of 12 clocks, 4 per mouse
+                 ;	  8 & 16 bit counters (only one can be active)
+                 ;	  packet timer for obtaining a complete packet
+                 ;	  packet byte timer for byte-to-byte timing
+                 
+                 i_tim0c:				; interrupt: timer 0 compare
+0003be 930f      	push	r16
+0003bf b70f      	in	r16,sreg		; status register
+0003c0 930f      	push	r16
+0003c1 931f      	push	r17
+0003c2 93ff      	push	ZH
+0003c3 93ef      	push	ZL
+                 
+                 ;	just in case we're needing a short break
+0003c4 9100 0320 	lds	r16,take5
+0003c6 2300      	tst	r16
+0003c7 f019      	breq	no5
+0003c8 950a      	dec	r16
+0003c9 9300 0320 	sts	take5,r16
+                 
+                 ;	first do the line timers (8 and/or 16 bit)
+0003cb e0f2      no5:	ldi	ZH,high(moff)
+0003cc e4e1      	ldi	ZL,low(moff)
+0003cd 9671      	adiw	ZH:ZL,mo_tmode		; first of 4 timer bytes
+0003ce e003      	ldi	r16,3			; looking at 3 mice
+                 
+0003cf 8110      it0l:	ld	r17,Z			; timer mode (0 = stopped)
+0003d0 3011      	cpi	r17,1
+0003d1 f0a8      	brcs	it03			; stopped - move on
+0003d2 f059      	breq	it04			; jump if 8 bit
+                 
+                 ;	we're here for 16 bit timer (mo_tmode = 2)
+0003d3 93df      	push	YH
+0003d4 93cf      	push	YL
+0003d5 81c1      	ldd	YL,Z+ztlo		; low order
+0003d6 81d2      	ldd	YH,Z+zthi		; high order
+0003d7 9721      	sbiw	YH:YL,1
+0003d8 83c1      	std	Z+ztlo,YL
+0003d9 83d2      	std	Z+zthi,YH
+0003da 91cf      	pop	YL
+0003db 91df      	pop	YH
+0003dc f029      	breq	sttim
+0003dd c009      	rjmp	it03
+                 
+                 ;	come here if 8 bit timer (mo_tmode = 1)
+0003de 8111      it04:	ldd	r17,Z+ztlo		; low order timer (Z -> mo_tmode)
+0003df 951a      	dec	r17
+0003e0 8311      	std	Z+ztlo,r17
+0003e1 f429      	brne	it03			; if not zero, done
+                 
+                 ;	come here on user timer runout on either timer
+0003e2 2711      sttim:	clr	r17			; stop the timer
+0003e3 8310      	st	Z,r17			; mo_tmode = 0 means stop
+0003e4 e011      	ldi	r17,1			; error flag
+0003e5 8313      	std	Z+zerr,r17		; mo_err = 1 for error
+0003e6 d5d2      	rcall	timeout			; go do packet processing
+                 
+0003e7 950a      it03:	dec	r16			; counting passes
+0003e8 f011      	breq	it99			; done
+0003e9 96fa      	adiw	ZH:ZL,mblksize		; next mouse
+0003ea cfe4      	rjmp	it0l
+                 
+                 ;	next do the packet and packet byte timers
+0003eb e0f2      it99:	ldi	ZH,high(pack)
+0003ec efec      	ldi	ZL,low(pack)
+0003ed e003      	ldi	r16,3			; again, 3 mice
+                 
+0003ee 8511      it10:	ldd	r17,Z+ptrun		; packet timer status
+0003ef 2311      	tst	r17
+0003f0 f039      	breq	it11			; jump if not running
+0003f1 8117      	ldd	r17,Z+ptimer		; get current value
+0003f2 951a      	dec	r17			; counting down
+0003f3 8317      	std	Z+ptimer,r17		; put it away
+0003f4 f419      	brne	it11			; nonzero is fine
+                 
+                 ;	we had a packet timer runout
+0003f5 2711      	clr	r17			; stop the timer
+0003f6 8711      	std	Z+ptrun,r17
+0003f7 d55b      	rcall	prunout			; go process it
+                 
+0003f8 8512      it11:	ldd	r17,Z+pbtrun		; packet byte timer status
+0003f9 2311      	tst	r17
+0003fa f039      	breq	it13			; jump if not running
+0003fb 8510      	ldd	r17,Z+pbtimer		; get current value
+0003fc 951a      	dec	r17			; counting down
+0003fd 8710      	std	Z+pbtimer,r17		; put it away
+0003fe f419      	brne	it13			; nonzero is fine
+                 
+                 ;	we had a packet byte timer runout
+0003ff 2711      	clr	r17			; stop the timer
+000400 8712      	std	Z+pbtrun,r17
+000401 d54f      	rcall	pbrunout		; go process it
+                 
+000402 950a      it13:	dec	r16			; counting passes
+000403 f011      	breq	it98			; done
+000404 963c      	adiw	ZH:ZL,packsize		; next mouse
+000405 cfe8      	rjmp	it10
+                 
+000406 91ef      it98:	pop	ZL
+000407 91ff      	pop	ZH
+000408 911f      	pop	r17
+000409 910f      	pop	r16
+00040a bf0f      	out	sreg,r16		; restore status reg
+00040b 910f      	pop	r16
+00040c 9518      	reti
+                 
+                 ; ==============================================
+                 ;	int0 interrupt handler
+                 i_irq0:
+00040d 930f      	push	r16
+00040e b70f      	in	r16,sreg		; status register
+00040f 930f      	push	r16
+000410 920f      	push	r0
+                 
+000411 2400      	clr	r0
+000412 d1f8      	rcall	mint2			; do the mouse interrupt stuff
+                 
+000413 900f      	pop	r0
+000414 910f      	pop	r16
+000415 bf0f      	out	sreg,r16		; restore status reg
+000416 910f      	pop	r16
+000417 9518      	reti
+                 
+                 ; ==============================================
+                 ;	int1 interrupt handler
+                 i_irq1:
+000418 930f      	push	r16
+000419 b70f      	in	r16,sreg		; status register
+00041a 930f      	push	r16
+00041b 920f      	push	r0
+                 
+00041c 2400      	clr	r0
+00041d 9403      	inc	r0
+00041e d1ec      	rcall	mint2			; do the mouse interrupt stuff
+                 
+00041f 900f      	pop	r0
+000420 910f      	pop	r16
+000421 bf0f      	out	sreg,r16		; restore status reg
+000422 910f      	pop	r16
+000423 9518      	reti
+                 
+                 ; ==============================================
+                 ;	int2 interrupt handler
+                 i_irq2:
+000424 930f      	push	r16
+000425 b70f      	in	r16,sreg		; status register
+000426 930f      	push	r16
+000427 920f      	push	r0
+                 
+000428 2400      	clr	r0
+000429 9403      	inc	r0
+00042a 9403      	inc	r0
+00042b d1df      	rcall	mint2			; do the mouse interrupt stuff
+                 
+00042c 900f      	pop	r0
+00042d 910f      	pop	r16
+00042e bf0f      	out	sreg,r16		; restore status reg
+00042f 910f      	pop	r16
+000430 9518      	reti
+                 
+                 ; ==============================================
+                 ;	jumptable - execute single word jumptable
+                 ;
+                 ;	push	offset (0 to n - 1)
+                 ;	call    jumptable
+                 ;	rjmp	offset = 0
+                 ;	rjmp	offset = 1
+                 ;	rjmp	etc.
+                 
+                 jumptable:
+000431 93cf      	push	YL		; save scratch regs
+000432 93df      	push	YH
+000433 93af      	push	XL
+000434 920f      	push	r0
+                 
+000435 b7cd      	in	YL,SPL		; get current stack pointer
+000436 b7de      	in	YH,SPH
+000437 800f      	ldd	r0,y+7		; get pushed argument
+000438 81ae      	ldd	XL,Y+6		; low byte of orig rtn addr
+000439 0da0      	add	XL,r0		; add the argument
+00043a 83af      	std	Y+7,XL		; put away new low byte where arg was
+00043b 81ad      	ldd	XL,Y+5		; high byte of orig rtn addr
+00043c f408      	brcc	ncarry		; if carry, bump it one
+00043d 95a3      	inc	XL
+00043e 83ae      ncarry:	std	Y+6,XL		; put away new high where low was
+00043f 81a9      	ldd	XL,Y+1		; save r0 value
+000440 83ad      	std	Y+5,XL		; overlay old hi rtn addr
+                 
+000441 900f      	pop	r0		; original push value
+000442 91af      	pop	XL		; restore everyone
+000443 91df      	pop	YH
+000444 91cf      	pop	YL
+000445 900f      	pop	r0		; the one we moved
+000446 9508      	ret			; jump to modified and moved address
+                 
+                 ; ==============================================
+                 ;	looktable - look up byte and jump on match
+                 ;
+                 ;	push value to match (0-255)
+                 ;	call looktable
+                 ;	dw	val1,address if jmparg = val1
+                 ;	dw	val2,address if jmparg = val2
+                 ;	...	...
+                 ;	dw	-1,address for no match
+                 
+                 looktable:
+000447 93cf      	push	YL		; save scratch regs
+000448 93df      	push	YH
+000449 93ef      	push	ZL
+00044a 93ff      	push	ZH
+00044b 938f      	push	r24
+00044c 939f      	push	r25
+00044d 920f      	push	r0
+                 
+00044e b7cd      	in	YL,SPL		; copy of revised stack pointer
+00044f b7de      	in	YH,SPH
+000450 85f8      	ldd	ZH,Y+8		; high rtn address (word address, not byte)
+000451 71ff      	andi	ZH,0x1f		; manual pg 10 says to mask
+000452 85e9      	ldd	ZL,Y+9		; low rtn address
+000453 0fee      	lsl	ZL		; mult by 2 for byte address
+000454 1fff      	rol	ZH		; needed for lpm instr
+                 
+000455 8608      	std	Y+8,r0		; overlay high rtn with r0
+000456 840a      	ldd	r0,Y+10		; the argument (match value)
+                 
+000457 9195      lloop:	lpm	r25,Z+		; match value
+000458 9185      	lpm	r24,Z+		; high data byte, usually zero
+000459 2388      	tst	r24
+00045a f421      	brne	useme
+00045b 1590      	cp	r25,r0		; what we want
+00045c f011      	breq	useme
+00045d 9632      	adiw	ZH:ZL,2
+00045e cff8      	rjmp	lloop
+                 
+00045f 9005      useme:	lpm	r0,Z+		; low target address
+000460 860a      	std	Y+10,r0		; overwrite orig arg
+000461 9005      	lpm	r0,Z+		; high target address
+000462 8609      	std	Y+9,r0		; overwrite orig low rtn addr
+                 
+000463 900f      	pop	r0		; dummy pop
+000464 919f      	pop	r25		; restore scratch regs
+000465 918f      	pop	r24
+000466 91ff      	pop	ZH
+000467 91ef      	pop	ZL
+000468 91df      	pop	YH
+000469 91cf      	pop	YL
+00046a 900f      	pop	r0		; added this one
+00046b 9508      	ret			; go to modified and moved return address
+                 
+                 ; ==============================================
+                 ;	fetcharg1 - grab one stacked argument and diddle the stack
+                 ;
+                 ;	this is for routines that use a single pushed arg
+                 ;	call this to return pushed arg in r0
+                 ;	when done, pop r0 and ret
+                 ;
+                 ;	e.g.	push arg
+                 ;		call xyz
+                 ;
+                 ;	xyz:	call fetcharg1
+                 ;		r0 now has pushed arg
+                 ;		...
+                 ;		pop r0
+                 ;		ret
+                 ; note: you must call this prior to any other pushes!
+                 
+                 fetcharg1:
+00046c 920f      	push	r0		; return arg here
+00046d 921f      	push	r1		; scratch
+00046e 93cf      	push	YL
+00046f 93df      	push	YH
+                 
+000470 b7cd      	in	YL,SPL		; copy of revised stack pointer
+000471 b7de      	in	YH,SPH
+                 
+000472 8419      	ldd	r1,Y+9		; hold arg value
+000473 8408      	ldd	r0,Y+8		; orig lo rtn addr
+000474 8609      	std	Y+9,r0
+000475 800f      	ldd	r0,Y+7		; orig hi rtn addr
+000476 8608      	std	Y+8,r0
+000477 800c      	ldd	r0,Y+4		; r0 we just pushed
+000478 820f      	std	Y+7,r0
+000479 821c      	std	Y+4,r1		; put the arg away
+                 
+00047a 91df      	pop	YH
+00047b 91cf      	pop	YL
+00047c 901f      	pop	r1
+00047d 900f      	pop	r0		; this is arg; original deeper in stack
+00047e 9508      	ret
+                 
+                 ; ==============================================
+                 ;	fetcharg2 - grab two stacked arguments and diddle the stack
+                 ;
+                 ;	this is for routines that use two pushed args
+                 ;	call this to return pushed args in r0 and r1
+                 ;	when done, pop r0 and r1 and ret
+                 ;
+                 ;	e.g.	push arg1 (ends up in r0)
+                 ;		push arg2 (ends up in r1)
+                 ;		call xyz
+                 ;
+                 ;	xyz:	call fetcharg2
+                 ;		r0 now has first pushed arg
+                 ;		r1 now has second pushed arg
+                 ;		...
+                 ;		pop r1
+                 ;		pop r0
+                 ;		ret
+                 ; note: you must call this prior to any other pushes!
+                 
+                 fetcharg2:
+00047f 920f      	push	r0		; return first arg here
+000480 921f      	push	r1		; return second arg here
+000481 93cf      	push	YL
+000482 93df      	push	YH
+                 
+000483 b7cd      	in	YL,SPL		; copy of revised stack pointer
+000484 b7de      	in	YH,SPH
+                 
+000485 841a      	ldd	r1,Y+10		; temp store arg1
+000486 8408      	ldd	r0,Y+8		; lo rtn
+000487 860a      	std	Y+10,r0
+000488 800c      	ldd	r0,Y+4		; orig r0
+000489 8608      	std	Y+8,r0
+00048a 821c      	std	Y+4,r1		; arg1 into stack
+                 
+00048b 8419      	ldd	r1,Y+9		; temp store arg2
+00048c 800f      	ldd	r0,Y+7		; hi rtn
+00048d 8609      	std	Y+9,r0
+00048e 800b      	ldd	r0,Y+3		; orig r1
+00048f 820f      	std	Y+7,r0
+000490 821b      	std	Y+3,r1		; arg2 into stack
+                 
+000491 91df      	pop	YH
+000492 91cf      	pop	YL
+000493 901f      	pop	r1		; second arg; orig deeper
+000494 900f      	pop	r0		; first arg; orig deeper
+000495 9508      	ret
+                 
+                 ; ==============================================
+                 ;	convhex16 - convert ascii hex digit in r16
+                 ;
+                 ;	r16 - ascii hex coming in ('a' - 'f', 'A' - 'F', '0' - '9')
+                 ;
+                 ;	returns:
+                 ;		if OK, 0 - 15 in r16, zero flag clear
+                 ;		if error, orig char in r16, zero flag set
+                 
+                 convhex16:
+000496 3300      	cpi	r16,'0'
+000497 f028      	brcs	nhex1			; jump if < '0'
+000498 3309      	cpi	r16,'9'
+000499 f009      	breq	ishex1
+00049a f410      	brcc	nhex1			; jump if > '9'
+00049b 700f      ishex1:	andi	r16,0x0f		; keep low 4 bits
+00049c c00d      	rjmp	hexrtn
+                 
+00049d 3601      nhex1:	cpi	r16,'a'
+00049e f028      	brcs	nhex2
+00049f 3606      	cpi	r16,'f'
+0004a0 f009      	breq	ishex2
+0004a1 f410      	brcc	nhex2
+0004a2 5507      ishex2:	subi	r16,'a' - 10		; 'a' -> 10
+0004a3 c006      	rjmp	hexrtn
+                 
+0004a4 3401      nhex2:	cpi	r16,'A'
+0004a5 f030      	brcs	nhex3
+0004a6 3406      	cpi	r16,'F'
+0004a7 f009      	breq	ishex3
+0004a8 f418      	brcc	nhex3
+0004a9 5307      ishex3:	subi	r16,'A' - 10		; 'A' -> 10
+0004aa 9498      hexrtn:	clz				; zero clear means OK
+0004ab 9508      	ret
+                 
+0004ac 9418      nhex3:	sez				; zero set means not hex
+0004ad 9508      	ret
+                 
+                 ; ==============================================
+                 ;	prepnum - prepare a number for hex output
+                 ;
+                 ;	Z - points to low order byte (preserved)
+                 ;	6 hex digits are put into pnum()
+                 ;	r20 has leading '0' or 'F' count
+                 ;	r21 has 1 for leading zeros, 2 for leading 'F'
+                 
+                 prepnum:
+0004ae 93df      	push	YH
+0004af 93cf      	push	YL
+0004b0 930f      	push	r16
+0004b1 932f      	push	r18
+                 
+0004b2 2744      	clr	r20		; count leading chars
+0004b3 2755      	clr	r21		; what kind (none now)
+0004b4 e0d2      	ldi	YH,high(pnum)	; where it goes
+0004b5 efc6      	ldi	YL,low(pnum)
+                 
+0004b6 e026      	ldi	r18,6		; nibble number going out now
+0004b7 9633      	adiw	ZH:ZL,3		; start at high order byte + 1
+                 
+0004b8 ff20      o3lp:	sbrs	r18,0		; odd or even?
+0004b9 c014      	rjmp	o3grab		; even - need to get byte
+0004ba 2d00      	mov	r16,r0		; odd - use copy we previously saved
+0004bb 700f      o3la:	andi	r16,0x0f	; keep nibble
+                 	; we have our next nibble masked off
+0004bc 2355      	tst	r21		; are we checking?
+0004bd f0a2      	brmi	o3no		; not any more
+0004be 2300      	tst	r16
+0004bf f021      	breq	o33		; this is a zero
+0004c0 300f      	cpi	r16,15		; 
+0004c1 f039      	breq	o33f		; this is an F
+                 
+0004c2 6850      o3kill:	sbr	r21,0x80	; r21 neg means no more checking
+0004c3 c00e      	rjmp	o3no		; put it away
+                 
+0004c4 fd51      o33:	sbrc	r21,1		; we have a zero
+0004c5 cffc      	rjmp	o3kill		; but we're suppressing F's
+0004c6 9543      	inc	r20		; zero is good - count it
+0004c7 6051      	sbr	r21,0x01	; mark that we're doing zeros
+0004c8 c009      	rjmp	o3no		; next input char
+                 
+0004c9 fd50      o33f:	sbrc	r21,0		; we have an F
+0004ca cff7      	rjmp	o3kill		; but we're suppressing 0's
+0004cb 9543      	inc	r20		; F is good - count it
+0004cc 6052      	sbr	r21,0x02	; mark that we're doing F's
+0004cd c004      	rjmp	o3no
+                 
+0004ce 9102      o3grab:	ld	r16,-Z		; grab a byte
+0004cf 2e00      	mov	r0,r16		; save a copy
+0004d0 9502      	swap	r16		; want high nibble first
+0004d1 cfe9      	rjmp	o3la
+                 
+0004d2 d02f      o3no:	rcall	bin2hex		; convert nibble to hex digit
+0004d3 9309      	st	Y+,r16		; put ascii char into pnum()
+0004d4 952a      	dec	r18		; how many to process
+0004d5 f711      	brne	o3lp		; do it 6 times
+                 
+0004d6 7053      	andi	r21,0x03	; drop bit 7 - rtn 1 or 2
+0004d7 3046      	cpi	r20,6		; make 6 suppressions into 5
+0004d8 f409      	brne	o3rtn
+0004d9 e045      	ldi	r20,5
+                 
+0004da 912f      o3rtn:	pop	r18
+0004db 910f      	pop	r16
+0004dc 91cf      	pop	YL
+0004dd 91df      	pop	YH
+0004de 9508      	ret
+                 
+                 ; ==============================================
+                 ;	out3bytenum - send 3 byte number on usart
+                 ;
+                 ;	Z - points to low order byte (garbaged)
+                 ;	output in hex. if abbrev = 0, suppress
+                 ;	leading zeros and sign extensions
+                 
+                 out3bytenum:
+0004df 935f      	push	r21
+0004e0 934f      	push	r20
+0004e1 931f      	push	r17
+0004e2 930f      	push	r16
+                 
+0004e3 dfca      	rcall	prepnum			; format the number
+0004e4 e0f2      	ldi	ZH,high(pnum)		; where prepnum put it
+0004e5 efe6      	ldi	ZL,low(pnum)
+0004e6 9100 02f5 	lds	r16,abbrev		; are we suppressing?
+0004e8 2300      	tst	r16
+0004e9 f469      	brne	nosup			; nonzero means no
+                 
+0004ea 2344      	tst	r20			; leading char count
+0004eb f059      	breq	nosup			; nothing to suppress anyway
+                 
+0004ec ff51      	sbrs	r21,1
+0004ed c003      	rjmp	szer			; r21 = 1 means suppress zeros
+0004ee e20d      	ldi	r16,'-'			; r21 = 2 means suppress F's
+0004ef 930f      	push	r16
+0004f0 d092      	rcall	xmit_put		; leading '-' = compression
+                 
+0004f1 0fe4      szer:	add	ZL,r20			; how many to hop over
+0004f2 f408      	brcc	szer1
+0004f3 95f3      	inc	ZH
+0004f4 e006      szer1:	ldi	r16,6
+0004f5 1b04      	sub	r16,r20			; how many are left to do?
+0004f6 c001      	rjmp	slpx
+                 
+0004f7 e006      nosup:	ldi	r16,6
+0004f8 9111      slpx:	ld	r17,Z+
+0004f9 931f      	push	r17
+0004fa d088      	rcall	xmit_put
+0004fb 950a      	dec	r16
+0004fc f7d9      	brne	slpx
+                 
+0004fd 910f      	pop	r16
+0004fe 911f      	pop	r17
+0004ff 914f      	pop	r20
+000500 915f      	pop	r21
+000501 9508      	ret
+                 
+                 ; ==============================================
+                 ;	bin2hex - convert nibble to hex
+                 ;
+                 ;	r16 - incoming binary value (0 - 15)
+                 ;	r16 - returned hex digit ('0' - '9', 'A' - 'F') or 'X' if error
+                 
+                 bin2hex:
+000502 3100      	cpi	r16,16
+000503 f010      	brcs	bin1
+000504 e508      	ldi	r16,'X'
+000505 9508      	ret
+000506 931f      bin1:	push	r17
+000507 300a      	cpi	r16,10
+000508 f010      	brcs	binlo
+000509 e317      	ldi	r17,'A'-10
+00050a c001      	rjmp	binr
+00050b e310      binlo:	ldi	r17,'0'
+00050c 0f01      binr:	add	r16,r17
+00050d 911f      	pop	r17
+00050e 9508      	ret
+                 .include	"AT3283_4.inc"
+                 
+                 ;
+                 ;	USART support for ATmega16
+                 
+                 ; ==============================================
+                 ;	initialize the USART
+                 ;
+                 ;	push high baud
+                 ;	push low baud
+                 ;	call usart_init
+                 
+                 usart_init:
+00050f 940e 047f 	call	fetcharg2		; get args in r0 & r1
+000511 930f      	push	r16
+                 
+000512 bc00      	out	ubrrh,r0
+000513 b819      	out	ubrrl,r1
+000514 d0b8      	rcall	xr_init			; init holding buffers
+000515 e908      	ldi	r16,u_noint
+000516 b90a      	out	ucsrb,r16
+000517 e806      	ldi	r16,(1<<ursel)|(3<<ucsz0)	; (1<<USBS)
+000518 bd00      	out	ucsrc,r16
+                 
+000519 2700      	clr	r16
+00051a 9300 02f4 	sts	echo232,r16		; no echo is default
+                 	
+00051c 910f      	pop	r16
+00051d 901f      	pop	r1			; pushed by fetcharg2
+00051e 900f      	pop	r0
+00051f 9508      	ret
+                 
+                 ; ==============================================
+                 ;	USART char received interrupt
+                 
+                 i_usartrx:
+000520 930f      	push	r16
+000521 b70f      	in	r16,sreg		; status register
+000522 930f      	push	r16
+000523 931f      	push	r17
+000524 93bf      	push	XH
+000525 93af      	push	XL
+                 
+000526 b10c      	in	r16,udr			; read the character
+000527 9110 01df 	lds	r17,rhead
+000529 e0b1      	ldi	XH,high(rbuf)		; point x at buffer
+00052a ebad      	ldi	XL,low(rbuf)
+00052b 0fa1      	add	XL,r17			; add to base address
+00052c f408      	brcc	nove
+00052d 95b3      	inc	XH			; carried into high byte
+00052e 930c      nove:	st	X,r16			; put char away
+00052f 9513      	inc	r17			; chase your tail
+000530 711f      	andi	r17,rmask		; mask for buffer size
+000531 9310 01df 	sts	rhead,r17
+                 
+000533 9110 02f4 	lds	r17,echo232		; see if we're echoing
+000535 2311      	tst	r17
+000536 f011      	breq	noech
+000537 930f      	push	r16
+000538 d04a      	rcall	xmit_put
+                 
+000539 91af      noech:	pop	XL			; restore Xreg
+00053a 91bf      	pop	XH
+00053b 911f      	pop	r17
+00053c 910f      	pop	r16
+00053d bf0f      	out	sreg,r16		; restore status reg
+00053e 910f      	pop	r16
+00053f 9518      	reti
+                 
+                 ; ==============================================
+                 ;	USART UDR empty interrupt handler
+                 
+                 i_usartun:
+000540 930f      	push	r16
+000541 b70f      	in	r16,sreg		; status register
+000542 930f      	push	r16
+000543 920f      	push	r0
+                 
+000544 9000 01dd 	lds	r0,xhead		; any more to send?
+000546 9100 01de 	lds	r16,xtail
+000548 1600      	cp	r0,r16
+000549 f419      	brne	yup
+                 	
+00054a e908      	ldi	r16,u_noint		; no - disable interrupt
+00054b b90a      	out	ucsrb,r16
+00054c c00f      	rjmp	nope
+                 
+                 
+00054d 93bf      yup:	push	XH			; save Xreg
+00054e 93af      	push	XL
+                 
+00054f e0b1      	ldi	XH,high(xbuf)		; point x at buffer
+000550 e3ad      	ldi	XL,low(xbuf)
+000551 0fa0      	add	XL,r16			; add to base address
+000552 f408      	brcc	novb
+000553 95b3      	inc	XH			; carried into high byte
+000554 900c      novb:	ld	r0,X			; get byte to send
+000555 b80c      	out	udr,r0			; byte into transmitter
+000556 9503      	inc	r16			; chase your tail
+000557 770f      	andi	r16,xmask		; mask for buffer size
+000558 9300 01de 	sts	xtail,r16
+                 
+00055a 91af      	pop	XL			; restore Xreg
+00055b 91bf      	pop	XH
+00055c 900f      nope:	pop	r0
+00055d 910f      	pop	r16
+00055e bf0f      	out	sreg,r16		; restore status reg
+00055f 910f      	pop	r16
+000560 9518      	reti
+                 
+                 ; ==============================================
+                 ; get character from receive buffer
+                 ;	call	recv_test
+                 ;	breq	empty
+                 ;	call	recv_get
+                 ;	returns char in r0
+                 ;	returns zero flag about buf sts (=0 means now empty)
+                 ;
+                 ; note: this returns a character regardless, so check recv_test first!
+                 
+                 recv_get:
+000561 93bf      	push	XH
+000562 93af      	push	XL
+000563 930f      	push	r16
+000564 931f      	push	r17
+                 
+000565 e0b1      	ldi	XH,high(rbuf)	; point x at buffer
+000566 ebad      	ldi	XL,low(rbuf)
+000567 9100 01e0 	lds	r16,rtail	; current tail offset
+000569 0fa0      	add	XL,r16		; add to base address
+00056a f408      	brcc	nova
+00056b 95b3      	inc	XH		; carried into high byte
+00056c 900c      nova:	ld	r0,X		; grab the character
+00056d 9503      	inc	r16		; incr circular offset
+00056e 710f      	andi	r16,rmask	; mask for buffer size
+00056f 9300 01e0 	sts	rtail,r16	; new tail pointer
+                 
+000571 9110 01df 	lds	r17,rhead	; head offset
+000573 1701      	cp	r16,r17		; set zero flag more chars
+                 
+000574 911f      	pop	r17
+000575 910f      	pop	r16
+000576 91af      	pop	XL
+000577 91bf      	pop	XH
+000578 9508      	ret
+                 
+                 ; ==============================================
+                 ; check for data in receive buffer
+                 ;	call	recv_test
+                 ;	breq	empty
+                 ;	brne	not empty
+                 
+                 recv_test:
+000579 920f      	push	r0
+00057a 921f      	push	r1
+00057b 9000 01df 	lds	r0,rhead
+00057d 9010 01e0 	lds	r1,rtail
+00057f 1401      	cp	r0,r1		; set flags
+000580 901f      	pop	r1
+000581 900f      	pop	r0
+000582 9508      	ret
+                 
+                 ; ==============================================
+                 ;	xmit_put - send a byte via the USART
+                 ;
+                 ;	push byte
+                 ;	call xmit_put
+                 ;
+                 ;	this waits until the thing goes out
+                 
+                 xmit_put:
+000583 940e 046c 	call fetcharg1		; get arg into r0
+000585 920f      	push	r0
+000586 d003      bz:	rcall	x_put_nw
+000587 f3f0      	brcs	bz
+000588 900f      	pop	r0		; fetcharg1 pushed this
+000589 9508      	ret
+                 
+                 ; ==============================================
+                 ;	x_put_nw - send a byte on the USART if possible
+                 ;
+                 ;	push byte
+                 ;	call x_put_nw
+                 ;
+                 ;	if the buffer is empty and transmitter available,
+                 ;	    the character is sent immediately
+                 ;	or, if the buffer has room, stick it in
+                 ;	or, if the buffer is full, return
+                 ;
+                 ;	returns:
+                 ;	  sent or buffered: carry clear
+                 ;	  full: carry set, byte still on stack
+                 
+                 x_put_nw:
+00058a 940e 046c 	call	fetcharg1	; get arg into r0
+00058c 930f      	push	r16
+00058d 931f      	push	r17
+                 
+00058e 9100 01dd 	lds	r16,xhead	; head offset
+000590 9110 01de 	lds	r17,xtail	; tail offset
+000592 1701      	cp	r16,r17		; buffer empty?
+000593 f431      	brne	notmt
+                 
+000594 9b5d      	sbis	ucsra,udre	; can we send?
+000595 c004      	rjmp	notmt		; no - it's in use
+000596 b80c      	out	udr,r0		; yes - send char
+000597 eb18      	ldi	r17,u_int	; buffer empty interrupt
+000598 b91a      	out	ucsrb,r17	; is now enabled
+000599 c01b      	rjmp	byenow		; and we're done
+                 
+00059a 9503      notmt:	inc	r16		; check for full buffer
+00059b 770f      	andi	r16,xmask	; it's a circular buf
+00059c 1701      	cp	r16,r17		; if head + 1 = tail, full
+00059d f439      	brne	room
+                 
+00059e 911f      	pop	r17		; clear our local pushes
+00059f 910f      	pop	r16
+0005a0 920f      	push	r0		; put the arg on
+0005a1 d018      	rcall	diddleme	; go manipulate the stack
+0005a2 900f      	pop	r0		; r0 we came in with
+0005a3 9408      	sec			; set carry for full buf
+0005a4 9508      	ret
+                 
+0005a5 9100 01dd room:	lds	r16,xhead
+0005a7 93bf      	push	XH
+0005a8 93af      	push	XL
+                 
+0005a9 e0b1      	ldi	XH,high(xbuf)	; point x at buffer
+0005aa e3ad      	ldi	XL,low(xbuf)
+0005ab 0fa0      	add	XL,r16		; add to base address
+0005ac f408      	brcc	novr
+0005ad 95b3      	inc	XH		; carried into high byte
+0005ae 920c      novr:	st	X,r0		; put their byte away
+0005af 9503      	inc	r16		; incr circular offset
+0005b0 770f      	andi	r16,xmask	; mask for buffer size
+0005b1 9300 01dd 	sts	xhead,r16	; new head pointer
+                 
+0005b3 91af      	pop	XL
+0005b4 91bf      	pop	XH
+                 byenow:
+0005b5 911f      	pop	r17
+0005b6 910f      	pop	r16
+0005b7 900f      	pop	r0		; fetcharg1 pushed this
+0005b8 9488      	clc			; clear carry means OK
+0005b9 9508      	ret
+                 
+                 ; ==============================================
+                 ;	diddleme - play with the stack
+                 ;
+                 ;	specialty routine for x_put_nw to undo some
+                 ;	stack manipulations
+                 ;
+                 ;	at time of call, stack is:
+                 ;		+1) return address to our caller (2 bytes)
+                 ;		+3) arg to x_put_nw call
+                 ;		+4) orig r0 at time of x_put_nw call
+                 ;		+5) return to caller to x_put_nw (2 bytes)
+                 ;
+                 ;	on return (prior to ret), it will be:
+                 ;		+1) return address to our caller (2 bytes)
+                 ;		+3) orig r0
+                 ;		+4) return to caller to x_put_nw (2 bytes)
+                 ;		+6) arg
+                 ;
+                 ;	caller pops r0, does a ret, and the orig arg is
+                 ;	on the stack ready for another call to x_put_nw
+                 
+                 diddleme:
+0005ba 93df      	push	YH		; save scratch regs
+0005bb 93cf      	push	YL		; these change the offsets, of course
+0005bc 930f      	push	r16
+0005bd 931f      	push	r17
+                 
+0005be b7cd      	in	YL,SPL		; copy of revised stack pointer
+0005bf b7de      	in	YH,SPH
+                 
+0005c0 810f      	ldd	r16,Y+7		; the arg
+                 
+0005c1 8518      	ldd	r17,Y+8		; the r0 value
+0005c2 831f      	std	Y+7,r17
+                 
+0005c3 8519      	ldd	r17,Y+9		; rtn addr bytes
+0005c4 8718      	std	Y+8,r17
+0005c5 851a      	ldd	r17,Y+10
+0005c6 8719      	std	Y+9,r17
+                 
+0005c7 870a      	std	Y+10,r16	; put the arg back
+                 
+0005c8 911f      	pop	r17
+0005c9 910f      	pop	r16
+0005ca 91cf      	pop	YL
+0005cb 91df      	pop	YH
+0005cc 9508      	ret
+                 
+                 ; ==============================================
+                 ;	xr_init - initialize the transmit and receive buffers
+                 ;
+                 ;	data goes in at the head, comes out at the tail
+                 
+                 xr_init:
+0005cd 920f      	push	r0
+                 
+0005ce 2400      	clr	r0
+0005cf 9200 01dd 	sts	xhead,r0	; xmit head
+0005d1 9200 01de 	sts	xtail,r0	; xmit tail
+0005d3 9200 01df 	sts	rhead,r0	; receiver head
+0005d5 9200 01e0 	sts	rtail,r0	; receiver tail
+                 
+0005d7 900f      	pop	r0
+0005d8 9508      	ret
+                 .include	"AT3283_5.inc"
+                 
+                 ;
+                 ;	Support for mouse I/O
+                 ;
+                 ; ==============================================
+                 ;	sendmouse - send a byte to a mousie
+                 ;
+                 ;	r0 - mouse number (0 - 2)
+                 ;	r1 - byte to send, preserved
+                 ;	call sendmouse
+                 ;	  brne  mouse is busy, thank you
+                 ;	  breq  byte was sent (includes timeout error)
+                 ;
+                 ;	this manually puts out the start bit and then
+                 ;	passes it off to the interrupt handler.
+                 
+                 sendmouse:
+0005d9 93ff      	push	ZH
+0005da 93ef      	push	ZL
+0005db 930f      	push	r16
+                 
+0005dc d122      	rcall	moff2z			; Z -> our definition block
+0005dd 8100      	ldd	r16,Z+mo_sts		; get current line status
+0005de 2300      	tst	r16
+0005df f061      	breq	sok			; 0 is truly idle
+0005e0 3004      	cpi	r16,4			; 4 is idle, once line is high
+0005e1 f529      	brne	mbzy			; otherwise it's busy
+                 
+0005e2 e002      	ldi	r16,2			; 2 milliseconds
+0005e3 940e 036c 	call	starttimer
+0005e5 d1a3      wwx:	rcall	readclock		; wait until it clock line is up
+0005e6 f020      	brcs	sokk			; jump if up
+0005e7 8904      	ldd	r16,Z+mo_err		; otherwise check timeout
+0005e8 2300      	tst	r16
+0005e9 f3d9      	breq	wwx			; zero means no timeout
+0005ea c01b      	rjmp	xbzy			; on timeout we give up
+                 
+0005eb dd76      sokk:	rcall	stoptimer	
+0005ec e001      sok:	ldi	r16,1			; we're setting up a send
+0005ed 8300      	std	Z+mo_sts,r16		; set status to 1
+                 
+                 ;	when we set the clock to output, it will go low because we did not
+                 ;	enable pullups (i.e., port = 0). this will cause a falling edge
+                 ;	interrupt which the interrupt handler will ignore
+0005ee d148      	rcall	clock2output		; set clock line to output
+0005ef e100      	ldi	r16,16			; doc says 15ms max for mouse
+0005f0 dd7b      	rcall	starttimer		; to respond with clock
+                 
+                 	; now we need to wait at least 100 microsecs (800 clock cycles)
+                 
+0005f1 8213      	std	Z+mo_s,r1		; the outgoing character
+0005f2 2700      	clr	r16
+0005f3 8305      	std	Z+mo_sc,r16		; number of bits sent
+0005f4 8304      	std	Z+mo_sp,r16		; parity calculation
+                 
+0005f5 950a      wl:	dec	r16			; 256 loops should do it
+0005f6 f7f1      	brne	wl
+0005f7 950a      wla:	dec	r16			; a little extra to make sure
+0005f8 f7f1      	brne	wla
+                 
+                 ;	when we set the data line to output, it will go low because we
+                 ;	did not enable pullups (port = 0).  this is our start bit.	
+0005f9 d14c      	rcall	data2output		; set data as output
+                 
+0005fa e104      	ldi	r16,20			; let things settle a little
+0005fb 950a      ww1:	dec	r16
+0005fc f7f1      	brne	ww1
+                 
+                 ;	setting the clock to input will tristate its output, and the
+                 ;	mouse's pullup will bring it high if there's a mouse plugged in
+0005fd d166      	rcall	clock2input		; set clock to input
+                 
+                 ;	now it's all up to the mouse to provide a clock.  if it's not
+                 ;	there, it probably won't.  if it does, we shoot the data out
+                 ;	when the clock falls (in the interrupt handler).
+0005fe e002      	ldi	r16,2			; sending in progress
+0005ff 8300      	std	Z+mo_sts,r16
+                 
+                 ;	now we sit and let the interrupt handler do the rest
+000600 8100      wlx:	ldd	r16,Z+mo_sts		; wait for status = 4 or timeout
+000601 3004      	cpi	r16,4
+000602 f019      	breq	xbzy			; yup - ok to go
+000603 8904      	ldd	r16,Z+mo_err		; timeout sets this to 1
+000604 2300      	tst	r16
+000605 f3d1      	breq	wlx
+000606 9418      xbzy:	sez				; set zero flag (success or timeout)
+                 
+000607 910f      mbzy:	pop	r16
+000608 91ef      	pop	ZL
+000609 91ff      	pop	ZH
+00060a 9508      	ret
+                 
+                 ; ==============================================
+                 ;	mint2 - mouse interrupt handler, part deux
+                 ;
+                 ;	mouse number will be in r0 (0, 1, or 2)
+                 ;	r16 may be used without save/restore (caller does it)
+                 ;	end with ret, not reti
+                 ;
+                 ;	status:	0 - idle (initial and after read or write)
+                 ;		1 - sending setup in progress (ignore interrupts)
+                 ;		2 - sending data
+                 ;		3 - receiving data
+                 ;		4 - received stop bit (ok for new receive, but
+                 ;		    if sendmouse sees this it has to wait for
+                 ;		    the line to go high
+                 ;		5 - waiting ack for send
+                 
+00060b 93ff      mint2:	push	ZH
+00060c 93ef      	push	ZL
+                 
+00060d d0f1      	rcall	moff2z
+00060e 8100      	ldd	r16,Z+mo_sts		; current line status
+00060f 930f      	push	r16			; it's arg to jumptable
+000610 de20      	rcall	jumptable
+000611 c005      	rjmp	strtrecv		; 0 - this int's a start bit
+000612 c00d      	rjmp	ignore			; 1 - ignore (sendmouse did it)
+000613 c02b      	rjmp	sendbits		; 2 - we're clocking bits out
+000614 c00e      	rjmp	recvbits		; 3 - we're clocking bits in
+000615 c001      	rjmp	strtrecv		; 4 - it's a start bit
+000616 c047      	rjmp	waitack			; 5 - it's the send ack
+                 
+                 ;	---------------------------------
+                 ;	the line is idle (0) or we received a stop bit on the last clock (4),
+                 ;	and we've had a falling edge. the mouse is sending us a start bit
+                 strtrecv:				; it's a start bit for receive
+000617 d359      	rcall	startofbyte		; packet mgmt
+000618 e003      	ldi	r16,3			; should wrap up in a couple ms
+000619 dd52      	rcall	starttimer
+00061a 2700      	clr	r16
+00061b 8306      	std	Z+mo_r,r16		; received byte = 0
+00061c 8700      	std	Z+mo_rc,r16		; received bit count = 0
+00061d 8307      	std	Z+mo_rp,r16		; received parity = 0
+00061e e003      	ldi	r16,3			; status: receive in progress
+00061f 8300      	std	Z+mo_sts,r16
+                 	
+000620 91ef      ignore:	pop	ZL
+000621 91ff      	pop	ZH
+000622 9508      	ret
+                 
+                 ;	---------------------------------
+                 ;	reading bits from the mouse (data, parity, stop)
+                 recvbits:
+000623 8500      	ldd	r16,Z+mo_rc		; # bits received so far
+000624 9503      	inc	r16			; count this one
+000625 8700      	std	Z+mo_rc,r16
+                 
+000626 3009      	cpi	r16,9
+000627 f099      	breq	pbit			; if 9, this is parity bit
+000628 f060      	brcs	dbit			; if <9, it's a data bit
+                 
+000629 8106      	ldd	r16,Z+mo_r		;  doggies, it's the stop bit
+00062a 93bf      	push	XH
+00062b 93af      	push	XL
+00062c d0ec      	rcall	mhinc2x			; point to buffer head w/ inc
+00062d 930c      	st	X,r16			; put our byte away
+00062e 91af      	pop	XL
+00062f 91bf      	pop	XH
+000630 d360      	rcall	endofbyte		; packet mgmt
+                 
+000631 dd30      	rcall	stoptimer
+000632 e004      	ldi	r16,4			; stop bit is still active
+000633 8300      	std	Z+mo_sts,r16		; stat = 4, need to wait it out
+000634 cfeb      	rjmp	ignore
+                 
+000635 9468      dbit:	set				; T=1 means do parity
+000636 d13c      	rcall	readdata		; read bit -> carry
+000637 8106      	ldd	r16,Z+mo_r		; the character so far
+000638 9507      	ror	r16			; shift bit into high end
+000639 8306      	std	Z+mo_r,r16		; and put it away
+00063a cfe5      	rjmp	ignore
+                 
+00063b 94e8      pbit:	clt				; T=0 means no parity
+00063c 940e 0773 	call	readdata		; read parity bit -> carry
+                 	
+                 	; check receive parity here, or not
+                 
+00063e cfe1      	rjmp	ignore
+                 
+                 ;	---------------------------------
+                 ;	sending bits to the mouse (data, parity, stop)
+                 sendbits:
+00063f 8105      	ldd	r16,Z+mo_sc		; # bits sent so far
+000640 9503      	inc	r16			; count this one
+000641 8305      	std	Z+mo_sc,r16
+000642 3009      	cpi	r16,9			; 1-8, data; 9 par, 10 stop
+000643 f0a9      	breq	parbit			; jump if parity bit
+000644 f030      	brcs	dtabit			; jump if data bits
+                 
+                 ;	this is the stop bit going out - set data line to input
+000645 d10f      	rcall	data2input		; switch to input
+                 ;	if the parity bit were a 1, our pullups are now enabled
+000646 9488      	clc				; need to write a 0
+000647 d153      	rcall	writedata		; make sure pullups are off
+                 
+000648 e005      	ldi	r16,5			; there's one more clock coming
+000649 8300      	std	Z+mo_sts,r16		; status: waiting ack
+00064a cfd5      	rjmp	ignore
+                 
+00064b 3001      dtabit:	cpi	r16,1			; is this data0?
+00064c f419      	brne	dta2			; jmp if no
+                 
+00064d dd14      	rcall	stoptimer		; end of timed cycle for setup,
+00064e e003      	ldi	r16,3			; docs say 2 ms to stop bit
+00064f dd1c      	rcall	starttimer		; for sending character
+                 
+000650 8103      dta2:	ldd	r16,Z+mo_s		; outgoing character
+000651 9507      	ror	r16			; low order bit -> carry
+000652 8303      	std	Z+mo_s,r16		; put back remainder
+000653 f418      	brcc	wrdta
+000654 8104      	ldd	r16,Z+mo_sp		; parity accumulation
+000655 9503      	inc	r16			; we're counting ones
+000656 8304      	std	Z+mo_sp,r16
+000657 d143      wrdta:	rcall	writedata		; away she goes
+000658 cfc7      	rjmp	ignore
+                 
+000659 8104      parbit:	ldd	r16,Z+mo_sp		; bit 0 = our even parity
+00065a 9500      	com	r16			; switch to odd
+00065b 9507      	ror	r16			; put it into carry
+00065c d13e      	rcall	writedata		; and write it
+00065d cfc2      	rjmp	ignore
+                 
+                 ;	---------------------------------
+                 ;	waiting for the ack following a send
+                 waitack:
+00065e dd03      	rcall	stoptimer		; we made it
+00065f e004      	ldi	r16,4			; the clock's still low - sending
+000660 8300      	std	Z+mo_sts,r16		; anything must wait, receive OK
+000661 cfbe      	rjmp	ignore
+                 
+                 ; ==============================================
+                 ;	zerobt - zero the btsav area for a mouse
+                 ;
+                 ;	r0 - mouse number
+                 
+                 zerobt:
+000662 93ff      	push	ZH
+000663 93ef      	push	ZL
+000664 930f      	push	r16
+000665 931f      	push	r17
+                 
+000666 e0f0      	ldi	ZH,high(btsav)		; Z -> mouse 0
+000667 e6e9      	ldi	ZL,low(btsav)
+000668 2000      	tst	r0
+000669 f019      	breq	zer1
+00066a 96f6      	adiw	ZH:ZL,btsavsize		; Z -> mouse 1
+00066b fc02      	sbrc	r0,2
+00066c 96f6      	adiw	ZH:ZL,btsavsize		; Z -> mouse 2
+                 
+00066d e306      zer1:	ldi	r16,btsavsize		; number of bytes
+00066e 2711      	clr	r17
+00066f 9311      zer2:	st	Z+,r17
+000670 950a      	dec	r16
+000671 f7e9      	brne	zer2
+                 
+000672 911f      	pop	r17
+000673 910f      	pop	r16
+000674 91ef      	pop	ZL
+000675 91ff      	pop	ZH
+000676 9508      	ret
+                 
+                 ; ==============================================
+                 ;	mr_init - initialize the mouse receive buffers, etc
+                 ;
+                 ;	general initialization, performed once
+                 
+                 mr_init:
+000677 920f      	push	r0
+000678 930f      	push	r16
+000679 93ff      	push	ZH
+00067a 93ef      	push	ZL
+00067b 93df      	push	YH
+00067c 93cf      	push	YL
+                 
+                 ;	zero out moff(), btsav(), and pack()
+00067d 2400      	clr	r0
+00067e e0f2      	ldi	ZH,high(moff)
+00067f e4e1      	ldi	ZL,low(moff)
+000680 ea0e      	ldi	r16,3 * mblksize	; number of bytes in all 3
+000681 9201      lpmr:	st	Z+,r0
+000682 950a      	dec	r16
+000683 f7e9      	brne	lpmr
+                 
+000684 ea02      	ldi	r16,3 * btsavsize	; number of bytes
+000685 e6e9      	ldi	ZL,low(btsav)
+000686 e0f0      	ldi	ZH,high(btsav)		; transition save area
+000687 9201      lpmr2:	st	Z+,r0
+000688 950a      	dec	r16
+000689 f7e9      	brne	lpmr2
+                 
+00068a e204      	ldi	r16,3 * packsize	; number of bytes
+00068b efec      	ldi	ZL,low(pack)
+00068c e0f2      	ldi	ZH,high(pack)		; transition save area
+00068d 9201      lpmr3:	st	Z+,r0
+00068e 950a      	dec	r16
+00068f f7e9      	brne	lpmr3
+                 
+                 ;	unfold the "wiring" data into moff() starting at wd_pin
+000690 e0f0      	ldi	ZH,high(wiring<<1)
+000691 e9e8      	ldi	ZL,low(wiring<<1)
+000692 e0d2      	ldi	YH,high(moff)
+000693 e4c1      	ldi	YL,low(moff)
+000694 96e0      	adiw	YH:YL,wd_pin		; where I/O stuff starts, mouse 0
+                 
+000695 e006      	ldi	r16,6			; 6 pairs of items
+000696 d010      lkz:	rcall	unfold			; do a pair + store 5 bytes
+000697 950a      	dec	r16
+000698 f039      	breq	jnxt			; are we done with all 6?
+000699 ff00      	sbrs	r16,0			; no - do post processing
+00069a c002      	rjmp	jeven
+00069b 9625      	adiw	YH:YL,5			; odd: move from data to clock
+00069c cff9      	rjmp	lkz
+00069d 96e5      jeven:	adiw	YH:YL,mblksize - 5	; even: on to next mouse's pin
+00069e 9631      	adiw	ZH:ZL,1			; jump over input separator
+00069f cff6      	rjmp	lkz
+                 
+0006a0 91cf      jnxt:	pop	YL
+0006a1 91df      	pop	YH
+0006a2 91ef      	pop	ZL
+0006a3 91ff      	pop	ZH
+0006a4 910f      	pop	r16
+0006a5 900f      	pop	r0
+0006a6 9508      	ret
+                 
+                 ; ==============================================
+                 ;	unfold - put a hardware pin definition into mcom()
+                 ;
+                 ;	Z - points to 2 char ascii string in CSEG defining the pin
+                 ;           Z is returned incremented to following character
+                 ;	Y - points to a wd_pin entry in mcom (preserved)
+                 ;	we will define:
+                 ;		Y+w_pin   PINx address (with 32 added)
+                 ;		Y+w_port  PORTx address (with 32 added)
+                 ;		Y+w_ddr   DDRx address (with 32 added)
+                 ;		Y+w_and   mask with our pin off, all others on
+                 ;		Y+w_or    mask with our pin on, all others off
+                 
+0006a7 921f      unfold:	push	r1
+0006a8 922f      	push	r2
+                 
+0006a9 9015      	lpm	r1,Z+			; port letter
+0006aa 9025      	lpm	r2,Z+			; pin number
+0006ab d012      	rcall	unfold2			; store data into pindef()
+                 	; we're ignoring the error return here, so beware!
+                 
+0006ac 9010 02ef 	lds	r1,pindef+w_pin		; this is ugly but as
+0006ae 8218      	std	Y+w_pin,r1		; efficient as a loop
+0006af 9010 02f0 	lds	r1,pindef+w_port
+0006b1 8219      	std	Y+w_port,r1
+0006b2 9010 02f1 	lds	r1,pindef+w_ddr
+0006b4 821a      	std	Y+w_ddr,r1
+0006b5 9010 02f2 	lds	r1,pindef+w_and
+0006b7 821b      	std	Y+w_and,r1
+0006b8 9010 02f3 	lds	r1,pindef+w_or
+0006ba 821c      	std	Y+w_or,r1
+                 
+0006bb 902f      	pop	r2
+0006bc 901f      	pop	r1
+0006bd 9508      	ret
+                 
+                 ; ==============================================
+                 ;	unfold2 - put a hardware pin definition into pindef()
+                 ;
+                 ;	r1 - ascii port number ('A' to 'D')
+                 ;	r2 - ascii pin number ('0' to '7')
+                 ;	rcall unfold2
+                 ;	  brne OK
+                 ;	  breq error (something out of range)
+                 ;
+                 ;	we will define pindef()
+                 ;		(0)   PINx address (with 32 added)
+                 ;		(1)   PORTx address (with 32 added)
+                 ;		(2)   DDRx address (with 32 added)
+                 ;		(3)   mask with our pin off, all others on (AND)
+                 ;		(4)   mask with our pin on, all others off (OR)
+                 
+                 unfold2:
+0006be 930f      	push	r16
+0006bf 931f      	push	r17
+                 
+0006c0 2d01      	mov	r16,r1			; ascii port A - D
+0006c1 3401      	cpi	r16,'A'
+0006c2 f158      	brcs	u2err
+0006c3 3404      	cpi	r16,'D'
+0006c4 f009      	breq	u2ok1
+0006c5 f540      	brcc	u2err
+0006c6 2d12      u2ok1:	mov	r17,r2			; ascii pin number
+0006c7 3310      	cpi	r17,'0'
+0006c8 f128      	brcs	u2err
+0006c9 3319      	cpi	r17,'9'
+0006ca f009      	breq	u2ok2
+0006cb f510      	brcc	u2err
+                 
+0006cc 932f      u2ok2:	push	r18
+                 
+0006cd 5401      	subi	r16,'A'			; convert to decimal 0-3
+0006ce 5310      	subi	r17,'0'			; convert to decimal 0-7
+0006cf 2722      	clr	r18			; build a mask
+0006d0 9408      	sec				; set carry
+0006d1 1f22      ush:	rol	r18			; shift carry bit across
+0006d2 2311      	tst	r17
+0006d3 f011      	breq	ubd
+0006d4 951a      	dec	r17			; countdown to our bit
+0006d5 cffb      	rjmp	ush
+0006d6 9320 02f3 ubd:	sts	pindef+w_or,r18		; the "OR" mask - 1 bit on
+0006d8 9520      	com	r18			; flip the bits
+0006d9 9320 02f2 	sts	pindef+w_and,r18		; the "AND" mask - 1 bit off
+                 
+0006db e319      	ldi	r17,0x39		; address of PINA, with $20 added
+0006dc 2300      ubf:	tst	r16			; subtract 3 per port from address
+0006dd f029      	breq	ube
+0006de 951a      	dec	r17
+0006df 951a      	dec	r17
+0006e0 951a      	dec	r17
+0006e1 950a      	dec	r16
+0006e2 cff9      	rjmp	ubf
+                 
+0006e3 9310 02ef ube:	sts	pindef+w_pin,r17	; PINx
+0006e5 9513      	inc	r17
+0006e6 9310 02f1 	sts	pindef+w_ddr,r17	; DDRx
+0006e8 9513      	inc	r17
+0006e9 9310 02f0 	sts	pindef+w_port,r17	; PORTx
+                 
+0006eb 912f      	pop	r18
+0006ec 9498      	clz			; success clears zero (brne ok)
+0006ed c001      	rjmp	urtn
+                 
+0006ee 9418      u2err:	sez			; error sets zero (breq err)
+0006ef 911f      urtn:	pop	r17
+0006f0 910f      	pop	r16
+0006f1 9508      	ret
+                 
+                 ; ==============================================
+                 ;	mrecv_test - check for data in mouse receive buffer
+                 ;
+                 ;	r0 - mouse number (0 - 2)
+                 ;	call	mrecv_test
+                 ;	breq	empty
+                 ;	brne	not empty
+                 
+                 mrecv_test:
+0006f2 93ff      	push	ZH
+0006f3 93ef      	push	ZL
+0006f4 930f      	push	r16
+0006f5 931f      	push	r17
+                 	
+0006f6 d008      	rcall	moff2z			; get z -> our mouse def
+0006f7 8101      	ldd	r16,Z+mo_hd		; head
+0006f8 8112      	ldd	r17,Z+mo_t		; tail
+0006f9 1701      	cp	r16,r17
+                 
+0006fa 911f      	pop	r17
+0006fb 910f      	pop	r16
+0006fc 91ef      	pop	ZL
+0006fd 91ff      	pop	ZH
+0006fe 9508      	ret
+                 
+                 ; ==============================================
+                 ;	moff2z - make Z point to mouse r0's definition block
+                 ;
+                 ;	r0 - mouse number (0 - 2)
+                 ;	returns Z -> moff(r0 * mblksize)
+                 
+0006ff e4e1      moff2z:	ldi	ZL,low(moff)
+000700 e0f2      	ldi	ZH,high(moff)
+000701 2000      	tst	r0
+000702 f019      	breq	mrb			; right answer for 0
+000703 96fa      	adiw	ZH:ZL,mblksize		; advance to mouse 1
+000704 fc01      	sbrc	r0,1			; if mouse 1, we're done
+000705 96fa      	adiw	ZH:ZL,mblksize		; advance to mouse 2
+000706 9508      mrb:	ret
+                 
+                 ; ==============================================
+                 ;	mbuf2x - make X point to r0's mouse buffer
+                 ;
+                 ;	r0 - mouse number (0 - 2)
+                 ;	returns X -> mbuf(mbufsize * r0)
+                 
+000707 eea1      mbuf2x:	ldi	XL,low(mbuf)
+000708 e0b1      	ldi	XH,high(mbuf)
+000709 2000      	tst	r0
+00070a f019      	breq	mre			; right answer for 0
+00070b 9690      	adiw	XH:XL,mbufsize		; advance to mouse 1
+00070c fc01      	sbrc	r0,1			; if mouse 1, we're done
+00070d 9690      	adiw	XH:XL,mbufsize		; advance to mouse 2
+00070e 9508      mre:	ret
+                 
+                 ; ==============================================
+                 ;	get X to point at head or tail of a mouse buffer
+                 ;
+                 ;	entry points:
+                 ;	   mhead2x - make X -> head of r0's mouse buffer
+                 ;	   mtail2x - make X -> tail of r0's mouse buffer
+                 ;	   mhinc2x - make X -> head, post increment head ptr
+                 ;	   mtinc2x - make X -> tail, post increment tail ptr
+                 ;
+                 ;	interrupt handler uses mhinc2x to store at head
+                 ;	app uses mtinc2x to retrieve from tail
+                 ;
+                 ;	r0 - mouse number (0 - 2)
+                 ;	returns X -> current head/tail in mbuf()
+                 ;	   and optionally bumps head/tail offset by one
+                 
+                 mhead2x:
+00070f 930f      	push	r16
+000710 931f      	push	r17
+000711 e001      	ldi	r16,mo_hd		; offset to head
+000712 2711      	clr	r17			; no post increment
+000713 c00e      	rjmp	mheadtail
+                 mtail2x:
+000714 930f      	push	r16
+000715 931f      	push	r17
+000716 e002      	ldi	r16,mo_t		; offset to tail
+000717 2711      	clr	r17			; no post increment
+000718 c009      	rjmp	mheadtail
+                 mhinc2x:
+000719 930f      	push	r16
+00071a 931f      	push	r17
+00071b e001      	ldi	r16,mo_hd		; offset to head
+00071c e011      	ldi	r17,1			; post increment
+00071d c004      	rjmp	mheadtail
+                 mtinc2x:
+00071e 930f      	push	r16
+00071f 931f      	push	r17
+000720 e002      	ldi	r16,mo_t		; offset to tail
+000721 e011      	ldi	r17,1			; post increment
+                 
+                 mheadtail:
+000722 93ff      	push	ZH
+000723 93ef      	push	ZL
+                 
+000724 dfda      	rcall	moff2z			; make Z point at our blk
+000725 0fe0      	add	ZL,r16			; add head or tail offset
+000726 f408      	brcc	mpass
+000727 95f3      	inc	ZH
+000728 8100      mpass:	ld	r16,Z			; get head or tail value
+000729 dfdd      	rcall	mbuf2x			; make X point to buffer
+00072a 0fa0      	add	XL,r16
+00072b f408      	brcc	mpass2
+00072c 95b3      	inc	XH
+00072d 2311      mpass2:	tst	r17			; post incrementing?
+00072e f019      	breq	mpass3			; skip if not
+00072f 9503      	inc	r16			; incr the head or tail
+000730 710f      	andi	r16,mrmask		; keep it in range
+000731 8300      	st	Z,r16			; put it away
+                 
+000732 91ef      mpass3:	pop	ZL
+000733 91ff      	pop	ZH
+000734 911f      	pop	r17
+000735 910f      	pop	r16
+000736 9508      	ret
+                 
+                 ; ==============================================
+                 ;	clock2output - set clock as output
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 ;	we need to write a 1 to the clock's DDR register bit
+                 
+                 clock2output:
+000737 93bf      	push	XH
+000738 93af      	push	XL
+000739 930f      	push	r16
+00073a 931f      	push	r17
+                 
+00073b ad11      	ldd	r17,Z+wc_or		; mask to force one bit
+00073c a9a7      	ldd	XL,Z+wc_ddr		; address of DDRx
+00073d 27bb      	clr	XH			; they're small...
+00073e 910c      	ld	r16,X			; read DDRx
+00073f 2b01      	or	r16,r17			; add our bit
+000740 930c      	st	X,r16			; put it back with bit
+                 
+000741 911f      	pop	r17
+000742 910f      	pop	r16
+000743 91af      	pop	XL
+000744 91bf      	pop	XH
+000745 9508      	ret
+                 
+                 ; ==============================================
+                 ;	data2output - set data as output
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 ;	we need to write a 1 to the data DDR register bit
+                 
+                 data2output:
+000746 93bf      	push	XH
+000747 93af      	push	XL
+000748 930f      	push	r16
+000749 931f      	push	r17
+                 
+00074a a914      	ldd	r17,Z+wd_or		; mask to force one bit
+00074b a9a2      	ldd	XL,Z+wd_ddr		; address of DDRx
+00074c 27bb      	clr	XH			; they're small...
+00074d 910c      	ld	r16,X			; read DDRx
+00074e 2b01      	or	r16,r17			; add our bit
+00074f 930c      	st	X,r16			; put it back with bit
+                 
+000750 911f      	pop	r17
+000751 910f      	pop	r16
+000752 91af      	pop	XL
+000753 91bf      	pop	XH
+000754 9508      	ret
+                 
+                 ; ==============================================
+                 ;	data2input - set mouse data line as input
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 ;	we need to write a 0 to the data DDR register bit
+                 
+                 data2input:
+000755 93bf      	push	XH
+000756 93af      	push	XL
+000757 930f      	push	r16
+000758 931f      	push	r17
+                 
+000759 a913      	ldd	r17,Z+wd_and		; mask to lose one bit
+00075a a9a2      	ldd	XL,Z+wd_ddr		; address of DDRx
+00075b 27bb      	clr	XH			; they're small...
+00075c 910c      	ld	r16,X			; read DDRx
+00075d 2301      	and	r16,r17			; drop our bit
+00075e 930c      	st	X,r16			; put it back sans bit
+                 
+00075f 911f      	pop	r17
+000760 910f      	pop	r16
+000761 91af      	pop	XL
+000762 91bf      	pop	XH
+000763 9508      	ret
+                 
+                 ; ==============================================
+                 ;	clock2input - set clock as input
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 ;	we need to write a 0 to the clock's DDR register bit
+                 
+                 clock2input:
+000764 93bf      	push	XH
+000765 93af      	push	XL
+000766 930f      	push	r16
+000767 931f      	push	r17
+                 
+000768 ad10      	ldd	r17,Z+wc_and		; mask to lose one bit
+000769 a9a7      	ldd	XL,Z+wc_ddr		; address of DDRx
+00076a 27bb      	clr	XH			; they're small...
+00076b 910c      	ld	r16,X			; read DDRx
+00076c 2301      	and	r16,r17			; drop our bit
+00076d 930c      	st	X,r16			; put it back sans bit
+                 
+00076e 911f      	pop	r17
+00076f 910f      	pop	r16
+000770 91af      	pop	XL
+000771 91bf      	pop	XH
+000772 9508      	ret
+                 
+                 ; ==============================================
+                 ;	readdata - read mouse data bit into carry reg
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 ;	T flag - if zero, don't do parity calculation
+                 
+                 readdata:
+000773 93bf      	push	XH
+000774 93af      	push	XL
+000775 931f      	push	r17
+000776 932f      	push	r18
+                 
+000777 a914      	ldd	r17,Z+wd_or		; mask to keep one bit
+000778 a9a0      	ldd	XL,Z+wd_pin		; address of PINx
+000779 27bb      	clr	XH			; they're small...
+00077a 912c      	ld	r18,X			; read PINx
+00077b 2321      	and	r18,r17			; mask all but our bit
+00077c f031      	breq	zippy			; if zero, done
+00077d f41e      	brtc	zappy			; T = 0, no parity
+                 
+00077e 8117      	ldd	r17,Z+mo_rp		; bump the parity count
+00077f 9513      	inc	r17
+000780 8317      	std	Z+mo_rp,r17
+                 
+000781 9408      zappy:	sec				; it was a one
+000782 c001      	rjmp	zrtn
+000783 9488      zippy:	clc				; it was a zero
+                 
+000784 912f      zrtn:	pop	r18
+000785 911f      	pop	r17
+000786 91af      	pop	XL
+000787 91bf      	pop	XH
+000788 9508      	ret
+                 
+                 ; ==============================================
+                 ;	readclock - read clock bit into carry reg
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 
+                 readclock:
+000789 93bf      	push	XH
+00078a 93af      	push	XL
+00078b 931f      	push	r17
+00078c 932f      	push	r18
+                 
+00078d ad11      	ldd	r17,Z+wc_or		; mask to keep one bit
+00078e a9a5      	ldd	XL,Z+wc_pin		; address of PINx
+00078f 27bb      	clr	XH			; they're small...
+000790 912c      	ld	r18,X			; read PINx
+000791 2321      	and	r18,r17			; mask all but our bit
+000792 f011      	breq	cippy			; if zero, done
+000793 9408      	sec				; it was a one
+000794 c001      	rjmp	crtn
+000795 9488      cippy:	clc				; it was a zero
+                 
+000796 912f      crtn:	pop	r18
+000797 911f      	pop	r17
+000798 91af      	pop	XL
+000799 91bf      	pop	XH
+00079a 9508      	ret
+                 
+                 ; ==============================================
+                 ;	writedata - write mouse data bit
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 ;	carry flag - bit to write
+                 
+                 writedata:
+00079b 93bf      	push	XH
+00079c 93af      	push	XL
+00079d 930f      	push	r16
+00079e 931f      	push	r17
+                 
+00079f a9a1      	ldd	XL,Z+wd_port		; address of PORTx
+0007a0 27bb      	clr	XH			; they're small...
+0007a1 910c      	ld	r16,X			; read PORTx
+0007a2 f418      	brcc	wr0a			; jump if writing 0
+0007a3 a914      	ldd	r17,Z+wd_or		; writing a 1
+0007a4 2b01      	or	r16,r17			; turn our bit on
+0007a5 c002      	rjmp	away2
+0007a6 a913      wr0a:	ldd	r17,Z+wd_and		; writing a 0
+0007a7 2301      	and	r16,r17			; drop our bit
+0007a8 930c      away2:	st	X,r16			; write PORTx
+                 
+0007a9 911f      	pop	r17
+0007aa 910f      	pop	r16
+0007ab 91af      	pop	XL
+0007ac 91bf      	pop	XH
+0007ad 9508      	ret
+                 
+                 ; ==============================================
+                 ;	writeclock - write a mouse clock bit
+                 ;
+                 ;	Z  - points to moff() block for this mouse
+                 ;	carry flag - bit to write
+                 
+                 writeclock:
+0007ae 93bf      	push	XH
+0007af 93af      	push	XL
+0007b0 930f      	push	r16
+0007b1 931f      	push	r17
+                 
+0007b2 a9a6      	ldd	XL,Z+wc_port		; address of PORTx
+0007b3 27bb      	clr	XH			; they're small...
+0007b4 910c      	ld	r16,X			; read PORTx
+0007b5 f418      	brcc	write0
+0007b6 ad11      	ldd	r17,Z+wc_or		; write a 1
+0007b7 2b01      	or	r16,r17			; turn bit on
+0007b8 c002      	rjmp	away
+0007b9 ad10      write0:	ldd	r17,Z+wc_and		; write a 0
+0007ba 2301      	and	r16,r17			; drop our bit
+0007bb 930c      away:	st	X,r16
+                 
+0007bc 911f      	pop	r17
+0007bd 910f      	pop	r16
+0007be 91af      	pop	XL
+0007bf 91bf      	pop	XH
+0007c0 9508      	ret
+                 
+                 ; ==============================================
+                 ;	getmbyte - maybe get a byte from a mouse
+                 ;
+                 ;	r0 - mouse number (0 - 3, preserved)
+                 ;	call getmbyte
+                 ;	  breq no data available
+                 ;	  brne data in r1
+                 
+                 getmbyte:
+0007c1 df30      	rcall	mrecv_test
+0007c2 f409      	brne	rddta
+0007c3 9508      	ret
+                 
+0007c4 93bf      rddta:	push	XH
+0007c5 93af      	push	XL
+0007c6 df57      	rcall	mtinc2x		; point at tail data
+0007c7 901c      	ld	r1,X		; get it
+0007c8 9498      	clz			; tell them we have it
+0007c9 91af      	pop	XL
+0007ca 91bf      	pop	XH
+0007cb 9508      	ret
+                 .include	"AT3283_6.inc"
+                 
+                 ;
+                 ;	more miscellaneous routines
+                 
+                 ; ==============================================
+                 ;	procmsg - process a mouse message, if any
+                 ;
+                 ;	r0 - mouse number
+                 ;	call procmsg
+                 ;	  brne error (1st byte read invalid,
+                 ;	              or mouse not initialized)
+                 ;	  breq ok, including no message waiting
+                 ;	  T is set if msg recvd, clear otherwise
+                 
+                 procmsg:
+0007cc d06b      	rcall	pktrdy		; is there a packet ready?
+0007cd f411      	brne	okproc		; yes
+0007ce 94e8      	clt			; no - T = 0 means no msg
+0007cf 9508      	ret
+                 
+0007d0 d040      okproc:	rcall	rdmmsg		; put new msg into our buf
+0007d1 f011      	breq	okpr		; it looks good
+0007d2 9468      	set			; we did have a msg (a bad one)
+0007d3 9508      	ret			; zero is cleared = err
+                 
+0007d4 93ff      okpr:	push	ZH
+0007d5 93ef      	push	ZL
+0007d6 931f      	push	r17
+0007d7 930f      	push	r16
+0007d8 924f      	push	r4
+0007d9 923f      	push	r3
+                 
+                 ;	we have a new message and the current situation. we need to see if any
+                 ;	buttons have changed, note any overflow bits, and accumulate the offsets
+0007da df24      	rcall	moff2z		; point at the mouse's definition
+0007db 8505      	ldd	r16,Z+mo_msg	; grab the new message's header byte
+0007dc 2e30      	mov	r3,r16		; save it in r3
+                 	; header: 7=Yov,6=Xov,5=Ysgn,4=Xsgn,3=1,2=Mbtn,1=Rbtn,0=Lbtn
+0007dd 8512      	ldd	r17,Z+mo_but	; current button/ovflo stat
+0007de 2e41      	mov	r4,r17		; save it in r4
+                 
+0007df 2710      	eor	r17,r16		; this will flag changed bits
+0007e0 7017      	andi	r17,0x07	; keep low 3 bits (btns: MRL)
+0007e1 8713      	std	Z+mo_chg,r17	; what buttons changed
+0007e2 2904      	or	r16,r4		; header | current
+0007e3 7c00      	andi	r16,0xc0	; keep the overflow bits in r16
+0007e4 2d13      	mov	r17,r3		; orig header
+0007e5 7017      	andi	r17,0x07	; keep button bits in r17
+0007e6 2b10      	or	r17,r16		; toss in overflow bits
+0007e7 8712      	std	Z+mo_but,r17	; new button & ovflo stats
+                 
+0007e8 ef0f      	ser	r16		; extended sign bit
+0007e9 fe34      	sbrs	r3,4		; check header x sign
+0007ea 2700      	clr	r16		; it's positive
+0007eb 8516      	ldd	r17,Z+mo_msg+1	; x displacement
+0007ec d05c      	rcall	xaddmoff
+                 
+0007ed ef0f      	ser	r16		; extended sign bit
+0007ee fe35      	sbrs	r3,5		; check header y sign
+0007ef 2700      	clr	r16		; it's positive
+0007f0 8517      	ldd	r17,Z+mo_msg+2	; y displacement
+0007f1 d05b      	rcall	yaddmoff
+                 
+0007f2 2700      	clr	r16		; assume positive z disp
+0007f3 8910      	ldd	r17,Z+mo_msg+3	; z displacement
+                 	; extra button bits go away here on 5 button mice
+0007f4 701f      	andi	r17,0x0f	; drop high bits
+0007f5 ff13      	sbrs	r17,3		; check header y sign
+0007f6 c002      	rjmp	ypos		; it's positive
+0007f7 ef0f      	ser	r16		; neg - extended sign
+0007f8 6f10      	ori	r17,0xf0	; more extended sign
+0007f9 d057      ypos:	rcall	zaddmoff
+                 
+0007fa 8513      	ldd	r17,Z+mo_chg	; what buttons changed
+0007fb 2311      	tst	r17		; any?
+0007fc f059      	breq	nolck		; jump if no changes
+0007fd 940e 0321 	call	savcur		; go save this location
+                 
+0007ff 925f      	push	r5
+000800 2e51      	mov	r5,r17		; r5 has button changes
+000801 8502      	ldd	r16,Z+mo_but	; buttons now, and ovrflo
+000802 7007      	andi	r16,0x07	; keep buttons only
+000803 2e40      	mov	r4,r16		; r4 has current buttons
+000804 e003      	ldi	r16,0x03	; do toggles and follows locks
+000805 2e30      	mov	r3,r16		; r3 has locks to perform
+000806 da75      	rcall	applylocks	; jump in the pit
+000807 905f      	pop	r5
+                 
+000808 9418      nolck:	sez			; z set means ok
+000809 9468      	set			; t set means msg recv
+                 	
+00080a 903f      	pop	r3
+00080b 904f      	pop	r4
+00080c 910f      	pop	r16
+00080d 911f      	pop	r17
+00080e 91ef      	pop	ZL
+00080f 91ff      	pop	ZH
+000810 9508      	ret
+                 
+                 ; ==============================================
+                 ;	rdmmsg - read a mouse message into buf
+                 ;
+                 ;	r0 - mouse number
+                 ;	call rdmmsg
+                 ;	brne error	(1st byte bad or no init)
+                 ;	breq ok
+                 ;
+                 ;	full msg must already be in recv buffer,
+                 ;	so call msgrdy prior to calling this
+                 
+000811 93ff      rdmmsg:	push	ZH
+000812 93ef      	push	ZL
+000813 932f      	push	r18
+000814 931f      	push	r17
+000815 930f      	push	r16
+000816 921f      	push	r1
+                 
+000817 dee7      	rcall	moff2z		; pointer to moff()
+000818 8514      	ldd	r17,Z+mo_msgsz	; message size
+000819 2311      	tst	r17
+00081a f0a9      	breq	noin		; not initialized
+                 
+00081b 963d      	adiw	ZH:ZL,mo_msg
+00081c dfa4      	rcall	getmbyte	; header of msg
+00081d f091      	breq	noin		; can't happen
+00081e 9211      	st	Z+,r1
+00081f 2d21      	mov	r18,r1		; hold header out
+                 
+000820 dfa0      	rcall	getmbyte	; byte 2 of msg
+000821 f071      	breq	noin		; can't happen
+000822 9211      	st	Z+,r1
+                 
+000823 df9d      	rcall	getmbyte	; byte 3 of msg
+000824 f059      	breq	noin		; can't happen
+000825 9211      	st	Z+,r1		; ignore error rtn
+                 	
+000826 2411      	clr	r1		; assume 3 byte msg
+000827 3014      	cpi	r17,4
+000828 f411      	brne	no4
+000829 df97      	rcall	getmbyte	; 4th byte into r1
+00082a f029      	breq	noin		; can't happen
+00082b 9211      no4:	st	Z+,r1		; byte 4 (or 0) of msg
+                 
+00082c 7028      	andi	r18,0x08	; header byte
+00082d f011      	breq	noin		; bit 3 must be set
+00082e 9418      	sez			; zero set returns OK
+00082f c001      	rjmp	bnn
+000830 9498      noin:	clz			; zero clear rtns error
+                 
+000831 901f      bnn:	pop	r1
+000832 910f      	pop	r16
+000833 911f      	pop	r17
+000834 912f      	pop	r18
+000835 91ef      	pop	ZL
+000836 91ff      	pop	ZH
+000837 9508      	ret
+                 
+                 ; ==============================================
+                 ;	pktrdy - has our mouse queued a packet?
+                 ;
+                 ;	r0 - mouse to check
+                 ;	call pktrdy
+                 ;	  breq not ready
+                 ;	  brne packet ready (decrements counter, so
+                 ;	    caller has to go ahead and grab the packet)
+                 
+000838 93df      pktrdy:	push	YH
+000839 93cf      	push	YL
+00083a 932f      	push	r18
+                 
+00083b d199      	rcall	pack2y
+00083c 812e      	ldd	r18,Y+pready
+00083d 2322      	tst	r18
+00083e f031      	breq	nopk			; zero is none
+                 
+00083f 94f8      	cli				; no interrupts while
+000840 812e      	ldd	r18,Y+pready		; we update this counter
+000841 952a      	dec	r18
+000842 832e      	std	Y+pready,r18		; update count
+000843 9478      	sei				; all done - interrupts on
+000844 9498      	clz				; zero clear means OK
+                 
+000845 912f      nopk:	pop	r18
+000846 91cf      	pop	YL
+000847 91df      	pop	YH
+000848 9508      	ret
+                 
+                 ; ==============================================
+                 ;	#addmoff - add 9 bit number to a 24 bit number
+                 ;
+                 ;	Z - points to moff()
+                 ;	r16 - second & higher bytes (ext. sign)
+                 ;	r17 - low order byte
+                 ;	entry points:
+                 ;		xaddmoff - add to x location
+                 ;		yaddmoff - add to y location
+                 ;		zaddmoff - add to z location
+                 
+                 xaddmoff:
+000849 93ff      	push	ZH
+00084a 93ef      	push	ZL
+00084b 9675      	adiw	ZH:ZL,mo_x0
+00084c c007      	rjmp	xad
+                 yaddmoff:
+00084d 93ff      	push	ZH
+00084e 93ef      	push	ZL
+00084f 9678      	adiw	ZH:ZL,mo_y0
+000850 c003      	rjmp	xad
+                 zaddmoff:
+000851 93ff      	push	ZH
+000852 93ef      	push	ZL
+000853 967b      	adiw	ZH:ZL,mo_z0
+                 
+000854 932f      xad:	push	r18
+000855 8120      	ld	r18,Z			; low order
+000856 0f21      	add	r18,r17
+000857 9321      	st	Z+,r18
+000858 8120      	ld	r18,Z			; 2nd byte
+000859 1f20      	adc	r18,r16
+00085a 9321      	st	Z+,r18
+00085b 8120      	ld	r18,Z			; high byte
+00085c 1f20      	adc	r18,r16
+00085d 8320      	st	Z,r18			; Z+ if more
+                 
+00085e 912f      	pop	r18
+00085f 91ef      	pop	ZL
+000860 91ff      	pop	ZH
+000861 9508      	ret
+                 
+                 ; ==============================================
+                 ;	setrefpnt - zero out the reference location
+                 ;
+                 ;	r0 - mouse in question (preserved)
+                 ;	zeroes out the 9 bytes of location data
+                 ;	and the overflow bits
+                 
+                 setrefpnt:
+000862 93ff      	push	ZH
+000863 93ef      	push	ZL
+000864 920f      	push	r0
+000865 930f      	push	r16
+                 
+000866 de98      	rcall	moff2z
+000867 8502      	ldd	r16,Z+mo_but
+000868 730f      	andi	r16,0x3f	; drop ovrflo bits
+000869 8702      	std	Z+mo_but,r16
+                 
+00086a 9675      	adiw	ZH:ZL,mo_x0	; low byte of x
+00086b 2400      	clr	r0
+00086c e009      	ldi	r16,9		; next 9 bytes are we
+00086d 9201      onwg1:	st	Z+,r0
+00086e 950a      	dec	r16
+00086f f7e9      	brne	onwg1
+                 
+000870 910f      	pop	r16
+000871 900f      	pop	r0
+000872 91ef      	pop	ZL
+000873 91ff      	pop	ZH
+000874 9508      	ret
+                 
+                 ; ==============================================
+                 ;	initmouse - initialize mouse r0
+                 ;
+                 ;	mouse number in r0 (preserved)
+                 ;	returns: zero set on error, cleared if OK
+                 
+                 initmouse:
+000875 93ff      	push	ZH
+000876 93ef      	push	ZL
+000877 93df      	push	YH
+000878 93cf      	push	YL
+000879 930f      	push	r16
+00087a 921f      	push	r1
+                 
+00087b d159      	rcall	pack2y				; Y -> pack
+00087c 2700      	clr	r16
+00087d 8309      	std	y+perr,r16			; we're doing initialization
+00087e dde3      	rcall	zerobt				; kill the transition stuff
+                 
+00087f de7f      	rcall	moff2z				; hit it with a stick
+000880 940e 0384 	call	killmouse			; turn off interrupts
+000882 e302      	ldi	r16,50				; wait a little while (50ms)
+000883 dae8      	rcall	starttimer			; to let things settle down
+000884 dad3      winit:	rcall	gettimer			; wait for timeout
+000885 f3f1      	breq	winit
+                 
+000886 2411      	clr	r1
+000887 8211      	std	Z+mo_hd,r1			; set buffer empty
+000888 8212      	std	Z+mo_t,r1			; tail of list
+000889 8210      	std	Z+mo_sts,r1			; line status is idle
+00088a 8a14      	std	Z+mo_err,r1			; clear error flag
+                 
+00088b e00c      	ldi	r16,packsize			; zero out the packet stuff
+00088c 9219      wii:	st	Y+,r1
+00088d 950a      	dec	r16
+00088e f7e9      	brne	wii
+                 
+00088f ded4      	rcall	clock2input			; probably unnecessary, but...
+000890 dec4      	rcall	data2input
+000891 9488      	clc					; need to write a 0 to
+000892 df08      	rcall	writedata			; make sure pullups are off
+000893 db01      	rcall	revivemouse			; bring up its interrupts
+                 
+000894 e0d0      	ldi	YH,high(iseq1<<1)		; send 3 resets
+000895 eac6      	ldi	YL,low(iseq1<<1)
+000896 d026      	rcall	mdialog
+000897 2011      	tst	r1
+000898 f451      	brne	iee
+                 
+000899 e0d0      	ldi	YH,high(iseq2<<1)		; check for scroll mouse
+00089a ecc8      	ldi	YL,low(iseq2<<1)
+00089b d021      	rcall	mdialog
+00089c 2011      	tst	r1
+00089d f429      	brne	iee
+                 
+                 	; we're not doing the intellimouse check
+                 
+00089e e0d0      	ldi	YH,high(iseq3<<1)		; set parameters and enable
+00089f efc4      	ldi	YL,low(iseq3<<1)
+0008a0 d01c      	rcall	mdialog
+0008a1 2011      	tst	r1
+0008a2 f029      	breq	eok
+                 
+                 ;	initialization failed - kill off the mouse
+0008a3 2411      iee:	clr	r1
+0008a4 8614      	std	Z+mo_msgsz,r1			; it's unitialized
+0008a5 dade      	rcall	killmouse			; disable interrupts
+0008a6 9418      	sez					; zero set is bad
+0008a7 c00e      	rjmp	irtn
+                 
+                 ;	initialization succeeded - set up packet management
+0008a8 d12c      eok:	rcall	pack2y				; Y -> packet stuff
+0008a9 8504      	ldd	r16,Z+mo_msgsz			; message size (3 or 4)
+0008aa 830a      	std	Y+psize,r16			; save in packet info
+0008ab 3003      	cpi	r16,3
+0008ac f019      	breq	msg3
+0008ad 9100 000c 	lds	r16,ptval4			; the 4 byte packet timer
+0008af c002      	rjmp	putms
+0008b0 9100 0009 msg3:	lds	r16,ptval3			; the 3 byte packet timer
+0008b2 870b      putms:	std	Y+ptval,r16			; save this timer value
+0008b3 e001      	ldi	r16,1
+0008b4 8308      	std	Y+psts,r16			; set line to packet idle
+0008b5 9498      	clz					; zero cleared is success
+                 
+0008b6 901f      irtn:	pop	r1
+0008b7 910f      	pop	r16
+0008b8 91cf      	pop	YL
+0008b9 91df      	pop	YH
+0008ba 91ef      	pop	ZL
+0008bb 91ff      	pop	ZH
+0008bc 9508      	ret
+                 
+                 ; ==============================================
+                 ;	mdialog - engage a chat with a mouse
+                 ;
+                 ;	r0 - mouse to speak with
+                 ;	Z  - points at moff() for this mouse
+                 ;	Y  - points at message (Y advances):
+                 ;		s - send next char (2 hex digits) to mouse
+                 ;		r - wait to receive following seq from mouse (1 to 3, 2 hex digits)
+                 ;		i - receive and define ID (00 or 03)
+                 ;		y - check previously received ID (00 or 03)
+                 ;		x - stop
+                 ;	returns:
+                 ;		r1 = 0  OK
+                 ;		   = 1  mouse timeout (character level or message level)
+                 ;		   = 2  reply didn't match expected
+                 ;		   = 3  error (FE) from mouse
+                 ;		   = 4  bad msg format
+                 ;		   = 5  mouse ID mismatch
+                 ;
+                 ;	mouse shouldn't be talking to us when we start this
+                 
+                 mdialog:
+0008bd 922f      	push	r2
+0008be 925f      	push	r5
+0008bf 930f      	push	r16
+0008c0 931f      	push	r17
+0008c1 932f      	push	r18
+0008c2 933f      	push	r19
+                 
+0008c3 2711      	clr	r17			; =0, send, =1, receive
+0008c4 d051      mdlp:	rcall	nextup			; get next char in string
+0008c5 921f      	push	r1			; returned val = arg
+0008c6 db6a      	rcall	jumptable		; transfer to whomever
+0008c7 c016      	rjmp	srx			; 0 = hex value in r2
+0008c8 c00b      	rjmp	sw_s			; 1 = 's'
+0008c9 c008      	rjmp	sw_r			; 2 = 'r'
+0008ca c043      	rjmp	xquit			; 3 = 'x'
+0008cb c00e      	rjmp	sw_idr			; 4 = 'i'
+0008cc c009      	rjmp	sw_idc			; 5 = 'y'
+0008cd c03f      	rjmp	sw_pause		; 6 = 'w'
+0008ce c000      	rjmp	xerr			; 7 = error
+                 
+0008cf e004      xerr:	ldi	r16,4			; bad message format
+0008d0 2e10      xerr2:	mov	r1,r16
+0008d1 c03d      	rjmp	xqret
+                 
+                 ;	------------ switch to receive
+0008d2 e011      sw_r:	ldi	r17,1			; switch to receive
+0008d3 cff0      	rjmp	mdlp
+                 
+                 ;	------------ switch to send
+0008d4 2711      sw_s:	clr	r17			; switch to send
+0008d5 cfee      	rjmp	mdlp
+                 
+                 ;	------------ read ID and compare to stored
+0008d6 2311      sw_idc:	tst	r17			; read ID and compare it
+0008d7 f3b9      	breq	xerr			; must be in receive mode
+0008d8 8421      	ldd	r2,Z+mo_id		; previously saved ID
+0008d9 c006      	rjmp	srx2			; go receive it hopefully
+                 
+                 ;	------------ read ID and store it
+0008da 2311      sw_idr:	tst	r17			; read ID and store it
+0008db f399      	breq	xerr			; must be in receive mode
+0008dc e023      	ldi	r18,3			; r18 = 3: special read and store
+0008dd c004      	rjmp	srx1
+                 
+                 ;	------------ we have a hex value in r2
+0008de 2311      srx:	tst	r17			; send or receive hex value in r2
+0008df f111      	breq	xsndx			; jump if sending
+                 
+0008e0 2c52      srx2:	mov	r5,r2			; the data we're expecting
+0008e1 2722      	clr	r18			; r18 = 0: read and compare
+                 
+0008e2 8901      srx1:	ldd	r16,Z+mo_tmode		; is the timer running?
+0008e3 2300      	tst	r16			; if yes, don't start it
+0008e4 f411      	brne	arx1
+0008e5 e808      	ldi	r16,128+8		; otherwise, two seconds to hear back
+0008e6 da85      	rcall	starttimer
+0008e7 ded9      arx1:	rcall	getmbyte		; anything from mr. mouse?
+0008e8 f421      	brne	got1			; jump if yes, data in r1
+                 
+0008e9 da6e      	rcall	gettimer		; timeout? (our 2 sec or a recv err)
+0008ea f3e1      	breq	arx1			; no error - try again
+0008eb e001      	ldi	r16,1			; error stopped timer. return a 1
+0008ec cfe3      	rjmp	xerr2	
+                 
+0008ed da74      got1:	rcall	stoptimer		; made it!
+0008ee 2d01      	mov	r16,r1
+0008ef 3f0e      	cpi	r16,0xfe		; mouse's error code
+0008f0 f411      	brne	got2
+0008f1 e003      	ldi	r16,3
+0008f2 cfdd      	rjmp	xerr2
+                 
+0008f3 2322      got2:	tst	r18			; looking for id byte?
+0008f4 f049      	breq	srnorm			; jump if no
+                 
+                 	; we just read an ID and need to save it (if it's 00 or 03)
+                 	; and set the message size (00 = 3, 03 = 4)
+0008f5 e033      	ldi	r19,3			; assume id = 00
+0008f6 2011      	tst	r1			; read id: 00 or 03 OK
+0008f7 f019      	breq	idgood
+0008f8 1612      	cp	r1,r18			; r18 has a 3 in it
+0008f9 f431      	brne	xsrbad
+0008fa e034      	ldi	r19,4			; it's a scroll mouse
+                 
+0008fb 8611      idgood:	std	Z+mo_id,r1		; save ID
+0008fc 8734      	std	Z+mo_msgsz,r19		; save message size
+0008fd cfc6      mdlpw:	rjmp	mdlp
+                 
+0008fe 1415      srnorm:	cp	r1,r5			; have vs. want
+0008ff f3e9      	breq	mdlpw			; ok, so go on...
+                 
+000900 e002      xsrbad:	ldi	r16,2			; didn't match
+000901 cfce      	rjmp	xerr2
+                 
+                 ;	we need to send out the hex value in r2
+000902 2c12      xsndx:	mov	r1,r2
+000903 940e 05d9 xss:	call	sendmouse
+000905 f019      	breq	xssc
+000906 da51      	rcall	gettimer
+000907 f3d9      	breq	xss			; try again
+000908 c002      	rjmp	xssd
+000909 da4e      xssc:	rcall	gettimer		; check for timeout
+00090a f391      	breq	mdlpw			; no error - next please
+00090b e001      xssd:	ldi	r16,1			; timeout error
+00090c cfc3      	rjmp	xerr2
+                 
+                 ;	------------ spare
+                 sw_pause:
+00090d cfb6      	rjmp	mdlp
+                 
+                 ;	------------ enough is enough - quit
+00090e 2411      xquit:	clr	r1			; normal termination
+                 
+00090f 913f      xqret:	pop	r19
+000910 912f      	pop	r18
+000911 911f      	pop	r17
+000912 910f      	pop	r16
+000913 905f      	pop	r5
+000914 902f      	pop	r2
+000915 9508      	ret
+                 
+                 ; ==============================================
+                 ;	nextup - decode a predefined mouse communication string
+                 ;
+                 ;	Y - points to next character in string (Y is advanced)
+                 ;	returns (in r1):
+                 ;		0  hex value in r2
+                 ;		1  's'
+                 ;		2  'r'
+                 ;		3  'x'
+                 ;		4  'i'
+                 ;		5  'y'
+                 ;		6  'w'
+                 ;		7  error (incomplete hex or unrecognized char)
+                 
+000916 930f      nextup:	push	r16
+000917 93ff      	push	ZH
+000918 93ef      	push	ZL
+                 
+000919 2ffd      	mov	ZH,YH
+00091a 2fec      	mov	ZL,YL
+00091b 9105      	lpm	r16,Z+				; get the dog
+00091c 9621      	adiw	YH:YL,1
+                 ;	push	r16				; debug echo =====
+                 ;	rcall	xmit_put
+00091d db78      	rcall	convhex16			; try to convert to hex
+00091e f4e9      	brne	hx				; if hex, zero clear
+00091f 2411      	clr	r1				; becomes the return value
+000920 930f      	push	r16				; arg to looktable
+000921 db25      	rcall	looktable
+000922 0073
+000923 094c      	.dw	's',pl_1
+000924 0072
+000925 094b      	.dw	'r',pl_2
+000926 0078
+000927 094a      	.dw	'x',pl_3
+000928 0069
+000929 0949      	.dw	'i',pl_4
+00092a 0079
+00092b 0948      	.dw	'y',pl_5
+00092c 0077
+00092d 0947      	.dw	'w',pl_6
+00092e 0053
+00092f 094c      	.dw	'S',pl_1
+000930 0052
+000931 094b      	.dw	'R',pl_2
+000932 0058
+000933 094a      	.dw	'X',pl_3
+000934 0049
+000935 0949      	.dw	'I',pl_4
+000936 0059
+000937 0948      	.dw	'Y',pl_5
+000938 0057
+000939 0947      	.dw	'W',pl_6
+00093a ffff
+00093b 0946      	.dw	-1,pl_7
+                 
+00093c 2e20      hx:	mov	r2,r16				; the converted value
+00093d 9422      	swap	r2				; move into high nibble
+00093e 9105      	lpm	r16,Z+				; get next character
+00093f 9621      	adiw	YH:YL,1
+                 ;	push	r16				; debug echo ======
+                 ;	rcall	xmit_put
+000940 db55      	rcall	convhex16
+000941 f019      	breq	bdhex				; zero set is bad
+000942 2a20      	or	r2,r16				; this is the low half
+000943 2411      	clr	r1
+000944 c008      	rjmp	pl_0
+                 
+000945 2411      bdhex:	clr	r1
+000946 9413      pl_7:	inc	r1
+000947 9413      pl_6:	inc	r1
+000948 9413      pl_5:	inc	r1
+000949 9413      pl_4:	inc	r1
+00094a 9413      pl_3:	inc	r1
+00094b 9413      pl_2:	inc	r1
+00094c 9413      pl_1:	inc	r1
+                 
+00094d 91ef      pl_0:	pop	ZL
+00094e 91ff      	pop	ZH
+00094f 910f      	pop	r16
+000950 9508      	ret
+                 .include	"AT3283_7.inc"
+                 
+                 ;
+                 ;	packet management routines
+                 
+                 ; ==============================================
+                 ;	pbrunout - the packet byte timer ran out
+                 ;
+                 ;	this is called when the packet byte timer
+                 ;	runs out (from the timer interrupt handler)
+                 ;	r0 does not have our mouse number:
+                 ;	  r16 - loop counter
+                 ;	    = 3 for mouse 0
+                 ;	    = 2 for mouse 1
+                 ;	    = 1 for mouse 2
+                 ;	Z -> packet info (Y usually does)
+                 ;	this timer only runs during receiving
+                 
+                 pbrunout:
+                 ;	we'll handle this like a packet timing
+                 ;	error since it probably means we lost
+                 ;	a byte somewhere
+000951 d001      	rcall	prunout
+000952 9508      	ret
+                 
+                 ; ==============================================
+                 ;	prunout - the packet timer ran out
+                 ;
+                 ;	this is called when the packet timer
+                 ;	runs out (from the timer interrupt handler)
+                 ;	r0 does not have our mouse number:
+                 ;	  r16 - loop counter
+                 ;	    = 3 for mouse 0
+                 ;	    = 2 for mouse 1
+                 ;	    = 1 for mouse 2
+                 ;	Z -> packet info (Y usually does)
+                 ;	this timer only runs during receiving
+                 
+                 prunout:
+000953 93ff      	push	ZH
+000954 93ef      	push	ZL
+000955 93df      	push	YH
+000956 93cf      	push	YL
+000957 931f      	push	r17
+000958 920f      	push	r0
+                 
+000959 2fdf      	mov	YH,ZH
+00095a 2fce      	mov	YL,ZL			; Y -> packet
+00095b 2711      	clr	r17
+00095c 8719      	std	Y+ptrun,r17		; stop packet timer
+00095d 871a      	std	Y+pbtrun,r17		; stop packet byte timer
+                 
+00095e e013      	ldi	r17,3
+00095f 1b10      	sub	r17,r16
+000960 2e01      	mov	r0,r17			; mouse number into r0
+000961 dd9d      	rcall	moff2z			; Z -> moff
+                 
+000962 811c      	ldd	r17,Y+phead		; orig buf head ptr
+000963 8311      	std	Z+mo_hd,r17		; put it back to kill bytes
+000964 811d      	ldd	r17,Y+preject		; reject count
+000965 9513      	inc	r17
+000966 ff16      	sbrs	r17,6			; stop at 63
+000967 831d      	std	Y+preject,r17
+000968 e011      	ldi	r17,1			; set packets to idle
+000969 8318      	std	Y+psts,r17	
+                 
+00096a 900f      	pop	r0
+00096b 911f      	pop	r17
+00096c 91cf      	pop	YL
+00096d 91df      	pop	YH
+00096e 91ef      	pop	ZL
+00096f 91ff      	pop	ZH
+000970 9508      	ret
+                 
+                 ; ==============================================
+                 ;	startofbyte - a start bit was received
+                 ;
+                 ;	this is called when the receiver kicks in.
+                 ;	called from the intx interrupt handler, so r0
+                 ;	has our mouse number
+                 
+                 startofbyte:
+000971 930f      	push	r16
+000972 93df      	push	YH
+000973 93cf      	push	YL
+                 
+000974 d060      	rcall	pack2y			; Y -> packet info
+000975 8108      	ldd	r16,Y+psts		; status
+000976 3001      	cpi	r16,1
+000977 f0a8      	brcs	ssrtn			; ignore init
+000978 f481      	brne	srecv
+                 	
+                 ;	we're idle - start timers, save head, etc.
+000979 850b      	ldd	r16,Y+ptval		; start the packet timer
+00097a 830f      	std	Y+ptimer,r16
+00097b e001      	ldi	r16,1
+00097c 8709      	std	Y+ptrun,r16
+                 
+00097d 2700      	clr	r16
+00097e 8309      	std	Y+perr,r16		; clear packet error flag
+00097f 830b      	std	Y+pbytes,r16		; and received byte count
+                 
+000980 93ff      	push	ZH
+000981 93ef      	push	ZL
+000982 dd7c      	rcall	moff2z
+000983 8101      	ldd	r16,Z+mo_hd		; save head pointer
+000984 91ef      	pop	ZL
+000985 91ff      	pop	ZH
+000986 830c      	std	Y+phead,r16
+                 
+000987 e002      	ldi	r16,2			; set receive mode
+000988 8308      	std	Y+psts,r16
+                 
+                 ;	we're receiving - restart timer
+000989 e003      srecv:	ldi	r16,pbtval		; start/restart byte timer
+00098a 8708      	std	Y+pbtimer,r16		; counter value
+00098b e001      	ldi	r16,1
+00098c 870a      	std	Y+pbtrun,r16		; run flag
+                 
+00098d 91cf      ssrtn:	pop	YL
+00098e 91df      	pop	YH
+00098f 910f      	pop	r16
+000990 9508      	ret
+                 
+                 ; ==============================================
+                 ;	endofbyte - a character was put away
+                 ;
+                 ;	this is called when the stop bit is received
+                 ;	and the character is put away.
+                 ;	called from the intx interrupt handler, so r0
+                 ;	has our mouse number
+                 
+                 endofbyte:
+000991 930f      	push	r16
+000992 931f      	push	r17
+000993 93df      	push	YH
+000994 93cf      	push	YL
+                 
+000995 d03f      	rcall	pack2y			; Y -> packet info
+000996 8108      	ldd	r16,Y+psts		; status
+000997 2300      	tst	r16
+000998 f0d9      	breq	esrtn			; ignore init
+                 
+000999 810b      	ldd	r16,Y+pbytes		; update packet byte count
+00099a 9503      	inc	r16
+00099b 830b      	std	Y+pbytes,r16
+00099c 811a      	ldd	r17,Y+psize		; # bytes in packet
+00099d 1701      	cp	r16,r17
+00099e f4a9      	brne	esrtn			; done if not the last one
+                 
+00099f 2700      	clr	r16
+0009a0 8709      	std	Y+ptrun,r16		; stop the packet timer
+0009a1 870a      	std	Y+pbtrun,r16		; stop the packet byte timer
+0009a2 8109      	ldd	r16,Y+perr		; packet error flag
+0009a3 2300      	tst	r16			; is it zero?
+0009a4 f051      	breq	goodpk			; if so, good packet
+                 
+                 ;	we had a bad packet - clean up a bit
+0009a5 93ff      	push	ZH
+0009a6 93ef      	push	ZL
+0009a7 dd57      	rcall	moff2z
+0009a8 810c      	ldd	r16,y+phead		; orig buf head ptr
+0009a9 8301      	std	Z+mo_hd,r16		; put it back to kill bytes
+0009aa 810d      	ldd	r16,Y+preject		; reject count
+0009ab 9503      	inc	r16
+0009ac ff06      	sbrs	r16,6			; stop at 63
+0009ad 830d      	std	Y+preject,r16
+0009ae c003      	rjmp	pkidle			; go set packet idle
+                 
+0009af 810e      goodpk:	ldd	r16,Y+pready		; update packet counter
+0009b0 9503      	inc	r16
+0009b1 830e      	std	Y+pready,r16
+0009b2 e001      pkidle:	ldi	r16,1			; set packets to idle
+0009b3 8308      	std	Y+psts,r16
+                 
+0009b4 91cf      esrtn:	pop	YL
+0009b5 91df      	pop	YH
+0009b6 911f      	pop	r17
+0009b7 910f      	pop	r16
+0009b8 9508      	ret
+                 
+                 ; ==============================================
+                 ;	timeout - timer runout
+                 ;
+                 ;	r16 - loop counter
+                 ;	  = 3 for mouse 0
+                 ;	  = 2 for mouse 1
+                 ;	  = 1 for mouse 2
+                 ;	this is called from inside the timer interrupt
+                 
+                 timeout:
+0009b9 93ff      	push	ZH
+0009ba 93ef      	push	ZL
+0009bb 93df      	push	YH
+0009bc 93cf      	push	YL
+0009bd 931f      	push	r17
+0009be 920f      	push	r0
+                 
+0009bf e013      	ldi	r17,3			; figure out which mouse
+0009c0 1b10      	sub	r17,r16
+0009c1 2e01      	mov	r0,r17			; mouse to r0
+0009c2 d012      	rcall	pack2y			; Y -> packet block
+0009c3 8118      	ldd	r17,Y+psts		; get packet status
+0009c4 2311      	tst	r17
+0009c5 f041      	breq	intme			; ignore during initialization
+                 
+0009c6 dd38      	rcall	moff2z			; Z -> moff
+0009c7 8110      	ldd	r17,Z+mo_sts		; are we sending or receiving?
+0009c8 3013      	cpi	r17,3			; only 3 (receiving) is important to us
+0009c9 f421      	brne	intme			; because sendmouse handles its own errors
+                 
+                 ;	we've had a timeout during receiving a byte. the timer is started
+                 ;	when the start bit is received, and stopped when the stop bit is
+                 ;	received. ergo, if it runs out something not nice has happened, so
+                 ;	we'll be naive and just hit things with a stick.
+                 ;	this timer has already been stopped by the caller.
+                 ;	the byte timer will fire soon, and toss the packet, and, if we're in
+                 ;	the middle of a packet, later the tail end of it will get rejected as
+                 ;	an incomplete following packet.  Eventually everything will catch up.
+                 
+0009ca e011      	ldi	r17,1
+0009cb 8319      	std	Y+perr,r17		; flag packet bad
+0009cc 2711      	clr	r17
+0009cd 8310      	std	Z+mo_sts,r17		; set line idle
+                 
+0009ce 900f      intme:	pop	r0
+0009cf 911f      	pop	r17
+0009d0 91cf      	pop	YL
+0009d1 91df      	pop	YH
+0009d2 91ef      	pop	ZL
+0009d3 91ff      	pop	ZH
+0009d4 9508      	ret
+                 
+                 ; ==============================================
+                 ;	pack2y - make Y point to r0's packet definition
+                 ;
+                 ;	r0 - mouse number (0 - 2)
+                 ;	returns Y -> pack(packsize * r0)
+                 
+0009d5 efcc      pack2y:	ldi	YL,low(pack)
+0009d6 e0d2      	ldi	YH,high(pack)
+0009d7 2000      	tst	r0
+0009d8 f019      	breq	pmre			; right answer for 0
+0009d9 962c      	adiw	YH:YL,packsize		; advance to mouse 1
+0009da fc01      	sbrc	r0,1			; if mouse 1, we're done
+0009db 962c      	adiw	YH:YL,packsize		; advance to mouse 2
+0009dc 9508      pmre:	ret
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATmega16 register use summary:
+r0 : 114 r1 :  93 r2 :  19 r3 :  21 r4 :   9 r5 :  10 r6 :   0 r7 :   0 
+r8 :   0 r9 :   0 r10:   0 r11:   0 r12:   0 r13:   0 r14:   0 r15:   0 
+r16: 546 r17: 274 r18:  91 r19:  24 r20:  10 r21:  11 r22:   0 r23:   0 
+r24:   4 r25:   4 r26:  93 r27:  82 r28:  63 r29:  63 r30: 103 r31: 104 
+x  :  47 y  :  96 z  : 149 
+Registers used: 23 out of 35 (65.7%)
+
+ATmega16 instruction use summary:
+adc   :   2 add   :  14 adiw  :  45 and   :  12 andi  :  35 asr   :   0 
+bclr  :   0 bld   :   0 brbc  :   0 brbs  :   0 brcc  :  20 brcs  :  20 
+break :   0 breq  : 108 brge  :   0 brhc  :   0 brhs  :   0 brid  :   0 
+brie  :   0 brlo  :   0 brlt  :   0 brmi  :   1 brne  :  43 brpl  :   3 
+brsh  :   0 brtc  :   1 brts  :   0 brvc  :   0 brvs  :   0 bset  :   0 
+bst   :   0 call  :   8 cbi   :   0 cbr   :   0 clc   :   5 clh   :   0 
+cli   :   1 cln   :   0 clr   :  69 cls   :   0 clt   :   2 clv   :   0 
+clz   :   9 com   :   2 cp    :  13 cpc   :   0 cpi   :  38 cpse  :   0 
+dec   :  27 eor   :   2 fmul  :   0 fmuls :   0 fmulsu:   0 icall :   0 
+ijmp  :   0 in    :  19 inc   :  43 jmp   :  21 ld    :  32 ldd   : 106 
+ldi   : 150 lds   :  64 lpm   :  12 lsl   :   1 lsr   :   7 mov   :  46 
+movw  :   0 mul   :   0 muls  :   0 mulsu :   0 neg   :   0 nop   :   0 
+or    :  13 ori   :   1 out   :  23 pop   : 256 push  : 281 rcall : 172 
+ret   :  73 reti  :   7 rjmp  : 174 rol   :   2 ror   :   3 sbc   :   0 
+sbci  :   0 sbi   :   0 sbic  :   0 sbis  :   1 sbiw  :   1 sbr   :   4 
+sbrc  :  13 sbrs  :  17 sec   :   4 seh   :   0 sei   :   2 sen   :   0 
+ser   :   7 ses   :   0 set   :   3 sev   :   0 sez   :   7 sleep :   0 
+spm   :   0 st    :  43 std   :  99 sts   :  22 sub   :   4 subi  :   4 
+swap  :   5 tst   :  49 wdr   :   0 
+Instructions used: 62 out of 111 (55.9%)
+
+ATmega16 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x0013ba   4772    278   5050   16384  30.8%
+[.dseg] 0x000060 0x000321      0    705    705    1024  68.8%
+[.eseg] 0x000000 0x000000      0      0      0     512   0.0%
+
+Assembly complete, 0 errors, 0 warnings
