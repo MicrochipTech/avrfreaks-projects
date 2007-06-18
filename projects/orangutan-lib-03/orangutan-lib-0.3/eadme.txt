@@ -1,0 +1,794 @@
+About Orangutan-lib:
+
+Orangutan-lib is a C library for the Orangutan family of robot
+controllers from Pololu Robotics. Distribution of Orangutan-lib is
+provided for by Sourceforge.net. It is very much a work in progress, but
+releases are posted frequently, and I take suggestions for new features
+on the Pololu Robotics Forums. Plans are also afoot to port the library
+to the AVR Butterfly, as time allows.
+
+The purpose of Orangutan-lib is not to provide every function everyone
+might ever want. Pascal Stang has already written a very full-featured
+library for AVR-based controllers: Procyon AVRlib. The purpose is not to
+provide anything like a real time multitasking kernel for the AVR
+processor, either. FreeRTOS already does this.
+
+The purpose of Orangutan-lib is to provide enough functionality to get
+someone up and running, to do this using (mostly) easy to read code with
+lots of comments, and to arrange things so there are as few
+cross-dependencies as possible, making it easy to only take those
+features you want and incorporate them into your own code. To put this
+in terms of robotics, expect Orangutan-lib to give you enough
+functionality to build a Mini-Sumo robot or a line follower. To program
+a Robo-Magellan platform, you'll need to add a lot of your own code.
+
+If you happen to use Orangutan-lib in one of your projects, please let
+us know so we can get that warm fuzzy feeling inside that comes from
+knowing you've helped someone else. Also, please post information about
+your project to the Pololu Robotics Forums so everyone else can take
+inspiration from what you've done.
+
+We're working on adding support for the new Orangutan-X2.
+
+-- Tom
+
+
+AVR/Orangutan Web Resources:
+
+These are resources I've used, and drawn code examples from, to write 
+Orangutan-lib.  In several instances the comments can be credited to me, 
+but credit for the code lies with one of these folks:
+
+Pololu Forums:
+http://www.pololu.com/forum
+
+AVRFreaks:
+http://www.avrfreaks.net
+
+Atmel:
+http://www.atmel.com
+
+Jim Remington's Orangutan Site:
+http://www.uoxray.uoregon.edu/orangutan/
+
+Cathy Saxton's Orangutan Site:
+http://www.idleloop.com/robotics/Orangutan/index.html
+
+
+Documentation
+
+Documentation is the one area where Orangutan-lib is still weak. This
+isn't that uncommon with a coding effort, but it's unfortunate
+nonetheless. A great deal of the documentation for Orangutan-lib is in
+the source code. But comments don't make for a very good reference
+manual, so this is a first pass at documenting each of the subsystems
+Orangutan-lib provides.
+
+Keep in mind that no documentation for Orangutan lib would be complete
+without also referencing the appropriate documentation from the Atmel
+website. Orangutan-lib provides a lot of neat stuff, but it in no way
+covers everything the AVR processors are capable of. Among other things
+a programmer might want to do on their own are timers, counters,
+interrupts on pin changes, routines to interface to specific hardware,
+etc. Orangutan-lib can't cover it all. Read your data sheets! They're a
+wealth of information!
+
+If you have any questions about Orangutan-lib that the documentation
+fails to answer, please don't hesitate to contact us to let us know. The
+documentation is as much a work in progress as the library itself.
+Expect changes. Expect them often. With any luck they'll make things
+easier in the long-run.
+
+General Considerations
+
+Orangutan-lib is developed on Windows PCs, using AVR Studio 4 as an IDE
+with WinAVR as a compiler. For that reason the entire set of project
+files for AVR Studio 4 are included with the distribution. But there are
+other development platforms that are used for AVR development. Provided
+the compiler is gcc-based, the source code should build fine on all of
+them. A script, winavr-to-unix can be run on the entire source tree to
+modify the Makefiles to work on UNIX-based build environments using
+avr-gcc. The script will be released with the 0.3 version of
+Orangutan-lib, or it can be downloaded from the Subversion source tree
+now.
+
+Orangutan-lib was written to have as few cross-dependencies as possible.
+What this means is that if you only want to use one part of it, you can
+copy out only the files required for that one part and use them.
+Different subsystems don't depend on each other.
+
+device.h
+
+The one exception to this is device.h. EVERY SUBSYSTEM IN ORANGUTAN-LIB
+RELIES ON DEVICE.H Among other things this file sets the CPU speed, sets
+flags to let the library know what hardware exists, sets what timers to
+use, etc. If you're planning on using only select subsystems from
+Orangutan-lib in your code, copy device.h over as well and include it in
+your program. It's all #defines, so there's no code space penalty for
+doing this.
+
+You must also edit device.h so the library knows which Orangutan you're
+compiling for. You have three choices: Orangutan, Baby-Orangutan, and
+Orangutan-X2. Uncomment the appropriate line and you should be up and
+running. So far only Orangutan and Baby-Orangutan are known to work.
+Functionality for the Orangutan-X2 will be verified once Pololu releases
+it.
+
+The one other flag in device.h you might be interested in is the
+PWM_TIMERn flag. You can choose which timer the PWM motor subsystem
+uses, either PWM_TIMER0 or PWM_TIMER2. (This list may change when the
+Orangutan-X2 comes out since it may have other timers available.)
+
+Past that you shouldn't have to do much with device.h. But by all means
+take a look around.
+
+Compiler Optimization
+
+Compiler options can make or break a project on an Orangutan. Regardless
+of the make and model, code space is limited and careful choice of
+optimization flags can make all the difference in the world. Using -O0
+optimization (no optimization) code tends to be large. Compiling in
+every bit of the library can eat up almost all the available memory.
+Changing to -O2 or -Os optimization can reduce code size by a factor of
+five or more. Some code responds better to other optimization flags.
+Experiment. Play. But don't get discouraged simply because it looks like
+there's not enough room. Chances are some flag twiddling will get you
+right back on track. 
+
+
+analog.h / analog.c
+
+analog_init()
+
+In order to use the analog subsystem, it has to be initialized. A call
+to analog_init() will power up the ADC, set it for single-read mode,
+10-bit resolution. If you have particular timing, resolution, or noise
+requirements for your application it's worth looking through the
+analog.c file with the AVR datasheet in-hand. Therer are a lot of
+options for how to use the onboard ADC on an AVR. This is just one way,
+and won't be a good fit for all applications. In particular, it leaves
+the ADC system powered up all the time. If you're designing for a
+power-sensitive application, this is a good source of battery-drain.
+
+analog10(channel)
+
+analog10() reads a single ADC channel in 10-bit mode and returns a value
+between 0 (0V) and 1023 (+5V).
+
+analog8(channel)
+
+analog8() reads a single ADC channel in 10-bit mode and returns the
+eight most significant bits of the value, essentially giving you eight
+bit functionality with the ADC set in 10-bit mode. The value returned is
+between 0 (0V) and 255 (+5V). 
+
+
+bitfield.h
+
+bitfield.h doesn't provide any commands, per se. It provides a different
+way of using the I/O registers on the AVR. It is an implementation of
+the the bitfield-style behavior of the CodeVision compiler in WinAVR.
+For more information search AVRFreaks on "bitfield". Apparently there's
+a fair bit of disagreement on using this approach. (By the same token
+there's a fair bit of disagreement between owners of Fords and Chevys,
+so keep this in mind when reading the threads on AVRFreaks.)
+
+In use you'd do something like this:
+
+    _PORTD.B7 = _PINC.B2;
+
+This sets bit 7 on PORTD to the value of bit 2 on PINC. Not as clean as
+the CodeVision implementation, but it works.
+
+Some other examples:
+
+    _PORTD.B1 = 1; // Set an output bit to true
+    _PORTD.B1 = 0; // Set an output bit to false
+    _PORTD.B1 ^= 1; // Toggle an output bit
+    i = _PINC.B2; // Assign a variable the value of an input pin
+
+You get the general idea. It lets each bit in the register behave like a
+variable (because it is!)
+
+Bitfield behavior is implemented for all available I/O registers for all
+available ports. On the Orangutan and Baby-Orangutan these are ports B,
+C, and D. The Orangutan-X2 has more available ports.
+
+
+buzzer.h / buzzer.c
+
+buzzer(freq, duration)
+
+This is a very lightweight buzzer routine that plays a single tone out
+the Orangutan's built-in buzzer for a fixed duration. Buzzer frequency
+is in Hertz (cycles per second) and duration is in milliseconds. This
+routine involves no timers or interrupts, and compiles to only a handful
+of bytes of code. The trade-off, however, is that while the buzzer is in
+use the CPU is completely occupied.
+
+Jim Remington, who posted the original buzzer code to the Pololu Forums
+also has a completely timer-based set of buzzer routines that will play
+music stored in EEPROM while the CPU is busy doing other things. For
+more on this please visit his web site:
+http://www.uoxray.uoregon.edu/orangutan/.
+
+
+counter.h / counter.c
+
+counter.c / counter.h provides for count-up and count-down timers. They
+use TIMER1B, running at full CPU speed, to do their counting. Inside
+counter.h are two user-settable defines. The first, COUNTER_MAX sets how
+many of each kind of counter (up and down) the system will handle. The
+default is 4, but the system could service many more. The second,
+COUNTER_DIVISOR says how many times you want your counters to increment
+each second. The default is 1000, giving millisecond resolution to the
+count-up and count-down timers.
+
+Be forewarned, the CPU speed divided by COUNTER_DIVISOR needds to be an
+integer, or you won't get accurate timing. For example, an 8MHz CPU
+(Orangutan) running with COUNTER_DIVISOR of 1000 is an integer (8000000
+/ 1000 = 8000).
+
+counter_init()
+
+In order to use the counter subsystem, it needs to be initialized. This
+sets up TIMER1B with no prescaler, and sets up the output compare match
+to provide for an interrupt every 1/COUNTER_DIVISOR seconds.
+
+counter_define_up(*counter)
+
+Defines a count-up counter. You pass counter_define_up() the memory
+location of a 16-bit unsigned integer, and it will add 1 to it every
+1/COUNTER_DIVISOR seconds. The counter subsystem doesn't take any
+precautions with count-up counters, and will happily keep adding 1 to
+them until they roll over to zero. (In which case it will continue to
+add 1 to them, etc.)
+
+For example, to set up a count-up timer in a program you'd do:
+
+    unsigned int countup;
+
+    // Initialize the counters
+    counter_init();
+    // Set up a count-up timer
+    counter_define_down(&countup);
+
+
+counter_define_down(*counter)
+
+Defines a count-down counter. You pass counter_define_down() the memory
+location of a 16-bit unsigned integer, and it will subtract 1 from it
+every 1/COUNTER_DIVISOR seconds. In the event that the count-down timer
+reaches zero, counting stops and the counter is left alone. It does not
+roll over.
+
+For example, to set up a count-down timer in a program you'd do:
+
+    unsigned int countdown;
+
+    // Initialize the counters
+    counter_init();
+    // Set up a count-down timer
+    counter_define_down(&countdown);
+
+Once a counter is set up, you use it like a normal variable. Only it's a
+variable that will either increment or decrement once every
+1/COUNTER_DIVISOR seconds.
+
+To make this a little easier to read: With the default
+COUNTER_DIVISORvalue of 1000, that means all your counter variables will
+either increment or decrement once every millisecond. 
+
+
+i2cmaster.h / i2cmaster.c
+
+Peter Fleury kindly let us include his I2C Master code in Orangutan-lib.
+Rather than try to document his code, I refer you to his i2cmaster.h
+file, which includes a description of the functions as well as example
+code for how to communicate with an I2C device.
+
+
+ lcd.h / lcd.c
+
+The LCD is one of the least standard things on the Orangutan (I still
+haven't seen how the LCD is done on the Orangutan-X2, so I can't say
+anything about that.) This isn't to say the LCD is poorly implemented on
+the Orangutan. It's not. It's actually quite clever, and doubles up
+several of the I/O lines so the three push-buttons share lines with the
+LCD, essentially freeing up three lines for other things. But it does
+mean the bulk of the LCD code available online won't work correctly on
+the Orangutan.
+
+lcd_init()
+
+This must be called prior to all other LCD commands. A lot is actually
+going on, so this can take several milliseconds for everything to
+initialize.
+
+lcd_string(const uint8_t *str)
+
+Prints a string stored in a RAM variable.
+
+lcd_string_P(const uint8_t *str)
+
+Prints a string stored in FLASH memory.
+
+lcd_int(uint16_t n)
+
+Print an unsigned integer at the current cursor position. The integer is
+printed as a zero-padded three-digit number.
+
+lcd_gotoxy(uint8_t x, uint8_t y)
+
+Move the LCD's cursor to the given (x,y) coordinates. (0,0) is the upper
+left corner of the screen (the home position.)
+
+lcd_moveto(uint8_t line, uint8_t pos)
+
+This command is deprecated in favor of lcd_gotoxy() and will be removed
+in rev 0.4.
+
+lcd_moverel(uint8_t dir, uint8_t num)
+
+Move the LCD's cursor left (dir = 0) or right (dir = 1) a given number
+of positions.
+
+lcd_shift(uint8_t dir, uint8_t num)
+
+Shift the entire display left (dir = 0) or right (dir = 1) by num
+positions. Shifting one position at a time with a delay essentially
+makes the LCD a two-line scrolling display.
+
+lcd_clear()
+
+Clear the LCD and put the cursor at the beginning of line 1.
+
+lcd_line1()
+
+This command is deprecated in favor of lcd_gotoxy() and will be removed
+in rev 0.4.
+
+lcd_line2()
+
+This command is deprecated in favor of lcd_gotoxy() and will be removed
+in rev 0.4.
+
+lcd_show()
+
+Show the LCD's cursor as a blinking block.
+
+lcd_hide()
+
+Hide the LCD's cursor.
+
+
+pin-change.h / pin-change.c
+
+The ATMega processors can call an interrupt if any of their general
+purpose I/O pins changes state. This is useful for a number of
+applications, including edge detection for mini-sumo robots,
+low-frequency quadrature encoders, user input on push buttons or digital
+joysticks, etc. All the programmer needs to do is set up all the
+interrupt handling code and tell the ATMega which pins to listen to.
+This subsystem gives the programmer a fairly easy to use interface for
+using this functionality of the ATMega.
+
+The pin-change code uses interrupts, but the rate at which interrupts
+are generated depends on how many pins are being trapped for, and how
+often they change state. Something to keep in mind when using pin change
+interrupts is that bouncy devices will cause gobs of interrupts. In
+initial testing I used a mechanical contact rotary encoder. Turns out
+the output was incredibly bouncy and generated far more interrupts than
+it should've. On an optical encoder this wouldn't be the case. (Which is
+a good argument for using optical encoders!)
+
+pci_define(pin, bit, function)
+
+There's only one command for this subsystem: pci_define(). It's where
+you say, "For a given PINx register and a given bit, run the following
+routine." Of course there are caveats with how this is called:
+
+Let's say you have the following subroutines for running an incremental
+encoder with an index to indicate 0 degrees:
+
+    void encoder_func(void)
+    {
+         counter++;
+    }
+
+    void index_func(void)
+    {
+         counter = 0;
+    }
+
+To set these up on PB2 and PB3 respectively, you'd do:
+
+    pci_define(_SFR_IO_ADDR(PINB), 2, *encoder_func);
+    pci_define(_SFR_IO_ADDR(PINB), 3, *index_func);
+
+(If you've read through the servo.c code, the _SFR_IO_ADDR() will be
+familiar ground.)
+
+From that point on, any time the state of those pins changed, those
+routines would be called. If you're reading this carefully you'll
+probably be thinking, "Ah, but if you call that on every change of PB3,
+then your index will trip twice per revolution!" You're right. Since I
+can't know whether you want to trap rising or falling edges, the code
+traps all changes. It's up to the user to then query the I/O line of
+their choice and see if it was a rising or falling edge transition. This
+can typically be handled with a single if() statement.
+
+You can only call void func(void) style routines with this code. No
+parameters. Sorry.
+
+One last note on interrupt routines: Item #1 in the WinAVR FAQ is this:
+Global variables that are used in interrupt routines must be declared as
+volatile. This ensures that the compiler doesn't optimize that variable
+and jeopardize its ability to be used inside interrupt routines. 
+
+
+pwm.h / pwm.c
+
+The PWM motor subystem currently uses a user-selectable timer (either
+TIMER0 or TIMER2 on the Orangutan and Baby-Orangutan) for all of its
+internal timekeeping. The PWM subsystem uses interrupts, and generates
+around 300-600 interrupts per second.
+
+pwm_init()
+
+In order to use the PWM motor subsystem, it has to be initialized. A
+call to pwm_init() will set up the selected timer to be used in normal
+counting mode, and set each of the two motors to zero speed.
+
+pmw_a(speed) / pwm_b(speed)
+
+pwm_a() and pwm_b() each take a speed value from -255 to 255 as an
+argument. A speed of 255 sets the motor to full speed in one direction.
+A speed of -255 sets the motor to full speed in the opposite direction.
+A speed of 0 removes power from that motor and allows it to coast.
+Speeds in between represent partial duty cycles of the PWM system and
+will result in slower motor rotation.
+
+Something to keep in mind when using PWM for motor speed control: Every
+motor will have a minimum PWM duty cycle at which it will begin turning.
+Geared motors typically start turning at higher duty cycles. If you're
+giving a motor a low speed value and it's not turning, try upping the
+speed value. If you plan to use just that one kind of motor with your
+code, consider writing a wrapper routine that defines the useful range
+of values for your motors.
+
+pwm_a_brake() / pwm_b_brake()
+
+The motor driver chip on the Orangutan and Baby-Orangutan can also pull
+both motor leads to ground, causing the motor to brake to a stop or hold
+position. This is very power hungry, but sometimes brakes are good to
+have. It is not necessary to set the motor's speed to zero before
+enabling brakes. The brake routines will do this for you. 
+
+
+relay-motor.h / relay-motor.c
+
+The relay-motor subystem doesn't allow for any sort of speed control
+over the motors, and treats them as if they were under relay control.
+The motors can each be set to full-forward, full-reverse, coast, and
+brake. Though this may not sound as good as PWM speed control, some
+applications don't require speed control and work just fine with
+relay-style control. Since the relay-motor routines are lighter weight
+and don't use as many of the resources of the ATMega, sometimes it's
+just the right thing to do.
+
+motor_init()
+
+In order to use the relay-motor subsystem, it has to be initialized. A
+call to motor_init() will set the motor's I/O pins as outputs and set
+each of the two motors to coast.
+
+motor_a_fwd() / motor_b_fwd()
+
+motor_a_fwd() and motor_b_fwd() each set their respective motor to
+full-forward speed.
+
+motor_a_rev() / motor_b_rev()
+
+motor_a_rev() and motor_b_rev() each set their respective motor to
+full-reverse speed.
+
+motor_a_coast() / motor_b_coast()
+
+motor_a_coast() and motor_b_coast() each remove power from their
+respective motor, allowing it to coast. This is the power-saving method
+to stop a motor and leave it stopped.
+
+motor_a_brake() / motor_b_brake()
+
+motor_a_brake() and motor_b_brake() each apply power to both inputs of
+their respective motor, turning on the motor brakes. This is the
+power-hungry method to stop a motor and leave it stopped. In a typical
+locomotion application, brakes would be applied until the robot comes to
+a stop, after which the motors would be set to coast to save battery
+power.
+
+
+servo.h / servo.c
+
+The servo subsystem lets you drive R/C servos using the I/O pins on the
+Orangutan and Baby-Orangutan. Support for the Orangutan-X2 is still
+pending. The servo routines are set up so that you can attach an R/C
+servo to any of the bidirectional I/O pins. Before using a servo, it
+must be defined so the servo subsystem knows which pin to drive.
+
+The servo subsystem ties up TIMER1A, clocking it at full CPU speed.
+TIMER1B is not used by the servo subsystem, but you cannot change the
+TIMER1 prescale value without breaking the servo subsystem. Here there
+be dragons! The counters.c / counters.h subsystem uses TIMER1B, but does
+not change the TIMER1 prescale, so the two co-exist just fine.
+
+As with the PWM subsystem, the servo subsystem uses interrupts and
+generates roughly 800 interrupts per second.
+
+servo_init()
+
+In order to use the servo subsystem, it has to be initialized. A call to
+servo_init() will set up TIMER1A in output compare interrupt mode with
+no prescale, and will initialize all of the internal variables used by
+the servo subsystem.
+
+servonum servo_define(ddr, port, bit)
+
+servo_define() is the one nasty part of the servo subsystem. In order
+for the subsystem to know which I/O in to drive for a given servo, you
+need to be able to tell it which port and which pin to use.
+
+The unfortunate part is that you can't simply hand DDR and PORT
+registers to other routines and have things work out right. To do that
+you need to use an AVR command called _SFR_IO_ADDR() to reference each
+of the registers.
+
+Also, the servo_define() routine returns an eight bit number that the
+servo system uses as a handle to refer to the servo you just defined.
+
+For example, to define two servos on PD6 and PD7, called left and right
+respectively, you'd do:
+
+    unsigned char left, right;
+
+    left = servo_define(_SFR_IO_ADDR(DDRD), _SFR_IO_ADDR(PORTD), 6);
+    right = servo_define(_SFR_IO_ADDR(DDRD), _SFR_IO_ADDR(PORTD), 7);
+
+The nice thing is, once that's done you can use all the other servo
+routines using the left and right variables:
+
+    servo_active(left); // Turn on left servo
+    servo_active(right); // Turn on right servo
+    servo_set(left, 1500); // Center left servo
+    servo_set(right, 2000); // Set right servo to max 
+
+servo_active(servo) / servo_inactive(servo)
+
+Once a servo is defined, it must still be activated before the servo
+subsystem will service it. In practice, this allows you to remove power
+to a servo from software, simply by inactivating it. Power can be
+restored by activating it again. If you're using servos modified for
+continuous rotation, this means when the robot is stopped and the drive
+servos are set to be inactive, the servos are not drawing battery power.
+
+Again, once a servo is defined it must be activated or it won't move!
+
+servo_set(servo, time)
+
+servo_set() is how you actually tell a servo to go to a commanded
+position. Positions are set in terms of time. Unfortunately this
+requires some knowlege of how servos work.
+
+A servo is commanded to go to a particular position based on the width
+of the command pulse that is sent to it. Pulses are typically between
+1000 microseconds and 2000 microseconds in duration. A servo's midline
+position is defined by a command pulse 1500 microseconds in duration.
+servo_set() takes time in terms of microseconds.
+
+So why microseconds and not some other unit? Simple: Every servo talks
+microseconds. The application for which a servo is used defines what
+other units of measure would be useful. A servo driving the flaps of an
+airplane might want to talk in terms of degrees of rotation. A servo
+modified for continuous rotation might want to talk in terms of linear
+speed. A sail winch servo on an R/C sailboat would use other units of
+measure, etc. The upshot is that it's up to the programmer to write
+their own scaling routines based on what they want to use their servos
+for.
+
+
+spi.h / spi.c
+
+The SPI subsystem lets you use the onboard SPI system on the ATMega. Be
+forewarned, this system is not availble on all Orangutans! On the
+Baby-Orangutan it's available. On the Orangutan, the pins for the SPI
+subsystem are not brought out to headers. On the Orangutan-X2 the SPI
+subsystem is used to talk to the onboard ATMega168, and the pins are not
+brought out to headers. So yeah, this is mostly for the Baby-Orangutan.
+
+SPI requires that there are three wires connected between the master (in
+this case the Baby-O) and the slave device. These are MOSI (master out,
+slave in), MISO (master in, slave out), and SCK (clock). In addition,
+there is a chip select line that is required for each device. Because
+each devices requires a separate !CS line to enable it, it's more or
+less up to the programmer to decide how that's done.
+
+The easiest arrangement is to use a general purpose I/O pin, wire that
+to the SPI device's !CS pin, enable it as an output, and bring it high
+to disable communication to the device. To enable communication, bring
+the I/O pin low, send the SPI data, then bring it high again.
+
+Something to keep in mind when looking at the SPI command set: Every
+transfer of data is two-way. To get a byte, you send a byte. To send a
+byte, you get a byte back, even if it's a zero. So there's only one
+command for moving data over the SPI bus.
+
+spi_init()
+
+In order to use the spi subsystem, it has to be initialized. A call to
+spi_init() will set up the hardware SPI system in 0,0 mode with the
+Orangutan as SPI Master.
+
+data_in spi_transfer(data_out)
+
+spi_transfer() sends out one byte of data and returns one byte of data.
+Again, it is up to the user to bring the !CS line for the target device
+low so the data can be sent and received. When the spi_transfer()
+command finishes, all data has cleared the SPI bus, and the !CS line can
+be brought high again.
+
+Putting it all together
+
+Here's the whole mess put together:
+
+    // Choose what I/O pin we use for !CS
+    #define CS_DDR DDRB
+    #define CS_PORT PORTB
+    #define CS PB0
+
+    main()
+    {
+        // Set up our CS as output and bring it high
+        CS_DDR |= (1 << CS);
+        CS_PORT |= (1 << CS);
+
+        // Initialize the SPI system
+        spi_init();
+
+        for(;;)
+        {
+            // Bring CS low
+            CS_PORT &= ~(1 << CS);
+            // Transmit data
+            spi_transfer(data);
+            // Bring CS high to end transmission
+            CS_PORT |= (1 << CS);
+        ... 
+
+
+uart-spi.h / uart-spi.c
+
+The UART on the ATMegas inside the Orangutans can be operated in SPI
+Master mode. Be forewarned, this system is also not available on all
+Orangutans! In order for this to work you need access to the UART's TX
+and RX lines, as well as the XCK line. The Baby-Orangutan makes the XCK
+line available, but the other two Orangutans do not.
+
+UART-SPI requires that there are three wires connected between the
+master (in this case the Baby-O) and the slave device. These are TX
+(which takes the place of MOSI), RX (which takes the place of MISO), and
+XCK (which takes the place of SCK). In addition, there is a chip select
+line that is required for each device. Because each devices requires a
+separate !CS line to enable it, it's more or less up to the programmer
+to decide how that's done, just as it is with the SPI system.
+
+The easiest arrangement is to use a general purpose I/O pin, wire that
+to the SPI device's !CS pin, enable it as an output, and bring it high
+to disable communication to the device. To enable communication, bring
+the I/O pin low, send the SPI data, then bring it high again.
+
+Something to keep in mind when looking at the SPI command set: Every
+transfer of data is two-way. To get a byte, you send a byte. To send a
+byte, you get a byte back, even if it's a zero. So there's only one
+command for moving data over the SPI bus, even when it's the UART that's
+driving it.
+
+uart_spi_init()
+
+In order to use the spi subsystem, it has to be initialized. A call to
+uart_spi_init() will set up the hardware SPI system in 0,0 mode with the
+Orangutan as SPI Master.
+
+data_in uart_spi_transfer(data_out)
+
+uart_spi_transfer() sends out one byte of data and returns one byte of
+data. Again, it is up to the user to bring the !CS line for the target
+device low so the data can be sent and received. When the
+uart_spi_transfer() command finishes, all data has cleared the SPI bus,
+and the !CS line can be brought high again.
+
+Putting it all together
+
+Here's the whole mess put together:
+
+    // Choose what I/O pin we use for !CS
+    #define CS_DDR DDRB
+    #define CS_PORT PORTB
+    #define CS PB0
+
+    main()
+    {
+        // Set up our CS as output and bring it high
+        CS_DDR |= (1 << CS);
+        CS_PORT |= (1 << CS);
+
+        // Initialize the SPI system
+        uart_spi_init();
+
+        for(;;)
+        {
+            // Bring CS low
+            CS_PORT &= ~(1 << CS);
+            // Transmit data
+            uart_spi_transfer(data);
+            // Bring CS high to end transmission
+            CS_PORT |= (1 << CS);
+        ... 
+
+
+
+uart.h / uart.c
+
+The UART code comes from Pascal Stang's Procyon AVRlib. The code is not
+as completely documented as Peter Fleury's I2C Master code, so I'm
+providing some documentation of the various routines here. Still, for
+more complete documentation refer to the uart.c / uart.h code itself.
+
+uartInit()
+
+Before using the UART subsystem, you must call uartInit() to set up the
+I/O port, etc.
+
+uartSetBaudRate(u32 baudrate)
+
+Sets the UART baud rate. Argument is the baud rate in bits-per-second.
+For example, uartSetBaudRate(9600) would set the baud rate to 9600bps.
+
+void uartSendByte()
+
+Sends a single byte out the UART.
+
+int16_t uartGetByte()
+
+Gets a single byte from the UART receive buffer. Returns the byte or -1
+if no byte was available (getchar-style).
+
+uint8_t uartReceiveByte(uint8_t *data)
+
+Gets a single byte from the UART receive buffer. Function returns TRUE
+if data was returned and FALSE if not.
+
+uint8_t uartReceiveBuffer(uint8_t *buffer, uint16_t nbytes, uint16_t *rxBytes, uint8_t rcvDone, uint8_t *flag)
+
+Receive a block of data using interrupt control and set the
+user-provided flag when the buffer is full or the character in "rcvDone"
+is received.
+
+void uartWait(uint8_t *flag)
+
+uartWait waits for a send or receive operation to complete and set the
+user-provided flag.
+
+
+
+Where to go from here?
+
+Be sure to keep tabs on http://orangutan-lib.sourceforge.net for updates.  
+New features are added pretty regularly, and bugs really do get chased 
+down and fixed.
+
+
+Have fun!
+
+Tom Benedict
+Steve Judd
