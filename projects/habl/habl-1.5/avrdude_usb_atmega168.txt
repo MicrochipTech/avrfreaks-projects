@@ -1,0 +1,177 @@
+
+Putting HABL on an atmega168 MCU using USB in system programmer
+
+
+For atmega168 replace 168 with 88 on appropriate places
+
+
+Install compiler and avrdude (on debian/ubuntu/mint style linux):
+apt-get install gcc-avr avr-libc binutils-avr avrdude
+
+
+
+To compile (optional):
+make
+
+
+
+Some HW will be needed.
+
+
+AVRISP MKII pin configuration.
+
+AVR ISP (In-System Programming) Pinouts
+1  MISO
+2  VTG
+3  SCK
+4  MOSI
+5  RESET
+6  GND
+
+Contact seen from below:
+ +---+---+------- 
+ | 5 | 6 |-------
+[  3 | 4 |-------
+ | 1 | 2 |-------
+ +---+---+------- red
+
+Pin one is the one marked red on flat cable.
+
+
+
+
+
+The test board used looked like this:
+
+                  ATMEGA168 28pin DIL
+                   +------------+
+         reset ----| 1          |
+           RxD ----|            |
+           TxD ----|            |
+                   |            |
+Resonator          |            |
+16MHz              |            |
++---+      VCC ----| 7       22 |------------- GND
+|  2|----- GND ----| 8          |
+|  1|---- XTAL1 ---| 9       20 |---- VCC ---- VTG
+|  3|---- XTAL2 ---| 10      19 |------------- SCK
++---+              |         18 |------------- MISO
+                   |         17 |------------- MOSÍ
+                   |            |
+                   |            |
+                   +------------+
+
+Connector J1 molex
++-------++
+| 1 VCC ||
+| 2 RxD ||
+| 3 TxD ||
+| 4 GND ||
++-------++
+
+Connector J2 molex
++---------++
+| 1 MOSI  ||
+| 2 MISO  ||
+| 3 SCK   ||
+| 4 VTG   ||
+| 5 Reset ||
+| 6 GND   ||
++---------++
+
+
+Power:                        7805
+                             +-----+
+batt+  ----diode>------------|     |-------------- VCC
+                       |     +-----+     |
+                   C1 ===       |       === C2
+                       |        |        |
+batt-  -------------------------+----------------- GND
+
+
+C1,C2 = 100nF
+
+
+
+Used an adapter cable from J2 to AVRISPMKII connector.
+Used this to connect computer to J1: http://www.eit.se/opto_usb_uart
+
+
+
+Programming the device 
+
+Set read write properties on usb dev (or do this as root).
+
+
+First the fuse bytes needs to be programmed.
+
+
+
+Extended fuse byte
+
+For boot loader reset.
+BOOTRST shall be 0
+
+For boot loader size 512 words:
+BOOTSZ1 shall be 0
+BOOTSZ0 shall be 1
+(If you use 1024 byte boot loader you need something else here.)
+(If you change to use a 1024 word boot loader then you may neeed to adjust) (START_ADRESS_OF_BOOT_SECTION in Makefile also.)
+
+
+With all other bits default the extended fuse byte should be: 11111010 
+
+For some reason that did not work for me, used hex: 0x02 instead (that worked).
+
+
+avrdude -p m168 -P usb -c avrispmkII -U efuse:w:0x02:m -u   -B 8
+
+SUT1...0
+
+
+
+
+
+High fuse byte
+
+Used default (did not change it).
+
+
+
+
+Low fuse byte
+
+To use 8 MHz internal clock CKSEL shall be 0010 and CKDIV shall be 1.
+With all other bits default this gives 11100010, in hex: 0xE2
+
+But I use a 16 MHz resonator so CKDIV8=1, CKOUT=1, SUT=10, CKSEL=1110 which gives lfuse 11101110 0xEE
+
+
+
+avrdude -p m168 -P usb -c avrispmkII -U lfuse:w:0xEE:m -u   -B 8
+
+
+
+
+
+
+
+
+
+
+
+Downloading the boot loader program to flash
+
+
+write:
+avrdude -p m168 -P usb -c avrispmkII -U flash:w:habl.hex  -B 8
+
+
+
+
+
+
+
+
+
+
