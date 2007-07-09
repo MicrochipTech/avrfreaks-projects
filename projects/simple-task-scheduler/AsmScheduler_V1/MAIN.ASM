@@ -1,0 +1,59 @@
+.NOLIST
+.INCLUDE	"M16DEF.INC"
+
+
+.INCLUDE	"Sched.INC"
+
+.INCLUDE	"INT_VECTOR.ASM"
+.INCLUDE	"SYSINI.ASM"
+.INCLUDE	"TIMER.ASM"
+.INCLUDE	"Sched.ASM"
+
+;******************************************************
+;	SIMPLE SCHEDULER V1
+;	
+;	CODED BY:OMID KOMPANI
+;	IRAN-TEHRAN		2007-JULY-08
+;	
+;	Assembler:AVR Studio 4.13
+;
+;
+;******************************************************
+
+
+MAIN:
+
+	;PCF: PROGRAM CONTROL FLAGS
+	;
+	_IF_BIT_SET_RCALL		PCF,__Sched_TICK,HANDLE_ScTask_EVENTS 
+
+
+
+	RJMP	MAIN
+
+
+
+TOGGLE_PORTB:
+
+	IN		R17,PINB
+	LDI		TEMP,0B00000001
+	EOR		R17,TEMP	;TOGGLES PORTB.0 PIN
+	OUT		PORTB,R17
+
+	RET
+
+SYSTEM_START:
+	_DISABLE_ScTASK	0
+	_ENABLE_ScTASK	1
+	_ENABLE_ScTASK	2
+	_ENABLE_ScTASK	3
+	RET
+
+
+SECOND_TICK:
+
+	RET
+
+MINUTE_TICK:
+
+	RET

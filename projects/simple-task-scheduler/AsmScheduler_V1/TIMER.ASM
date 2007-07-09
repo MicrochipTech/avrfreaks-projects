@@ -1,0 +1,64 @@
+.CSEG
+;***********************************************************************
+;* TIMER0 INTERRUPT HANDLER ROUTIN   ~10uS
+;***********************************************************************
+ISR_TIMER1_OCMA:
+	PUSH	R1
+    IN      R1,SREG
+	PUSH	R16
+    PUSH    R17
+	PUSH	R18
+	PUSH	R19
+	PUSH	R20
+	PUSH    R30
+    PUSH    R31
+
+	LDI		TEMP,0
+	LDI		YH,HIGH(RAM_ScTASK)
+	LDI		YL,LOW(RAM_ScTASK)
+ISR_TIMER1_UPDATE_ScTask_LOOP:
+	CPI		TEMP,__MAX_ScTask
+	BREQ	EOF_ISR_TIMER1_UPDATE_ScTask
+	LD		R17,Y+
+	CPI		R17,(__ScTask_EN)		
+	BRNE	ISR_T1_USCT_STEP2
+	LD		R30,Y+
+	LD		R31,Y+	
+	LDI		R17,0	
+	CPI		R30,1
+	CPC		R31,R17
+	BRNE	ISR_T1_USCT_DEC
+	LD		R30,Y+
+	LD		R31,Y+
+	SBIW	Y,5
+	LDI		R17,(__ScTask_RUN)|(__ScTask_EN)
+	ST		Y+,R17
+	ADIW	Y,2
+	RJMP	ISR_T1_USCT_SAVE	
+ISR_T1_USCT_DEC:
+	SBIW	Z,1
+ISR_T1_USCT_SAVE:
+	ST		-Y,R31
+	ST		-Y,R30
+	INC		TEMP
+	ADIW	Y,6
+	RJMP	ISR_TIMER1_UPDATE_ScTask_LOOP	
+ISR_T1_USCT_STEP2:
+	INC		TEMP
+	ADIW	Y,6
+	RJMP	ISR_TIMER1_UPDATE_ScTask_LOOP
+
+EOF_ISR_TIMER1_UPDATE_ScTask:
+	_SBR	PCF,__Sched_TICK
+END_OF_ISR_TIMER1_OCMA:
+    POP     R31
+    POP     R30
+	POP		R20
+	POP		R19
+	POP		R18
+    POP     R17
+	POP		TEMP
+    OUT     SREG,R1
+	
+	POP		R1
+	RETI

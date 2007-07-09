@@ -1,0 +1,2 @@
+@ECHO OFF
+"E:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "H:\AVR Projects\scheduler\Scheduler_V1\labels.tmp" -fI -W+ie -o "H:\AVR Projects\scheduler\Scheduler_V1\SIMPLE_SCHED_V1.hex" -d "H:\AVR Projects\scheduler\Scheduler_V1\SIMPLE_SCHED_V1.obj" -e "H:\AVR Projects\scheduler\Scheduler_V1\SIMPLE_SCHED_V1.eep" -m "H:\AVR Projects\scheduler\Scheduler_V1\SIMPLE_SCHED_V1.map" "H:\AVR Projects\scheduler\Scheduler_V1\MAIN.ASM"

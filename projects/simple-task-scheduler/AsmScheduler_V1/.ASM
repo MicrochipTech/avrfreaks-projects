@@ -1,0 +1,79 @@
+.CSEG
+
+
+INIT_ScTask:
+	ST		Y+,R17
+	ST		Y+,XL
+	ST		Y+,XH
+	ST		Y+,XL
+	ST		Y+,XH			
+	ST		Y+,ZL
+	ST		Y,ZH
+	RET
+
+DELETE_ScTask:
+	LDI		TEMP,__ScTask_FREE
+	ST		Y+,TEMP
+	RET
+
+	ENABLE_ScTask:
+	LDI		TEMP,__ScTask_EN
+	ST		Y+,TEMP
+	RET
+
+DISABLE_ScTask:
+	LDI		TEMP,__ScTask_DIS
+	ST		Y+,TEMP
+	RET
+
+
+RESET_ScTask:
+	LD		XL,Y+
+	LD		XH,Y+
+	SBIW	Y,4
+	ST		Y+,XL
+	ST		Y,XH
+	RET
+
+SET_ScTask:
+	ST		Y+,XL
+	ST		Y+,XH
+	ST		Y+,XL
+	ST		Y+,XH
+	RET
+
+HANDLE_ScTask_EVENTS:
+	LDI		TEMP,0
+	LDI		YH,HIGH(RAM_ScTASK)
+	LDI		YL,LOW(RAM_ScTASK)
+HSTE_LOOP:
+	CPI		TEMP,__MAX_ScTask
+	BREQ	EOF_HSTE
+	LD		R17,Y
+	CPI		R17,(__ScTask_RUN)|(__ScTask_EN)		
+	BRNE	HSTE_STEP2	
+	ANDI	R17,(__ScTask_EN)
+	ST		Y,R17
+	ADIW	Y,5		
+	LD		ZL,Y+
+	LD		ZH,Y+
+	PUSH	YL
+	PUSH	YH
+	PUSH	TEMP
+	ICALL
+	POP		TEMP
+	POP		YH
+	POP		YL
+	INC		TEMP
+	RJMP	HSTE_LOOP	
+HSTE_STEP2:
+	ADIW	Y,7
+	INC		TEMP
+	RJMP	HSTE_LOOP
+EOF_HSTE:
+	_CBR	PCF,__Sched_TICK
+	
+	RET
+
+
+
