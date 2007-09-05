@@ -1,0 +1,697 @@
+/***************************************************************************
+* Description     : Tiny monitor tester
+* HW-Environment  : AVR MCU ATTiny2313-20MHz
+*                   Deogen PCB ver1.2
+*                   
+* SW-Environment  : Avrstudio 4.12 (b498), Avrasm2							
+* Author          : Daniel Ciocea
+*
+* Revision list:
+* 1.0 DaCi 10.01.2007  Initial version
+* 1.1 DaCi 25.08.2007  Added 1280x1024x60Hz resolution
+* 1.2 DaCi 30.08.2007  Changed 1280x1024 H-Sync polarity to positive
+****************************************************************************/
+
+.include "tn2313def.inc"
+
+/*Operational defibitions */
+#define DEO_nNumberOfResolutions  0x04
+#define DEO_nNumberOfRasters      0x08
+
+/*Synchro signals*/
+#define DEO_u8SyncOut             PORTB
+#define DEO_u8SyncInput           PINB
+#define DEO_u8SyncDdr             DDRB
+#define DEO_biSyncH               4
+#define DEO_biSyncV               3
+
+/* Keyboard */
+#define DEO_u8KeyInput            PINB
+#define DEO_u8KeyOutput           PORTB
+#define DEO_u8KeyDdr              DDRB
+#define DEO_biResolutionKey       1
+#define DEO_biRasterKey           0
+
+/* RGB color signals */
+#define DEO_u8VgaPort             PORTD            /* PORT for VGA output signals */
+#define DEO_u8VgaDdr              DDRD             /* Direction register of VGA port */
+
+#define DEO_nBlue0                0
+#define DEO_nBlue1                1
+#define DEO_nGreen0               2
+#define DEO_nGreen1               3
+#define DEO_nRed0                 4
+#define DEO_nRed1                 5
+
+
+/* Colors */
+#define DEO_nWhite                ((1<<DEO_nRed1)|(1<<DEO_nRed0)|(1<<DEO_nGreen1)|(1<<DEO_nGreen0)|(1<<DEO_nBlue1)|(1<<DEO_nBlue0))
+#define DEO_nBlack                (~(DEO_nWhite))
+#define DEO_nBlue                 ((1<<DEO_nBlue1)|(1<<DEO_nBlue0))
+#define DEO_nGreen                ((1<<DEO_nGreen1)|(1<<DEO_nGreen0))
+#define DEO_nRed                  ((1<<DEO_nRed1)|(1<<DEO_nRed0))
+#define DEO_nLightGrey            ((1<<DEO_nRed1)|(1<<DEO_nGreen1)|(1<<DEO_nBlue1))
+#define DEO_nDarkGrey             ((1<<DEO_nRed0)|(1<<DEO_nGreen0)|(1<<DEO_nBlue0))
+
+#define DEO_nYellow               ((1<<DEO_nRed1)|(1<<DEO_nRed0)|(1<<DEO_nGreen1)|(1<<DEO_nGreen0))
+#define DEO_nOrange               ((1<<DEO_nRed1)|(1<<DEO_nRed0)|(1<<DEO_nGreen0))
+#define DEO_nMagenta              ((1<<DEO_nRed1)|(1<<DEO_nRed0)|(1<<DEO_nBlue1)|(1<<DEO_nBlue0))
+#define DEO_nIndigo               ((1<<DEO_nRed1)|(1<<DEO_nRed0)|(1<<DEO_nBlue1))
+
+#define DEO_nWinGreen             ((1<<DEO_nGreen0)|(1<<DEO_nBlue0))
+
+
+/* Will set VGA port as inputs, thus blanking the color signals */
+#define DEO_u8DisableRGB       0x00
+
+/* Register definitions */
+
+#define DEO_u8VgaMask          r0
+#define DEO_u8ActivateRGB      r1
+
+#define DEO_u8Color1           r2
+#define DEO_u8Color2           r3
+#define DEO_u8Color3           r4
+#define DEO_u8Color4           r5
+#define DEO_u8Color5           r6
+#define DEO_u8Color6           r7
+#define DEO_u8Color7           r8
+#define DEO_u8Color8           r9
+
+/* Timings */
+/* Vertical */
+#define P                      r10
+#define PQ                     r11
+#define PQRH                   r12
+#define PQRL                   r13
+#define PQRSH                  r14
+#define PQRSL                  r15
+
+/*Horizontal */
+#define BC                     r16
+#define D                      r17
+#define E                      r18
+
+/* Counters */
+#define DEO_u8CounterH         r19
+
+/*Misc */
+#define DEO_u8ResolutionState  r20
+#define DEO_u8RasterState      r21
+#define DEO_u8KeyDebouncing    r22
+
+#define acc                    r23
+
+#define DEO_u16CounterP        r24
+#define DEO_u8CounterPL        DEO_u16CounterP
+#define DEO_u8CounterPH        r25
+
+#define DEO_u16CounterPQ       r26
+#define DEO_u8CounterPQL       DEO_u16CounterPQ
+#define DEO_u8CounterPQH       r27
+
+#define DEO_u16CounterPQR      r28
+#define DEO_u8CounterPQRL      DEO_u16CounterPQR
+#define DEO_u8CounterPQRH      r29
+
+#define DEO_u16CounterPQRS     r30
+#define DEO_u8CounterPQRSL     DEO_u16CounterPQRS
+#define DEO_u8CounterPQRSH     r31
+
+
+rjmp RESET		; Reset Handler
+
+.org OVF1addr
+rjmp TIM1_OVF 	; Timer1 Overflow Handler
+
+.org PCIaddr    ; Pin change interrupt
+rjmp PCInt
+
+.org WDTaddr
+rjmp RESET
+
+TIM1_OVF:
+
+  sbiw DEO_u16CounterP,0x01
+  brne PC+4
+  sbi  DEO_u8SyncInput,DEO_biSyncV
+  ldi  acc,0x00
+  out  GIMSK, acc
+
+
+  sbiw DEO_u16CounterPQ,0x01
+  brne PC+2
+  mov  DEO_u8VgaMask, DEO_u8ActivateRGB
+
+
+  sbiw DEO_u16CounterPQR,0x01
+  brne PC+2
+  clr  DEO_u8VgaMask                 /* like DEO_u8DisableRGB action */
+
+  sbiw DEO_u16CounterPQRS,0x01
+  brne Vend
+
+  /* Toggle SyncV */
+  sbi  DEO_u8SyncInput,DEO_biSyncV
+
+ // sbic  DEO_u8KeyInput,DEO_biResolutionKey
+ // dec   DEO_u8KeyDebouncing   
+
+  ldi  acc,(1<<PCIE)
+  out  GIMSK, acc
+
+  ldi DEO_u8CounterPH, 0x00
+  mov DEO_u8CounterPL, P
+
+  ldi DEO_u8CounterPQH, 0x00
+  mov DEO_u8CounterPQL, PQ
+
+  mov DEO_u8CounterPQRH, PQRH
+  mov DEO_u8CounterPQRL, PQRL
+
+  mov DEO_u8CounterPQRSH,PQRSH
+  mov DEO_u8CounterPQRSL,PQRSL
+
+  Vend:
+  
+  mov  DEO_u8CounterH,BC
+  dec  DEO_u8CounterH
+  brne PC-1
+
+  out  DEO_u8VgaPort, DEO_u8Color1
+  out  DEO_u8VgaDdr, DEO_u8VgaMask     /* Activates RGB signals */
+
+  /* Color1 delay  */
+  mov  DEO_u8CounterH,D
+  dec  DEO_u8CounterH
+  brne PC-1
+  nop
+
+  /* Color2 delay */
+  mov  DEO_u8CounterH,D
+  out  DEO_u8VgaPort, DEO_u8Color2
+  dec  DEO_u8CounterH
+  brne PC-1
+  nop
+
+  /* Color3 delay */
+  mov  DEO_u8CounterH,D
+  out  DEO_u8VgaPort, DEO_u8Color3
+  dec  DEO_u8CounterH
+  brne PC-1
+  nop
+
+  /* Color4 delay */
+  mov  DEO_u8CounterH,D
+  out  DEO_u8VgaPort, DEO_u8Color4
+  dec  DEO_u8CounterH
+  brne PC-1
+  nop
+
+  /* Color5 delay */
+  mov  DEO_u8CounterH,D
+  out  DEO_u8VgaPort, DEO_u8Color5
+  dec  DEO_u8CounterH
+  brne PC-1
+  nop
+
+  /* Color6 delay */
+  mov  DEO_u8CounterH,D
+  out  DEO_u8VgaPort, DEO_u8Color6
+  dec  DEO_u8CounterH
+  brne PC-1
+  nop
+
+  /* Color7 delay */
+  mov  DEO_u8CounterH,D
+  out  DEO_u8VgaPort, DEO_u8Color7
+  dec  DEO_u8CounterH
+  brne PC-1
+  nop
+
+  /* Color8 delay */
+  mov  DEO_u8CounterH,D
+  out  DEO_u8VgaPort, DEO_u8Color8
+  dec  DEO_u8CounterH
+  brne PC-1
+
+  /* Delay E */
+  mov  DEO_u8CounterH,E
+  dec  DEO_u8CounterH
+  brne PC-1
+
+  nop
+  /* Disables RGB signals at the end of each line*/
+  ldi  acc,DEO_u8DisableRGB
+  out  DEO_u8VgaDdr,acc
+
+  reti
+;*************************************
+
+;**************** Keyboard handler *********************
+PCInt:        
+    cli
+
+    sbic  DEO_u8KeyInput,DEO_biResolutionKey
+    rjmp  KEY_DEB1
+    sbrc  DEO_u8KeyDebouncing, DEO_biResolutionKey
+    rjmp  KEY1_jmp
+    sbr   DEO_u8KeyDebouncing,(1<<DEO_biResolutionKey)
+
+    dec   DEO_u8ResolutionState
+    brne  PC+3
+    ldi   DEO_u8ResolutionState,DEO_nNumberOfResolutions  /*Number of resolution modes */
+    rcall R640x480x60Hz
+
+    cpi   DEO_u8ResolutionState,0x03
+    brne  PC+2
+    rcall R800x600x60Hz
+          
+    cpi   DEO_u8ResolutionState,0x02
+    brne  PC+2
+    rcall R1024x768x60Hz
+
+    cpi   DEO_u8ResolutionState,0x01
+    brne  PC+2
+    rcall R1280x1024x60Hz
+
+    rjmp  KEY1_jmp
+KEY_DEB1:
+    cbr   DEO_u8KeyDebouncing,(1<<DEO_biResolutionKey)
+
+KEY1_jmp: 
+
+    sbic  DEO_u8KeyInput,DEO_biRasterKey
+    rjmp  KEY_DEB2
+    sbrc  DEO_u8KeyDebouncing, DEO_biRasterKey
+    rjmp  KEY2_jmp
+    sbr   DEO_u8KeyDebouncing,(1<<DEO_biRasterKey)
+
+    dec   DEO_u8RasterState
+    brne  PC+3
+    ldi   DEO_u8RasterState,DEO_nNumberOfRasters
+    rcall COLOR_BARS
+
+    cpi   DEO_u8RasterState,0x07
+    brne  PC+2
+    rcall GREY_BARS
+
+    cpi   DEO_u8RasterState,0x06
+    brne  PC+2
+    rcall BLACK_RASTER
+
+    cpi   DEO_u8RasterState,0x05
+    brne  PC+2
+    rcall WHITE_RASTER
+
+    cpi   DEO_u8RasterState,0x04
+    brne  PC+2
+    rcall WIN_GREEN_RASTER
+
+    cpi   DEO_u8RasterState,0x03
+    brne  PC+2
+    rcall RED_RASTER
+
+    cpi   DEO_u8RasterState,0x02
+    brne  PC+2
+    rcall GREEN_RASTER
+
+    cpi   DEO_u8RasterState,0x01
+    brne  PC+2
+    rcall BLUE_RASTER
+
+    rjmp  KEY2_jmp
+KEY_DEB2:
+    cbr   DEO_u8KeyDebouncing,(1<<DEO_biRasterKey)
+KEY2_jmp: 
+    reti
+/***************** end keyboard handler ***************************/
+
+
+;*************************************
+R640x480x60Hz: /* For VGA 640x480:60Hz the synchro signals are negative polarised */
+               cbi  DEO_u8SyncOut,DEO_biSyncV
+
+
+			    //PWM
+               ldi acc,((1<<WGM13)|(1<<WGM12)|(1<<CS10)) // clk/1
+	           out TCCR1B,acc
+               ldi acc,((1<<COM1B1)|(1<<COM1B0)|(1<<WGM11)) //mode14, set on compare match clear at TOP
+	           out TCCR1A,acc
+
+			   /* 20MHz / 31469Hz = 635.54  = 0x027B*/
+			   /* Hsync pulse = 3.77us, at 50ns/instr cycle = 75.4 = 0x004B */
+
+               ldi acc,0x02
+               out ICR1H,acc
+               ldi acc,0x7B
+               out ICR1L,acc
+
+               ldi acc,0x00
+               out OCR1BH,acc
+               ldi acc,0x4A
+               out OCR1BL,acc
+
+               
+               //38  = 0x0025
+               ldi  BC,0x1D
+               ldi  D,20
+               ldi  E,3
+
+
+               //2 lines
+               ldi  DEO_u8CounterPH,0x00
+               ldi  DEO_u8CounterPL,0x02
+               mov  P,DEO_u8CounterPL
+
+               //32 lines = 0x0020h
+               ldi  DEO_u8CounterPQH, 0x00
+               ldi  DEO_u8CounterPQL, 0x22
+			   mov  PQ,DEO_u8CounterPQL
+
+			   //513 lines = 0x0201h
+               ldi  DEO_u8CounterPQRH, 0x02
+               ldi  DEO_u8CounterPQRL, 0x01
+               mov  PQRH, DEO_u8CounterPQRH
+			   mov  PQRL, DEO_u8CounterPQRL
+
+			   //524 lines = 0x020Ch
+               ldi  DEO_u8CounterPQRSH,0x02
+               ldi  DEO_u8CounterPQRSL,0x0C
+               mov  PQRSH,DEO_u8CounterPQRSH
+			   mov  PQRSL,DEO_u8CounterPQRSL
+
+               ret
+;*************************************
+;*************************************
+R800x600x60Hz: /* For VGA R800x600:60Hz the synchro signals are positive polarised */
+               sbi  DEO_u8SyncOut,DEO_biSyncV
+
+
+			    //PWM
+               ldi acc,((1<<WGM13)|(1<<WGM12)|(1<<CS10)) // clk/1
+	           out TCCR1B,acc
+               ldi acc,((1<<COM1B1)|(1<<WGM11)) //mode14, clear on compare match set at TOP
+	           out TCCR1A,acc
+
+			   /* 20MHz / 37880Hz = 527.98  = 0x0210*/
+			   /* Hsync pulse = 3.2us, at 50ns/instr cycle = 64 = 0x0040 */
+
+               ldi acc,0x02
+               out ICR1H,acc
+               ldi acc,0x10
+               out ICR1L,acc
+
+               ldi acc,0x00
+               out OCR1BH,acc
+               ldi acc,0x40
+               out OCR1BL,acc
+
+               ldi  BC,28
+               ldi  D,16
+               ldi  E,1
+
+               //4 lines
+               ldi  DEO_u8CounterPH,0x00
+               ldi  DEO_u8CounterPL,0x04
+               mov  P,DEO_u8CounterPL
+
+
+               //27 lines = 0x001Bh
+               ldi  DEO_u8CounterPQH, 0x00
+               ldi  DEO_u8CounterPQL, 0x1B
+			   mov  PQ,DEO_u8CounterPQL
+
+			   //627 lines = 0x0273h
+               ldi  DEO_u8CounterPQRH, 0x02
+               ldi  DEO_u8CounterPQRL, 0x73
+               mov  PQRH, DEO_u8CounterPQRH
+			   mov  PQRL, DEO_u8CounterPQRL
+
+			   //628 lines = 0x0274h
+               ldi  DEO_u8CounterPQRSH,0x02
+               ldi  DEO_u8CounterPQRSL,0x74
+               mov  PQRSH,DEO_u8CounterPQRSH
+			   mov  PQRSL,DEO_u8CounterPQRSL
+
+               ret
+;*************************************
+;*************************************
+R1024x768x60Hz:
+               /* For VGA R1024x768:60Hz the synchro signals are negative polarised */
+               cbi  DEO_u8SyncOut,DEO_biSyncV
+
+			    //PWM
+               ldi acc,((1<<WGM13)|(1<<WGM12)|(1<<CS10)) // clk/1
+	           out TCCR1B,acc
+               ldi acc,((1<<COM1B1)|(1<<COM1B0)|(1<<WGM11)) //mode14, set on compare match clear at TOP
+	           out TCCR1A,acc
+
+			   /* 20MHz / 48500Hz = 413  = 0x019D*/
+			   /* Hsync pulse = 2us, at 50ns/instr cycle = 40 = 0x0028 */
+
+               ldi acc,0x01
+               out ICR1H,acc
+               ldi acc,0x9C
+               out ICR1L,acc
+
+               ldi acc,0x00
+               out OCR1BH,acc
+               ldi acc,0x28
+               out OCR1BL,acc
+
+
+               ldi  BC,22
+               ldi  D,12
+               ldi  E,3
+
+               //6 lines
+               ldi  DEO_u8CounterPH,0x00
+               ldi  DEO_u8CounterPL,0x06
+               mov  P,DEO_u8CounterPL
+
+               //35 lines = 0x0023h
+               ldi  DEO_u8CounterPQH, 0x00
+               ldi  DEO_u8CounterPQL, 0x23
+			   mov  PQ,DEO_u8CounterPQL
+
+			   //803 lines = 0x0323h
+               ldi  DEO_u8CounterPQRH, 0x03
+               ldi  DEO_u8CounterPQRL, 0x23
+               mov  PQRH, DEO_u8CounterPQRH
+			   mov  PQRL, DEO_u8CounterPQRL
+
+			   //806 lines = 0x0326h
+               ldi  DEO_u8CounterPQRSH,0x03
+               ldi  DEO_u8CounterPQRSL,0x26
+               mov  PQRSH,DEO_u8CounterPQRSH
+			   mov  PQRSL,DEO_u8CounterPQRSL
+ 
+               ret
+;*************************************
+
+
+;*************************************
+R1280x1024x60Hz:
+               /* For VGA R1280x1024:60Hz the synchro signals are positive polarised */
+               sbi  DEO_u8SyncOut,DEO_biSyncV
+
+			    //PWM
+               ldi acc,((1<<WGM13)|(1<<WGM12)|(1<<CS10)) // clk/1
+	           out TCCR1B,acc
+			   ldi acc,((1<<COM1B1)|(1<<WGM11)) //mode14, clear on compare match set at TOP
+	           out TCCR1A,acc
+
+			   /* 20MHz / 64000Hz = 312.6  = 0x0138*/
+			   /* Hsync pulse = 1.037us, at 50ns/instr cycle = 21 = 0x0014 */
+
+               ldi acc,0x01
+               out ICR1H,acc
+               ldi acc,0x38
+               out ICR1L,acc
+
+               ldi acc,0x00
+               out OCR1BH,acc
+               ldi acc,0x14
+               out OCR1BL,acc
+
+
+               ldi  BC,14
+               ldi  D,9
+               ldi  E,1
+
+               //3 lines
+               ldi  DEO_u8CounterPH,0x00
+               ldi  DEO_u8CounterPL,0x03
+               mov  P,DEO_u8CounterPL
+
+               //41 lines = 0x0029h
+               ldi  DEO_u8CounterPQH, 0x00
+               ldi  DEO_u8CounterPQL, 0x29
+			   mov  PQ,DEO_u8CounterPQL
+
+			   //1065 lines = 0x0429h
+               ldi  DEO_u8CounterPQRH, 0x04
+               ldi  DEO_u8CounterPQRL, 0x29
+               mov  PQRH, DEO_u8CounterPQRH
+			   mov  PQRL, DEO_u8CounterPQRL
+
+			   //1066 lines = 0x042Ah
+               ldi  DEO_u8CounterPQRSH,0x04
+               ldi  DEO_u8CounterPQRSL,0x2A
+               mov  PQRSH,DEO_u8CounterPQRSH
+			   mov  PQRSL,DEO_u8CounterPQRSL
+ 
+               ret
+;*************************************
+
+
+
+;*************************************
+RASTER:
+               mov DEO_u8Color1,acc
+               mov DEO_u8Color2,acc
+               mov DEO_u8Color3,acc             
+               mov DEO_u8Color4,acc       
+               mov DEO_u8Color5,acc       
+               mov DEO_u8Color6,acc
+               mov DEO_u8Color7,acc
+               mov DEO_u8Color8,acc
+               ret
+;*************************************
+;*************************************
+BLACK_RASTER:
+               ldi   acc, DEO_nBlack
+               rcall RASTER
+               ret
+;*************************************
+;*************************************
+WIN_GREEN_RASTER:
+               ldi   acc, DEO_nWinGreen
+               rcall RASTER
+               ret
+;*************************************
+;*************************************
+GREEN_RASTER:
+               ldi   acc, DEO_nGreen
+               rcall RASTER
+               ret
+;*************************************
+;*************************************
+BLUE_RASTER:
+               ldi   acc, DEO_nBlue
+               rcall RASTER
+               ret
+;*************************************
+;*************************************
+RED_RASTER:
+               ldi   acc, DEO_nRed
+               rcall RASTER
+               ret
+;*************************************
+;*************************************
+WHITE_RASTER:
+               ldi   acc, DEO_nWhite
+               rcall RASTER
+               ret
+;*************************************
+;*************************************
+GREY_BARS:
+               ldi  acc, DEO_nWhite
+               mov  DEO_u8Color1,acc
+               mov  DEO_u8Color2,acc
+
+               ldi  acc, DEO_nLightGrey
+               mov  DEO_u8Color3,acc             
+               mov  DEO_u8Color4,acc       
+
+               ldi  acc, DEO_nDarkGrey
+               mov  DEO_u8Color5,acc       
+               mov  DEO_u8Color6,acc
+
+               ldi  acc, DEO_nBlack
+               mov  DEO_u8Color7,acc
+               mov  DEO_u8Color8,acc
+               ret
+;*************************************
+;*************************************
+COLOR_BARS:
+               ldi  acc, DEO_nWhite
+               mov  DEO_u8Color1,acc
+               ldi  acc, DEO_nYellow
+               mov  DEO_u8Color2,acc
+               ldi  acc, DEO_nOrange
+               mov  DEO_u8Color3,acc             
+               ldi  acc, DEO_nGreen
+               mov  DEO_u8Color4,acc       
+               ldi  acc, DEO_nRed
+               mov  DEO_u8Color5,acc       
+               ldi  acc, DEO_nMagenta
+               mov  DEO_u8Color6,acc
+               ldi  acc, DEO_nBlue
+               mov  DEO_u8Color7,acc
+               ldi  acc, DEO_nBlack
+               mov  DEO_u8Color8,acc
+               ret
+;*************************************
+
+;*************************************
+; Main function: initializations followed by an endless loop
+
+RESET:         
+               ldi   acc, low(RAMEND)   ; Main program start
+               out   SPL, acc 		; Set Stack Pointer to top of RAM
+
+
+               /* Power consumption minimize */
+
+               /* Analog comparator off */
+               sbi ACSR,ACD
+
+
+               ldi acc,(0<<WDE)
+               out WDTCSR,acc
+
+               ldi acc,(1<<SM0)
+               out MCUCR,acc
+
+
+
+               /* Synchro signals as outputs */
+               sbi   DEO_u8SyncDdr,DEO_biSyncV
+               sbi   DEO_u8SyncDdr,DEO_biSyncH
+
+               /* VGA port as output */
+               ldi   acc,((1<<DEO_nRed1)|(1<<DEO_nRed0)|(1<<DEO_nGreen1)|(1<<DEO_nGreen0)|(1<<DEO_nBlue1)|(1<<DEO_nBlue0))
+               mov   DEO_u8ActivateRGB, acc
+               /* Set keyboard port as input */
+               cbi   DEO_u8KeyDdr,DEO_biRasterKey
+               cbi   DEO_u8KeyDdr,DEO_biResolutionKey
+
+               /* Pullups */
+               sbi   DEO_u8KeyOutput,DEO_biRasterKey
+               sbi   DEO_u8KeyOutput,DEO_biResolutionKey
+
+               /* Usefull register values */
+               ldi   DEO_u8ResolutionState,DEO_nNumberOfResolutions  /*Number of resolution modes */
+               ldi   DEO_u8RasterState,DEO_nNumberOfRasters      	 /*Number of rasters */
+
+               /* Color raster initialize */
+               rcall COLOR_BARS
+               rcall R640x480x60Hz
+
+               /* Enable interrupt for RGB disable/enable toggling  */
+               
+               ldi   acc,(1<<TOIE1)
+               out   TIMSK,acc
+
+
+               /* Enable keyboard interrupt at begining of V sync pulse */
+               ldi   acc, ((1<<DEO_biResolutionKey)|(1<<DEO_biRasterKey))
+               out   PCMSK,acc
+
+               /* Global interrupt enable */
+               sei
+
+               rjmp   PC /*  while (1) */
+
