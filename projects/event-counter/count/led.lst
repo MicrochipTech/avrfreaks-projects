@@ -1,0 +1,619 @@
+   1               		.file	"led.c"
+   2               		.arch atmega8
+   3               	__SREG__ = 0x3f
+   4               	__SP_H__ = 0x3e
+   5               	__SP_L__ = 0x3d
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.global __do_copy_data
+   9               		.global __do_clear_bss
+  11               		.text
+  12               	.Ltext0:
+  84               	.global	set_display
+  86               	set_display:
+   1:led.c         **** #include <stdlib.h>
+   2:led.c         **** #include <avr/io.h>
+   3:led.c         **** 
+   4:led.c         **** 
+   5:led.c         **** #include "counter.h"
+   6:led.c         **** #include "led.h"
+   7:led.c         **** 
+   8:led.c         **** uint8_t display[4];
+   9:led.c         **** 
+  10:led.c         **** void set_display(int16_t in)
+  11:led.c         **** {
+  88               	.LM1:
+  89               	/* prologue: frame size=4 */
+  90 0000 CF93      		push r28
+  91 0002 DF93      		push r29
+  92 0004 CDB7      		in r28,__SP_L__
+  93 0006 DEB7      		in r29,__SP_H__
+  94 0008 2497      		sbiw r28,4
+  95 000a 0FB6      		in __tmp_reg__,__SREG__
+  96 000c F894      		cli
+  97 000e DEBF      		out __SP_H__,r29
+  98 0010 0FBE      		out __SREG__,__tmp_reg__
+  99 0012 CDBF      		out __SP_L__,r28
+ 100               	/* prologue end (size=10) */
+ 101 0014 9A83      		std Y+2,r25
+ 102 0016 8983      		std Y+1,r24
+  12:led.c         **** uint16_t in_abs;
+  13:led.c         **** 
+  14:led.c         **** 	in_abs = abs(in);
+ 104               	.LM2:
+ 105 0018 8981      		ldd r24,Y+1
+ 106 001a 9A81      		ldd r25,Y+2
+ 107 001c 9C83      		std Y+4,r25
+ 108 001e 8B83      		std Y+3,r24
+ 109 0020 8B81      		ldd r24,Y+3
+ 110 0022 9C81      		ldd r25,Y+4
+ 111 0024 9923      		tst r25
+ 112 0026 3CF4      		brge .L2
+ 114               	.LM3:
+ 115 0028 8B81      		ldd r24,Y+3
+ 116 002a 9C81      		ldd r25,Y+4
+ 117 002c 9095      		com r25
+ 118 002e 8195      		neg r24
+ 119 0030 9F4F      		sbci r25,lo8(-1)
+ 120 0032 9C83      		std Y+4,r25
+ 121 0034 8B83      		std Y+3,r24
+ 122               	.L2:
+  15:led.c         **** 	
+  16:led.c         **** 	display[0] = in_abs / 1000 + 48; //+48 -> conversion to ascii char
+ 124               	.LM4:
+ 125 0036 8B81      		ldd r24,Y+3
+ 126 0038 9C81      		ldd r25,Y+4
+ 127 003a 28EE      		ldi r18,lo8(1000)
+ 128 003c 33E0      		ldi r19,hi8(1000)
+ 129 003e B901      		movw r22,r18
+ 130 0040 00D0      		rcall __udivmodhi4
+ 131 0042 CB01      		movw r24,r22
+ 132 0044 805D      		subi r24,lo8(-(48))
+ 133 0046 8093 0000 		sts display,r24
+  17:led.c         **** 	in_abs = (in_abs % 1000 ); 
+ 135               	.LM5:
+ 136 004a 8B81      		ldd r24,Y+3
+ 137 004c 9C81      		ldd r25,Y+4
+ 138 004e 28EE      		ldi r18,lo8(1000)
+ 139 0050 33E0      		ldi r19,hi8(1000)
+ 140 0052 B901      		movw r22,r18
+ 141 0054 00D0      		rcall __udivmodhi4
+ 142 0056 9C83      		std Y+4,r25
+ 143 0058 8B83      		std Y+3,r24
+  18:led.c         **** 	display[1] =  in_abs / 100 + 48;
+ 145               	.LM6:
+ 146 005a 8B81      		ldd r24,Y+3
+ 147 005c 9C81      		ldd r25,Y+4
+ 148 005e 24E6      		ldi r18,lo8(100)
+ 149 0060 30E0      		ldi r19,hi8(100)
+ 150 0062 B901      		movw r22,r18
+ 151 0064 00D0      		rcall __udivmodhi4
+ 152 0066 CB01      		movw r24,r22
+ 153 0068 805D      		subi r24,lo8(-(48))
+ 154 006a 8093 0000 		sts display+1,r24
+  19:led.c         **** 	in_abs = in_abs % 100;
+ 156               	.LM7:
+ 157 006e 8B81      		ldd r24,Y+3
+ 158 0070 9C81      		ldd r25,Y+4
+ 159 0072 24E6      		ldi r18,lo8(100)
+ 160 0074 30E0      		ldi r19,hi8(100)
+ 161 0076 B901      		movw r22,r18
+ 162 0078 00D0      		rcall __udivmodhi4
+ 163 007a 9C83      		std Y+4,r25
+ 164 007c 8B83      		std Y+3,r24
+  20:led.c         **** 	display[2] = in_abs / 10 + 48;
+ 166               	.LM8:
+ 167 007e 8B81      		ldd r24,Y+3
+ 168 0080 9C81      		ldd r25,Y+4
+ 169 0082 2AE0      		ldi r18,lo8(10)
+ 170 0084 30E0      		ldi r19,hi8(10)
+ 171 0086 B901      		movw r22,r18
+ 172 0088 00D0      		rcall __udivmodhi4
+ 173 008a CB01      		movw r24,r22
+ 174 008c 805D      		subi r24,lo8(-(48))
+ 175 008e 8093 0000 		sts display+2,r24
+  21:led.c         **** 	in_abs = in_abs % 10;
+ 177               	.LM9:
+ 178 0092 8B81      		ldd r24,Y+3
+ 179 0094 9C81      		ldd r25,Y+4
+ 180 0096 2AE0      		ldi r18,lo8(10)
+ 181 0098 30E0      		ldi r19,hi8(10)
+ 182 009a B901      		movw r22,r18
+ 183 009c 00D0      		rcall __udivmodhi4
+ 184 009e 9C83      		std Y+4,r25
+ 185 00a0 8B83      		std Y+3,r24
+  22:led.c         **** 	display[3] = in_abs + 48;
+ 187               	.LM10:
+ 188 00a2 8B81      		ldd r24,Y+3
+ 189 00a4 805D      		subi r24,lo8(-(48))
+ 190 00a6 8093 0000 		sts display+3,r24
+  23:led.c         **** 	
+  24:led.c         **** 	if (in < 0) display[0] = '-';
+ 192               	.LM11:
+ 193 00aa 8981      		ldd r24,Y+1
+ 194 00ac 9A81      		ldd r25,Y+2
+ 195 00ae 9923      		tst r25
+ 196 00b0 1CF4      		brge .L3
+ 197 00b2 8DE2      		ldi r24,lo8(45)
+ 198 00b4 8093 0000 		sts display,r24
+ 199               	.L3:
+  25:led.c         **** 	
+  26:led.c         **** 	display[0] = char_to_led(display[0]);	
+ 201               	.LM12:
+ 202 00b8 8091 0000 		lds r24,display
+ 203 00bc 1AD0      		rcall char_to_led
+ 204 00be 8093 0000 		sts display,r24
+  27:led.c         **** 	display[1] = char_to_led(display[1]);
+ 206               	.LM13:
+ 207 00c2 8091 0000 		lds r24,display+1
+ 208 00c6 15D0      		rcall char_to_led
+ 209 00c8 8093 0000 		sts display+1,r24
+  28:led.c         **** 	display[2] = char_to_led(display[2]);
+ 211               	.LM14:
+ 212 00cc 8091 0000 		lds r24,display+2
+ 213 00d0 10D0      		rcall char_to_led
+ 214 00d2 8093 0000 		sts display+2,r24
+  29:led.c         **** 	display[3] = char_to_led(display[3]);
+ 216               	.LM15:
+ 217 00d6 8091 0000 		lds r24,display+3
+ 218 00da 0BD0      		rcall char_to_led
+ 219 00dc 8093 0000 		sts display+3,r24
+ 220               	/* epilogue: frame size=4 */
+ 221 00e0 2496      		adiw r28,4
+ 222 00e2 0FB6      		in __tmp_reg__,__SREG__
+ 223 00e4 F894      		cli
+ 224 00e6 DEBF      		out __SP_H__,r29
+ 225 00e8 0FBE      		out __SREG__,__tmp_reg__
+ 226 00ea CDBF      		out __SP_L__,r28
+ 227 00ec DF91      		pop r29
+ 228 00ee CF91      		pop r28
+ 229 00f0 0895      		ret
+ 230               	/* epilogue end (size=9) */
+ 231               	/* function set_display size 121 (102) */
+ 236               	.Lscope0:
+ 239               	.global	char_to_led
+ 241               	char_to_led:
+  30:led.c         **** 	
+  31:led.c         **** }
+  32:led.c         **** 
+  33:led.c         **** //
+  34:led.c         **** // conversion from ascii/nr value to led display
+  35:led.c         **** //			 A
+  36:led.c         **** //			****
+  37:led.c         **** //		  F * G* B
+  38:led.c         **** //			****
+  39:led.c         **** //        E *  * C
+  40:led.c         **** //			****	
+  41:led.c         **** //           D
+  42:led.c         **** char char_to_led(char in)
+  43:led.c         **** {
+ 243               	.LM16:
+ 244               	/* prologue: frame size=2 */
+ 245 00f2 CF93      		push r28
+ 246 00f4 DF93      		push r29
+ 247 00f6 CDB7      		in r28,__SP_L__
+ 248 00f8 DEB7      		in r29,__SP_H__
+ 249 00fa 2297      		sbiw r28,2
+ 250 00fc 0FB6      		in __tmp_reg__,__SREG__
+ 251 00fe F894      		cli
+ 252 0100 DEBF      		out __SP_H__,r29
+ 253 0102 0FBE      		out __SREG__,__tmp_reg__
+ 254 0104 CDBF      		out __SP_L__,r28
+ 255               	/* prologue end (size=10) */
+ 256 0106 8983      		std Y+1,r24
+  44:led.c         **** uint8_t tmp;
+  45:led.c         **** 	
+  46:led.c         **** //this can be done via array, let it be today 
+  47:led.c         **** 	if (in == '0') 		tmp = A+B+C+D+E+F; 
+ 258               	.LM17:
+ 259 0108 8981      		ldd r24,Y+1
+ 260 010a 8033      		cpi r24,lo8(48)
+ 261 010c 19F4      		brne .L5
+ 263               	.LM18:
+ 264 010e 8FE3      		ldi r24,lo8(63)
+ 265 0110 8A83      		std Y+2,r24
+ 266 0112 3DC0      		rjmp .L6
+ 267               	.L5:
+  48:led.c         **** 	else if (in == '1')	tmp = B+C;
+ 269               	.LM19:
+ 270 0114 8981      		ldd r24,Y+1
+ 271 0116 8133      		cpi r24,lo8(49)
+ 272 0118 19F4      		brne .L7
+ 273 011a 86E0      		ldi r24,lo8(6)
+ 274 011c 8A83      		std Y+2,r24
+ 275 011e 37C0      		rjmp .L6
+ 276               	.L7:
+  49:led.c         **** 	else if (in == '2')	tmp = A+B+G+E+D;	
+ 278               	.LM20:
+ 279 0120 8981      		ldd r24,Y+1
+ 280 0122 8233      		cpi r24,lo8(50)
+ 281 0124 19F4      		brne .L9
+ 282 0126 8BE5      		ldi r24,lo8(91)
+ 283 0128 8A83      		std Y+2,r24
+ 284 012a 31C0      		rjmp .L6
+ 285               	.L9:
+  50:led.c         **** 	else if (in == '3')	tmp = A+B+G+C+D;
+ 287               	.LM21:
+ 288 012c 8981      		ldd r24,Y+1
+ 289 012e 8333      		cpi r24,lo8(51)
+ 290 0130 19F4      		brne .L11
+ 291 0132 8FE4      		ldi r24,lo8(79)
+ 292 0134 8A83      		std Y+2,r24
+ 293 0136 2BC0      		rjmp .L6
+ 294               	.L11:
+  51:led.c         **** 	else if (in == '4')	tmp = F+G+B+C;
+ 296               	.LM22:
+ 297 0138 8981      		ldd r24,Y+1
+ 298 013a 8433      		cpi r24,lo8(52)
+ 299 013c 19F4      		brne .L13
+ 300 013e 86E6      		ldi r24,lo8(102)
+ 301 0140 8A83      		std Y+2,r24
+ 302 0142 25C0      		rjmp .L6
+ 303               	.L13:
+  52:led.c         **** 	else if (in == '5')	tmp = A+F+G+C+D;
+ 305               	.LM23:
+ 306 0144 8981      		ldd r24,Y+1
+ 307 0146 8533      		cpi r24,lo8(53)
+ 308 0148 19F4      		brne .L15
+ 309 014a 8DE6      		ldi r24,lo8(109)
+ 310 014c 8A83      		std Y+2,r24
+ 311 014e 1FC0      		rjmp .L6
+ 312               	.L15:
+  53:led.c         **** 	else if (in == '6')	tmp = A+F+G+C+D+E;
+ 314               	.LM24:
+ 315 0150 8981      		ldd r24,Y+1
+ 316 0152 8633      		cpi r24,lo8(54)
+ 317 0154 19F4      		brne .L17
+ 318 0156 8DE7      		ldi r24,lo8(125)
+ 319 0158 8A83      		std Y+2,r24
+ 320 015a 19C0      		rjmp .L6
+ 321               	.L17:
+  54:led.c         **** 	else if (in == '7')	tmp = A+B+C;
+ 323               	.LM25:
+ 324 015c 8981      		ldd r24,Y+1
+ 325 015e 8733      		cpi r24,lo8(55)
+ 326 0160 19F4      		brne .L19
+ 327 0162 87E0      		ldi r24,lo8(7)
+ 328 0164 8A83      		std Y+2,r24
+ 329 0166 13C0      		rjmp .L6
+ 330               	.L19:
+  55:led.c         **** 	else if (in == '8')	tmp = A+B+C+D+E+F+G;
+ 332               	.LM26:
+ 333 0168 8981      		ldd r24,Y+1
+ 334 016a 8833      		cpi r24,lo8(56)
+ 335 016c 19F4      		brne .L21
+ 336 016e 8FE7      		ldi r24,lo8(127)
+ 337 0170 8A83      		std Y+2,r24
+ 338 0172 0DC0      		rjmp .L6
+ 339               	.L21:
+  56:led.c         **** 	else if (in == '9')	tmp = A+B+G+F+C+D;
+ 341               	.LM27:
+ 342 0174 8981      		ldd r24,Y+1
+ 343 0176 8933      		cpi r24,lo8(57)
+ 344 0178 19F4      		brne .L23
+ 345 017a 8FE6      		ldi r24,lo8(111)
+ 346 017c 8A83      		std Y+2,r24
+ 347 017e 07C0      		rjmp .L6
+ 348               	.L23:
+  57:led.c         **** 	else if (in == '-')	tmp = G;
+ 350               	.LM28:
+ 351 0180 8981      		ldd r24,Y+1
+ 352 0182 8D32      		cpi r24,lo8(45)
+ 353 0184 19F4      		brne .L25
+ 354 0186 80E4      		ldi r24,lo8(64)
+ 355 0188 8A83      		std Y+2,r24
+ 356 018a 01C0      		rjmp .L6
+ 357               	.L25:
+  58:led.c         **** 	else tmp=0; //unknow character
+ 359               	.LM29:
+ 360 018c 1A82      		std Y+2,__zero_reg__
+ 361               	.L6:
+  59:led.c         **** 
+  60:led.c         **** 	return(tmp);
+ 363               	.LM30:
+ 364 018e 8A81      		ldd r24,Y+2
+ 365 0190 9927      		clr r25
+ 366               	/* epilogue: frame size=2 */
+ 367 0192 2296      		adiw r28,2
+ 368 0194 0FB6      		in __tmp_reg__,__SREG__
+ 369 0196 F894      		cli
+ 370 0198 DEBF      		out __SP_H__,r29
+ 371 019a 0FBE      		out __SREG__,__tmp_reg__
+ 372 019c CDBF      		out __SP_L__,r28
+ 373 019e DF91      		pop r29
+ 374 01a0 CF91      		pop r28
+ 375 01a2 0895      		ret
+ 376               	/* epilogue end (size=9) */
+ 377               	/* function char_to_led size 89 (70) */
+ 382               	.Lscope1:
+ 383               		.lcomm position.0,1
+ 385               	.global	refresh_led
+ 387               	refresh_led:
+  61:led.c         **** }
+  62:led.c         **** 
+  63:led.c         **** //called every 5ms
+  64:led.c         **** void refresh_led(void)
+  65:led.c         **** {
+ 389               	.LM31:
+ 390               	/* prologue: frame size=0 */
+ 391 01a4 CF93      		push r28
+ 392 01a6 DF93      		push r29
+ 393 01a8 CDB7      		in r28,__SP_L__
+ 394 01aa DEB7      		in r29,__SP_H__
+ 395               	/* prologue end (size=4) */
+  66:led.c         **** static uint8_t position; //position of current LEDisplay
+  67:led.c         **** 	
+  68:led.c         **** 	//position of currently displayed LED segment (0,1,2 or 3)
+  69:led.c         **** 	position++;
+ 397               	.LM32:
+ 398 01ac 8091 0000 		lds r24,position.0
+ 399 01b0 8F5F      		subi r24,lo8(-(1))
+ 400 01b2 8093 0000 		sts position.0,r24
+  70:led.c         **** 	if (position >= NR_LED) position = 0;		
+ 402               	.LM33:
+ 403 01b6 8091 0000 		lds r24,position.0
+ 404 01ba 8430      		cpi r24,lo8(4)
+ 405 01bc 10F0      		brlo .L28
+ 407               	.LM34:
+ 408 01be 1092 0000 		sts position.0,__zero_reg__
+ 409               	.L28:
+  71:led.c         **** 	
+  72:led.c         **** 	set_led_display(position, display[position]);
+ 411               	.LM35:
+ 412 01c2 8091 0000 		lds r24,position.0
+ 413 01c6 9927      		clr r25
+ 414 01c8 FC01      		movw r30,r24
+ 415 01ca E050      		subi r30,lo8(-(display))
+ 416 01cc F040      		sbci r31,hi8(-(display))
+ 417 01ce 6081      		ld r22,Z
+ 418 01d0 8091 0000 		lds r24,position.0
+ 419 01d4 03D0      		rcall set_led_display
+ 420               	/* epilogue: frame size=0 */
+ 421 01d6 DF91      		pop r29
+ 422 01d8 CF91      		pop r28
+ 423 01da 0895      		ret
+ 424               	/* epilogue end (size=3) */
+ 425               	/* function refresh_led size 28 (21) */
+ 430               	.Lscope2:
+ 434               	.global	set_led_display
+ 436               	set_led_display:
+  73:led.c         **** 		
+  74:led.c         **** }
+  75:led.c         **** 
+  76:led.c         **** //	hw layer
+  77:led.c         **** //  
+  78:led.c         **** void set_led_display(uint8_t control, uint8_t data)
+  79:led.c         **** {
+ 438               	.LM36:
+ 439               	/* prologue: frame size=2 */
+ 440 01dc CF93      		push r28
+ 441 01de DF93      		push r29
+ 442 01e0 CDB7      		in r28,__SP_L__
+ 443 01e2 DEB7      		in r29,__SP_H__
+ 444 01e4 2297      		sbiw r28,2
+ 445 01e6 0FB6      		in __tmp_reg__,__SREG__
+ 446 01e8 F894      		cli
+ 447 01ea DEBF      		out __SP_H__,r29
+ 448 01ec 0FBE      		out __SREG__,__tmp_reg__
+ 449 01ee CDBF      		out __SP_L__,r28
+ 450               	/* prologue end (size=10) */
+ 451 01f0 8983      		std Y+1,r24
+ 452 01f2 6A83      		std Y+2,r22
+  80:led.c         **** 	PORTB &= ~_BV(SEG1000_OB);	
+ 454               	.LM37:
+ 455 01f4 8091 3800 		lds r24,56
+ 456 01f8 8E7F      		andi r24,lo8(-2)
+ 457 01fa 8093 3800 		sts 56,r24
+  81:led.c         **** 	PORTD &= ~_BV(SEG100_OD);
+ 459               	.LM38:
+ 460 01fe 9FE7      		ldi r25,lo8(127)
+ 461 0200 8091 3200 		lds r24,50
+ 462 0204 8923      		and r24,r25
+ 463 0206 8093 3200 		sts 50,r24
+  82:led.c         **** 	PORTD &= ~_BV(SEG10_OD);
+ 465               	.LM39:
+ 466 020a 8091 3200 		lds r24,50
+ 467 020e 8F7B      		andi r24,lo8(-65)
+ 468 0210 8093 3200 		sts 50,r24
+  83:led.c         **** 	PORTD &= ~_BV(SEG1_OD);
+ 470               	.LM40:
+ 471 0214 8091 3200 		lds r24,50
+ 472 0218 8F7D      		andi r24,lo8(-33)
+ 473 021a 8093 3200 		sts 50,r24
+  84:led.c         **** 	
+  85:led.c         **** 	if (data & A) PORTD &= ~_BV(LED_A_OD); else PORTD |= _BV(LED_A_OD);
+ 475               	.LM41:
+ 476 021e 8A81      		ldd r24,Y+2
+ 477 0220 9927      		clr r25
+ 478 0222 8170      		andi r24,lo8(1)
+ 479 0224 9070      		andi r25,hi8(1)
+ 480 0226 0097      		sbiw r24,0
+ 481 0228 31F0      		breq .L30
+ 483               	.LM42:
+ 484 022a 8091 3200 		lds r24,50
+ 485 022e 8E7F      		andi r24,lo8(-2)
+ 486 0230 8093 3200 		sts 50,r24
+ 487 0234 05C0      		rjmp .L31
+ 488               	.L30:
+ 489 0236 8091 3200 		lds r24,50
+ 490 023a 8160      		ori r24,lo8(1)
+ 491 023c 8093 3200 		sts 50,r24
+ 492               	.L31:
+  86:led.c         **** 	if (data & B) PORTD &= ~_BV(LED_B_OD); else PORTD |= _BV(LED_B_OD);
+ 494               	.LM43:
+ 495 0240 8A81      		ldd r24,Y+2
+ 496 0242 9927      		clr r25
+ 497 0244 8270      		andi r24,lo8(2)
+ 498 0246 9070      		andi r25,hi8(2)
+ 499 0248 0097      		sbiw r24,0
+ 500 024a 31F0      		breq .L32
+ 501 024c 8091 3200 		lds r24,50
+ 502 0250 8D7F      		andi r24,lo8(-3)
+ 503 0252 8093 3200 		sts 50,r24
+ 504 0256 05C0      		rjmp .L33
+ 505               	.L32:
+ 506 0258 8091 3200 		lds r24,50
+ 507 025c 8260      		ori r24,lo8(2)
+ 508 025e 8093 3200 		sts 50,r24
+ 509               	.L33:
+  87:led.c         **** 	if (data & C) PORTD &= ~_BV(LED_C_OD); else PORTD |= _BV(LED_C_OD);
+ 511               	.LM44:
+ 512 0262 8A81      		ldd r24,Y+2
+ 513 0264 9927      		clr r25
+ 514 0266 8470      		andi r24,lo8(4)
+ 515 0268 9070      		andi r25,hi8(4)
+ 516 026a 0097      		sbiw r24,0
+ 517 026c 31F0      		breq .L34
+ 518 026e 8091 3200 		lds r24,50
+ 519 0272 8B7F      		andi r24,lo8(-5)
+ 520 0274 8093 3200 		sts 50,r24
+ 521 0278 05C0      		rjmp .L35
+ 522               	.L34:
+ 523 027a 8091 3200 		lds r24,50
+ 524 027e 8460      		ori r24,lo8(4)
+ 525 0280 8093 3200 		sts 50,r24
+ 526               	.L35:
+  88:led.c         **** 	if (data & D) PORTD &= ~_BV(LED_D_OD); else PORTD |= _BV(LED_D_OD);
+ 528               	.LM45:
+ 529 0284 8A81      		ldd r24,Y+2
+ 530 0286 9927      		clr r25
+ 531 0288 8870      		andi r24,lo8(8)
+ 532 028a 9070      		andi r25,hi8(8)
+ 533 028c 0097      		sbiw r24,0
+ 534 028e 31F0      		breq .L36
+ 535 0290 8091 3200 		lds r24,50
+ 536 0294 877F      		andi r24,lo8(-9)
+ 537 0296 8093 3200 		sts 50,r24
+ 538 029a 05C0      		rjmp .L37
+ 539               	.L36:
+ 540 029c 8091 3200 		lds r24,50
+ 541 02a0 8860      		ori r24,lo8(8)
+ 542 02a2 8093 3200 		sts 50,r24
+ 543               	.L37:
+  89:led.c         **** 	if (data & E) PORTD &= ~_BV(LED_E_OD); else PORTD |= _BV(LED_E_OD);
+ 545               	.LM46:
+ 546 02a6 8A81      		ldd r24,Y+2
+ 547 02a8 9927      		clr r25
+ 548 02aa 8071      		andi r24,lo8(16)
+ 549 02ac 9070      		andi r25,hi8(16)
+ 550 02ae 0097      		sbiw r24,0
+ 551 02b0 31F0      		breq .L38
+ 552 02b2 8091 3200 		lds r24,50
+ 553 02b6 8F7E      		andi r24,lo8(-17)
+ 554 02b8 8093 3200 		sts 50,r24
+ 555 02bc 05C0      		rjmp .L39
+ 556               	.L38:
+ 557 02be 8091 3200 		lds r24,50
+ 558 02c2 8061      		ori r24,lo8(16)
+ 559 02c4 8093 3200 		sts 50,r24
+ 560               	.L39:
+  90:led.c         **** 	if (data & F) PORTB &= ~_BV(LED_F_OB); else PORTB |= _BV(LED_F_OB);
+ 562               	.LM47:
+ 563 02c8 8A81      		ldd r24,Y+2
+ 564 02ca 9927      		clr r25
+ 565 02cc 8072      		andi r24,lo8(32)
+ 566 02ce 9070      		andi r25,hi8(32)
+ 567 02d0 0097      		sbiw r24,0
+ 568 02d2 31F0      		breq .L40
+ 569 02d4 8091 3800 		lds r24,56
+ 570 02d8 8F7B      		andi r24,lo8(-65)
+ 571 02da 8093 3800 		sts 56,r24
+ 572 02de 05C0      		rjmp .L41
+ 573               	.L40:
+ 574 02e0 8091 3800 		lds r24,56
+ 575 02e4 8064      		ori r24,lo8(64)
+ 576 02e6 8093 3800 		sts 56,r24
+ 577               	.L41:
+  91:led.c         **** 	if (data & G) PORTB &= ~_BV(LED_G_OB); else PORTB |= _BV(LED_G_OB);
+ 579               	.LM48:
+ 580 02ea 8A81      		ldd r24,Y+2
+ 581 02ec 9927      		clr r25
+ 582 02ee 8074      		andi r24,lo8(64)
+ 583 02f0 9070      		andi r25,hi8(64)
+ 584 02f2 0097      		sbiw r24,0
+ 585 02f4 39F0      		breq .L42
+ 586 02f6 8FE7      		ldi r24,lo8(127)
+ 587 02f8 9091 3800 		lds r25,56
+ 588 02fc 8923      		and r24,r25
+ 589 02fe 8093 3800 		sts 56,r24
+ 590 0302 05C0      		rjmp .L43
+ 591               	.L42:
+ 592 0304 8091 3800 		lds r24,56
+ 593 0308 8068      		ori r24,lo8(-128)
+ 594 030a 8093 3800 		sts 56,r24
+ 595               	.L43:
+  92:led.c         **** 	
+  93:led.c         **** 	if (control == 0) PORTB |= _BV(SEG1000_OB);
+ 597               	.LM49:
+ 598 030e 8981      		ldd r24,Y+1
+ 599 0310 8823      		tst r24
+ 600 0312 31F4      		brne .L44
+ 601 0314 8091 3800 		lds r24,56
+ 602 0318 8160      		ori r24,lo8(1)
+ 603 031a 8093 3800 		sts 56,r24
+ 604 031e 17C0      		rjmp .L29
+ 605               	.L44:
+  94:led.c         **** 	else if (control == 1) PORTD |= _BV(SEG100_OD);
+ 607               	.LM50:
+ 608 0320 8981      		ldd r24,Y+1
+ 609 0322 8130      		cpi r24,lo8(1)
+ 610 0324 31F4      		brne .L46
+ 611 0326 8091 3200 		lds r24,50
+ 612 032a 8068      		ori r24,lo8(-128)
+ 613 032c 8093 3200 		sts 50,r24
+ 614 0330 0EC0      		rjmp .L29
+ 615               	.L46:
+  95:led.c         **** 	else if (control == 2) PORTD |= _BV(SEG10_OD);
+ 617               	.LM51:
+ 618 0332 8981      		ldd r24,Y+1
+ 619 0334 8230      		cpi r24,lo8(2)
+ 620 0336 31F4      		brne .L48
+ 621 0338 8091 3200 		lds r24,50
+ 622 033c 8064      		ori r24,lo8(64)
+ 623 033e 8093 3200 		sts 50,r24
+ 624 0342 05C0      		rjmp .L29
+ 625               	.L48:
+  96:led.c         **** 	else PORTD |= _BV(SEG1_OD);
+ 627               	.LM52:
+ 628 0344 8091 3200 		lds r24,50
+ 629 0348 8062      		ori r24,lo8(32)
+ 630 034a 8093 3200 		sts 50,r24
+ 631               	.L29:
+ 632               	/* epilogue: frame size=2 */
+ 633 034e 2296      		adiw r28,2
+ 634 0350 0FB6      		in __tmp_reg__,__SREG__
+ 635 0352 F894      		cli
+ 636 0354 DEBF      		out __SP_H__,r29
+ 637 0356 0FBE      		out __SREG__,__tmp_reg__
+ 638 0358 CDBF      		out __SP_L__,r28
+ 639 035a DF91      		pop r29
+ 640 035c CF91      		pop r28
+ 641 035e 0895      		ret
+ 642               	/* epilogue end (size=9) */
+ 643               	/* function set_led_display size 194 (175) */
+ 645               	.Lscope3:
+ 646               		.comm main_counter,2,1
+ 647               		.comm display,4,1
+ 650               		.text
+ 652               	Letext:
+ 653               	/* File "led.c": code  432 = 0x01b0 ( 368), prologues  34, epilogues  30 */
+DEFINED SYMBOLS
+                            *ABS*:00000000 led.c
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:3      *ABS*:0000003f __SREG__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:4      *ABS*:0000003e __SP_H__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:5      *ABS*:0000003d __SP_L__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:6      *ABS*:00000000 __tmp_reg__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:7      *ABS*:00000001 __zero_reg__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:86     .text:00000000 set_display
+                            *COM*:00000004 display
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:241    .text:000000f2 char_to_led
+                             .bss:00000000 position.0
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:387    .text:000001a4 refresh_led
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:436    .text:000001dc set_led_display
+                            *COM*:00000002 main_counter
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccwRaaaa.s:652    .text:00000360 Letext
+
+UNDEFINED SYMBOLS
+__do_copy_data
+__do_clear_bss
+__udivmodhi4

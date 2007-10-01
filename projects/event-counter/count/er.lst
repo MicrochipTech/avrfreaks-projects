@@ -1,0 +1,611 @@
+   1               		.file	"counter.c"
+   2               		.arch atmega8
+   3               	__SREG__ = 0x3f
+   4               	__SP_H__ = 0x3e
+   5               	__SP_L__ = 0x3d
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.global __do_copy_data
+   9               		.global __do_clear_bss
+  11               		.text
+  12               	.Ltext0:
+  70               	.global	main
+  72               	main:
+   1:counter.c     **** //	this program counts events from optical input
+   2:counter.c     **** //	output is displayed on LED display, 4 digits
+   3:counter.c     **** //	clock = 8MHz, internal RC oscillator
+   4:counter.c     **** //	input from optical part is periodically strobed every 256us
+   5:counter.c     **** //  output is valid only in case that last 8(?) values were the same
+   6:counter.c     **** //
+   7:counter.c     **** //  Peter Rosko, p.eastman@zoznam.sk, 21.9.2007
+   8:counter.c     **** 
+   9:counter.c     **** 
+  10:counter.c     **** 
+  11:counter.c     **** #include <inttypes.h>
+  12:counter.c     **** #include <avr/io.h>
+  13:counter.c     **** #include <avr/interrupt.h>
+  14:counter.c     **** #include <avr/signal.h>
+  15:counter.c     **** #include <avr/wdt.h>
+  16:counter.c     **** 
+  17:counter.c     **** 
+  18:counter.c     **** #include "adc.h"
+  19:counter.c     **** #include "in_out.h"
+  20:counter.c     **** #include "led.h"
+  21:counter.c     **** #include "counter.h"
+  22:counter.c     **** 
+  23:counter.c     **** uint8_t clock, dir; //current values
+  24:counter.c     **** uint8_t clock_last, dir_last; //previous valid values
+  25:counter.c     **** 
+  26:counter.c     **** 
+  27:counter.c     **** volatile uint8_t timer256us;
+  28:counter.c     **** uint8_t timer1ms;
+  29:counter.c     **** uint8_t timer5ms;
+  30:counter.c     **** uint8_t timer100ms;
+  31:counter.c     **** 
+  32:counter.c     **** void timer_init(void);
+  33:counter.c     **** 
+  34:counter.c     **** int main(void)
+  35:counter.c     **** {
+  74               	.LM1:
+  75               	/* prologue: frame size=2 */
+  76 0000 C0E0      		ldi r28,lo8(__stack - 2)
+  77 0002 D0E0      		ldi r29,hi8(__stack - 2)
+  78 0004 DEBF      		out __SP_H__,r29
+  79 0006 CDBF      		out __SP_L__,r28
+  80               	/* prologue end (size=4) */
+  36:counter.c     **** 	timer_init();
+  82               	.LM2:
+  83 0008 8FD0      		rcall timer_init
+  37:counter.c     **** 	port_init();
+  85               	.LM3:
+  86 000a 00D0      		rcall port_init
+  38:counter.c     **** 	adc_init();
+  88               	.LM4:
+  89 000c 00D0      		rcall adc_init
+  39:counter.c     **** 
+  40:counter.c     **** 	main_counter = 0;
+  91               	.LM5:
+  92 000e 1092 0000 		sts (main_counter)+1,__zero_reg__
+  93 0012 1092 0000 		sts main_counter,__zero_reg__
+  41:counter.c     **** 	set_output(STOP);
+  95               	.LM6:
+  96 0016 80E0      		ldi r24,lo8(0)
+  97 0018 00D0      		rcall set_output
+  42:counter.c     **** 	
+  43:counter.c     **** 	//wd enabled + cca 0.5 sec wd interval
+  44:counter.c     **** 	wdt_enable(WDTO_500MS);		
+  99               	.LM7:
+ 100 001a 88E1      		ldi r24,lo8(24)
+ 101 001c 90E0      		ldi r25,hi8(24)
+ 102 001e 2DE0      		ldi r18,lo8(13)
+ 103               	/* #APP */
+ 104 0020 0FB6      		in __tmp_reg__,__SREG__
+ 105 0022 F894      		cli
+ 106 0024 A895      		wdr
+ 107 0026 81BD      		out 33,r24
+ 108 0028 0FBE      		out __SREG__,__tmp_reg__
+ 109 002a 21BD      		out 33,r18
+  45:counter.c     **** 
+  46:counter.c     **** 	sei();
+ 111               	.LM8:
+ 112 002c 7894      		sei
+ 113               	/* #NOAPP */
+ 114               	.L2:
+  47:counter.c     **** 	
+  48:counter.c     **** 	for(;;)
+  49:counter.c     **** 	{
+  50:counter.c     **** 		if (timer100ms >= 10)
+ 116               	.LM9:
+ 117 002e 8091 0000 		lds r24,timer100ms
+ 118 0032 8A30      		cpi r24,lo8(10)
+ 119 0034 10F0      		brlo .L4
+  51:counter.c     **** 		{
+  52:counter.c     **** 			
+  53:counter.c     **** 			timer100ms = 0;
+ 121               	.LM10:
+ 122 0036 1092 0000 		sts timer100ms,__zero_reg__
+ 123               	.L4:
+  54:counter.c     **** 		}
+  55:counter.c     **** 		if (timer5ms >= 20) //called every 100ms
+ 125               	.LM11:
+ 126 003a 8091 0000 		lds r24,timer5ms
+ 127 003e 8431      		cpi r24,lo8(20)
+ 128 0040 98F0      		brlo .L5
+ 129               	.LBB2:
+  56:counter.c     **** 		{
+  57:counter.c     **** 			int16_t main_counter_tmp;
+  58:counter.c     **** 			
+  59:counter.c     **** 			cli();
+ 131               	.LM12:
+ 132               	/* #APP */
+ 133 0042 F894      		cli
+  60:counter.c     **** 			main_counter_tmp = main_counter;
+ 135               	.LM13:
+ 136               	/* #NOAPP */
+ 137 0044 8091 0000 		lds r24,main_counter
+ 138 0048 9091 0000 		lds r25,(main_counter)+1
+ 139 004c 9A83      		std Y+2,r25
+ 140 004e 8983      		std Y+1,r24
+  61:counter.c     **** 			sei();
+ 142               	.LM14:
+ 143               	/* #APP */
+ 144 0050 7894      		sei
+  62:counter.c     **** 			
+  63:counter.c     **** 			set_display(main_counter_tmp);	
+ 146               	.LM15:
+ 147               	/* #NOAPP */
+ 148 0052 8981      		ldd r24,Y+1
+ 149 0054 9A81      		ldd r25,Y+2
+ 150 0056 00D0      		rcall set_display
+  64:counter.c     **** 						
+  65:counter.c     **** 			wdt_reset();
+ 152               	.LM16:
+ 153               	/* #APP */
+ 154 0058 A895      		wdr
+  66:counter.c     **** 			
+  67:counter.c     **** 			timer100ms++;
+ 156               	.LM17:
+ 157               	/* #NOAPP */
+ 158 005a 8091 0000 		lds r24,timer100ms
+ 159 005e 8F5F      		subi r24,lo8(-(1))
+ 160 0060 8093 0000 		sts timer100ms,r24
+  68:counter.c     **** 			timer5ms = 0;
+ 162               	.LM18:
+ 163 0064 1092 0000 		sts timer5ms,__zero_reg__
+ 164               	.L5:
+ 165               	.LBE2:
+  69:counter.c     **** 		}
+  70:counter.c     **** 		
+  71:counter.c     **** 		if (timer1ms >= 5) //called every 5ms
+ 167               	.LM19:
+ 168 0068 8091 0000 		lds r24,timer1ms
+ 169 006c 8530      		cpi r24,lo8(5)
+ 170 006e 48F0      		brlo .L6
+  72:counter.c     **** 		{
+  73:counter.c     **** 			check_buttons();
+ 172               	.LM20:
+ 173 0070 00D0      		rcall check_buttons
+  74:counter.c     **** 			refresh_led();
+ 175               	.LM21:
+ 176 0072 00D0      		rcall refresh_led
+  75:counter.c     **** 			
+  76:counter.c     **** 			timer5ms++;
+ 178               	.LM22:
+ 179 0074 8091 0000 		lds r24,timer5ms
+ 180 0078 8F5F      		subi r24,lo8(-(1))
+ 181 007a 8093 0000 		sts timer5ms,r24
+  77:counter.c     **** 			timer1ms = 0;
+ 183               	.LM23:
+ 184 007e 1092 0000 		sts timer1ms,__zero_reg__
+ 185               	.L6:
+  78:counter.c     **** 		}
+  79:counter.c     **** 																					
+  80:counter.c     **** 		cli();
+ 187               	.LM24:
+ 188               	/* #APP */
+ 189 0082 F894      		cli
+  81:counter.c     **** 		if (timer256us >= 4) //called every 1ms
+ 191               	.LM25:
+ 192               	/* #NOAPP */
+ 193 0084 8091 0000 		lds r24,timer256us
+ 194 0088 8430      		cpi r24,lo8(4)
+ 195 008a 50F0      		brlo .L7
+  82:counter.c     **** 		{
+  83:counter.c     **** 			timer1ms++;
+ 197               	.LM26:
+ 198 008c 8091 0000 		lds r24,timer1ms
+ 199 0090 8F5F      		subi r24,lo8(-(1))
+ 200 0092 8093 0000 		sts timer1ms,r24
+  84:counter.c     **** 			timer256us -= 4;
+ 202               	.LM27:
+ 203 0096 8091 0000 		lds r24,timer256us
+ 204 009a 8450      		subi r24,lo8(-(-4))
+ 205 009c 8093 0000 		sts timer256us,r24
+ 206               	.L7:
+  85:counter.c     **** 		}
+  86:counter.c     **** 		sei();
+ 208               	.LM28:
+ 209               	/* #APP */
+ 210 00a0 7894      		sei
+  87:counter.c     **** 		
+  88:counter.c     **** 		//indication LEDs
+  89:counter.c     **** 		if ((clock & FILTER_MASK) == FILTER_MASK) PORTC &= ~_BV(CLOCK_OC);
+ 212               	.LM29:
+ 213               	/* #NOAPP */
+ 214 00a2 8091 0000 		lds r24,clock
+ 215 00a6 8F3F      		cpi r24,lo8(-1)
+ 216 00a8 29F4      		brne .L8
+ 217 00aa 8091 3500 		lds r24,53
+ 218 00ae 8B7F      		andi r24,lo8(-5)
+ 219 00b0 8093 3500 		sts 53,r24
+ 220               	.L8:
+  90:counter.c     **** 		if (clock == 0) PORTC |= _BV(CLOCK_OC);
+ 222               	.LM30:
+ 223 00b4 8091 0000 		lds r24,clock
+ 224 00b8 8823      		tst r24
+ 225 00ba 29F4      		brne .L9
+ 226 00bc 8091 3500 		lds r24,53
+ 227 00c0 8460      		ori r24,lo8(4)
+ 228 00c2 8093 3500 		sts 53,r24
+ 229               	.L9:
+  91:counter.c     **** 		if ((dir & FILTER_MASK) == FILTER_MASK) PORTC &= ~_BV(DIR_OC);
+ 231               	.LM31:
+ 232 00c6 8091 0000 		lds r24,dir
+ 233 00ca 8F3F      		cpi r24,lo8(-1)
+ 234 00cc 29F4      		brne .L10
+ 235 00ce 8091 3500 		lds r24,53
+ 236 00d2 877F      		andi r24,lo8(-9)
+ 237 00d4 8093 3500 		sts 53,r24
+ 238               	.L10:
+  92:counter.c     **** 		if (dir == 0) PORTC |= _BV(DIR_OC);
+ 240               	.LM32:
+ 241 00d8 8091 0000 		lds r24,dir
+ 242 00dc 8823      		tst r24
+ 243 00de 29F4      		brne .L11
+ 244 00e0 8091 3500 		lds r24,53
+ 245 00e4 8860      		ori r24,lo8(8)
+ 246 00e6 8093 3500 		sts 53,r24
+ 247               	.L11:
+  93:counter.c     **** 		
+  94:counter.c     **** 		//plausibility check
+  95:counter.c     **** 		if (main_counter > 9999) main_counter = -999;
+ 249               	.LM33:
+ 250 00ea 8091 0000 		lds r24,main_counter
+ 251 00ee 9091 0000 		lds r25,(main_counter)+1
+ 252 00f2 27E2      		ldi r18,hi8(10000)
+ 253 00f4 8031      		cpi r24,lo8(10000)
+ 254 00f6 9207      		cpc r25,r18
+ 255 00f8 3CF0      		brlt .L12
+ 256 00fa 89E1      		ldi r24,lo8(-999)
+ 257 00fc 9CEF      		ldi r25,hi8(-999)
+ 258 00fe 9093 0000 		sts (main_counter)+1,r25
+ 259 0102 8093 0000 		sts main_counter,r24
+ 260 0106 93CF      		rjmp .L2
+ 261               	.L12:
+  96:counter.c     **** 		else if (main_counter < -999) main_counter = 9999;
+ 263               	.LM34:
+ 264 0108 8091 0000 		lds r24,main_counter
+ 265 010c 9091 0000 		lds r25,(main_counter)+1
+ 266 0110 2CEF      		ldi r18,hi8(-999)
+ 267 0112 8931      		cpi r24,lo8(-999)
+ 268 0114 9207      		cpc r25,r18
+ 269 0116 0CF0      		brlt .+2
+ 270 0118 8ACF      		rjmp .L2
+ 271 011a 8FE0      		ldi r24,lo8(9999)
+ 272 011c 97E2      		ldi r25,hi8(9999)
+ 273 011e 9093 0000 		sts (main_counter)+1,r25
+ 274 0122 8093 0000 		sts main_counter,r24
+ 276               	.LM35:
+ 277 0126 83CF      		rjmp .L2
+ 278               	/* epilogue: frame size=2 */
+ 279               	/* epilogue: noreturn */
+ 280               	/* epilogue end (size=0) */
+ 281               	/* function main size 160 (156) */
+ 286               	.Lscope0:
+ 288               	.global	timer_init
+ 290               	timer_init:
+  97:counter.c     **** 	
+  98:counter.c     **** 	}
+  99:counter.c     **** 	
+ 100:counter.c     **** 	return(0);
+ 101:counter.c     **** 	
+ 102:counter.c     **** }
+ 103:counter.c     **** 
+ 104:counter.c     **** void timer_init(void)
+ 105:counter.c     **** {
+ 292               	.LM36:
+ 293               	/* prologue: frame size=0 */
+ 294 0128 CF93      		push r28
+ 295 012a DF93      		push r29
+ 296 012c CDB7      		in r28,__SP_L__
+ 297 012e DEB7      		in r29,__SP_H__
+ 298               	/* prologue end (size=4) */
+ 106:counter.c     **** 
+ 107:counter.c     **** 	TCCR0 = _BV(CS01); //(1/8e6)*8*256 = 256us - only general timer here
+ 300               	.LM37:
+ 301 0130 82E0      		ldi r24,lo8(2)
+ 302 0132 8093 5300 		sts 83,r24
+ 108:counter.c     **** 	TCCR2 = _BV(CS21); //it is the same value as Timer0, but is separatly configurable in a future - i
+ 304               	.LM38:
+ 305 0136 82E0      		ldi r24,lo8(2)
+ 306 0138 8093 4500 		sts 69,r24
+ 109:counter.c     **** 	
+ 110:counter.c     **** 	TCNT2 = 0;	
+ 308               	.LM39:
+ 309 013c 1092 4400 		sts 68,__zero_reg__
+ 111:counter.c     **** 	TCNT0 = 120; //to split effort
+ 311               	.LM40:
+ 312 0140 88E7      		ldi r24,lo8(120)
+ 313 0142 8093 5200 		sts 82,r24
+ 112:counter.c     **** 	
+ 113:counter.c     **** 	TIMSK = _BV(TOIE0) | _BV(TOIE2); //enable interrupt
+ 315               	.LM41:
+ 316 0146 81E4      		ldi r24,lo8(65)
+ 317 0148 8093 5900 		sts 89,r24
+ 318               	/* epilogue: frame size=0 */
+ 319 014c DF91      		pop r29
+ 320 014e CF91      		pop r28
+ 321 0150 0895      		ret
+ 322               	/* epilogue end (size=3) */
+ 323               	/* function timer_init size 21 (14) */
+ 325               	.Lscope1:
+ 327               	.global	__vector_9
+ 329               	__vector_9:
+ 114:counter.c     **** }
+ 115:counter.c     **** 
+ 116:counter.c     **** ISR(SIG_OVERFLOW0)
+ 117:counter.c     **** {
+ 331               	.LM42:
+ 332               	/* prologue: frame size=0 */
+ 333 0152 1F92      		push __zero_reg__
+ 334 0154 0F92      		push __tmp_reg__
+ 335 0156 0FB6      		in __tmp_reg__,__SREG__
+ 336 0158 0F92      		push __tmp_reg__
+ 337 015a 1124      		clr __zero_reg__
+ 338 015c 8F93      		push r24
+ 339 015e CF93      		push r28
+ 340 0160 DF93      		push r29
+ 341 0162 CDB7      		in r28,__SP_L__
+ 342 0164 DEB7      		in r29,__SP_H__
+ 343               	/* prologue end (size=10) */
+ 118:counter.c     **** 	//increases own value every 256us ( (1/8e6)*256*8)
+ 119:counter.c     **** 	timer256us++;
+ 345               	.LM43:
+ 346 0166 8091 0000 		lds r24,timer256us
+ 347 016a 8F5F      		subi r24,lo8(-(1))
+ 348 016c 8093 0000 		sts timer256us,r24
+ 349               	/* epilogue: frame size=0 */
+ 350 0170 DF91      		pop r29
+ 351 0172 CF91      		pop r28
+ 352 0174 8F91      		pop r24
+ 353 0176 0F90      		pop __tmp_reg__
+ 354 0178 0FBE      		out __SREG__,__tmp_reg__
+ 355 017a 0F90      		pop __tmp_reg__
+ 356 017c 1F90      		pop __zero_reg__
+ 357 017e 1895      		reti
+ 358               	/* epilogue end (size=8) */
+ 359               	/* function __vector_9 size 23 (5) */
+ 361               	.Lscope2:
+ 363               	.global	__vector_4
+ 365               	__vector_4:
+ 120:counter.c     **** }
+ 121:counter.c     **** 
+ 122:counter.c     **** //check the input signals periodically (every 256us)
+ 123:counter.c     **** //filter them
+ 124:counter.c     **** //calculate number of rotation and direction
+ 125:counter.c     **** ISR(SIG_OVERFLOW2)
+ 126:counter.c     **** {
+ 367               	.LM44:
+ 368               	/* prologue: frame size=0 */
+ 369 0180 1F92      		push __zero_reg__
+ 370 0182 0F92      		push __tmp_reg__
+ 371 0184 0FB6      		in __tmp_reg__,__SREG__
+ 372 0186 0F92      		push __tmp_reg__
+ 373 0188 1124      		clr __zero_reg__
+ 374 018a 2F93      		push r18
+ 375 018c 3F93      		push r19
+ 376 018e 4F93      		push r20
+ 377 0190 5F93      		push r21
+ 378 0192 6F93      		push r22
+ 379 0194 7F93      		push r23
+ 380 0196 8F93      		push r24
+ 381 0198 9F93      		push r25
+ 382 019a AF93      		push r26
+ 383 019c BF93      		push r27
+ 384 019e EF93      		push r30
+ 385 01a0 FF93      		push r31
+ 386 01a2 CF93      		push r28
+ 387 01a4 DF93      		push r29
+ 388 01a6 CDB7      		in r28,__SP_L__
+ 389 01a8 DEB7      		in r29,__SP_H__
+ 390               	/* prologue end (size=21) */
+ 127:counter.c     **** 	clock = clock << 1;	
+ 392               	.LM45:
+ 393 01aa 8091 0000 		lds r24,clock
+ 394 01ae 880F      		lsl r24
+ 395 01b0 8093 0000 		sts clock,r24
+ 128:counter.c     **** 	if (adc_clock > 200) clock++; //valid 1, add 1
+ 397               	.LM46:
+ 398 01b4 8091 0000 		lds r24,adc_clock
+ 399 01b8 893C      		cpi r24,lo8(-55)
+ 400 01ba 30F0      		brlo .L18
+ 402               	.LM47:
+ 403 01bc 8091 0000 		lds r24,clock
+ 404 01c0 8F5F      		subi r24,lo8(-(1))
+ 405 01c2 8093 0000 		sts clock,r24
+ 406 01c6 08C0      		rjmp .L19
+ 407               	.L18:
+ 129:counter.c     **** 	else if (adc_clock < 50) clock = clock; //valid 0, add 0
+ 409               	.LM48:
+ 410 01c8 8091 0000 		lds r24,adc_clock
+ 411 01cc 8233      		cpi r24,lo8(50)
+ 412 01ce 08F4      		brsh .L20
+ 413 01d0 03C0      		rjmp .L19
+ 414               	.L20:
+ 130:counter.c     **** 	else clock = 2; //forbidden range, type poor value 0b10
+ 416               	.LM49:
+ 417 01d2 82E0      		ldi r24,lo8(2)
+ 418 01d4 8093 0000 		sts clock,r24
+ 419               	.L19:
+ 131:counter.c     **** 	
+ 132:counter.c     **** 	dir = dir << 1;
+ 421               	.LM50:
+ 422 01d8 8091 0000 		lds r24,dir
+ 423 01dc 880F      		lsl r24
+ 424 01de 8093 0000 		sts dir,r24
+ 133:counter.c     **** 	if (adc_dir > 200) dir++;
+ 426               	.LM51:
+ 427 01e2 8091 0000 		lds r24,adc_dir
+ 428 01e6 893C      		cpi r24,lo8(-55)
+ 429 01e8 30F0      		brlo .L22
+ 430 01ea 8091 0000 		lds r24,dir
+ 431 01ee 8F5F      		subi r24,lo8(-(1))
+ 432 01f0 8093 0000 		sts dir,r24
+ 433 01f4 08C0      		rjmp .L23
+ 434               	.L22:
+ 134:counter.c     **** 	else if (adc_dir < 50) dir = dir;
+ 436               	.LM52:
+ 437 01f6 8091 0000 		lds r24,adc_dir
+ 438 01fa 8233      		cpi r24,lo8(50)
+ 439 01fc 08F4      		brsh .L24
+ 440 01fe 03C0      		rjmp .L23
+ 441               	.L24:
+ 135:counter.c     **** 	else adc_dir = 2;
+ 443               	.LM53:
+ 444 0200 82E0      		ldi r24,lo8(2)
+ 445 0202 8093 0000 		sts adc_dir,r24
+ 446               	.L23:
+ 136:counter.c     **** 	
+ 137:counter.c     **** 	//if last 8(?) values were the same, then we could take the averaged value as correct info
+ 138:counter.c     **** 	if ( (dir == 0) || ((dir & FILTER_MASK ) == FILTER_MASK) ) //valid bits
+ 448               	.LM54:
+ 449 0206 8091 0000 		lds r24,dir
+ 450 020a 8823      		tst r24
+ 451 020c 29F0      		breq .L27
+ 452 020e 8091 0000 		lds r24,dir
+ 453 0212 8F3F      		cpi r24,lo8(-1)
+ 454 0214 09F0      		breq .L27
+ 455 0216 04C0      		rjmp .L26
+ 456               	.L27:
+ 139:counter.c     **** 	{
+ 140:counter.c     **** 		dir_last = dir;
+ 458               	.LM55:
+ 459 0218 8091 0000 		lds r24,dir
+ 460 021c 8093 0000 		sts dir_last,r24
+ 461               	.L26:
+ 141:counter.c     **** 	}
+ 142:counter.c     **** 	
+ 143:counter.c     **** 	if ( (clock == 0) || ((clock & FILTER_MASK) == FILTER_MASK) )
+ 463               	.LM56:
+ 464 0220 8091 0000 		lds r24,clock
+ 465 0224 8823      		tst r24
+ 466 0226 29F0      		breq .L29
+ 467 0228 8091 0000 		lds r24,clock
+ 468 022c 8F3F      		cpi r24,lo8(-1)
+ 469 022e 09F0      		breq .L29
+ 470 0230 21C0      		rjmp .L28
+ 471               	.L29:
+ 144:counter.c     **** 	{
+ 145:counter.c     **** 		if ( clock_last > clock )
+ 473               	.LM57:
+ 474 0232 9091 0000 		lds r25,clock_last
+ 475 0236 8091 0000 		lds r24,clock
+ 476 023a 8917      		cp r24,r25
+ 477 023c B8F4      		brsh .L30
+ 146:counter.c     **** 		{
+ 147:counter.c     **** 			if (dir_last)
+ 479               	.LM58:
+ 480 023e 8091 0000 		lds r24,dir_last
+ 481 0242 8823      		tst r24
+ 482 0244 51F0      		breq .L31
+ 148:counter.c     **** 			{
+ 149:counter.c     **** 				main_counter--; //if DIR LED is not connected, then is internally connected to log.1
+ 484               	.LM59:
+ 485 0246 8091 0000 		lds r24,main_counter
+ 486 024a 9091 0000 		lds r25,(main_counter)+1
+ 487 024e 0197      		sbiw r24,1
+ 488 0250 9093 0000 		sts (main_counter)+1,r25
+ 489 0254 8093 0000 		sts main_counter,r24
+ 490 0258 09C0      		rjmp .L30
+ 491               	.L31:
+ 150:counter.c     **** 			}
+ 151:counter.c     **** 			else
+ 152:counter.c     **** 			{
+ 153:counter.c     **** 				main_counter++;
+ 493               	.LM60:
+ 494 025a 8091 0000 		lds r24,main_counter
+ 495 025e 9091 0000 		lds r25,(main_counter)+1
+ 496 0262 0196      		adiw r24,1
+ 497 0264 9093 0000 		sts (main_counter)+1,r25
+ 498 0268 8093 0000 		sts main_counter,r24
+ 499               	.L30:
+ 154:counter.c     **** 			}
+ 155:counter.c     **** 		}
+ 156:counter.c     **** 		clock_last = clock;
+ 501               	.LM61:
+ 502 026c 8091 0000 		lds r24,clock
+ 503 0270 8093 0000 		sts clock_last,r24
+ 504               	.L28:
+ 157:counter.c     **** 	}
+ 158:counter.c     **** 	
+ 159:counter.c     **** 	if (main_counter <= 0) set_output(STOP);
+ 506               	.LM62:
+ 507 0274 8091 0000 		lds r24,main_counter
+ 508 0278 9091 0000 		lds r25,(main_counter)+1
+ 509 027c 1816      		cp __zero_reg__,r24
+ 510 027e 1906      		cpc __zero_reg__,r25
+ 511 0280 14F0      		brlt .L17
+ 512 0282 80E0      		ldi r24,lo8(0)
+ 513 0284 00D0      		rcall set_output
+ 514               	.L17:
+ 515               	/* epilogue: frame size=0 */
+ 516 0286 DF91      		pop r29
+ 517 0288 CF91      		pop r28
+ 518 028a FF91      		pop r31
+ 519 028c EF91      		pop r30
+ 520 028e BF91      		pop r27
+ 521 0290 AF91      		pop r26
+ 522 0292 9F91      		pop r25
+ 523 0294 8F91      		pop r24
+ 524 0296 7F91      		pop r23
+ 525 0298 6F91      		pop r22
+ 526 029a 5F91      		pop r21
+ 527 029c 4F91      		pop r20
+ 528 029e 3F91      		pop r19
+ 529 02a0 2F91      		pop r18
+ 530 02a2 0F90      		pop __tmp_reg__
+ 531 02a4 0FBE      		out __SREG__,__tmp_reg__
+ 532 02a6 0F90      		pop __tmp_reg__
+ 533 02a8 1F90      		pop __zero_reg__
+ 534 02aa 1895      		reti
+ 535               	/* epilogue end (size=19) */
+ 536               	/* function __vector_4 size 150 (110) */
+ 538               	.Lscope3:
+ 539               		.comm adc_clock,1,1
+ 540               		.comm adc_dir,1,1
+ 541               		.comm main_counter,2,1
+ 542               		.comm clock,1,1
+ 543               		.comm dir,1,1
+ 544               		.comm clock_last,1,1
+ 545               		.comm dir_last,1,1
+ 546               		.comm timer256us,1,1
+ 547               		.comm timer1ms,1,1
+ 548               		.comm timer5ms,1,1
+ 549               		.comm timer100ms,1,1
+ 561               		.text
+ 563               	Letext:
+ 564               	/* File "counter.c": code  354 = 0x0162 ( 285), prologues  39, epilogues  30 */
+DEFINED SYMBOLS
+                            *ABS*:00000000 counter.c
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:3      *ABS*:0000003f __SREG__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:4      *ABS*:0000003e __SP_H__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:5      *ABS*:0000003d __SP_L__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:6      *ABS*:00000000 __tmp_reg__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:7      *ABS*:00000001 __zero_reg__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:72     .text:00000000 main
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:290    .text:00000128 timer_init
+                            *COM*:00000002 main_counter
+                            *COM*:00000001 timer100ms
+                            *COM*:00000001 timer5ms
+                            *COM*:00000001 timer1ms
+                            *COM*:00000001 timer256us
+                            *COM*:00000001 clock
+                            *COM*:00000001 dir
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:329    .text:00000152 __vector_9
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:365    .text:00000180 __vector_4
+                            *COM*:00000001 adc_clock
+                            *COM*:00000001 adc_dir
+                            *COM*:00000001 dir_last
+                            *COM*:00000001 clock_last
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccmSaaaa.s:563    .text:000002ac Letext
+
+UNDEFINED SYMBOLS
+__do_copy_data
+__do_clear_bss
+__stack
+port_init
+adc_init
+set_output
+set_display
+check_buttons
+refresh_led

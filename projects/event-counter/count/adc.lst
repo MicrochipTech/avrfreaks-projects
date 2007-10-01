@@ -1,0 +1,160 @@
+   1               		.file	"adc.c"
+   2               		.arch atmega8
+   3               	__SREG__ = 0x3f
+   4               	__SP_H__ = 0x3e
+   5               	__SP_L__ = 0x3d
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.global __do_copy_data
+   9               		.global __do_clear_bss
+  11               		.text
+  12               	.Ltext0:
+  74               	.global	adc_init
+  76               	adc_init:
+   1:adc.c         **** //
+   2:adc.c         **** // ADC control object
+   3:adc.c         **** //
+   4:adc.c         **** // ADC runs in interrupt
+   5:adc.c         **** // 
+   6:adc.c         **** //   
+   7:adc.c         **** 
+   8:adc.c         **** 
+   9:adc.c         **** 
+  10:adc.c         **** #include <avr/io.h>
+  11:adc.c         **** #include <inttypes.h>
+  12:adc.c         **** #include <avr/signal.h>
+  13:adc.c         **** 
+  14:adc.c         **** #include "counter.h"
+  15:adc.c         **** #include "adc.h"
+  16:adc.c         **** 
+  17:adc.c         **** void adc_init(void)
+  18:adc.c         **** { 
+  78               	.LM1:
+  79               	/* prologue: frame size=0 */
+  80 0000 CF93      		push r28
+  81 0002 DF93      		push r29
+  82 0004 CDB7      		in r28,__SP_L__
+  83 0006 DEB7      		in r29,__SP_H__
+  84               	/* prologue end (size=4) */
+  19:adc.c         **** 	//channel 0 + AVCC + external cap on AREF pin
+  20:adc.c         **** 	ADMUX = _BV(REFS0); 
+  86               	.LM2:
+  87 0008 80E4      		ldi r24,lo8(64)
+  88 000a 8093 2700 		sts 39,r24
+  21:adc.c         **** 	// adc enabled, adc started, set adc clock
+  22:adc.c         **** 	//clock 8 MHZ / 64 = 125kHz
+  23:adc.c         **** 	ADCSRA = _BV(ADEN) | _BV (ADIE) | _BV(ADSC) | _BV(ADPS2) | _BV(ADPS1); 
+  90               	.LM3:
+  91 000e 8EEC      		ldi r24,lo8(-50)
+  92 0010 8093 2600 		sts 38,r24
+  93               	/* epilogue: frame size=0 */
+  94 0014 DF91      		pop r29
+  95 0016 CF91      		pop r28
+  96 0018 0895      		ret
+  97               	/* epilogue end (size=3) */
+  98               	/* function adc_init size 13 (6) */
+ 100               	.Lscope0:
+ 102               	.global	__vector_14
+ 104               	__vector_14:
+  24:adc.c         **** }
+  25:adc.c         **** 
+  26:adc.c         **** ISR(ADC_vect) //interrupts are disabled
+  27:adc.c         **** {
+ 106               	.LM4:
+ 107               	/* prologue: frame size=0 */
+ 108 001a 1F92      		push __zero_reg__
+ 109 001c 0F92      		push __tmp_reg__
+ 110 001e 0FB6      		in __tmp_reg__,__SREG__
+ 111 0020 0F92      		push __tmp_reg__
+ 112 0022 1124      		clr __zero_reg__
+ 113 0024 8F93      		push r24
+ 114 0026 9F93      		push r25
+ 115 0028 CF93      		push r28
+ 116 002a DF93      		push r29
+ 117 002c CDB7      		in r28,__SP_L__
+ 118 002e DEB7      		in r29,__SP_H__
+ 119               	/* prologue end (size=11) */
+  28:adc.c         **** 	if (ADMUX & 0x1) //PC1
+ 121               	.LM5:
+ 122 0030 8091 2700 		lds r24,39
+ 123 0034 9927      		clr r25
+ 124 0036 8170      		andi r24,lo8(1)
+ 125 0038 9070      		andi r25,hi8(1)
+ 126 003a 0097      		sbiw r24,0
+ 127 003c 71F0      		breq .L3
+  29:adc.c         **** 	{
+  30:adc.c         **** 		adc_dir = ADC >> 2;//8 bits are enough 
+ 129               	.LM6:
+ 130 003e 8091 2400 		lds r24,36
+ 131 0042 9091 2500 		lds r25,(36)+1
+ 132 0046 9695      		lsr r25
+ 133 0048 8795      		ror r24
+ 134 004a 9695      		lsr r25
+ 135 004c 8795      		ror r24
+ 136 004e 8093 0000 		sts adc_dir,r24
+  31:adc.c         **** 		ADMUX = _BV(REFS0);
+ 138               	.LM7:
+ 139 0052 80E4      		ldi r24,lo8(64)
+ 140 0054 8093 2700 		sts 39,r24
+ 141 0058 0DC0      		rjmp .L4
+ 142               	.L3:
+  32:adc.c         **** 	}
+  33:adc.c         **** 	else
+  34:adc.c         **** 	{
+  35:adc.c         **** 		adc_clock = ADC >> 2;//8 bits are enough
+ 144               	.LM8:
+ 145 005a 8091 2400 		lds r24,36
+ 146 005e 9091 2500 		lds r25,(36)+1
+ 147 0062 9695      		lsr r25
+ 148 0064 8795      		ror r24
+ 149 0066 9695      		lsr r25
+ 150 0068 8795      		ror r24
+ 151 006a 8093 0000 		sts adc_clock,r24
+  36:adc.c         **** 		ADMUX = _BV(REFS0) | 1;
+ 153               	.LM9:
+ 154 006e 81E4      		ldi r24,lo8(65)
+ 155 0070 8093 2700 		sts 39,r24
+ 156               	.L4:
+  37:adc.c         **** 	}
+  38:adc.c         **** 
+  39:adc.c         **** 	ADCSRA |= _BV(ADSC); //start next conversion
+ 158               	.LM10:
+ 159 0074 8091 2600 		lds r24,38
+ 160 0078 8064      		ori r24,lo8(64)
+ 161 007a 8093 2600 		sts 38,r24
+ 162               	/* epilogue: frame size=0 */
+ 163 007e DF91      		pop r29
+ 164 0080 CF91      		pop r28
+ 165 0082 9F91      		pop r25
+ 166 0084 8F91      		pop r24
+ 167 0086 0F90      		pop __tmp_reg__
+ 168 0088 0FBE      		out __SREG__,__tmp_reg__
+ 169 008a 0F90      		pop __tmp_reg__
+ 170 008c 1F90      		pop __zero_reg__
+ 171 008e 1895      		reti
+ 172               	/* epilogue end (size=9) */
+ 173               	/* function __vector_14 size 59 (39) */
+ 175               	.Lscope1:
+ 176               		.comm main_counter,2,1
+ 177               		.comm adc_clock,1,1
+ 178               		.comm adc_dir,1,1
+ 182               		.text
+ 184               	Letext:
+ 185               	/* File "adc.c": code   72 = 0x0048 (  45), prologues  15, epilogues  12 */
+DEFINED SYMBOLS
+                            *ABS*:00000000 adc.c
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:3      *ABS*:0000003f __SREG__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:4      *ABS*:0000003e __SP_H__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:5      *ABS*:0000003d __SP_L__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:6      *ABS*:00000000 __tmp_reg__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:7      *ABS*:00000001 __zero_reg__
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:76     .text:00000000 adc_init
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:104    .text:0000001a __vector_14
+                            *COM*:00000001 adc_dir
+                            *COM*:00000001 adc_clock
+                            *COM*:00000002 main_counter
+C:\DOCUME~1\sk1u02y9\LOCALS~1\Temp/ccsXaaaa.s:184    .text:00000090 Letext
+
+UNDEFINED SYMBOLS
+__do_copy_data
+__do_clear_bss
