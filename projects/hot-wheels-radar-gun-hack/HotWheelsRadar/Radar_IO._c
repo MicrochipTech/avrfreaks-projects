@@ -1,0 +1,320 @@
+// Radar_IO.c
+//
+// general routines for the Mattel Hot Wheels Radar Gun
+//
+// Written by Chuck Baird, http://www.cbaird.net
+// This may be freely distributed and modified. Attribution
+// would be appreciated. Outright theft will bring you bad karma.
+// No warranties, gurarantees, liability, etc. implied or assumed.
+// Use at your own risk.
+
+#include "radar_decl.h"
+
+// local stuff:
+char x_find(int);
+
+// -------------------------------------------------------------
+// load_xlit() - read xlit table from EEPROM
+//
+// creates a new empty table if it doesn't like what it reads
+
+void load_xlit(void)
+{
+  char i;
+  int addr, v;
+  
+  EEPROM_READ(0, nxtbl);
+  if (nxtbl < 2 || nxtbl > MAXXLIT) {
+    xlit_clear();
+	return;
+  }
+  addr = 1;
+  for (i = 0; i < nxtbl; i++) {
+    EEPROM_READ(addr, v);
+	if (v < 0 || v > 1023) {
+	  xlit_clear();
+	  return;
+	}
+	xtbl[i].node = v;
+	EEPROM_READ(addr + 2, xtbl[i].val);
+	addr += 4;
+  }
+  if (xtbl[0].node != 0 || xtbl[nxtbl - 1].node != 1023) xlit_clear();
+}
+
+// -------------------------------------------------------------
+// store_xlit() - write xlit table to EEPROM
+
+void store_xlit(void)
+{
+  char i;
+  int addr;
+  
+  EEPROM_WRITE(0, nxtbl);            // number of entries
+  addr = 1;                          // next address
+  for (i = 0; i < nxtbl; i++) {
+    EEPROM_WRITE(addr, xtbl[i].node);
+	EEPROM_WRITE(addr + 2, xtbl[i].val);
+	addr += 4;
+  }
+}
+
+// -------------------------------------------------------------
+// fire_radar(v) - turn radar off or on, pulsing or steady
+//
+// v = 0 for off, 1 for on
+
+void fire_radar(char v)
+{
+  TCCR1B = 0x18;               // stop the PWM timer
+  TCCR1A = 0x03;               // release B2
+  PORTB |= 0x04;               // radar osc off: B2 <-- 1
+  radar = 0;
+  
+  if (v) {
+    if (pulsed) {
+	  radar = 1;
+	  TCNT1H = 0;              // reset counter (not necessary)
+	  TCNT1L = 0;
+      TCCR1A = 0x33;           // B2 (OC1B) under control of PWM
+	  TCCR1B = 0x1b;           // start the timer running
+	} else {
+	  radar = 2;
+	  PORTB &= 0xfb;           // osc on steady (B2 <-- 0)
+	}
+  }
+}
+
+// -------------------------------------------------------------
+// add_node() - add a node to the transliteration table
+//
+// user must input 3 hex digits for node (000 - 3FF), followed by
+// 4 hex digits for the node Y value (0000 - FFFF)
+
+void add_node(void)
+{
+  char i, j, tomove;
+  int nnum, v;
+  
+  nnum = user_input(3);             // node value (x)
+  v = user_input(4);                // table value (y)
+
+  if (nxtbl >= MAXXLIT) return;
+  if ((j = x_find(nnum)) == 255) return;    // ignore out of range 
+  if (j > 127) {                   // if an exact match
+    j &= 0x7f;                     // drop the high bit
+	xtbl[j].val = v;               // replace the value
+  } else {
+    // put in a new node at xtbl[j+1]
+	tomove = nxtbl - j - 1;        // number that have to scoot
+    for (i = 0; i < tomove; i++) xtbl[nxtbl - i] = xtbl[nxtbl - i - 1];
+	nxtbl++;                       // one more in table
+    xtbl[++j].node = nnum;         // put values away in new node
+	xtbl[j].val = v;
+  }
+}
+
+// -------------------------------------------------------------
+// user_input(n) - get an n character hex number from the USART
+//
+// n is 3 or 4. length 3 will always be +, length 4 may be +/-
+
+int user_input(char n)
+{
+  char buf[5], i, s, c;
+  
+  buf[0] = '0';
+  s = (n == 4) ? 0 : 1;
+  for (i = s; i < 4; i++) {
+    echo_me(c = usart_in());
+	buf[i] = c;
+  }
+  buf[4] = 0;
+  return ((int) strtol(buf, NULL, 16));
+}
+
+// -------------------------------------------------------------
+// translate(v) - apply the transliteration table
+//
+// input must be 0 - 1023, or error occurs (returns as 0x7fff = 32,767)
+
+int translate(int v)
+{
+  char j;
+  long g;
+  
+  j = x_find(v);                             // locate "floor" node
+  if (j == 255) return (0x7fff);             // out of range
+  if (j > 127) return (xtbl[j & 0x7f].val);  // exact match
+  
+  g = v - xtbl[j].node;                      // interpolate
+  g *= (long) (xtbl[j + 1].val - xtbl[j].val);  
+  g /= (long) (xtbl[j + 1].node - xtbl[j].node);
+  return (xtbl[j].val + (int) g);
+}
+
+// -------------------------------------------------------------
+// xlit_clear() - clear the transliteration table
+//
+// builds a trivial xlit table with two entries, 0 and 1023
+
+void xlit_clear(void)
+{
+  nxtbl = 2;
+  xtbl[0].node = 0;
+  xtbl[0].val = 0;
+  xtbl[1].node = 1023;
+  xtbl[1].val = 1023;
+}
+
+// -------------------------------------------------------------
+// x_find(v) - locate a node interval for a given value
+//
+// v - value to look up, 0 to 1023
+// returns:
+//   0 to (MAXXLIT - 1), plus bit 7 set if exact match
+//   note: MAXXLIT cannot exceed 126
+//   255 if out of range
+
+char x_find(int v)
+{
+  char i;
+  
+  if (v < 0 || v > 1023) return (255);
+  for (i = nxtbl - 1; i >= 0; i--) {
+    if (v > xtbl[i].node) return (i);
+	if (v == xtbl[i].node) return (i | 0x80);
+  }
+  return (0x80);             // impossible
+}
+
+// -------------------------------------------------------------
+// read_switches() - read the 3 switches
+//
+// returns ASCII "0" to "7" - sum up the following:
+//   1 - scale (left) switch
+//   2 - units (right) switch
+//   4 - trigger (ADC reads at about 115 when off, 158 when pressed)
+// "on" is considered top of switch pointing right (1:1 and KPH)
+
+char read_switches(void)
+{
+  char v;
+  
+  v = PINB & 0x01 ? 0 : 1;         // scale switch (sw is backwards)
+  if (PINC & 0x04) v += 2;         // units switch
+  if (read_adc(1) > 136) v += 4;   // trigger
+  return ('0' + v);
+}
+
+// -------------------------------------------------------------
+// read_adc(who) - read one of the ADCs
+//
+// w = 0, radar in
+//   = 1, trigger
+//   = 7, battery (rewired)
+//
+// if we're reading the radar in pulsed mode, then we want to
+// time our read with the radar being on (pin low)
+
+int read_adc(char w)
+{
+  int v, s, hi, lo;
+  char i;
+  
+  ADMUX = 0x40 | (w & 0x0f);     // select input and reference
+  ADCSRA = 0x87;                 // enable with prescale = 128
+   
+  ADCSRA |= 0x40;                // start a conversion
+  while (ADCSRA & 0x40) ;        // wait for it
+  v = ADCH;                      // toss it
+  v = 0;                         // accumulate 10 samples here
+  hi = 0;                        // get largest here
+  lo = 1023;                     // get smallest here
+  
+  for (i = 0; i < 10; i++) {     // take 10, toss highest and lowest
+    if (!w && pulsed) {          // are we reading pulsed radar?
+	  while (!(PORTB & 0x04)) ;  // wait until it goes high (radar off)
+	  while (PORTB & 0x04) ;     // and then until it goes low (radar on)
+	}
+  
+    ADCSRA |= 0x40;              // start a conversion
+    while (ADCSRA & 0x40) ;      // wait for it
+    s = ADCL;                    // low order
+	s += ADCH << 8;              // and high order
+	if (s > hi) hi = s;
+	if (s < lo) lo = s;
+	v += s;
+  }
+  ADCSRA = 0x00;                 // shut it off
+  return ((v - hi - lo) >> 3);   // keep 8 and average them
+}
+
+// -------------------------------------------------------------
+// num_out() - put a number to the output device
+//
+// out of range shows up as vertical bars on LCD
+
+void num_out(int v)
+{
+  char buf[7], i, j, c;
+  
+  i = 16;                                // assume hex
+  switch (outdev) {
+    case 0:                              // LCD
+      if ((v < -999) || (v > 9999)) {
+        for (i = 0; i < 4; i++) lcd_num(i, 13);
+        return;
+      }
+      itoa(buf, v, 10);
+      lcd_erase();
+      j = strlen(buf);
+      i = 0;
+      while (j > 0) {
+        c = buf[--j];
+        if (c == '-') c = ':';           // minus sign --> 10
+        lcd_num(i++, c - '0');
+      }
+	  break;
+    case 1:                             // ASCII
+	  i = 10;
+	default:                            // hex digits
+	  itoa(buf, v, i);
+	  j = 0;
+	  crlf_me();
+	  while (buf[j]) usart_out(buf[j++]);
+	  break;
+  }
+}
+
+// -------------------------------------------------------------
+// usart_init() - initialize the USART
+//
+// 19,200 baud, 8N2
+
+void usart_init(void)
+{
+  UBRR0L = 64;          // baud rate lo (20MHz)
+  UBRR0H = 0x00;        // baud rate hi
+  UCSR0A = 0x00;        // normal speed
+  UCSR0C = (1<<USBS0) | (3<<UCSZ00);
+  UCSR0B = (1<<RXEN0) | (1<<TXEN0);
+}
+
+// -------------------------------------------------------------
+// usart_in() - wait for an incoming char from the USART
+
+char usart_in(void)
+{
+  while (!(UCSR0A & (1 << RXC0))) ;
+  return UDR0;
+}
+
+// -------------------------------------------------------------
+// usart_out() - send a char to the USART
+
+void usart_out(char c)
+{
+  while (!(UCSR0A & (1 << UDRE0))) ;
+  UDR0 = c;
+}

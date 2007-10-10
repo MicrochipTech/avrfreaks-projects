@@ -1,0 +1,280 @@
+// Mattel Hot Wheels Radar Gun
+//
+// These are the LCD routines and support
+//
+// Written by Chuck Baird, http://www.cbaird.net
+// This may be freely distributed and modified. Attribution
+// would be appreciated. Outright theft will bring you bad karma.
+// No warranties, gurarantees, liability, etc. implied or assumed.
+// Use at your own risk.
+//
+// with rewiring mod, PD0 --> PC3
+//                    PD1 --> PC5
+//
+// we need to diddle one of the backplane voltages about every 0.75ms
+// (1333 Hz). Each goes V for an interval, V/2 for 3 intervals, 0 for
+// an interval, and V/2 for 3 intervals, and repeats. The 4 backplanes
+// are sequenced such that one of them is always either at V or 0.
+//
+// when at V, the contents of seg# for that backplane is written.  when
+// at 0, the 1's complement of that value is written. thus, either seg#
+// or ~seg# is written on every interrupt.
+//
+// to set a backplane voltage at V, the pin is set to output and a 1 is
+// written. to set voltage at 0, the pin is set to output and a 0 is
+// written. for V/2 the pin is set to input with no pullup.
+
+#include "radar_decl.h"
+
+char scnt;                   // which pass we're in for interrupts
+
+// -------------------------------------------------------------
+// lcd_cnum(value) - write individual digit/char to LCD using cursor
+//
+// write a number, hyphen, blank, or other predefined pattern to LCD
+// using the cursor (with cursor movement, as appropriate)
+// v - 0-9, 10 for hyphen, 11 for blank, 12 for horiz bars,
+//     13 for vertical bars, 14-15 undefined
+
+void lcd_cnum(char v)
+{
+  lcd_num(cursor, v);
+  cursor += curadd;
+  cursor &= 0x03;
+}
+
+// -------------------------------------------------------------
+// lcd_num(position, value) - write individual digit/char to LCD
+//
+// write a number, hyphen, blank, or other predefined pattern to LCD
+// pos - position; 0 = rightmost (1's), 3 = leftmost (1000's)
+// v - 0-9, 10 for hyphen, 11 for blank, 12 for horiz bars,
+//     13 for vertical bars, 14-15 undefined
+
+void lcd_num(char pos, char v)
+{
+  unsigned char i, j;           // with ICC unsigned isn't necessary
+  
+  pos &= 0x03;                  // we like legal args
+  v &= 0x0f;
+  j = pos * 4;
+    
+  for (i = 0; i < 4; i++)       // drop the old bits for this position
+    segs[i] &= killer[j + i];
+
+  j = v * 12;                   // start of this one's defs
+  if (pos & 0x01) j += 6;       // offset: 0=0, 1=+6, 2=+2, 3=+8
+  if (pos & 0x02) j += 2;
+  for (i = 0; i < 4; i++)
+    segs[i] |= tab[j++];
+}
+
+// -------------------------------------------------------------
+// lcd_seg - turn a specific segment at the cursor on/off
+//
+// s - segment 0 - 6 (A-G) or 7 for battery symbol
+// x - 0 to turn off, 1 to turn on
+// no cursor movement
+
+void lcd_seg(char s, char x)
+{
+  char w, m, t;
+  
+  w = smap[s * 4 + cursor];     // byte in hi nibble, bit in lo nibble
+  t = (w & 0x30) >> 4;
+  m = 1 << (w & 0x07);			// build mask
+  if (x) segs[t] |= m; else segs[t] &= ~m;
+}
+
+// -------------------------------------------------------------
+// lcd_init - set up the lcd stuff
+//
+// we'll use timer 0 to run the LCD updates
+
+void lcd_init(void)
+{
+  lcd_erase();               // clear the segment bytes
+
+  TCCR0A = 0x02;             // ctc mode 2
+  TCCR0B = 0x03;             // prescaler = 64
+  TCNT0 = 0;                 // counter (not necessary)
+  OCR0A = 245;               // 1332.03 Hz (wanted 1333.333, but...)
+  TIMSK0 = 0x02;             // compare A interrupt on
+    
+  
+  
+  
+//  TCCR1A = 0;                // ctc
+//  TCCR1C = 0;
+//  TCNT1H = 0;                // zero the counter (not necessary)
+//  TCNT1L = 0;                // part deux;
+//  OCR1AH = 0;                // high part of compare (write hi then lo)
+//  OCR1AL = 0xf5;             // 245 = freq of 1332.0325
+// TIMSK1 = 0x02;             // enable compare A interrupts
+//  TCCR1B = 0x0b;             // ctc, 64 prescale, start timer
+}
+
+// -------------------------------------------------------------
+// lcd_erase() - blank the LCD and home cursor
+
+void lcd_erase(void)
+{
+  int i;
+  
+  for (i = 0; i < 4; i++) segs[i] = 0;
+  if (curadd == 7) cursor = 3; else cursor = 0;
+}
+
+// -------------------------------------------------------------
+// Timer1 Compare A Handler - 1,332.03 Hz
+//
+// we come here every 1/8 of a complete LCD cycle. we need to dingle some
+// backplane voltages and put out a value to port D (mostly).
+//
+// we may also be running a seconds and tenth-seconds (more or less)
+// clock which sets flags (t_1serv and t_10serv) when they go by.
+//
+// entry  backplane  data
+// -----  ---------  ----
+//  0/4      B5      seg1
+//  1/5      B4      seg2
+//  2/6      B3      seg3
+//  3/7      B1      seg4
+
+#pragma interrupt_handler timer0_compa_isr:iv_TIM0_COMPA
+void timer0_compa_isr(void)
+{
+  char dirb;                 // DDRB
+  char prtb;                 // PORTB
+  char v;                    // segments to light
+  char w;                    // scratch
+
+  if (clock) {               // are we timing?
+    t_small--;               // 0.1 seconds counter
+	if (!t_small) {
+	  t_small = 133;         // ran out - restart it
+	  t_10serv = 1;          // flag it
+	  t_10++;                // and one more 0.1 down
+	  if (t_10 > 9) {        // if it's (roughly) a second
+		t_10 = 0;            // start the tenths counter over
+        t_1++;               // one more second down the drain
+	    if (t_1 > 9999) t_1 = 0;    // rollover
+	    t_1serv = 1;         // service needed for seconds
+	  }
+	}
+  }
+
+// drop all backplanes back to V/2 (3 of them already will be)
+  dirb = DDRB & 0xc5;    // 4 backplanes to inputs
+  prtb = PORTB & 0xc5;   // without pullups
+  switch (scnt++) {
+    case 0:              // send ~segs[0] to B5
+	  v = ~segs[0];
+      dirb |= 0x20;
+	  prtb |= 0x20;      // output = 1
+	  break;
+	case 1:              // send ~segs[1] to B4
+	  v = ~segs[1];
+      dirb |= 0x10;
+	  prtb |= 0x10;      // output = 1
+	  break;
+	case 2:              // send ~segs[2] to B3
+	  v = ~segs[2];
+      dirb |= 0x08;
+	  prtb |= 0x08;      // output = 1
+	  break;
+	case 3:              // send ~segs[3] to B1
+	  v = ~segs[3];
+      dirb |= 0x02;
+	  prtb |= 0x02;      // output = 1
+	  break;
+	case 4:              // send segs[0] to B5
+	  v = segs[0];
+	  dirb |= 0x20;      // B5, output = 0
+	  break;
+	case 5:              // send segs[1] to B4
+	  v = segs[1];
+	  dirb |= 0x10;      // B4, output = 0
+	  break;
+	case 6:              // send segs[2] to B3
+	  v = segs[2];
+	  dirb |= 0x08;      // B3, output = 0
+	  break;
+	default:             // send segs[3] to B1
+	  v = segs[3];
+	  dirb |= 0x02;      // B1, output = 0
+  }
+  DDRB = dirb;           // 3 backplanes to input, 1 to output
+  PORTB = prtb;          // its output is 0 or 1
+
+// if the thing hadn't been rewired, v would go directly to port D.
+// however, D0 and D1 have moved (they're the USART pins).
+  
+  PORTD = (PORTD & 0x03) | (v & 0xfc);    // top 6 bits haven't moved
+  w = PORTC & 0xd7;                       // drop C3 and C5
+  if (v & 0x01) w |= 0x08;                // D0 --> C3
+  if (v & 0x02) w |= 0x20;                // D1 --> C5
+  PORTC = w;
+  scnt &= 0x07;                           // keep it 0 - 7
+}
+
+// -------------------------------------------------------------
+// table of numeric segments and friends
+//
+// tab: "0" in position 0. add 12 for each number beyond 0
+//          +2 for position 2
+//          +6 for position 1
+//          +8 for position 3
+  const char tab[] = {
+    0x00, 0x00, 0x50, 0x78, 0x00, 0x00,
+	0x00, 0x00, 0x0D, 0x07, 0x00, 0x00,  // 0
+    0x00, 0x00, 0x00, 0x30, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x06, 0x00, 0x00,  // 1
+    0x00, 0x00, 0x30, 0x68, 0x00, 0x00,
+    0x00, 0x00, 0x0E, 0x03, 0x00, 0x00,  // 2
+    0x00, 0x00, 0x20, 0x78, 0x00, 0x00,
+    0x00, 0x00, 0x0A, 0x07, 0x00, 0x00,  // 3
+    0x00, 0x00, 0x60, 0x30, 0x00, 0x00,
+    0x00, 0x00, 0x03, 0x06, 0x00, 0x00,  // 4
+    0x00, 0x00, 0x60, 0x58, 0x00, 0x00,
+    0x00, 0x00, 0x0B, 0x05, 0x00, 0x00,  // 5
+    0x00, 0x00, 0x70, 0x58, 0x00, 0x00,
+    0x00, 0x00, 0x0F, 0x05, 0x00, 0x00,  // 6
+    0x00, 0x00, 0x00, 0x70, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x07, 0x00, 0x00,  // 7
+    0x00, 0x00, 0x70, 0x78, 0x00, 0x00,
+    0x00, 0x00, 0x0F, 0x07, 0x00, 0x00,  // 8
+    0x00, 0x00, 0x60, 0x70, 0x00, 0x00,
+    0x00, 0x00, 0x03, 0x07, 0x00, 0x00,  // 9
+    0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x02, 0x00, 0x00, 0x00,  // -
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // 11 = blank
+    0x00, 0x00, 0x20, 0x48, 0x00, 0x00,
+    0x00, 0x00, 0x0a, 0x01, 0x00, 0x00,  // 12 = horiz bars
+    0x00, 0x00, 0x50, 0x30, 0x00, 0x00,
+    0x00, 0x00, 0x05, 0x06, 0x00, 0x00,  // 13 = vert bars
+	
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // 14 = available
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00   // 15 = available
+  };
+  
+// this table masks out the bits for the given position
+  const char killer[] = {
+    0xff, 0xff, 0x8f, 0x87,    // position 0
+    0xff, 0xff, 0xf0, 0xf8,    // position 1
+    0x8f, 0x87, 0xff, 0xff,    // position 2
+    0xf0, 0xf8, 0xff, 0xff     // position 3
+  };
+
+// this table maps individual segments
+// order is A0, A1, ..., G3, Bat0, ... , Bat3
+// high nibble is byte offset (0-3), low nibble is bit number (0-7)
+  const char smap[] = {
+    0x36, 0x30, 0x16, 0x10, 0x35, 0x31, 0x15, 0x11,   // A and B
+    0x34, 0x32, 0x14, 0x12, 0x33, 0x23, 0x13, 0x03,   // C and D
+    0x24, 0x22, 0x04, 0x02, 0x26, 0x20, 0x06, 0x00,   // E and F
+    0x25, 0x21, 0x05, 0x01, 0x07, 0x07, 0x07, 0x07    // G and battery
+  };

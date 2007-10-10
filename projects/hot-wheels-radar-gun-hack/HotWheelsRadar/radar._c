@@ -1,0 +1,304 @@
+// Mattel Hot Wheels Radar Gun
+// Serial interface and command processor
+//
+// ATMega88, 20.000Mhz; ICCAVR compiler
+//
+// Written by Chuck Baird, http://www.cbaird.net
+// This may be freely distributed and modified. Attribution
+// would be appreciated. Outright theft will bring you bad karma.
+// No warranties, gurarantees, liability, etc. implied or assumed.
+// Use at your own risk.
+//
+// This is for a modified version of the radar gun.  A couple of
+// the LCD lines have been rerouted to access the USART, and the
+// trigger was moved to a different ADC input to free up an I/O bit.
+// See the accompanying documentation for details.
+
+#define EXTERN
+#include "radar_decl.h"
+
+// -------------------------------------------------------------
+void main(void)
+{
+  int v;
+  char c;
+  
+  init();  	 	                        // initialize some goodies
+  c = 32;                               // force initial prompt
+  
+  for (;;) {
+    if (c > 31) {                       // don't prompt on clock loops
+	  crlf_me();
+      usart_out('?');                   // prompt those doggies
+	}
+
+	c = 0;                              // no clock as faked input
+    while (!(UCSR0A & (1 << RXC0))) {   // watch for incoming
+      if (clock == 1) {                 // are we watching seconds?
+	    if (t_1serv) {
+		  t_1serv = 0;
+		  c = 1;
+		  break;
+		}
+	  }
+	  if (clock == 2) {                 // are we watching 1/10 secs?
+		if (t_10serv) {
+		  t_10serv = 0;
+		  c = 2;
+		  break;
+		}	
+	  }
+	}
+    if (!c) {                           // if it's not clock, read char
+	  c = usart_in();
+	  if (c < ' ') c = '!';
+	  echo_me(c);
+	}
+	
+	switch (c) {
+	  case 1:              // one second has elapsed
+	    num_out(t_1);
+	    break;
+	  case 2:              // one tenth of a second has elapsed
+	    v = (t_1 * 10 + t_10) % 10000;
+		num_out(v);
+	    break;
+	  case 'P':            // power on (override trigger release)
+	    power(1);
+	    break;
+	  case 'p':            // power off (trigger controls power)
+	    power(0);
+	    break;
+	  case 'G':            // radar on
+	    fire_radar(1);
+	    break;
+	  case 'g':            // radar off
+	    fire_radar(0);
+	    break;
+	  case 'R':            // read radar, output to "device"
+	    if (radar) {
+	      v = read_adc(0);
+		  if (xlit) v = translate(v);
+		} else v = -999;
+		num_out(v);
+	    break;
+	  case 'r':            // read battery, output to "device"
+	    v = read_adc(7);
+		if (xlit) v = translate(v);
+		num_out(v);
+	    break;
+	  case '$':            // read switches, "0" - "7" to usart
+	    crlf_me();
+		
+		num_out(read_adc(1));
+		
+//        usart_out(read_switches());
+	    break;
+	  case 'X':            // erase LCD and home cursor
+	    lcd_erase();
+	    break;
+	  case ' ':            // blank LCD at cursor and advance
+	    lcd_cnum(11);
+	    break;
+	  case 'x':            // blank LCD at cursor, no move
+	    lcd_num(cursor, 11);
+	    break;
+	  case 'A':            // translation on
+	    xlit = 1;
+	    break;
+	  case 'a':            // translation off (default)
+	    xlit = 0;
+	    break;
+	  case 'L':            // load xlit table from EEPROM
+	    load_xlit();
+	    break;
+	  case 'S':            // save xlit table to EEPROM
+	    store_xlit();
+	    break;
+	  case '^':            // clear xlit table
+	    xlit_clear();
+	    break;
+	  case '+':            // add node to table
+	    add_node();
+	    break;
+	  case 'D':            // output device is LCD (default)
+	    outdev = 0;
+	    break;
+	  case 'U':            // output device is usart - ASCII
+	    outdev = 1;
+	    break;
+	  case 'u':            // output device is usart - hexadecimal
+	    outdev = 2;
+	    break;
+	  case '<':            // cursor moves left (home 1's; default)
+	    curadd = 1;
+	    break;
+	  case '>':            // cursor moves right (home 1000's)
+	    curadd = 7;
+	    break;
+	  case '.':            // do not advance cursor (home 1's)
+	    curadd = 0;
+	    break;
+	  case '=':            // input 4 char ASCII hex number from usart
+	    v = user_input(4);
+		if (xlit) v = translate(v);
+		num_out(v);
+	    break;
+	  case '~':            // radar pulsed when fired (default)
+	    pulsed = 1;
+	    break;
+	  case '_':            // radar constant (not pulsed) when fired
+	    pulsed = 0;
+	    break;
+      case 'E':            // echo on
+	    echo = 1;
+	    break;
+	  case 'e':            // echo off
+	    echo = 0;
+	    break;
+	  case 'C':            // CRLF on
+	    crlf = 1;
+	    break;
+	  case 'c':            // CRLF off
+	    crlf = 0;
+	    break;
+	  case 'B':            // battery symbol on
+	    lcd_seg(7, 1);
+	    break;
+	  case 'b':            // battery symbol off
+	    lcd_seg(7, 0);
+	    break;
+	  case '-':            // minus sign at cursor
+	    lcd_cnum(10);
+		break;
+	  case 'T':            // seconds timer on
+	    s_clock(1);
+		break;
+	  case 't':            // tenths seconds timer on
+	    s_clock(2);
+		break;
+	  case 'Z':            // clock stop
+	    s_clock(0);
+	    break;
+	  case 'z':            // clock reset
+	    s_clock(clock + 4);
+		break;
+	  default:             // something else
+	    if ((c >= '0') && (c <= '9')) lcd_cnum(c - '0');
+		else if ((c >= 'H') && (c <= 'K')) cursor = c - 'H';
+		else if ((c >= 'h') && (c <= 'n')) lcd_seg(c - 'h', 1);
+		break;
+	}
+  }
+}
+
+// -------------------------------------------------------------
+void init(void)
+{
+//  In the modified wiring:
+//  Pin   Dir  Function
+//  ---   ---  --------
+//  B0    in   "scale" switch
+//  B1    var  LCD backplane
+//  B2    out  radar oscillator (timer 1 drives this)
+//  B3    var  LCD backplane
+//  B4    var  LCD backplane
+//  B5    var  LCD backplane
+//  B6         crystal
+//  B7         crystal
+//  ---
+//  C0         radar in (ADC)
+//  C1         trigger in (ADC)
+//  C2    in   "unit" switch
+//  C3    out  LCD segment
+//  C4    out  trigger override (power on)
+//  C5    out  LCD segment
+//  C6         reset
+//  C7         does not exist
+//  ---
+//  D0         RxD              (timer 0 drives USART)
+//  D1         TxD
+//  D2-7  out  LCD segment
+
+  DDRB  = 0x04;         // radar oscillator is output
+  PORTB = 0x05;         // B0 pullup, B2 = 1 turns oscillator off
+  
+  DDRC  = 0x38;         // 2 new LCDs & power hold are outputs
+  PORTC = 0x04;         // pullup for C2 (unit switch)
+  
+  DDRD  = 0xFC;         // D0 & D1 in, others (LCD segs) out
+  
+  DIDR0 = 0x03;         // digital input disable, ADCs
+ 
+// set up timer 1 for 8KHz radar PWM; leave it off
+  TCCR1A = 0x03;        // timer 1 = 8KHz PWM mode 15, no out now
+  TCCR1B = 0x48;        // clock = 000 means not running
+  OCR1AH = 0;           // top value, high byte (PWM set)
+  OCR1AL = 39;          // top value, low byte
+  OCR1BH = 0;           // match value, high byte (PWM cleared)
+  OCR1BL = 31;          // match value, low byte
+  
+  outdev = 0;           // output to LCD (1 = ASCII, 2 = binary)
+  echo = 0;             // no input echo
+  crlf = 0;             // no appended CRLF
+  cursor = 0;           // cursor is in the 1's position
+  xlit = 0;             // translation off
+  curadd = 1;           // cursor moves to the left
+  pulsed = 1;           // radar is pulsed
+
+  usart_init();         // and the usart
+  xlit_clear();         // build a new xlit table
+  s_clock(4);           // stop and reset clock
+  lcd_init();           // set up the LCD
+  SEI();                // and enable the interrupts 
+}
+
+// -------------------------------------------------------------
+// power() - turn trigger power override on/off
+//
+// x - 0 for off, 1 for on
+
+void power(char x)
+{
+  if (x) PORTC |= 0x10; else PORTC &= 0xef;
+}
+
+// -------------------------------------------------------------
+// s_clock(w) - handle the seconds counting clock
+//
+// w = 0  stop        add 4 to reset counters
+//   = 1  seconds
+//   = 2  tenths
+
+void s_clock(char w)
+{
+  if (w & 0x04) {
+    clock = 0;                 // stop it while resetting
+    t_10 = 0;                  // tenth seconds counter
+    t_1 = 0;                   // seconds counter (0 - 9999)
+    t_10serv = 0;              // if 1, tenths have changed
+    t_1serv = 0;               // if 1, seconds have changed
+    t_small = 133;             // interrupt countdown, 0.1 secs
+  }
+  clock = w & 0x03;
+}
+
+// -------------------------------------------------------------
+// echo_me(w) - maybe echo the incoming character
+
+void echo_me(char w)
+{
+  if (echo) usart_out(w);
+}
+
+// -------------------------------------------------------------
+// crlf_me() - maybe send out a crlf
+
+void crlf_me(void)
+{
+  if (crlf) {
+    usart_out('\r');
+    usart_out('\n');
+  }
+}
+
