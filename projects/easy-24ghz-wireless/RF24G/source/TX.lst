@@ -1,0 +1,410 @@
+
+AVRASM ver. 1.57  TX.asm Tue Oct 09 15:40:47 2007
+
+
+         ;-----------------------------------------------
+         ; Nordic nRF2401A 2.4GHz Transceiver Software
+         ;-----------------------------------------------
+         ;Tuesday, October 09, 2007, 2:05:02 PM
+         ;
+         ;WORKING!!! Starts out in RX mode, and monitors DR line
+         ;if data comes in, print to terminal
+         ;to activate Transmit mode, press a key in terminal. This
+         ;activates the usart interrupt and sets a flag to switch to
+         ;TX mode and transmit data to the other RF24G.
+         ;When done transmitting, RF24G returns to RX mode and
+         ;monitors DR line for next data
+         ;
+          .nolist
+         ;-----------------------------------------------
+         ;definitions, register alias and constants
+         ;-----------------------------------------------
+          .equ		CE	= 2	;PD2
+          .equ		CS	= 3	;PD3
+          .equ		DR1	= 4	;PD4
+          .equ		CLK 	= 5	;PD5
+          .equ		Data	= 6	;PD6
+         
+          .equ		RamBuffer =	0x60
+         
+          .def		Temp	=	r16
+          .def		Address =	r17
+          .def		Data1	=	r18
+          .def		temp2	=	r19
+          .def		Counter =	r20
+          .def		BitCnt =	r21	
+          .def		ByteCnt =   r22
+          .def		flags   =  r23
+         ;
+          .org	0
+          Reset:
+000000 940c 000b 	jmp	Start			; 
+         
+          .org	URXCaddr
+000009 940c 00cc 	jmp	UART_RX_interrupt	;
+         ;****************************************
+          Start:
+00000b e53f      	ldi	temp2,Low(RAMEND)
+00000c bf3d      	out	SPL,temp2		; Set stack pointer
+00000d e032      	ldi	temp2,High(RAMEND)
+00000e bf3e      	out	SPH,temp2
+         	
+00000f ea0e      	ldi	temp,0b10101110 	;PD0,PD4,PD6 inputs
+000010 bb01      	out	DDRD,temp		;
+000011 e000      	ldi	temp,0b00000000	;
+000012 bb02      	out	PORTD,temp
+         
+000013 d0bc      	rcall	USART_Init
+         
+         ;config nRF2401A
+000014 d024      	rcall	BuildSPIWord	;configuration data
+000015 d05a      	rcall	SPInRF2401		;clock out config string
+000016 9478      	sei				;enable interrupts
+         ;****************************************
+          Main:
+000017 9984      	sbic	PIND,DR1		;skip if DR is low (no data rec'd)
+000018 d093      	rcall	ReceiveShock
+         
+000019 fd70      	sbrc	Flags,0		;check if char rec'd from term
+00001a d001      	rcall	Transmit 		;	
+00001b cffb      	rjmp	main
+         ;****************************************
+          Transmit:
+00001c d005      	rcall	TX_EN			;set TX mode
+00001d d02f      	rcall	BuildShockWord  
+00001e d072      	rcall	ShockBurst		
+00001f 2777      	clr	Flags
+000020 d00d      	rcall	RX_EN
+000021 9508      	ret
+         ;****************************************	
+          TX_EN:
+000022 9892      	cbi	PortD,CE	; config mode		
+000023 9a93      	sbi	PortD,CS	; config mode
+000024 d0cb      	rcall	Del_5uS
+         
+000025 9a8e      	sbi	DDRD,DATA	; Set Data as output	
+000026 9896      	cbi	PortD,DATA	; disable bit 0 (RXEN)
+         
+000027 d064      	rcall	DoSPIClock	; clock it
+         
+000028 0000      	nop
+000029 0000      	nop
+00002a 9893      	cbi	PortD,CS	; Sleep Mode
+00002b 9892      	cbi	PortD,CE	;
+         
+00002c 988e      	cbi	DDRD,DATA	; Set Data as Input
+00002d 9508      	ret
+         ;****************************************
+          RX_EN:
+00002e 9892      	cbi	PortD,CE	; config mode	
+00002f 9a93      	sbi	PortD,CS	; 
+000030 d0b1      	rcall	Del_200uS		; 200uS delay
+         
+000031 9a8e      	sbi	DDRD,DATA	; Set Data as output	
+000032 9a96      	sbi	PortD,DATA	; enable RX (set bit 0)
+         
+000033 d058      	rcall	DoSPIClock	; clock it
+         
+000034 9a92      	sbi	PortD,CE	; active mode
+000035 9893      	cbi	PortD,CS	; 
+         
+000036 988e      	cbi	DDRD,DATA	; Set Data as input
+000037 9896      	cbi	PortD,DATA	; Data Line Floating
+000038 9508      	ret
+         ;****************************************
+         ;RF24G is configured for:
+         ;RXEN, CHANNEL 2, RF Power: 0 DBm, 16MHz clock,Data Rate: 250 kbps,
+         ;ShockBurst Mode, One Channel Receive, 16 bit CRC enabled, 40 bit address,
+         ;10 bytes payload length
+         ;
+         ;transfer config string to Ram @RamBuffer			
+          BuildSPIWord:	
+000039 e6a0      	ldi	XL,RamBuffer	
+00003a 27bb      	clr	XH
+00003b e00f      	ldi	temp,15	; Number of bytes
+00003c 930d      	st	X+,temp
+         	
+00003d e0f0      	ldi	ZH,high(configword*2)
+00003e e8ea      	ldi	ZL,low(configword*2)
+         
+          BuildLp:
+00003f 95c8      	lpm
+000040 920d      	st	X+,R0
+000041 9631      	adiw	ZL,1
+000042 950a      	dec	temp
+000043 f7d9      	brne	BuildLp
+000044 9508      	ret
+         ;****************************************
+          configword:
+          .db 0x00, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA
+000045 5000
+000046 0000
+000047 0000
+000048 aa00
+          .db 0xBB, 0xCC, 0xDD, 0xEE, 0xA3, 0x4F, 0x05, 0x00 ;<padded extra byte
+000049 ccbb
+00004a eedd
+00004b 4fa3
+00004c 0005
+         ;****************************************
+          BuildShockWord:	
+00004d e6a0      	ldi	XL,RamBuffer	;0x0060 in ram
+00004e 27bb      	clr	XH
+00004f e00f      	ldi	temp,15	; Number of bytes
+000050 930d      	st	X+,temp
+         
+000051 ea0a      	ldi	temp,0xAA	; MSB    ;transmitter 1 address High byte
+000052 930d      	st	X+,temp
+         
+000053 eb0b      	ldi	temp,0xBB	; MSB-1  ;transmitter 1 address High  byte
+000054 930d      	st	X+,temp
+         
+000055 ec0c      	ldi	temp,0xCC	; MSB-2  ;transmitter 1 address Low byte
+000056 930d      	st	X+,temp
+         
+000057 ed0d      	ldi	temp,0xDD	; MSB-3  ;transmitter 1 address Low  byte
+000058 930d      	st	X+,temp
+         
+000059 ee0e      	ldi	temp,0xEE	; MSB-4  ;transmitter 1 address Low  byte
+00005a 930d      	st	X+,temp
+         		
+00005b e300      	ldi	temp,0x30	; MSB-5  ;data byte 9
+00005c 930d      	st	X+,temp
+00005d e301      	ldi	temp,0x31	; MSB-6  ; data byte 8
+00005e 930d      	st	X+,temp
+00005f e302      	ldi	temp,0x32	; MSB-7  ; data byte 7
+000060 930d      	st	X+,temp
+000061 e303      	ldi	temp,0x33	; MSB-8  ; data byte 6
+000062 930d      	st	X+,temp
+000063 e304      	ldi	temp,0x34	; MSB-9  ; data byte 5
+000064 930d      	st	X+,temp
+000065 e305      	ldi	temp,0x35	; MSB-10  ; data byte 4
+000066 930d      	st	X+,temp
+000067 e306      	ldi	temp,0x36	; MSB-11 ; data byte 3
+000068 930d      	st	X+,temp
+000069 e307      	ldi	temp,0x37	; MSB-12 ; data byte 2
+00006a 930d      	st	X+,temp
+00006b e308      	ldi	temp,0x38	; MSB-13 ; data byte 1
+00006c 930d      	st	X+,temp
+00006d e309      	ldi	temp,0x39	; MSB-14 ; data byte 0   
+00006e 930d      	st	X+,temp
+00006f 9508      	ret
+         ;****************************************
+          SPInRF2401:	
+000070 e6a0      	ldi	XL,RamBuffer	; Load Address for where SPI data starts
+000071 27bb      	clr	XH			; 
+000072 9a8e      	sbi	DDRD,DATA		; Set data as output
+         
+000073 9892      	cbi	PORTD,CE		; config mode
+000074 9a93      	sbi	PORTD,CS		; 
+         
+000075 d06c      	rcall	Del_200uS		; 200uS delay
+         
+000076 916d      	ld	ByteCnt,X+		; Number of bytes
+         		
+          Highloop:
+000077 910d      	ld	temp,X+		; Data in "temp"
+000078 e058      	ldi	BitCnt,8		; "BitCnt" tracks number of programmed bits
+         
+          LowLoop:
+000079 ff07      	sbrs	temp,7		; Check if first bit is HIGH
+00007a 9896      	cbi	PORTD,DATA		; NO: Set Data low
+00007b fd07      	sbrc	temp,7		; Check if first bit is LOW
+00007c 9a96      	sbi	PORTD,DATA		; NO: Set Data high
+00007d d00e      	rcall	DoSPIClock		; Call "DoClock" to generate a clock pulse
+00007e 955a      	dec	BitCnt		; Decrement "BitCnt"
+00007f 0f00      	lsl	temp			; Left Shift to get next bit
+000080 3050      	cpi	BitCnt,0		; Check if all bits are written in this byte
+000081 f7b9      	brne	Lowloop		; NO: Write next one
+         
+000082 956a      	dec	ByteCnt		; YES: Decrement "ByteCnt"
+000083 3060      	cpi	ByteCnt,0		; Check if all bytes are written in this SPI round
+000084 f791      	brne	Highloop		; NO: Get next byte and write it out
+         
+          SPIReturn:
+000085 9a92      	sbi	PortD,CE		; ENABLE SHOCKBURST
+         
+000086 d06d      	rcall	Delay10mS		; wait 10mS for TX
+         
+000087 9892      	cbi	PORTD,CE		; sleep mode
+000088 9893      	cbi	PORTD,CS		;
+         
+000089 9896      	cbi	PORTD,DATA		; Set Data low
+00008a 988e      	cbi	DDRD,DATA		; Set data as input (low)
+00008b 9508      	ret
+         
+          DoSPIClock:
+00008c 9a95      	sbi	PORTD,CLK
+00008d 0000      	nop
+00008e 0000      	nop
+00008f 9895      	cbi	PORTD,CLK
+000090 9508      	ret
+         ;****************************************
+          ShockBurst:					
+000091 9a8e      	sbi	DDRD,Data		; Set data as output
+         
+000092 9a92      	sbi	PORTD,CE		; enable TX
+000093 d04e      	rcall	Del_200uS		; 200uS delay
+         
+000094 e6a0      	ldi	XL,RamBuffer	; 0x0060 in ram
+000095 27bb      	clr	XH			; 
+000096 916d      	ld	ByteCnt,X+		; 1st byte is length of send
+          BurstLoop1:
+000097 910d      	ld	temp,X+		; Load databyte in temp
+000098 d008      	rcall	SendData		; Call SendData
+000099 956a      	dec	ByteCnt		; Check if all bytes are sent
+00009a 3060      	cpi	ByteCnt,0
+00009b f7d9      	brne	BurstLoop1		; NO: Loop around and do it again
+         
+          BurstReturn:
+00009c 9892      	cbi	PORTD,CE		; ENABLE SHOCKBURST
+00009d d056      	rcall	Delay10mS		;
+00009e 9896      	cbi	PORTD,Data		; Set Data low
+00009f 988e      	cbi	DDRD,Data		; Set data as input (low)
+0000a0 9508      	ret
+         ;**************************************************
+         ;send a byte from X
+          SendData:
+0000a1 e058      	ldi	BitCnt,8		; Load number of bits in 'BitCnt'
+          LowLoopburst:
+0000a2 ff07      	sbrs	temp,7			
+0000a3 9896      	cbi	PORTD,Data		; Set Data low
+0000a4 fd07      	sbrc	temp,7
+0000a5 9a96      	sbi	PORTD,Data		; Set Data high
+0000a6 dfe5      	rcall	DoSPIClock
+0000a7 955a      	dec	BitCnt
+0000a8 0f00      	lsl	temp
+0000a9 3050      	cpi	BitCnt,0
+0000aa f7b9      	brne	Lowloopburst	
+0000ab 9508      	ret
+         ;**************************************************
+          ReceiveShock:	
+0000ac 988e      	cbi	DDRD,Data		; Set data as input
+0000ad 9896      	cbi	PortD,Data		; Set data tri state
+0000ae e6a0      	ldi	XL,RamBuffer	; 0x0060 in ram
+0000af 27bb      	clr	XH
+0000b0 2766      	clr	ByteCnt
+         
+          RxByteLp:
+0000b1 2700      	clr	temp
+0000b2 2755      	clr	BitCnt
+         
+          in1loop:
+0000b3 0f00      	lsl	temp			; shift left to receive next bit
+0000b4 9a95      	sbi	PORTD,CLK		; set clock high
+0000b5 0000      	nop
+0000b6 0000      	nop				; wait one clk cycle
+0000b7 9986      	sbic	PIND,Data		; check if Data=low		
+0000b8 6001      	ori	temp,1		; no - set bit high
+0000b9 9895      	cbi	PORTD,CLK		; set clock low
+0000ba 0000      	nop				; wait one clk cycle
+0000bb 9553      	inc	BitCnt		; increment bit counter
+0000bc 3058      	cpi	BitCnt,8		; 
+0000bd f7a9      	brne	in1loop
+         
+0000be 0000      	nop				;done 8 bits
+0000bf 9563      	inc	ByteCnt		;next byte
+0000c0 930d      	st	X+,temp		;store byte @X		
+0000c1 9b84      	sbis	PinD,DR1		;check if DR1 is still high
+0000c2 c001      	rjmp	Receiveret		;no, exit subroutine
+0000c3 cfed      	rjmp	RxByteLp		;YES, get another byte
+         		
+          Receiveret:
+0000c4 0000      	nop			
+0000c5 e6a0      	ldi	XL,RamBuffer	; 0x0060 in ram
+0000c6 27bb      	clr	XH			; 
+         
+          SendLoop:
+0000c7 910d      	ld	temp,X+		;Load databyte in temp
+0000c8 d010      	rcall	USART_TX		;Print to terminal
+0000c9 956a      	dec	ByteCnt
+0000ca f7e1      	brne	SendLoop
+0000cb 9508      	ret
+         ;****************************************
+          .include "usart.inc"
+         ;****************************************
+          UART_RX_interrupt:
+0000cc b10c      	in	temp,UDR	;receive data from PD1
+0000cd d00b      	rcall	USART_TX
+0000ce e071      	ldi	flags,1
+0000cf 9518      	reti
+         ;****************************************
+          USART_Init:
+0000d0 2733      	clr	temp2
+0000d1 bd30      	out	UBRRH, temp2
+0000d2 e109      	ldi	temp, 25		; set up baud rate 9600
+0000d3 b909      	out	UBRRL, temp		; @4 MHZ	
+         	
+         ;use this one for interrupts
+0000d4 e908      	ldi	temp,(1<<RXEN)|(1<<TXEN)|(1<<RXCIE)
+         ;use this one without interrupts
+         ;	ldi	temp, (1<<RXEN) | (1<<TXEN)	;Enable RX & TX
+0000d5 b90a      	out	UCSRB, temp				;set frame format	
+0000d6 e80e      	ldi	temp,(1<<URSEL) | (1<<USBS) | (3<<UCSZ0)	
+0000d7 bd00      	out	UCSRC, temp				;8 data bits, 2 stop bits
+0000d8 9508      	ret
+         ;****************************************
+         ;send a byte to the serial port
+          USART_TX:
+0000d9 9b5d      	sbis	UCSRA,UDRE		;wait for empty TX Buffer
+0000da cffe      	rjmp	USART_TX
+         
+0000db b90c      	out	UDR, temp		;send data byte
+0000dc 2777      	clr	flags
+0000dd 9508      	ret
+         ;****************************************
+         ;receive a byte from serial port
+          USART_RX:
+0000de 9b5f      	sbis	UCSRA,RXC		;wait for data to be received
+0000df cffe      	rjmp	USART_RX
+         
+0000e0 b10c      	in	temp,UDR		;get and return received byte from buffer
+0000e1 9508      	ret
+         ;****************************************
+          .include "delays.inc"
+         ;****************************************
+         ; Delay subroutines
+         ;****************************************
+         ;200uS delay @ 4MHz
+          Del_200uS:
+0000e2 e052      	ldi  r21, $02
+          D_200:
+0000e3 e843      	ldi  r20, $83
+          D_200_1:
+0000e4 954a      	dec  r20
+0000e5 f7f1      	brne D_200_1
+0000e6 955a      	dec  r21
+0000e7 f7d9      	brne D_200
+0000e8 9508      	ret
+         ;****************************************
+         ;1 mS delay @4MHz
+          Del_1mS:
+0000e9 e14f      	ldi  R20, $1F
+          Del_1mS1:
+0000ea e25a      	ldi  R21, $2A
+          Del_1mS2:
+0000eb 955a      	dec  R21
+0000ec f7f1      	brne Del_1mS2
+0000ed 954a      	dec  R20
+0000ee f7d9      	brne Del_1mS1
+0000ef 9508      	ret
+         ;****************************************
+         ;5.25uS @4MHz
+          Del_5uS:
+0000f0 e054      	ldi  R21, 4
+          Del_5uS1:
+0000f1 955a      	dec  R21
+0000f2 f7f1          	brne Del_5uS1
+0000f3 9508      	ret
+         ;****************************************
+         ;10mS Delay @4MHz
+          Delay10mS:
+0000f4 e00a      	ldi	temp,10
+          Del_10mS:
+0000f5 dff3      	rcall	Del_1mS
+0000f6 950a      	dec	temp
+0000f7 f7e9      	brne	Del_10mS
+0000f8 9508      	ret
+         ;****************************************          .exit
+
+Assembly complete with no errors.
