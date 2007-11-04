@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "C:\Documents and Settings\ferko\My Documents\Projekty\timer\program\labels.tmp" -fI -W+ie -o "C:\Documents and Settings\ferko\My Documents\Projekty\timer\program\timer.hex" -d "C:\Documents and Settings\ferko\My Documents\Projekty\timer\program\timer.obj" -e "C:\Documents and Settings\ferko\My Documents\Projekty\timer\program\timer.eep" -m "C:\Documents and Settings\ferko\My Documents\Projekty\timer\program\timer.map" "C:\Documents and Settings\ferko\My Documents\Projekty\timer\program\timer_v1.0.asm"
