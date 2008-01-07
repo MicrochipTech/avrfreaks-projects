@@ -1,0 +1,57 @@
+#include "pid.h"
+
+/*
+Simple structure based (class-like) fixed-point PID regulator
+all values use fxied point(last 4 bits treated as a fraction (x1/16).
+Therafore all values should be multiplyied by 16 to match format.
+That reduces all int values to 12-bit int +4-bit fraction.
+
+
+
+Author: Krzysztof Pilasiewicz (koriel@o2.pl)
+Version: 1.2 (2.01.08)
+*/
+
+
+//Initialization of regulator's structure
+void InitReg(struct PID *s,int k,int pi,int pd)
+{
+	//Note: k, pi, pd treated as fixed point int values (12bit int .4 fractional bits)
+	s->k=k;
+	s->pd=pd;
+	s->pi=pi;
+	s->sigma=0;
+	s->delta=0;
+	
+}
+
+//Counts netg regulator output based on set value and object output
+//IN:		x-set value
+//			y-object output value
+//OUT:		e-control output
+//
+//Function shall be used inside timer interrupt.
+//	
+int RegulatorNextStep(struct PID *s,int x,int y)
+{
+	int e;	//control
+	e=x-y;
+
+	// Integration of current output value
+	s->sigma+=e;
+
+	e=(((s->k)*e + (s->pi)*(s->sigma) + (s->pd)*(e-s->delta))>>4);	//Count PID gain
+		//Fixed point note: remove >>4 in statment above to abandon fied point notation
+	s->delta=e;		//Remember current differential value
+	return e;		//Return control
+}
+
+
+
+
+//Structure reset (resets values of sigma and delta)
+void RegulatorReset(struct PID *s)
+{
+	s->sigma=0;
+	s->delta=0;
+}
