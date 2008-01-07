@@ -1,0 +1,1 @@
+This program required .Net Framework version 2.0
