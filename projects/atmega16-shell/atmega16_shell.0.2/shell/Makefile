@@ -1,0 +1,45 @@
+CC=avr-gcc
+OBJCOPY=avr-objcopy
+STRIP=avr-strip
+UISP=uisp 
+OBJDUMP=avr-objdump
+
+# NOTE: Change this to match your AVR chip type. 
+MCU=atmega16
+PROG_METHOD=stk200
+
+SRECS = shell.srec 
+
+default: $(SRECS)
+
+shell: shell.o comm.o
+
+PROGRAMS=$(SRECS:.srec=)
+OBJFILES=$(SRECS:.srec=.o)
+ASSEMBLY=$(SRECS:.srec=.asm)
+
+clean:
+	rm -f $(SRECS) $(PROGRAMS) $(OBJFILES) $(ASSEMBLY)
+
+%.o: %.c
+	$(CC) -g -O -mmcu=$(MCU) -c $^ -o $@
+
+%: %.o 
+	$(CC) -g -O -mmcu=$(MCU) $^ -o $@
+
+%.asm: %
+	$(OBJDUMP) -S -d $^ > $@
+
+%-stripped: %
+	$(STRIP) $^ -o $@
+
+%.srec: %-stripped
+	$(OBJCOPY) -O srec $^ $@
+
+%.hex: %-stripped
+	$(OBJCOPY) -O ihex $^ $@
+
+program-%: %.srec
+	sudo $(UISP) -dprog=$(PROG_METHOD) --segment=flash -dlpt=0x378 -dpart=$(MCU) --erase 
+	sudo $(UISP) -dprog=$(PROG_METHOD) --segment=flash -dlpt=0x378 -dpart=$(MCU) --upload if=$^
+	sudo $(UISP) -dprog=$(PROG_METHOD) --segment=flash -dlpt=0x378 -dpart=$(MCU) --verify if=$^
