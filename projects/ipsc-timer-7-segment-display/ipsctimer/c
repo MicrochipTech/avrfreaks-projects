@@ -1,0 +1,201 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#define F_CPU 1000000UL  
+#include <util/delay.h>
+#include <avr/sleep.h>
+
+static unsigned char d2led[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f}; 
+
+volatile unsigned int number=0,i=0,t=0,g=0;
+
+void init7segment(void);
+
+inline void upd7segment (unsigned int number);
+
+void numberwrite (int number);
+int numberread(void);
+
+int niz[100];
+
+
+
+int main(void){
+
+		ACSR |=(1<<ACD);
+
+		//TCCR0 |=(1<<WGM01)|(1<<CS02)|(1<<CS00);
+		TCCR0 |=(1<<CS02);
+
+		TCCR1B |= (1<<WGM12)|(1<<CS10);
+		
+		//TIMSK |= (1<<OCIE1A)|(1<<OCIE0);
+		TIMSK |= (1<<OCIE1A);
+		
+		
+		//OCR0 = 5;
+		OCR1A = 10000;
+				
+		GICR |= ((1<<INT1)|(1<<INT0));
+		
+		MCUCR |= (1<<ISC10)|(1<<ISC11)|(1<<ISC00)|(1<<ISC01)|(1<<SE);
+		
+
+		sei();
+		
+		init7segment();
+		
+
+        while (1) {
+					
+				   if(TCNT0>=5)
+				    {
+					 
+					 upd7segment(number);					 
+					 TCNT0=0;
+					 	
+					}
+					
+					//sleep_mode();
+
+                  }
+        return 0;
+}
+
+ISR(INT1_vect)
+	{
+     number = numberread();
+	}
+
+ISR(INT0_vect)
+	{
+	 numberwrite(number);	
+	}
+
+
+
+//ISR (TIMER0_COMP_vect) 
+//	{
+//	 upd7segment(number);	
+//	}
+
+
+
+
+ISR (TIMER1_COMPA_vect)
+	{
+		
+		if(t==1)
+		{
+			number++;
+		}
+	
+		else 
+		{
+			number=number;
+		}
+
+	}
+
+void init7segment(void)
+{
+       
+        DDRB|= (1<<0);
+       
+        DDRB|= (1<<1);
+       
+        DDRB|= (1<<2);
+       
+        DDRB|= (1<<3);
+		
+		DDRA|= 0xFF;
+        
+        PORTA=0;
+
+		
+}
+
+inline void upd7segment(unsigned int number)
+{
+				
+		int num=number;
+				
+				 PORTA=d2led[(num%10)];
+        		 PORTB|=(1<<PB0);
+								
+				 _delay_loop_1 (250);
+        		
+				 num/=10; 
+        		 PORTB &=~(1<<PB0);
+				 PORTA = 0x00;				
+
+        if (num>=0)
+				{ 
+ 	             PORTA=d2led[(num%10)];
+                 PORTB|= (1<<PB1);
+				                
+				 _delay_loop_1 (250);
+                 num/=10; 
+                 PORTB &= ~(1<<PB1);
+				 PORTA = 0x00;
+				}
+
+        if (num>=0)
+				{ 
+                 PORTA|=(d2led[(num%10)])|(1<<7);
+                 PORTB|= (1<<PB2);
+
+                 _delay_loop_1 (250);
+
+				 num/=10;
+                 PORTB &= ~(1<<PB2);
+				 PORTA = 0x00;
+				}
+
+		if (num>0)
+				{ 		
+	             PORTA=d2led[num];
+                 PORTB|= (1<<PB3);
+
+                 _delay_loop_1 (250);
+
+                 PORTB &= ~(1<<PB3);
+				 PORTA = 0x00;
+				}
+
+			
+}
+
+
+void numberwrite (int number)
+{
+	
+	if(t==1)
+		{
+			niz[i] = number;
+			i++;
+		}
+		
+}
+
+int numberread(void)
+{
+	++t;
+	
+	if((niz[g])!=0)
+	{
+	number = niz[g];
+	g++;
+	}
+
+	else if((niz[g])==0)
+		{
+		  g=0;	
+		}
+			
+	return number;
+
+	
+}
+
+
+
