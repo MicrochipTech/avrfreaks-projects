@@ -1,0 +1,277 @@
+/**
+
+\page usage Using YAVRTOS
+
+\li \subpage usage-sema
+\li \subpage usage-mbox
+\li \subpage usage-mutex
+
+\page usage-sema Using semaphores
+
+Semaphores are used to send signals between tasks, or between tasks and ISRs.
+
+\section usage-sema-1 Example 1 - signalling between tasks
+
+\code
+semaphore_t sema;
+
+void semaphore_receiving_task(void *p) {
+	while (1) {
+		wait_for_increment_of(&sema, 1);
+		do_stuff();
+	}
+}
+
+void semaphore_writing_task(void *p) {
+	while (1) {
+		wait_for_conditions_to_be_right();
+		increment_semaphore_by(&sema, 1); // This makes the "wait_for_increment_of()" function in the receiving task return
+	}
+}
+\endcode
+In the above example, if the \c semaphore_receiving_task is of higher priority than the \c semaphore_writing_task, then as
+soon as the increment_semaphore_by() call is made, the \c semaphore_receiving_task will start executing.
+
+\section usage-sema-2 Example 2 - signalling tasks from an ISR
+
+The classic use of semaphores is to provide tasks with an easy means of implementing a delay. This is done by having a semaphore
+increment during the tick - then tasks can use that semaphore's value to suspend themselves for a known period of time.
+\code
+semaphore_t tick;
+
+// This is a function that runs every tick - we use it to increment the tick semaphore value by one
+uint8_t tick_interrupt() {
+        increment_semaphore_by(&tick, 1);
+        return 1;
+}
+
+// e.g. the TIMER1_COMPA interrupt is our tick interrupt
+TASK_ISR(TIMER1_COMPA_vect, tick_interrupt())
+
+// This task needs to periodically delay by 100 ticks
+void periodical_task(void *p) {
+	while (1) {
+		...
+		wait_for_increment_of(&tick, 100); // This function call won't return until 100 ticks have elapsed
+		...
+	}
+}
+\endcode
+
+\page usage-mbox Using mailboxes
+
+Mailboxes are used to send data between tasks or between ISRs and tasks.
+
+\section usage-mbox-1 Example 1 - distributing data throughout the application
+
+In this example, we have a task that generates information to be used by other parts of the application
+
+\code
+mailbox_t data_mbox;
+
+void get_and_post_data();
+
+void data_consumer_1_task(void *p) {
+	int16_t version;
+	int *data;
+	...
+	version = get_current_mbox_version(&data_mbox);
+	while (1) {
+		if ((data = (int *)read_mbox_min_version(&data_mbox, &version)) != 0) {
+			do_something_with_the_data(*data);
+		}
+		release_mbox_read();
+		version++;
+	}
+}
+
+void data_consumer_2_task(void *p) {
+	int16_t version;
+	int *data;
+	...
+	version = get_current_mbox_version(&data_mbox);
+	while (1) {
+		if ((data = (int *)read_mbox_min_version(&data_mbox, &version)) != 0) {
+			do_something_else_with_the_data(*data);
+		}
+		release_mbox_read();
+		version++;
+	}
+}
+
+void data_producer_task(void *p) {
+	...
+	while (1) {
+		...
+		get_and_post_data();
+		...
+	}
+}
+
+void get_and_post_data() {
+	int the_data = get_data_from_some_microcontroller_system();
+	write_mbox(&data_mbox, &the_data, 0, 2); // See below...
+}
+
+int main() {
+	...
+	initialise_mbox(&data_mbox, 0, 0);
+	...
+}
+\endcode
+
+So the big question is - what do the two final parameters of write_mbox() mean?
+
+The first parameter is the number of reading tasks to wait for. In this case, we decide that we do not wish to wait for
+any reading task - if there are no tasks waiting to read from the mailbox (i.e. no tasks have suspended themselves on
+read_mbox_min_version()), then the data will end up being "lost". It is up to the application developer to decide how
+many tasks, if any, \b must receive the data.
+
+The second parameter means that, once the data has been put into the mailbox, the \c data_producer_task will be suspended
+until all of the tasks that were suspended on read_mbox_min_version() have received the data and have called release_mbox_read().
+It also means that, once all the receiving tasks have called release_mbox_read(), the mailbox will contain a new version with
+a null pointer. This means that the \c data_producer_task is guaranteed that no-one is going to subsequently try and read the
+\c the_data which is important, as \c the_data is a local variable and hence ceases to exist once \c get_and_post_data() returns.
+
+\section usage-mbox-2 Example 2 - sending commands to a task
+
+In this example, we will send commands to a task that controls an LED display.
+
+\code
+// This structure contains an instruction for our lcd display driver task
+typedef struct lcd_command_struct {
+	uint8_t command; // e.g. cursor on, clear display
+	char string[21]; // e.g. a string to display
+	...
+} lcd_command_t;
+
+// The mailbox that will be used to send instructions to the lcd display driver task
+mailbox_t lcd_commands_mbox;
+
+// The lcd display driver task
+void lcd_display_driver_task(void *p) {
+	lcd_command_t *cmd;
+	int16_t version;
+	initialise_lcd_display();
+	version = get_current_mbox_version(&lcd_commands_mbox);
+	while (1) {
+		// When we set up the mailbox with initialise_mbox(), we set it up with null data, so our first read is going to return null
+		if ((cmd = (lcd_command_t *)read_mbox_min_version(&lcd_commands_mbox, &version)) != 0) {
+			process_lcd_command(cmd);
+		}
+		release_mbox_read();
+		version++;
+	}
+}
+
+// A task that wants to send something to the LCD
+void data_provider_task(void *p) {
+	lcd_command_t cmd;
+	while (1) {
+		get_information_for_lcd(&cmd);
+		write_mbox(&lcd_commands_mbox, &cmd, 1, 1); // see below...
+	}
+}
+
+int main() {
+	...
+	initialise_mbox(&lcd_commands_mbox, 0, 0);
+	...
+}
+\endcode
+So how do we choose the value for the last two arguments in write_mbox()? Assuming that the \c lcd_display_driver_task is of
+lower priority, we need to ensure that it has a chance to initialise the LCD display before we start sending commands to
+it - so we want it to get to the stage of being suspended on the read_mailbox_min_version() call. The way to do this is
+by using a value of 1 for the \c wait_for_receivers argument of write_mbox().
+
+Also, we don't want the \c data_provider_task to make another call to get_information_for_lcd() until the \c lcd_display_driver_task
+has finished reading the command we have just sent it (otherwise, get_information_for_lcd() could over-write the information
+held in the \c lcd_command before the \c lcd_display_driver_task has finished with it). By providing a value of one for the
+\c wait_for_empty_nullify argument of write_mbox(), we ensure that write_mbox() won't return until the \c lcd_display_driver_task has
+executed release_mbox_read().
+
+In this case, there is no need to "nullify" the mailbox after it has been read, because we know that no other task is going to
+attempt to read it again.
+
+Of course, there is nothing to stop other tasks from using the \c lcd_commands_mbox - the mailbox is, in effect, a software interface
+to your LCD that any task can call upon at any time.
+
+\section usage-mbox-3 Example 3 - sending data from an ISR to a task
+
+Sending information from ISRs to tasks is slightly complicated by the fact that ISRs cannot be suspended, hence they must use
+the write_mbox_now() call, which will fail if the mailbox is in use by a task. Hence all tasks that read from the mailbox should
+probably be of high priority, and should call release_mbox_read() before the next interrupt.
+
+\code
+// We cannot use a local variable to hold the ISR data, as the data still needs to exist when the ISR exits
+int isr_data;
+
+mailbox_t isr_data_mbox;
+
+uint8_t isr() {
+	isr_data = read_data_from_some_microcontroller_system();
+	write_mbox_now(&isr_data_mbox, &isr_data);
+	return 1; // We have (probably) affected a mailbox, so the task switcher needs to run
+}
+
+TASK_ISR(xxxx_vect, isr())
+
+void data_reading_task(void *p) {
+	int isr_data_local_copy;
+	int *i;
+	int16_t version = get_current_mbox_version(&isr_data_mbox);
+	while (1) {
+		if ((i = (int *)read_mbox_min_version(&isr_data_mbox, &version)) != 0) {
+			isr_data_local_copy = *i; // Quickly retrieve the data!
+			release_mbox_read(); // The mailbox is now available to the ISR again
+			process_data(isr_data_local_copy);
+		} else {
+			release_mbox_read(); // A good idea to always call this after any attempt to read a mailbox...
+		}
+		version++;
+	}
+}
+
+int main() {
+	...
+	initialise_mbox(&isr_data_mbox, 0, 0);
+	...
+}
+\endcode
+
+
+\page usage-mutex Using mutexes
+
+A mutex is used to ensure that only one task is using a shared resource at any one time.
+
+\section usage-mutex-1 Example - sharing I/O pins
+
+Given that microcontrollers only have a limited number of I/O pins, it is common for pins to be dual-purpose.
+
+\code
+mutex_t pin_mutex;
+
+void task1(void *p) {
+	...
+	// task 1 now needs to use the dual-purpose pins
+	lock_on(&pin_mutex);
+	// we now "own" the mutex, so we "own" the pins
+	do_stuff_with_the_dual_purpose_pins();
+	// release the pins
+	lock_off(&pin_mutex);
+	...
+}
+
+void task2(void *p) {
+	...
+	// task 2 now needs to use the dual-purpose pins
+	lock_on(&pin_mutex);
+	// we now "own" the mutex, so we "own" the pins
+	do_other_stuff_with_the_dual_purpose_pins();
+	// release the pins
+	lock_off(&pin_mutex);
+	...
+}
+\endcode
+
+*/
