@@ -1,0 +1,1211 @@
+# 9 floor elevator asm program
+
+Uploaded by tumee on 2008-02-25 01:16:00 (rating 0 out of 5)
+
+## Summary
+
+;R1 - location modifier  
+
+;R2 - inside pushbotton modifier  
+
+;R3 - outside down pushbotton modifier  
+
+;R4 - outside up pushbotton modifier  
+
+;P3 - recieve from separate controller  
+
+;P1 - motor  
+
+ ORG 00H
+
+
+START: CLR A  
+
+ MOV R1, #0  
+
+ MOV R2, #0  
+
+ MOV R3, #0  
+
+ MOV R4, #0  
+
+ MOV R5, #0
+
+
+ ;Go down  
+
+ CALL DOWN  
+
+ MOV A, R3  
+
+ JZ NEXT ;Jump if register A=0  
+
+ CALL LOCATION  
+
+ MOV A, R1  
+
+ CLR C  
+
+ SUBB A, R3  
+
+ JNZ AnoZERO ;Jump if register A is no zero  
+
+ DOWN1:CALL OPEN  
+
+ SJMP CHECK\_INSIDE  
+
+ AnoZERO: RLC A  
+
+ JC CYisONE ;Jump if CY=0  
+
+ CALL GO\_DOWN  
+
+ CALL OPEN  
+
+ SJMP CHECK\_INSIDE  
+
+ CYisONE: NOP  
+
+ CALL GO\_UP  
+
+ CALL OPEN  
+
+ SJMP CHECK\_INSIDE
+
+
+NEXT: ;Go up  
+
+ CALL UP  
+
+ MOV A, R4  
+
+ JZ NEXT1 ;Jump if register A=0  
+
+ CALL LOCATION  
+
+ MOV A, R1  
+
+ CLR C  
+
+ SUBB A, R4  
+
+ JNZ AnoZERO1  
+
+ UP1: CALL OPEN  
+
+ SJMP CHECK\_INSIDE1  
+
+ AnoZERO1: RLC A  
+
+ JC CYisONE1  
+
+ CALL GO\_UP1  
+
+ CALL OPEN  
+
+ SJMP CHECK\_INSIDE1  
+
+ CYisONE1: CALL GO\_DOWN1  
+
+ CALL OPEN  
+
+ SJMP CHECK\_INSIDE1  
+
+ SJMP START
+
+
+ NEXT1: NOP  
+
+CHECK\_INSIDE: NOP  
+
+ CALL INSIDE  
+
+ MOV A, R2  
+
+ JZ NEXT2  
+
+ CLR C  
+
+ SUBB A, R1 ;A = inside - location  
+
+ INSIDE1:JNZ AnoZERO2  
+
+ CALL OPEN  
+
+ AnoZERO2: RLC A  
+
+ JNC FALSE  
+
+ CALL GO\_DOWN2  
+
+ CALL OPEN  
+
+ FALSE: CALL OPEN  
+
+ SJMP START
+
+
+ NEXT2: NOP  
+
+CHECK\_INSIDE1: NOP  
+
+ CALL INSIDE  
+
+ MOV A, R2  
+
+ JZ START  
+
+ CLR C  
+
+ SUBB A, R1 ;A = inside - location  
+
+ INSIDE2:JNZ AnoZERO3  
+
+ CALL OPEN  
+
+ AnoZERO3: RLC A  
+
+ JC FALSE1  
+
+ CALL GO\_UP2  
+
+ CALL OPEN  
+
+ FALSE1:CALL OPEN  
+
+ LJMP START
+
+
+MOTOR\_DOWN:  
+
+ MOV P1, #240  
+
+ CALL DELAY  
+
+ MOV P1, #248  
+
+ CALL DELAY  
+
+ MOV P1, #244  
+
+ CALL DELAY  
+
+ MOV P1, #252  
+
+ CALL DELAY  
+
+ RET
+
+
+MOTOR\_UP:  
+
+ MOV P1, #240  
+
+ CALL DELAY  
+
+ MOV P1, #252  
+
+ CALL DELAY  
+
+ MOV P1, #244  
+
+ CALL DELAY  
+
+ MOV P1,#248  
+
+ CALL DELAY  
+
+ RET
+
+
+OPEN:  
+
+ LOOP: CALL DOOR  
+
+ MOV P1, #242  
+
+ CJNE R5, #0, LOOP  
+
+ LOOP1: CALL INSIDE  
+
+ MOV A, R2  
+
+ JZ NEXT3  
+
+ CALL DOWN  
+
+ MOV A, R3  
+
+ JZ NEXT3  
+
+ CALL UP  
+
+ MOV A, R4  
+
+ JZ NEXT3  
+
+ SJMP LOOP1  
+
+ NEXT3: CALL DOOR  
+
+ MOV P1, #250  
+
+ CJNE R5, #1, NEXT3  
+
+ RET
+
+
+DELAY: MOV R6, #5  
+
+LOOP3: MOV R0, #10  
+
+; DJNZ R0, $  
+
+ DJNZ R6, LOOP3  
+
+ RET
+
+
+;***********************************************************;  
+
+LOCATION:  
+
+ CLR A  
+
+ MOV A, P0 ;Floors location.  
+
+ CJNE A, #246, L1 ;1 11110110 #246  
+
+ SJMP RET1  
+
+ L1: CJNE A, #247, L2 ;2 11110111 #247  
+
+ SJMP RET1  
+
+ L2: CJNE A, #248, L3 ;3 11111000 #248  
+
+ SJMP RET1  
+
+ L3: CJNE A, #249, L4 ;4 11111001 #249  
+
+ SJMP RET1  
+
+ L4: CJNE A, #250, L5 ;5 11111010 #250  
+
+ SJMP RET1  
+
+ L5: CJNE A, #251, L6 ;6 11111011 #251  
+
+ SJMP RET1  
+
+ L6: CJNE A, #252, L7 ;7 11111100 #252  
+
+ SJMP RET1  
+
+ L7: CJNE A, #253, L8 ;8 11111101 #253  
+
+ SJMP RET1  
+
+ L8: CJNE A, #254, NONE ;9 11111110 #254  
+
+ RET1: CLR C  
+
+ SUBB A, #245  
+
+ MOV R1, A  
+
+ RET  
+
+ NONE: MOV R1, #0  
+
+ CLR A  
+
+ RET
+
+
+INSIDE:  
+
+ MOV R2, #0  
+
+ CLR A  
+
+ MOV A, P0 ;Inside pushbotton  
+
+ CJNE A, #111, I1 ;1 01101111 #111  
+
+ MOV R2, #1  
+
+ SJMP RET2  
+
+ I1: CJNE A, #127, I2 ;2 01111111 #127  
+
+ MOV R2, #2  
+
+ SJMP RET2  
+
+ I2: CJNE A, #143, I3 ;3 10001111 #143  
+
+ MOV R2, #3  
+
+ SJMP RET2  
+
+ I3: CJNE A, #159, I4 ;4 10011111 #159  
+
+ MOV R2, #4  
+
+ SJMP RET2  
+
+ I4: CJNE A, #175, I5 ;5 10101111 #175  
+
+ MOV R2, #5  
+
+ SJMP RET2  
+
+ I5: CJNE A, #191, I6 ;6 10111111 #191  
+
+ MOV R2, #6  
+
+ SJMP RET2  
+
+ I6: CJNE A, #207, I7 ;7 11001111 #207  
+
+ MOV R2, #7  
+
+ SJMP RET2  
+
+ I7: CJNE A, #223, I8 ;8 11011111 #223  
+
+ MOV R2, #8  
+
+ SJMP RET2  
+
+ I8: CJNE A, #239, NONE1 ;9 11101111 #239  
+
+ MOV R2, #9  
+
+ RET2: RET  
+
+ NONE1: MOV R2, #0  
+
+ CLR A  
+
+ RET
+
+
+DOWN:  
+
+ MOV R3, #0  
+
+ CLR A  
+
+ MOV A, P2 ;Outside pushbottons "DOWN"  
+
+ CJNE A, #246, D1 ;2 11110110 #246  
+
+ MOV R3, #2  
+
+ SJMP RET3  
+
+ D1: CJNE A, #247, D2 ;3 11110111 #247  
+
+ MOV R3, #3  
+
+ SJMP RET3  
+
+ D2: CJNE A, #248, D3 ;4 11111000 #248  
+
+ MOV R3, #4  
+
+ SJMP RET3  
+
+ D3: CJNE A, #249, D4 ;5 11111001 #249  
+
+ MOV R3, #5  
+
+ SJMP RET3  
+
+ D4: CJNE A, #250, D5 ;6 11111010 #250  
+
+ MOV R3, #6  
+
+ SJMP RET3  
+
+ D5: CJNE A, #251, D6 ;7 11111011 #251  
+
+ MOV R3, #7  
+
+ SJMP RET3  
+
+ D6: CJNE A, #252, D7 ;8 11111100 #252  
+
+ MOV R4, #8  
+
+ SJMP RET3  
+
+ D7: CJNE A, #253, NONE2 ;9 11111101 #253  
+
+ MOV R3, #9  
+
+ RET3: RET  
+
+ NONE2: MOV R3, #0  
+
+ CLR A  
+
+ RET
+
+
+UP:  
+
+ MOV R4, #0  
+
+ CLR A  
+
+ MOV A, P2 ;Outside pushbottons "UP"  
+
+ CJNE A, #254, U1 ;1 11111110 #254  
+
+ MOV R4, #1  
+
+ SJMP RET4  
+
+ U1: CJNE A, #111, U2 ;2 01101111 #111  
+
+ MOV R4, #2  
+
+ SJMP RET4  
+
+ U2: CJNE A, #127, U3 ;3 01111111 #127  
+
+ MOV R4, #3  
+
+ SJMP RET4  
+
+ U3: CJNE A, #143, U4 ;4 10001111 #143  
+
+ MOV R4, #4  
+
+ SJMP RET4  
+
+ U4: CJNE A, #159, U5 ;5 10011111 #159  
+
+ MOV R4, #5  
+
+ SJMP RET4  
+
+ U5: CJNE A, #175, U6 ;6 10101111 #175  
+
+ MOV R4, #6  
+
+ SJMP RET4  
+
+ U6: CJNE A, #191, U7 ;7 10111111 #191  
+
+ MOV R4, #7  
+
+ SJMP RET4  
+
+ U7: CJNE A, #207, NONE3 ;8 11001111 #207  
+
+ MOV R4, #8  
+
+ RET4: RET  
+
+ NONE3: MOV A, #0  
+
+ CLR A  
+
+ RET
+
+
+DOOR:  
+
+ MOV R5, #0  
+
+ CLR A  
+
+ MOV A, P2  
+
+ CJNE A, #223, DR  
+
+ MOV R5 , #1  
+
+ SJMP RET6  
+
+ DR: CJNE A, #239, NONE8  
+
+ MOV R5, #2  
+
+ RET6:RET  
+
+ NONE8: MOV R5, #0  
+
+ CLR A  
+
+ RET  
+
+;**************************************************************;  
+
+GO\_DOWN:  
+
+ CJNE R3, #9, N1  
+
+ L1\_1: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #9, L1\_1  
+
+ SJMP RET5  
+
+ N1: CJNE R3, #8, N1\_1  
+
+ L1\_2: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #8, L1\_2  
+
+ SJMP RET5  
+
+ N1\_1: CJNE R3, #7, N1\_2  
+
+ L1\_3: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #7, L1\_3  
+
+ SJMP RET5  
+
+ N1\_2: CJNE R3, #6, N1\_3  
+
+ L1\_4: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #6, L1\_4  
+
+ SJMP RET5  
+
+ N1\_3: CJNE R3, #5, N1\_4  
+
+ L1\_5: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #5, L1\_5  
+
+ SJMP RET5  
+
+ N1\_4: CJNE R3, #4, N1\_5  
+
+ L1\_6: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #4, L1\_6  
+
+ SJMP RET5  
+
+ N1\_5: CJNE R3, #3, N1\_6  
+
+ L1\_7: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #3, L1\_7  
+
+ SJMP RET5  
+
+ N1\_6: CJNE R3, #2, NO1  
+
+ L1\_8: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN  
+
+ CJNE R1, #2, L1\_8  
+
+ SJMP RET5  
+
+ NO1: LJMP START  
+
+ RET5: RET
+
+
+CHECK\_DOWN:  
+
+ CALL DOWN  
+
+ MOV A, R3  
+
+ JZ NONE4  
+
+ MOV A, R1  
+
+ CLR C  
+
+ SUBB A, R3 ;A=LOCATION - DOWN  
+
+ JNZ AisONE  
+
+ LJMP DOWN1  
+
+ AisONE:RLC A  
+
+ JC FALSE2  
+
+ LJMP AnoZERO  
+
+ NONE4:NOP  
+
+ FALSE2:NOP  
+
+ RET
+
+
+GO\_UP:  
+
+ CJNE R3, #9, N2  
+
+ L2\_1: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #9, L2\_1  
+
+ N2: CJNE R3, #8, N2\_1  
+
+ L2\_2: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #8, L2\_2  
+
+ N2\_1: CJNE R3, #7, N2\_2  
+
+ L2\_3: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #7, L2\_3  
+
+ N2\_2: CJNE R3, #6, N2\_3  
+
+ L2\_4: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #6, L2\_4  
+
+ N2\_3: CJNE R3, #5, N2\_4  
+
+ L2\_5: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #5, L2\_5  
+
+ N2\_4: CJNE R3, #4, N2\_5  
+
+ L2\_6: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #4, L2\_6  
+
+ N2\_5: CJNE R3, #3, N2\_6  
+
+ L2\_7: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #3, L2\_7  
+
+ N2\_6: CJNE R3, #2, NO2  
+
+ L2\_8: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #2, L2\_8  
+
+ SJMP DONE1  
+
+ NO2: LJMP GO\_DOWN  
+
+ DONE1: RET
+
+
+GO\_UP1:  
+
+ CJNE R4, #8, N3  
+
+ L3\_1: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #8, L3\_1  
+
+ N3: CJNE R4, #7, N3\_1  
+
+ L3\_2: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #7, L3\_2  
+
+ N3\_1: CJNE R4, #6, N3\_2  
+
+ L3\_3: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #6, L3\_3  
+
+ N3\_2: CJNE R4, #5, N3\_3  
+
+ L3\_4: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #5, L3\_4  
+
+ N3\_3: CJNE R4, #4, N3\_4  
+
+ L3\_5: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #4, L3\_5  
+
+ N3\_4: CJNE R4, #3, N3\_5  
+
+ L3\_6: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #3, L3\_6  
+
+ N3\_5: CJNE R4, #2, N3\_6  
+
+ L3\_7: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #2, L3\_7  
+
+ N3\_6: CJNE R4, #1, NO3  
+
+ L3\_8: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP  
+
+ CJNE R1, #1, L3\_8  
+
+ SJMP DONE2  
+
+ NO3: LJMP NEXT  
+
+ DONE2: RET
+
+
+CHECK\_UP:  
+
+ CALL UP  
+
+ MOV A, R4  
+
+ JZ NONE5  
+
+ MOV A, R1  
+
+ CLR C  
+
+ SUBB A, R4  
+
+ JNZ AisONE1  
+
+ LJMP UP1  
+
+ AisONE1:RLC A  
+
+ JNC FALSE3  
+
+ LJMP AnoZERO1  
+
+ NONE5:NOP  
+
+ FALSE3:NOP  
+
+ RET
+
+
+GO\_DOWN1:  
+
+ CJNE R4, #8, N4  
+
+ L4\_1: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CJNE R1, #8, L4\_1  
+
+ N4: CJNE R4, #7, N4\_1  
+
+ L4\_2: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CJNE R1, #7, L4\_2  
+
+ N4\_1: CJNE R4, #6, N4\_2  
+
+ L4\_3: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CJNE R1, #6, L4\_3  
+
+ N4\_2: CJNE R4, #5, N4\_3  
+
+ L4\_4: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CJNE R1, #5, L4\_4  
+
+ N4\_3: CJNE R4, #4, N4\_4  
+
+ L4\_5: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CJNE R1, #4, L4\_5  
+
+ N4\_4: CJNE R4, #3, N4\_5  
+
+ L4\_6: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CJNE R1, #3, L4\_6  
+
+ N4\_5: CJNE R4, #2, N4\_6  
+
+ L4\_7: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CJNE R1, #2, L4\_7  
+
+ N4\_6: CJNE R4, #1, NO4  
+
+ L4\_8: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CJNE R1, #1, L4\_8  
+
+ SJMP DONE3  
+
+ NO4: LJMP NEXT  
+
+ DONE3: RET
+
+
+GO\_DOWN2:  
+
+ CJNE R2, #9, N5  
+
+ L5\_1: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #9, L5\_1  
+
+ N5: CJNE R2, #8, N5\_1  
+
+ L5\_2: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #8, L5\_2  
+
+ N5\_1: CJNE R2, #7, N5\_2  
+
+ L5\_3: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #7, L5\_3  
+
+ N5\_2: CJNE R2, #6, N5\_3  
+
+ L5\_4: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #6, L5\_4  
+
+ N5\_3: CJNE R2, #5, N5\_4  
+
+ L5\_5: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #5, L5\_5  
+
+ N5\_4: CJNE R2, #4, N5\_5  
+
+ L5\_6: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #4, L5\_6  
+
+ N5\_5: CJNE R2, #3, N5\_6  
+
+ L5\_7: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #3, L5\_7  
+
+ N5\_6: CJNE R2, #2, N5\_7  
+
+ L5\_8: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #2, L5\_8  
+
+ N5\_7: CJNE R2, #1, NO5  
+
+ L5\_9: CALL LOCATION  
+
+ CALL MOTOR\_DOWN  
+
+ CALL CHECK\_DOWN1  
+
+ CJNE R1, #1, L5\_9  
+
+ SJMP DONE4  
+
+ NO5: LJMP START  
+
+ DONE4: RET
+
+
+CHECK\_DOWN1:  
+
+ CALL INSIDE  
+
+ MOV A, R2  
+
+ JZ NONE6  
+
+ MOV A, R1  
+
+ CLR C  
+
+ SUBB A, R2  
+
+ JNZ AisONE2  
+
+ LJMP INSIDE1  
+
+ AisONE2:RLC A  
+
+ JC FALSE4  
+
+ LJMP AnoZERO2  
+
+ NONE6:NOP  
+
+ FALSE4:NOP  
+
+ RET
+
+
+GO\_UP2:  
+
+ CJNE R2, #9, N6  
+
+ L6\_1: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #9, L6\_1  
+
+ N6: CJNE R2, #8, N6\_1  
+
+ L6\_2: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #8, L6\_2  
+
+ N6\_1: CJNE R2, #7, N6\_2  
+
+ L6\_3: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #7, L6\_3  
+
+ N6\_2: CJNE R2, #6, N6\_3  
+
+ L6\_4: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #6, L6\_4  
+
+ N6\_3: CJNE R2, #5, N6\_4  
+
+ L6\_5: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #5, L6\_5  
+
+ N6\_4: CJNE R2, #4, N6\_5  
+
+ L6\_6: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #4, L6\_6  
+
+ N6\_5: CJNE R2, #3, N6\_6  
+
+ L6\_7: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #3, L6\_7  
+
+ N6\_6: CJNE R2, #2, N6\_7  
+
+ L6\_8: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #2, L6\_8  
+
+ N6\_7: CJNE R2, #1, NO6  
+
+ L6\_9: CALL LOCATION  
+
+ CALL MOTOR\_UP  
+
+ CALL CHECK\_UP1  
+
+ CJNE R1, #1, L6\_9  
+
+ SJMP DONE5  
+
+ NO6: LJMP GO\_DOWN  
+
+ DONE5: RET
+
+
+CHECK\_UP1:  
+
+ CALL INSIDE  
+
+ MOV A, R2  
+
+ JZ NONE7  
+
+ MOV A, R1  
+
+ CLR C  
+
+ SUBB A, R2  
+
+ JNZ AisONE3  
+
+ LJMP INSIDE1  
+
+ AisONE3:RLC A  
+
+ JC FALSE5  
+
+ LJMP AnoZERO3  
+
+ NONE7:NOP  
+
+ FALSE5:NOP  
+
+ RET
+
+
+ LJMP START  
+
+ END
