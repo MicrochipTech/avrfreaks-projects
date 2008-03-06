@@ -1,0 +1,1474 @@
+
+AVRASM ver. 2.1.14  C:\WizNet contest\WIZnet_001185\WIZnet_001185.asm Wed Jan 30 11:58:08 2008
+
+C:\WizNet contest\WIZnet_001185\WIZnet_001185.asm(7): Including file 'C:\Program Files\Atmel\AVR Tools\AvrAssembler2\Appnotes\m169def.inc'
+C:\WizNet contest\WIZnet_001185\WIZnet_001185.asm(872): Including file 'C:\WizNet contest\WIZnet_001185\WIZnet_001185_1.inc'
+C:\WizNet contest\WIZnet_001185\WIZnet_001185.asm(873): Including file 'C:\WizNet contest\WIZnet_001185\WIZnet_001185_2.inc'
+                 
+                 
+                 ;
+                 ;       Project Title: "Terminalator II - The SQL"
+                 ;
+                 
+                         .list
+                 
+                 ; ------------------------------------------------------
+                 ;       W5100 register addresses
+                 #define W_MR    0x0000          ; mode register
+                 #define W_GWR   0x0001          ; gateway address
+                 #define W_IMR   0x0016          ; interrupt mask
+                 #define S0_MR   0x0400          ; socket 0 mode register
+                 #define S0_CMD  0x0401          ; socket 0 command register
+                 #define S0_IR   0x0402          ; socket 0 interrupt register
+                 #define S0_SR   0x0403          ; socket 0 status register
+                 #define S0_PORT 0x0404          ; socket 0 port address, high byte
+                 #define S0_RCNT 0x0426          ; socket 0 recv byte count (S0_RX_RSR)
+                 #define S0_RPTR 0x0428          ; socket 0 recv read pointer (S0_RX_RD)
+                 #define S0_TSZ  0x0420          ; socket 0 trans free size (S0_TX_FSR)
+                 #define S0_TPTR 0x0424          ; socket 0 trans write pointer (S0_TX_WR)
+                 
+                 ;       other stuff
+                 #define S0_RX   0x6000          ; socket 0 base address, receive buffer
+                 #define S0_TX   0x4000          ; socket 0 base address, transmit buffer
+                 #define S0_RMSK 0x1fff          ; 8K mask - socket 0 receive
+                 #define S0_ROVR 0x80            ; overflow mask, high byte, recv socket 0
+                 #define S0_TMSK 0x1fff          ; 8K mask - socket 0 transmit
+                 #define S0_TOVR 0x20            ; overflow mask, high byte, xmit socket 0
+                 
+                 #define STS_CLOSED 0x00         ; SOCK_CLOSED status, S0_SR
+                 #define STS_INIT   0x13         ; SOCK_INIT status, S0_SR
+                 #define STS_EST    0x17         ; SOCK_ESTABLISHED status, S0_SR
+                 #define STS_CWAIT  0x1c         ; SOCK_CLOSE_WAIT status, S0_SR
+                 
+                 #define CMD_OPEN   0x01         ; OPEN command, S0_CR
+                 #define CMD_CLOSE  0x10         ; CLOSE command, S0_CR
+                 #define CMD_CON    0x04         ; CONNECT command, S0_CR
+                 #define CMD_RECV   0x40         ; receive processed command, S0_CR
+                 #define CMD_SEND   0x20         ; transmit command, S0_CR
+                 #define CMD_DISC   0x08         ; DISCON command, S0_CR
+                 
+                         .dseg                   ; data segment
+000100           xot:    .byte   1               ; number of bytes in obuf
+000101           ibuf:   .byte   256             ; the input buffer (from PC to us)
+000201           obuf:   .byte   128             ; the output buffer (from terminal, to PC)
+                 
+                         .cseg                   ; code segment
+                 ; ------------------------------------------------------
+                 ;       the interrupt vectors are at 0x0000
+                 ;       we don't need full vectors, but our mother taught us to be polite
+                         .org 0x0000
+000000 940c 0060         jmp     main            ; reset
+000002 940c 002e         jmp     nullvector      ; IRQ0 handler
+000004 940c 002e         jmp     nullvector      ; PCINT0 handler
+000006 940c 002e         jmp     nullvector      ; PCINT1 handler
+000008 940c 002e         jmp     nullvector      ; Timer 2 compare handler
+00000a 940c 002e         jmp     nullvector      ; Timer 2 overflow handler
+00000c 940c 002e         jmp     nullvector      ; Timer 1 capture handler
+00000e 940c 002e         jmp     nullvector      ; Timer 1 compare A handler
+000010 940c 002e         jmp     nullvector      ; Timer 1 compare B handler
+000012 940c 002e         jmp     nullvector      ; Timer 1 overflow handler
+000014 940c 002e         jmp     nullvector      ; Timer 0 compare handler
+000016 940c 002e         jmp     nullvector      ; Timer 0 overflow handler
+000018 940c 002e         jmp     nullvector      ; SPI transfer complete handler
+00001a 940c 002e         jmp     nullvector      ; USART Rx complete handler
+00001c 940c 002e         jmp     nullvector      ; USART UDR empty handler
+00001e 940c 002e         jmp     nullvector      ; USART Tx complete handler
+000020 940c 002e         jmp     nullvector      ; USI start condition handler
+000022 940c 002e         jmp     nullvector      ; USI overflow handler
+000024 940c 002e         jmp     nullvector      ; analog comparator handler
+000026 940c 002e         jmp     nullvector      ; ADC conversion complete handler
+000028 940c 002e         jmp     nullvector      ; EEPROM ready handler
+00002a 940c 002e         jmp     nullvector      ; SPM ready handler
+00002c 940c 0248         jmp     i_lcd_sof       ; LCD start of frame handler
+                 
+                 nullvector:
+00002e 9518              reti
+                 
+00002f 4920
+000030 494e
+000031 2054      msg1:   .db     " INIT "
+000032 6e49
+000033 7469
+000034 6169
+000035 696c
+000036 617a
+000037 6974
+000038 6e6f      msg2:   .db     "Initialization"
+000039 0000              .dw     0
+00003a 6f43
+00003b 6e6e
+00003c 6365
+00003d 6974
+00003e 6e6f
+00003f 7420
+000040 7265
+000041 696d
+000042 616e
+000043 6574
+000044 2064      msg3:   .db     "Connection terminated "
+000045 0000              .dw     0
+000046 704f
+000047 6e65
+000048 6e69
+000049 2067
+00004a 7361
+00004b 6320
+00004c 696c
+00004d 6e65
+00004e 2074      msg4:   .db     "Opening as client "
+00004f 0000              .dw     0
+000050 6552
+000051 6461
+000052 2079
+000053 6f66
+000054 2072
+000055 6e69
+000056 7570
+000057 2e74
+000058 2e2e      msg5:   .db     "Ready for input..."
+000059 0000              .dw     0
+00005a 4320
+00005b 4c4f
+00005c 2044      msg6:   .db     " COLD "
+00005d 5720
+00005e 5241
+00005f 204d      msg7:   .db     " WARM "
+                 
+000060 94f8      main:   cli                      ; not necessary, but so what
+000061 e004              ldi     r16,high(RAMEND) ; set up stack pointer
+000062 bf0e              out     SPH,r16
+000063 ef0f              ldi     r16,low(RAMEND)
+000064 bf0d              out     SPL,r16
+                 
+000065 d2d4              rcall   USART_init      ; wake up the USART
+000066 d27e              rcall   lcd_init        ; and kick the LCD
+000067 9478              sei                     ; start up the band
+                 
+000068 e0f0              ldi     zh,high(msg1<<1) ; let them know we're alive
+000069 e5ee              ldi     zl,low(msg1<<1)
+00006a d1d3              rcall   lcd_fmsg
+00006b d2bf              rcall   usart_crlf       ; space down a bit on terminal
+00006c d2be              rcall   usart_crlf
+00006d e0f0              ldi     zh,high(msg2<<1)
+00006e e6e4              ldi     zl,low(msg2<<1)
+00006f d2c2              rcall   usart_flash      ; put a message on the terminal
+000070 d2ba              rcall   usart_crlf
+                 
+000071 d0ed              rcall   hard_reset_W5100 ; hardware reset of WIZ
+                 
+000072 e0f0              ldi     zh,high(msg6<<1) ; let them know we're alive
+000073 ebe4              ldi     zl,low(msg6<<1)
+000074 d1c9              rcall   lcd_fmsg
+                 
+000075 d0ad              rcall   init_SPI         ; set up SPI and I/O bits
+                 
+000076 e0f0              ldi     zh,high(msg7<<1) ; let them know we're alive
+000077 ebea              ldi     zl,low(msg7<<1)
+000078 d1c5              rcall   lcd_fmsg
+                 
+000079 d105              rcall   init_WIZnet     ; and the WIZnet
+00007a 2455              clr     r5              ; r5 is the shutdown flag
+00007b 9250 0100         sts     xot,r5          ; use it to zero buffer count
+                 
+00007d e0f0              ldi     zh,high(msg4<<1)
+00007e e8ec              ldi     zl,low(msg4<<1)
+00007f d2b2              rcall   usart_flash     ; put a message on the terminal
+000080 d2aa              rcall   usart_crlf
+                 
+000081 d064              rcall   open_client     ; get going as a client
+000082 2311              tst     r17
+000083 f451              brne    died
+                 
+000084 e0f0              ldi     zh,high(msg5<<1)
+000085 eae0              ldi     zl,low(msg5<<1)
+000086 d2ab              rcall   usart_flash     ; put a message on the terminal
+000087 d2a3              rcall   usart_crlf
+000088 d2a2              rcall   usart_crlf
+                 
+000089 d00a      mloop:  rcall   user_input      ; see if the monkeys have written Hamlet
+00008a d047              rcall   host_input      ; process any incoming traffic
+00008b d074              rcall   terminations    ; any of various terminations?
+00008c 2311              tst     r17
+00008d f3d9              breq    mloop            ; we're still alive
+                 
+00008e d29c      died:   rcall   usart_crlf
+00008f e0f0              ldi     zh,high(msg3<<1) ; "terminated" message
+000090 e7e4              ldi     zl,low(msg3<<1)
+000091 d2a0              rcall   usart_flash
+000092 d298              rcall   usart_crlf
+                 
+000093 cfff      here:   rjmp    here            ; die now
+                 
+                 ; ------------------------------------------------------
+                 ;       user_input - see if they've typed something
+                 ;
+                 ;       we'll do some simple editing and processing, but basically
+                 ;       stuff characters into the output buffer until we have either
+                 ;       a CR or 128 characters. We'll send CRs, ignore LFs, handle
+                 ;       backspaces and escapes, and echo other printables.
+                 ;
+                 ;       note: this trashes r16
+                 
+                 user_input:
+000094 d2b6              rcall   getchar         ; any soup in the pot?
+000095 f409              brne    inchr
+000096 9508              ret
+                 
+000097 93ff      inchr:  push    zh              ; we have a character in r16
+000098 93ef              push    zl
+000099 934f              push    r20
+                 
+00009a 310b              cpi     r16,0x1b        ; ESC
+00009b f161              breq    c_esc
+00009c 300d              cpi     r16,0x0d        ; CR
+00009d f031              breq    c_cr
+00009e 3008              cpi     r16,0x08        ; BS
+00009f f0f9              breq    c_bs
+0000a0 3200              cpi     r16,0x20        ; see if it's printable
+0000a1 f160              brlo    ignore
+0000a2 370f              cpi     r16,0x7f        ; other printable limit
+0000a3 f550              brsh    ignore
+                 
+0000a4 d2b2      c_cr:   rcall   sendchar        ; echo it
+0000a5 9140 0100         lds     r20,xot         ; previous output count
+0000a7 e0f2              ldi     zh,high(obuf)   ; output buffer base address
+0000a8 e0e1              ldi     zl,low(obuf)
+0000a9 0fe4              add     zl,r20          ; add #chars in buffer
+0000aa f408              brcc    noc
+0000ab 95f3              inc     zh              ; add in carry
+0000ac 8300      noc:    st      z,r16           ; put new character away
+0000ad 9543              inc     r20             ; count this one
+0000ae 9340 0100         sts     xot,r20         ; and update   
+                 
+0000b0 300d              cpi     r16,0x0d        ; CR?
+0000b1 f019              breq    eol             ; yes - transmit the buffer contents
+0000b2 fd47              sbrc    r20,7           ; is the buffer full (cnt = 128?)
+0000b3 c003              rjmp    eol2            ; jump if yes
+0000b4 c019              rjmp    ignore          ; all done with this one
+                 
+0000b5 e00a      eol:    ldi     r16,0x0a        ; CR --> CRLF for display
+0000b6 d2a0              rcall   sendchar
+0000b7 e0f2      eol2:   ldi     zh,high(obuf)   ; send buffer to WIZ
+0000b8 e0e1              ldi     zl,low(obuf)
+0000b9 2f04              mov     r16,r20         ; number of bytes to send
+0000ba d137              rcall   SRAM_write      ; shoot it out
+0000bb 2700              clr     r16
+0000bc 9300 0100         sts     xot,r16         ; buffer is empty now
+0000be c00f              rjmp    ignore          ; say goodnight, gracie
+                 
+                 ;       we're going to assume the terminal can handle a backspace
+0000bf 9140 0100 c_bs:   lds     r20,xot         ; number of chars already
+0000c1 2344              tst     r20
+0000c2 f059              breq    ignore          ; if none, ignore backspace
+0000c3 954a              dec     r20             ; one fewer now
+0000c4 9340 0100         sts     xot,r20
+0000c6 d290              rcall   sendchar        ; here's hoping...
+0000c7 c006              rjmp    ignore
+                 
+                 ;       ESC just tosses the whole line
+0000c8 e50c      c_esc:  ldi     r16,'\\'        ; signal killing the line
+0000c9 d28d              rcall   sendchar
+0000ca d260              rcall   usart_crlf      ; new line
+0000cb 2700              clr     r16
+0000cc 9300 0100         sts     xot,r16         ; empty the buffer
+                 
+0000ce 914f      ignore: pop     r20
+0000cf 91ef              pop     zl
+0000d0 91ff              pop     zh
+0000d1 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       process_rx - process incoming data
+                 ;
+                 ;       if something's in the WIZ input buffer, this simply
+                 ;       copies it as is to the terminal. hopefully the host
+                 ;       did CRLFs, because we don't.
+                 ;
+                 ;       note: trashes r16
+                 
+                 host_input:
+0000d2 93ff              push    zh
+0000d3 93ef              push    zl
+0000d4 934f              push    r20
+                 
+0000d5 e0f1              ldi     zh,high(ibuf)   ; input buffer
+0000d6 e0e1              ldi     zl,low(ibuf)
+0000d7 ef0f              ldi     r16,255         ; max bytes to read
+0000d8 d0d8              rcall   recv_read
+0000d9 2300              tst     r16             ; number actually read
+0000da f039              breq    noin            ; jump if no input
+0000db 2f40              mov     r20,r16         ; save the value
+                 
+0000dc e0f1              ldi     zh,high(ibuf)   ; input buffer
+0000dd e0e1              ldi     zl,low(ibuf)
+0000de 9101      mo:     ld      r16,z+
+0000df d277              rcall   sendchar
+0000e0 954a              dec     r20             ; count down
+0000e1 f7e1              brne    mo
+                 
+0000e2 914f      noin:   pop     r20
+0000e3 91ef              pop     zl
+0000e4 91ff              pop     zh
+0000e5 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       open_client - open socket 0 and make client connection
+                 ;
+                 ;       returns: r17 = 0 if good, nonzero if failed
+                 
+                 open_client:
+0000e6 93df              push    yh
+0000e7 93cf              push    yl
+0000e8 e0d4              ldi     yh,high(S0_MR)  ; socket mode register address
+0000e9 e0c0              ldi     yl,low(S0_MR)
+0000ea e011              ldi     r17,0x01        ; set TCP mode
+0000eb d064              rcall   WIZ_write
+0000ec 91cf              pop     yl
+0000ed 91df              pop     yh
+                 
+0000ee e011              ldi     r17,CMD_OPEN    ; open command
+0000ef d067              rcall   WIZ_cmd
+0000f0 d021      wtinit: rcall   get_status      ; check on status
+0000f1 3010              cpi     r17,STS_CLOSED  ; is it closed?
+0000f2 f059              breq    fail
+0000f3 3113              cpi     r17,STS_INIT    ; init ok?
+0000f4 f7d9              brne    wtinit
+                 
+0000f5 e014              ldi     r17,CMD_CON     ; connect command
+0000f6 d060              rcall   WIZ_cmd
+0000f7 d01a      wtcon:  rcall   get_status      ; check on status
+0000f8 3010              cpi     r17,STS_CLOSED  ; did we time out?
+0000f9 f021              breq    fail
+0000fa 3117              cpi     r17,STS_EST     ; connection established?
+0000fb f7d9              brne    wtcon
+                 
+0000fc 2711              clr     r17             ; all looks good
+0000fd 9508              ret
+                 
+0000fe ef1f      fail:   ser     r17             ; failure of some sort
+0000ff 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       terminations - see if we need to shut down and do it
+                 ;
+                 ;       the other end can request it, we can request it, or something
+                 ;       may have happened to our connection. who knows, who cares?
+                 ;
+                 ;       r5 - if nonzero, terminate us (internal request)
+                 ;       returns:
+                 ;         r17 = 0 if we're still alive
+                 ;         r17 nonzero if we shut things down
+                 
+                 terminations:
+000100 d011              rcall   get_status      ; check on status
+000101 3010              cpi     r17,STS_CLOSED  ; is it closed?
+000102 f059              breq    closem
+000103 311c              cpi     r17,STS_CWAIT   ; SOCK_CLOSE_WAIT?
+000104 f021              breq    disc            ; yup, disconnect
+000105 2055              tst     r5              ; do our guys want to quit?
+000106 f411              brne    disc            ; jump if yuppers
+                 
+000107 2711              clr     r17             ; we live another day
+000108 9508              ret
+                 
+000109 e018      disc:   ldi     r17,CMD_DISC    ; DISCON command
+00010a d04c              rcall   WIZ_cmd
+00010b d006      pwait:  rcall   get_status      ; check on status
+00010c 3010              cpi     r17,STS_CLOSED  ; is it closed?
+00010d f7e9              brne    pwait           ; wait until it is
+                 
+00010e e110      closem: ldi     r17,CMD_CLOSE   ; close command
+00010f d047              rcall   WIZ_cmd
+000110 ef1f              ser     r17             ; nonzero return
+000111 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       get_status - return the socket 0 status
+                 ;
+                 ;       r17 - returned status byte
+                 
+                 get_status:
+000112 93df              push    yh
+000113 93cf              push    yl
+                 
+000114 e0d4              ldi     yh,high(S0_SR)  ; socket 0 status register
+000115 e0c3              ldi     yl,low(S0_SR)
+000116 d034              rcall   WIZ_read        ; read it
+                 
+000117 91cf              pop     yl
+000118 91df              pop     yh
+000119 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       wait10ms - wait 10 milliseconds or so
+                 ;
+                 ;       we're running at 8MHz, so that's 80,000 clock cycles
+                 
+                 wait10ms:
+00011a 93af              push    xl
+00011b 93bf              push    xh
+                 
+00011c eaa8              ldi     xl,low(25000)   ; make it 100K cycles
+00011d e6b1              ldi     xh,high(25000)
+00011e 9711      ww:     sbiw    xh:xl,1         ; 2 cycles
+00011f f7f1              brne    ww              ; usually 2 cycles
+                 
+000120 91bf              pop     xh
+000121 91af              pop     xl
+000122 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       init_SPI - set up SPI for dataflash and WIZnet
+                 ;
+                 ;       the Butterfly's dataflash memory sits on the SPI bus, which
+                 ;       the WIZ810MJ shares. The W5100's SPI_EN is pulled high via a
+                 ;       resistor on the breakout board, but must be low to release the
+                 ;       SPI bus. Consequently the Butterfly's dataflash may not be
+                 ;       accessed without a hardware change to allow MCU control of
+                 ;       the SPI_EN line.
+                 ;
+                 ;       the output ports that need a high signal are dingled prior to
+                 ;       setting them output, so that when the switch occurs there won't be
+                 ;       a low spike. it does temporarily turn on the pullups, but no matter.
+                 ;
+                 ;       E4 input  (INT, WIZnet)
+                 ;       E5 output (~SCS, WIZnet. 0 to select)
+                 ;       E6 output (WIZ810MJ reset line. pull low to reset)
+                 ;       E7 output (reset, dataflash. 0 to reset, 10 microseconds)
+                 ;       B0 output (~CS, dataflash. 0 to select)
+                 ;       B1 output (SCK)
+                 ;       B2 output (MOSI)
+                 ;       B3 input  (MISO)
+                 
+                 init_SPI:
+000123 930f              push    r16
+                 
+000124 986c              cbi     ddre,porte4     ; E4 is an input (INT, WIZnet)
+                 
+000125 9a75              sbi     porte,porte5    ; ~SCS high to deselect WIZnet
+000126 9a6d              sbi     ddre,porte5     ; E5 is an output (~SCS, WIZnet, 0 = select)
+                 
+000127 9a76              sbi     porte,porte6    ; WIZnet reset (high = no reset)
+000128 9a6e              sbi     ddre,porte6     ; E6 is an output (WIZnet reset, 0 = reset)
+                 
+000129 9a77              sbi     porte,porte7    ; dataflash reset (high = no reset)
+00012a 9a6f              sbi     ddre,porte7     ; E7 is an output (dataflash reset, 0 = reset)
+                 
+00012b 9a28              sbi     portb,portb0    ; ~CS high to deselect dataflash
+00012c 9a20              sbi     ddrb,portb0     ; B0 is an output (dataflash ~CS)
+                 
+00012d 9a21              sbi     ddrb,portb1     ; B1 is an output (SCK, low when idle - mode 0)
+                 
+00012e 9a22              sbi     ddrb,portb2     ; B2 is an output (MOSI)
+00012f 9823              cbi     ddrb,portb3     ; B3 is an input (MISO)
+                 
+000130 d02e              rcall   hard_reset_W5100 ; hit it with a stick
+                 
+000131 e001              ldi     r16,(1<<spi2x)  ; SPI double speed
+000132 bd0d              out     spsr,r16
+                 
+000133 e500              ldi     r16,(1<<spe)|(1<<mstr)|(0<<cpha)|(0<<cpol)
+000134 bd0c              out     spcr,r16        ; enable SPI, master, mode 0
+                 
+000135 910f              pop     r16
+000136 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       WIZnet_32 - do a 32 bit SPI dingle with the WIZnet
+                 ;
+                 ;       y   - W5100 address to read or write (incremented on return)
+                 ;       r16 - lead in byte (read or write command - 0x0f or 0xf0)
+                 ;       r17 - following byte (byte to write or don't care for read)
+                 ;             returned as don't care for write or value for read
+                 
+                 WIZnet_32:
+000137 932f              push    r18
+                 
+000138 9875              cbi     porte,porte5    ; ~SCS low to select WIZnet
+000139 2f20              mov     r18,r16         ; read or write command
+00013a d00b              rcall   WIZ_out
+00013b 2f2d              mov     r18,yh          ; high address
+00013c d009              rcall   WIZ_out
+00013d 2f2c              mov     r18,yl          ; low address
+00013e d007              rcall   WIZ_out
+00013f 2f21              mov     r18,r17         ; data or don't care
+000140 d005              rcall   WIZ_out
+                 
+000141 b51e              in      r17,spdr        ; grab incoming byte
+000142 9a75              sbi     porte,porte5    ; ~SCS high to deselect WIZnet
+000143 9621              adiw    yh:yl,1         ; increment address
+                 
+000144 912f              pop     r18
+000145 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       WIZ_out - exchange byte with WIZnet
+                 ;
+                 ;       r18 - byte going out - garbaged on return
+                 
+                 WIZ_out:
+000146 bd2e              out     spdr,r18        ; going out
+000147 b52d      WZ_wt:  in      r18,spsr        ; watch spif flag
+000148 ff27              sbrs    r18,spif        ; 0 means busy
+000149 cffd              rjmp    WZ_wt
+                 
+00014a 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       WIZ_read - read a byte from the WIZ, plus overhead
+                 ;
+                 ;       y - address (incremented on return)
+                 ;       r17 - returned value
+                 
+                 WIZ_read:
+00014b 930f              push    r16
+                 
+00014c e00f              ldi     r16,0x0f        ; read command
+00014d dfe9              rcall   WIZnet_32       ; send 4 bytes
+                 
+00014e 910f              pop     r16
+00014f 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       WIZ_write - write a byte to the WIZ, plus overhead
+                 ;
+                 ;       y - address (incremented on return)
+                 ;       r17 - byte to write
+                 
+                 WIZ_write:
+000150 930f              push    r16
+000151 931f              push    r17
+                 
+000152 ef00              ldi     r16,0xf0        ; write command
+000153 dfe3              rcall   WIZnet_32       ; send 4 bytes
+                 
+000154 911f              pop     r17
+000155 910f              pop     r16
+000156 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       WIZ_cmd - send socket 0 command to WIZ
+                 ;
+                 ;       r17 - command to send
+                 
+                 WIZ_cmd:
+000157 93df              push    yh
+000158 93cf              push    yl
+                 
+000159 e0d4              ldi     yh,high(S0_CMD) ; socket 0 command register
+00015a e0c1              ldi     yl,low(S0_CMD)
+00015b dff4              rcall   WIZ_write
+                 
+00015c 91cf              pop     yl
+00015d 91df              pop     yh
+00015e 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       hard_reset_W5100 - hardware reset on the W5100 chip
+                 ;
+                 ;       generate a 2 microsecond low on reset line, then wait 10 ms
+                 ;       we'll be generous on all counts
+                 
+                 hard_reset_W5100:
+00015f 930f              push    r16
+                 
+000160 9876              cbi     porte,porte6    ; low = reset
+000161 e007              ldi     r16,7           ; kill a little time for W5100 reset pulse
+000162 950a      resdly: dec     r16             ; only need a couple of microseconds, or 16 clocks
+000163 f7f1              brne    resdly
+000164 9a76              sbi     porte,porte6    ; end the WIZnet reset pulse
+                 
+000165 dfb4              rcall   wait10ms        ; now go twiddle thumbs for 10 ms or so
+                 
+000166 910f              pop     r16
+000167 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       soft_reset_W5100 - software reset on the W5100 chip
+                 ;
+                 ;       send 0x80 to the mode register, and wait for high
+                 ;       bit to go to zero
+                 
+                 soft_reset_W5100:
+000168 93df              push    yh
+000169 93cf              push    yl
+00016a 931f              push    r17
+                 
+00016b e0d0              ldi     yh,high(W_MR)   ; mode register address
+00016c e0c0              ldi     yl,low(W_MR)
+00016d e810              ldi     r17,0x80        ; reset bit high
+00016e dfe1              rcall   WIZ_write       ; and write the mode register
+                 
+00016f e0d0      rloop:  ldi     yh,high(W_MR)   ; mode register address
+000170 e0c0              ldi     yl,low(W_MR)
+000171 dfd9              rcall   WIZ_read        ; get register value
+000172 7810              andi    r17,0x80        ; want MSB
+000173 f7d9              brne    rloop           ; still in reset
+                 
+000174 911f              pop     r17
+000175 91cf              pop     yl
+000176 91df              pop     yh
+000177 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       WIZ_string - write a flash string to WIZnet
+                 ;
+                 ;       z - flash byte address (incremented on return)
+                 ;       y - beginning WIZ address (incremented on return)
+                 ;       r16 - count of bytes (trashed on return)
+                 
+                 WIZ_string:
+000178 931f              push    r17
+                 
+000179 9115      smore:  lpm     r17,z+          ; next byte from flash
+00017a dfd5              rcall   WIZ_write       ; write it to WIZ
+00017b 950a              dec     r16             ; one less bell to answer
+00017c f7e1              brne    smore           ; rinse and repeat
+                 
+00017d 911f              pop     r17
+00017e 9508              ret 
+                 
+                 ; ------------------------------------------------------
+                 ;       init_WIZnet - set up the TCP stuff
+                 ;
+                 ;       highjacked MAC address: 00-0f-66-d5-83-34
+                 ;       IP address: 192.168.1.200
+                 ;       gateway: 192.168.1.1
+                 ;       subnet mask: 255.255.255.0
+                 ;       socket mem: 0 - 8K rx/tx, all others 1K (not used)
+                 ;       source port: 19001 (0x4a39)
+                 ;       destination MAC: 00-17-3f-9b-2e-54
+                 ;       destination IP: 192.168.1.100
+                 ;       destination port: 19002 (0x4a3a)
+                 
+                 init_WIZnet:
+00017f 93ff              push    zh
+000180 93ef              push    zl
+000181 93df              push    yh
+000182 93cf              push    yl
+000183 930f              push    r16
+                 
+000184 dfe3              rcall   soft_reset_W5100 ; do a software reset
+                 
+000185 e0d0              ldi     yh,high(W_GWR)  ; gateway register address
+000186 e0c1              ldi     yl,low(W_GWR)
+000187 e0f3              ldi     zh,high(istr_1 << 1) ; the first initialization string
+000188 e3ea              ldi     zl,low(istr_1 << 1)
+000189 e102              ldi     r16,18          ; string length
+00018a dfed              rcall   WIZ_string      ; write string to WIZ
+                 
+00018b e0d0              ldi     yh,high(W_IMR)  ; interrupt mask register address
+00018c e1c6              ldi     yl,low(W_IMR)
+00018d e0f3              ldi     zh,high(istr_2 << 1) ; the second initialization string
+00018e e4ec              ldi     zl,low(istr_2 << 1)
+00018f e006              ldi     r16,6           ; string length
+000190 dfe7              rcall   WIZ_string      ; write string to WIZ
+                 
+000191 e0d4              ldi     yh,high(S0_PORT) ; source port, socket 0
+000192 e0c4              ldi     yl,low(S0_PORT)
+000193 e0f3              ldi     zh,high(istr_3 << 1) ; the third initialization string
+000194 e5e2              ldi     zl,low(istr_3 << 1)
+000195 e100              ldi     r16,16          ; string length
+000196 dfe1              rcall   WIZ_string      ; write string to WIZ
+                 
+000197 910f              pop     r16
+000198 91cf              pop     yl
+000199 91df              pop     yh
+00019a 91ef              pop     zl
+00019b 91ff              pop     zh
+                 
+00019c 9508              ret
+                 
+                 ; string 1 is: gateway (4), subnet (4), mac (6), IP (4), total = 18
+00019d a8c0
+00019e 0101
+00019f ffff
+0001a0 00ff
+0001a1 0f00
+0001a2 d566
+0001a3 3483
+0001a4 a8c0
+0001a5 c801      istr_1: .dw 0xa8c0,0x0101,0xffff,0x00ff,0x0f00,0xd566,0x3483,0xa8c0,0xc801
+                 
+                 ; string 2 is: interrupt mask (1), timeout value (2), timeout count (1),
+                 ;              rx mem (1), tx mem (1), total = 6
+0001a6 0f00
+0001a7 08a0
+0001a8 0303      istr_2: .dw 0x0f00,0x08a0,0x0303
+                 
+                 ; string 3 is: source port (2), dest MAC (6), dest IP (4), dest port (2),
+                 ;              max seg size (2), total 16
+0001a9 394a
+0001aa 1700
+0001ab 9b3f
+0001ac 542e
+0001ad a8c0
+0001ae 6401
+0001af 3a4a
+0001b0 b405      istr_3: .dw 0x394a,0x1700,0x9b3f,0x542e,0xa8c0,0x6401,0x3a4a,0xb405
+                 
+                 ; ------------------------------------------------------
+                 ;       recv_read - read from W5100 receive buffer, socket 0
+                 ;
+                 ;       z   - where to put returned values (SRAM address)
+                 ;       r16 - maximum bytes to read (1 - 255)
+                 ;             returned as bytes read (may be zero)
+                 ;
+                 ;       note: z is returned pointing at next available location,
+                 ;       so multiple calls may be made to concatenate data
+                 
+                 recv_read:
+0001b1 2300              tst     r16
+0001b2 f409              brne    rok             ; yes, a skip on the flags would be better
+0001b3 9508              ret                     ; request for zero bytes
+                 
+0001b4 93df      rok:    push    yh
+0001b5 93cf              push    yl
+0001b6 93bf              push    xh
+0001b7 93af              push    xl
+0001b8 920f              push    r0
+0001b9 931f              push    r17
+0001ba 938f              push    r24
+0001bb 939f              push    r25
+                 
+0001bc e0d4              ldi     yh,high(S0_RCNT) ; recv byte count, high address
+0001bd e2c6              ldi     yl,low(S0_RCNT)
+0001be df8c              rcall   WIZ_read
+0001bf 2fb1              mov     xh,r17          ; read high byte of count
+0001c0 df8a              rcall   WIZ_read
+0001c1 2fa1              mov     xl,r17          ; then low byte of count
+0001c2 2b1b              or      r17,xh          ; put them together
+0001c3 f121              breq    nodata          ; if zero, receiver empty
+                 
+0001c4 e0d4              ldi     yh,high(S0_RPTR) ; recv pointer, high address
+0001c5 e2c8              ldi     yl,low(S0_RPTR)
+0001c6 df84              rcall   WIZ_read
+0001c7 2f91              mov     r25,r17         ; read high byte of address
+0001c8 df82              rcall   WIZ_read
+0001c9 2f81              mov     r24,r17         ; then low byte of address
+0001ca 01ec              movw    yh:yl,r25:r24   ; drop raw address into y
+                 
+                 ;       we can play a little loose with the mask and add here because
+                 ;       the numbers are so well behaved. when we're done, y will
+                 ;       be the actual WIZ address of the next byte of receiver data.
+0001cb 71df              andi    yh,high(S0_RMSK) ; mask to get offset
+0001cc 66d0              ori     yh,high(S0_RX)  ; add the recv buffer base addr
+0001cd 2400              clr     r0              ; our byte counter
+                 
+0001ce df7c      nxtrcv: rcall   WIZ_read        ; grab next byte
+0001cf 9311              st      z+,r17          ; put it away
+0001d0 9403              inc     r0              ; count it
+0001d1 950a              dec     r16             ; the number they asked for
+0001d2 f041              breq    rdone           ; jump if we got them all
+0001d3 9711              sbiw    xh:xl,1         ; the number available
+0001d4 f031              breq    rdone           ; jump if we read them all
+0001d5 2f1d              mov     r17,yh          ; see if we hit top of recv buf
+0001d6 7810              andi    r17,S0_ROVR
+0001d7 f3b1              breq    nxtrcv          ; jump if we did not top out
+0001d8 e6d0              ldi     yh,high(S0_RX)  ; or, back to beginning of buffer
+0001d9 e0c0              ldi     yl,low(S0_RX)
+0001da cff3              rjmp    nxtrcv
+                 
+0001db 2d00      rdone:  mov     r16,r0          ; returned count
+0001dc 2400              clr     r0
+0001dd 0f80              add     r24,r16         ; add count to buf pointer
+0001de 1d90              adc     r25,r0
+                 
+0001df e0d4              ldi     yh,high(S0_RPTR) ; recv pointer, high address
+0001e0 e2c8              ldi     yl,low(S0_RPTR)
+0001e1 2f19              mov     r17,r25
+0001e2 df6d              rcall   WIZ_write       ; write high byte of address
+0001e3 2f18              mov     r17,r24
+0001e4 df6b              rcall   WIZ_write       ; and low byte of address
+                 
+0001e5 e410              ldi     r17,CMD_RECV    ; receive done command
+0001e6 df70              rcall   WIZ_cmd
+0001e7 c001              rjmp    rbye
+                 
+0001e8 2700      nodata: clr     r16
+                 
+0001e9 919f      rbye:   pop     r25
+0001ea 918f              pop     r24
+0001eb 911f              pop     r17
+0001ec 900f              pop     r0
+0001ed 91af              pop     xl
+0001ee 91bf              pop     xh
+0001ef 91cf              pop     yl
+0001f0 91df              pop     yh
+0001f1 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       SRAM_write - write to the W5100 from SRAM
+                 ;
+                 ;       z   - where the data is (SRAM address)
+                 ;       r16 - maximum bytes to write (1 - 255)
+                 ;             returned as # transmitted (0 or original value - no partials)
+                 ;
+                 ;       note: z is returned pointing at next character location,
+                 ;             so multiple calls may be made for contiguous data
+                 
+                 SRAM_write:
+0001f2 932f              push    r18
+                 
+0001f3 2722              clr     r18
+0001f4 d007              rcall   trans_write
+                 
+0001f5 912f              pop     r18
+0001f6 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       flash_write - write to the W5100 from flash
+                 ;
+                 ;       z   - where the data is (flash byte address)
+                 ;       r16 - maximum bytes to write (1 - 255)
+                 ;             returned as # transmitted (0 or original value - no partials)
+                 ;
+                 ;       note: z is returned pointing at next character location,
+                 ;             so multiple calls may be made for contiguous data
+                 
+                 flash_write:
+0001f7 932f              push    r18
+                 
+0001f8 ef2f              ser     r18
+0001f9 d002              rcall   trans_write
+                 
+0001fa 912f              pop     r18
+0001fb 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 ;       trans_write - write to the W5100 receive buffer, socket 0
+                 ;
+                 ;       z   - where the data is (SRAM or flash)
+                 ;       r16 - maximum bytes to write (1 - 255)
+                 ;             returned as # transmitted (0 or original value - no partials)
+                 ;       r18 - zero for SRAM, nonzero for flash
+                 ;
+                 ;       note: z is returned pointing at next available location,
+                 ;             so multiple calls may be made to concatenate data
+                 
+                 trans_write:
+0001fc 2300              tst     r16             ; check write count
+0001fd f409              brne    tok
+0001fe 9508              ret                     ; ignore request for zero bytes
+                 
+0001ff 93df      tok:    push    yh
+000200 93cf              push    yl
+000201 93bf              push    xh
+000202 93af              push    xl
+000203 920f              push    r0
+000204 931f              push    r17
+000205 938f              push    r24
+000206 939f              push    r25
+                 
+000207 2e00              mov     r0,r16          ; save original count
+000208 e0d4              ldi     yh,high(S0_TSZ) ; transmit free size, high address
+000209 e2c0              ldi     yl,low(S0_TSZ)
+00020a df40              rcall   WIZ_read
+00020b 2311              tst     r17
+00020c f419              brne    tszok           ; if nonzero, it's big enough
+00020d df3d              rcall   WIZ_read
+00020e 1710              cp      r17,r16
+00020f f118              brlo    small           ; not big enough - sorry
+                 
+000210 e0d4      tszok:  ldi     yh,high(S0_TPTR) ; trans write ptr, high address
+000211 e2c4              ldi     yl,low(S0_TPTR)
+000212 df38              rcall   WIZ_read
+000213 2f91              mov     r25,r17         ; read high byte of address
+000214 df36              rcall   WIZ_read
+000215 2f81              mov     r24,r17         ; then low byte of address
+000216 01ec              movw    yh:yl,r25:r24   ; drop raw address into y
+                 
+                 ;       we can play a little loose with the mask and add here because
+                 ;       the numbers are so well behaved. when we're done, y will
+                 ;       be the WIZ address to write the next byte of transmitted data.
+000217 71df              andi    yh,high(S0_TMSK) ; mask to get offset
+000218 64d0              ori     yh,high(S0_TX)  ; add the xmit buffer base addr
+                 
+000219 2322      nxttx:  tst     r18             ; SRAM or flash?
+00021a f011              breq    inram
+00021b 9115              lpm     r17,z+          ; read from flash
+00021c c001              rjmp    ntx
+00021d 9111      inram:  ld      r17,z+          ; read from SRAM
+00021e df31      ntx:    rcall   WIZ_write       ; hand it off to the WIZ
+00021f 950a              dec     r16             ; the number they asked for
+000220 f031              breq    tdone           ; jump if we got them all
+000221 2f1d              mov     r17,yh          ; see if we hit top of txmit buf
+000222 7210              andi    r17,S0_TOVR
+000223 f3a9              breq    nxttx           ; jump if we did not top out
+000224 e4d0              ldi     yh,high(S0_TX)  ; or, back to beginning of buffer
+000225 e0c0              ldi     yl,low(S0_TX)
+000226 cff2              rjmp    nxttx
+                 
+000227 2700      tdone:  clr     r16             ; redundant, but who cares?
+000228 0d80              add     r24,r0          ; add count to buf pointer
+000229 1f90              adc     r25,r16
+                 
+00022a e0d4              ldi     yh,high(S0_TPTR) ; write pointer, high address
+00022b e2c4              ldi     yl,low(S0_TPTR)
+00022c 2f19              mov     r17,r25
+00022d df22              rcall   WIZ_write       ; write updated pointer, high byte
+00022e 2f18              mov     r17,r24
+00022f df20              rcall   WIZ_write       ; and low byte of pointer
+                 
+000230 e210              ldi     r17,CMD_SEND    ; shoot it out
+000231 df25              rcall   WIZ_cmd
+000232 c001              rjmp    tbye
+                 
+000233 2400      small:  clr     r0
+000234 2d00      tbye:   mov     r16,r0          ; original value or zero
+                 
+000235 919f              pop     r25
+000236 918f              pop     r24
+000237 911f              pop     r17
+000238 900f              pop     r0
+000239 91af              pop     xl
+00023a 91bf              pop     xh 
+00023b 91cf              pop     yl
+00023c 91df              pop     yh
+00023d 9508              ret
+                 
+                 ; ------------------------------------------------------
+                 
+                 #include "WIZnet_001185_1.inc"
+                 
+                 ;
+                 ;       project title: "Terminalator II - The SQL"
+                 ;       LCD stuff for the AVR Butterfly
+                 ;
+                 ; ----------- usage
+                 ;       rcall   lcd_init        ; do LCD initialization
+                 ;       sei                     ; let the interrupts rip
+                 ;       ...
+                 ;       rcall   lcd_clear       ; clear the buffer
+                 ;       rcall   put_in_LCD      ; shift R1 into the LCD buffer from the right
+                 ; -----------------------------------------------------------
+                 
+                         .equ     bufsize = 12   ; ours is a 6 character LCD, 2 bytes/char
+                 
+                         .dseg                   ; what follows is SRAM data
+000281           lcd_yup: .byte  1               ; if nonzero, update LCD
+000282           lbuf:   .byte   bufsize         ; the world famous LCD buffer
+                 
+                         .cseg                   ; what follows is flash code
+                 ; -----------------------------------------------------------
+                 ;       lcd_fmsg - put out a 6 character flash based message
+                 ;
+                 ;       z - points to first of six bytes
+                 ;           incremented on return
+                 
+                 lcd_fmsg:
+00023e 921f              push    r1
+00023f 930f              push    r16
+                 
+000240 e006              ldi     r16,6           ; we'll do 6 chars
+000241 9015      llp:    lpm     r1,z+           ; get next character
+000242 d05a              rcall   put_in_lcd      ; shift it into lcd
+000243 950a              dec     r16             ; keep count
+000244 f7e1              brne    llp             ; and repeat if more
+                 
+000245 910f              pop     r16
+000246 901f              pop     r1
+000247 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       i_lcd_sof - LCD start of frame interrupt handler
+                 
+                 i_lcd_sof:
+000248 934f              push    r20             ; save r20
+000249 b74f              in      r20,sreg        ; copy status flags
+00024a 934f              push    r20             ; and save them
+                 
+00024b 9140 0281         lds     r20,lcd_yup     ; flag that buffer has changed
+00024d 2344              tst     r20
+00024e f0b9              breq    nope            ; nothing has changed
+                 
+                 ; the main routine has changed the buffer - rewrite it to LCD
+00024f 920f              push    r0              ; save some more regs
+000250 930f              push    r16
+000251 931f              push    r17
+000252 93ff              push    ZH
+000253 93ef              push    ZL
+                 
+000254 2744              clr     r20
+000255 9340 0281         sts     lcd_yup,r20     ; clear flag
+                 
+000257 e046              ldi     r20,6           ; we'll shoot them 6 characters
+000258 e0f2              ldi     ZH,high(lbuf)   ; stating at this location
+000259 e8e2              ldi     ZL,low(lbuf)
+00025a 2400              clr     r0              ; which char it is (0 - 5)
+                 
+00025b 9111      again:  ld      r17,Z+          ; low byte of segment bits
+00025c 9101              ld      r16,Z+          ; high byte of segment bits
+00025d d00c              rcall   lcd_char        ; put it away
+00025e 9403              inc     r0              ; character position counter
+00025f 954a              dec     r20             ; loop counter
+000260 f7d1              brne    again
+                 
+000261 91ef              pop     ZL              ; restore our second batch
+000262 91ff              pop     ZH
+000263 911f              pop     r17
+000264 910f              pop     r16
+000265 900f              pop     r0
+                 
+000266 914f      nope:   pop     r20             ; save status flags
+000267 bf4f              out     sreg,r20        ; restore them
+000268 914f              pop     r20             ; restore r20
+000269 9518              reti
+                 
+                 ; -----------------------------------------------------------
+                 ;       lcd_char - write segment definition to LCDDR0 register
+                 ;
+                 ;       parameters:
+                 ;         r0 - character position (0 - 5)
+                 ;         r16 - high byte of segment bits
+                 ;         r17 - low byte of segment bits
+                 ;       returns:
+                 ;         none
+                 ;
+                 ;       note: the Atmel documentation counts the LCD characters
+                 ;             as starting with position 2.  their 7 is our 5.
+                 
+                 lcd_char:
+00026a 93cf              push    YL
+00026b 93df              push    YH
+00026c 921f              push    r1
+00026d 931f              push    r17
+                 
+00026e eecc              ldi     YL,low(lcddr0)  ; Y -> where lowest nibble goes
+00026f e0d0              ldi     YH,high(lcddr0)
+000270 fc01              sbrc    r0,1
+000271 9621              adiw    YH:YL,1         ; add 1 if r0 = 2 or 3
+000272 fc02              sbrc    r0,2
+000273 9622              adiw    YH:YL,2         ; add 2 if r0 = 4 or 5 
+                 
+000274 2411              clr     r1              ; flag for special handling, first time
+000275 d007              rcall   lcd_proc1       ; do byte in r17
+000276 2f10              mov     r17,r16         ; r17 needs the argument
+000277 d005              rcall   lcd_proc1       ; do low order byte
+                 
+000278 911f              pop     r17
+000279 901f              pop     r1
+00027a 91df              pop     YH
+00027b 91cf              pop     YL
+00027c 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       lcd_proc1 - helper function, write segments to LCD
+                 ;
+                 ;       parameters:
+                 ;         r0 - character position (starting with 0)
+                 ;         r1 - special case flag (0 for first call to lcd_proc2)
+                 ;         r17 - 8 segment bits, 2 nibbles
+                 ;         Y - points into our spot in LCDDR0 register set
+                 ;       returns:
+                 ;         Y advanced to next register for segments
+                 
+                 lcd_proc1:
+00027d 931f              push    r17
+00027e 922f              push    r2
+                 
+00027f 2e21              mov     r2,r17          ; save r17
+000280 701f              andi    r17,0x0F        ; keep low nibble
+000281 d008              rcall   lcd_proc2       ; go put nibble away
+000282 9413              inc     r1              ; turn off special case
+                 
+000283 2d12              mov     r17,r2          ; get original
+000284 9512              swap    r17             ; exchange low and high nibbles
+000285 701f              andi    r17,0x0F        ; keep what was high nibble
+000286 d003              rcall   lcd_proc2       ; go put it away
+                 
+000287 902f              pop     r2
+000288 911f              pop     r17
+000289 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       lcd_proc2 - second helper function, write segments to LCD
+                 ;
+                 ;       parameters:
+                 ;         r0 - character position (starting with 0)
+                 ;         r1 - zer0 for special case, 1 for normal
+                 ;         r17 - 4 segment bits (0 - 3)
+                 ;         Y - points to our spot in LCDDR0 register set
+                 ;       returns:
+                 ;         Y advanced to next register for segments
+                 ;
+                 ;       this gets called 4 times to put away the segment bits
+                 ;       for one character.  on the first call r1 = 0, and we
+                 ;       do a tiny bit of special handling
+                 
+                 lcd_proc2: 
+00028a 932f              push    r18
+00028b 931f              push    r17
+                 
+00028c 8128              ld      r18,Y           ; what's already where ours goes
+00028d fc00              sbrc    r0,0            ; is r0 odd or even?
+00028e 9522              swap    r18             ; odd - we want high nibble
+                 
+00028f 2011              tst     r1              ; is this our special case?
+000290 f011              breq    yes
+000291 7f20              andi    r18,0xF0        ; no - drop bits 0 to 3
+000292 c002              rjmp    onnow
+                 
+000293 7f26      yes:    andi    r18,0xF6        ; yes - drop bits 0 and 3
+000294 7019              andi    r17,0x09        ; keep only 0 and 3 of incoming
+                 
+000295 2b21      onnow:  or      r18,r17         ; put ours in their place
+000296 fc00              sbrc    r0,0            ; check odd/even again
+000297 9522              swap    r18             ; and if odd, reverse them back
+000298 8328              st      Y,r18           ; put the segment data away
+                 
+000299 9625              adiw    YH:YL,5         ; seg register areas are 5 bytes long
+                 
+00029a 911f              pop     r17
+00029b 912f              pop     r18
+00029c 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       put_in_LCD - shift a character into the LCD buffer from the right
+                 ;
+                 ;       parameters:
+                 ;         R1 - ASCII character
+                 ;       returns:
+                 ;         none
+                 ;
+                 ;       the buffer holds 2 bytes per character.  we'll move
+                 ;       lbuf[2] -> lbuf[0], lbuf[3] -> lbuf[1], etc.,
+                 ;       and then put the segment definitions for the character
+                 ;       in R1 into lbuf[10] and lbuf[11].  Finally we'll let the
+                 ;       interrupt handler know it changed by setting lcd_yup = 1
+                 
+                 put_in_LCD:
+00029d 93ff              push    ZH
+00029e 93ef              push    ZL
+00029f 931f              push    r17
+0002a0 932f              push    r18
+                 
+0002a1 e0f2              ldi     ZH,high(lbuf)   ; make Z point to lbuf
+0002a2 e8e2              ldi     ZL,low(lbuf)
+                 
+0002a3 e01a              ldi     r17,bufsize - 2 ; number of bytes that move
+                 
+0002a4 8122      ploop:  ldd     r18,Z+2         ; pick up byte from lbuf array
+0002a5 9321              st      Z+,r18          ; move it 2 bytes to the "left"
+0002a6 951a              dec     r17             ; knock one off the counter
+0002a7 f7e1              brne    ploop           ; and repeat
+                 
+                 ;       now we're ready to put the new data into lbuf+10 and lbuf+11,
+                 ;       but we need to convert from ASCII to segment bits using the
+                 ;       segs table in flash
+0002a8 2d21      done:   mov     r18,r1          ; move character to r18
+0002a9 3621              cpi     r18,'a'         ; so we can do immediate compares
+0002aa f089              breq    conv            ; convert 'a' to upper case
+0002ab f020              brcs    check           ; < 'a' gets checked
+0002ac 372a              cpi     r18,'z'         ; upper limit of LC
+0002ad f071              breq    conv            ; 'z' is ok
+0002ae f068              brcs    conv            ; < 'z' is LC that needs converting
+0002af c006              rjmp    bad             ; everything else is out of range
+                 
+0002b0 322a      check:  cpi     r18,'*'         ; first character we'll accept
+0002b1 f059              breq    aok             ; '*' is ok
+0002b2 f018              brcs    bad             ; < '*' is not
+0002b3 352f              cpi     r18,'_'         ; last character we'll accept
+0002b4 f041              breq    aok             ; '_' is ok
+0002b5 f038              brcs    aok             ; > '_' is ok
+0002b6 2722      bad:    clr     r18             ; bad dog - no segments
+0002b7 9320 028c         sts     lbuf+10,r18
+0002b9 9320 028d         sts     lbuf+11,r18
+0002bb c00e              rjmp    rtn
+                 
+0002bc 5220      conv:   subi    r18,32          ; convert LC -> UC
+0002bd e0f5      aok:    ldi     ZH,high(segs<<1) ; it's a flash address
+0002be eeea              ldi     ZL,low(segs<<1)
+0002bf 522a              subi    r18,'*'         ; convert ASCII to zero based number
+0002c0 0f22              lsl     r18             ; multiply by 2 (2 bytes per .dw)
+                        
+0002c1 0fe2              add     ZL,r18          ; add offset to ZL
+0002c2 f408              brcc    ncarry          ; done if no carry
+0002c3 95f3              inc     ZH              ; otherwise increment ZH
+                 
+0002c4 9125      ncarry: lpm     r18,Z+          ; grab low byte of segment word
+0002c5 9320 028c         sts     lbuf+10,r18     ; put it into lbuf at right end
+0002c7 9124              lpm     r18,Z           ; and the high byte
+0002c8 9320 028d         sts     lbuf+11,r18     ; and put it into lbuf, too
+                 
+0002ca e021      rtn:    ldi     r18,1
+0002cb 9320 0281         sts     lcd_yup,r18     ; let the interrupt handler know
+                 
+0002cd 912f              pop     r18
+0002ce 911f              pop     r17
+0002cf 91ef              pop     ZL
+0002d0 91ff              pop     ZH
+0002d1 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       lcd_clear - blank the LCD
+                 ;
+                 ;       parameters and returns: none
+                 
+                 lcd_clear:
+0002d2 930f              push    r16
+0002d3 93ff              push    zh
+0002d4 93ef              push    zl
+0002d5 920f              push    r0
+                 
+                 ;       zero out the buffer which holds our 6 LCD characters' segments
+0002d6 e00c              ldi     r16,bufsize     ; number of bytes in buffer
+0002d7 e0f2              ldi     ZH,high(lbuf)   ; high byte of address
+0002d8 e8e2              ldi     ZL,low(lbuf)    ; low byte of address
+0002d9 2400              clr     r0
+                 
+0002da 9201      iloop:  st      Z+,r0           ; zero out buffer
+0002db 950a              dec     r16
+0002dc f7e9              brne    iloop
+0002dd e001              ldi     r16,1
+0002de 9300 0281         sts     lcd_yup,r16     ; mark data as changed
+                 
+0002e0 900f              pop     r0
+0002e1 91ef              pop     zl
+0002e2 91ff              pop     zh
+0002e3 910f              pop     r16
+0002e4 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       lcd_init - LCD initialization
+                 ;
+                 ;       parameters and returns: none
+                 
+                 lcd_init:
+0002e5 930f              push    r16
+                 
+0002e6 dfeb              rcall   lcd_clear       ; empty the buffer
+0002e7 e102              ldi     r16,0x12        ; contrast (4 bits)
+0002e8 9300 00e7         sts     lcdccr,r16
+                 
+0002ea eb07              ldi     r16,(1<<lcdcs) | (3<<lcdmux0) | (7<<lcdpm0)
+0002eb 9300 00e5         sts     lcdcrb,r16      ; external clock, all MUX pins & segs
+                 
+0002ed e100              ldi     r16,(1<<lcdps0)
+0002ee 9300 00e6         sts     lcdfrr,r16      ; prescale to lcd clk/64
+                 
+0002f0 e808              ldi     r16,(1<<lcdie) | (1<<lcden)
+0002f1 9300 00e4         sts     lcdcra,r16      ; enable lcd and start of frame interrupts
+                 
+0002f3 910f              pop     r16
+0002f4 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;
+                 ;       The following data were modified (borrowed, stolen) from
+                 ;       the Atmel Butterfly code.  They are the LCD segment data for
+                 ;       the various ASCII codes within our acceptable range.
+                 
+0002f5 0a51      segs:   .dw 0x0A51      ; '*' (?)
+0002f6 2a80              .dw 0x2A80      ; '+'
+0002f7 0000              .dw 0x0000      ; ',' (Not defined)
+0002f8 0a00              .dw 0x0A00      ; '-'
+0002f9 0a51              .dw 0x0A51      ; '.' Degree sign
+0002fa 0000              .dw 0x0000      ; '/' (Not defined)
+0002fb 5559              .dw 0x5559      ; '0'
+0002fc 0118              .dw 0x0118      ; '1'
+0002fd 1e11              .dw 0x1e11      ; '2
+0002fe 1b11              .dw 0x1b11      ; '3
+0002ff 0b50              .dw 0x0b50      ; '4
+000300 1b41              .dw 0x1b41      ; '5
+000301 1f41              .dw 0x1f41      ; '6
+000302 0111              .dw 0x0111      ; '7
+000303 1f51              .dw 0x1f51      ; '8
+000304 1b51              .dw 0x1b51      ; '9'
+000305 0000              .dw 0x0000      ; ':' (Not defined)
+000306 0000              .dw 0x0000      ; ';' (Not defined)
+000307 0000              .dw 0x0000      ; '<' (Not defined)
+000308 0000              .dw 0x0000      ; '=' (Not defined)
+000309 0000              .dw 0x0000      ; '>' (Not defined)
+00030a 0000              .dw 0x0000      ; '?' (Not defined)
+00030b 0000              .dw 0x0000      ; '@' (Not defined)
+00030c 0f51              .dw 0x0f51      ; 'A' (+ 'a')
+00030d 3991              .dw 0x3991      ; 'B' (+ 'b')
+00030e 1441              .dw 0x1441      ; 'C' (+ 'c')
+00030f 3191              .dw 0x3191      ; 'D' (+ 'd')
+000310 1e41              .dw 0x1e41      ; 'E' (+ 'e')
+000311 0e41              .dw 0x0e41      ; 'F' (+ 'f')
+000312 1d41              .dw 0x1d41      ; 'G' (+ 'g')
+000313 0f50              .dw 0x0f50      ; 'H' (+ 'h')
+000314 2080              .dw 0x2080      ; 'I' (+ 'i')
+000315 1510              .dw 0x1510      ; 'J' (+ 'j')
+000316 8648              .dw 0x8648      ; 'K' (+ 'k')
+000317 1440              .dw 0x1440      ; 'L' (+ 'l')
+000318 0578              .dw 0x0578      ; 'M' (+ 'm')
+000319 8570              .dw 0x8570      ; 'N' (+ 'n')
+00031a 1551              .dw 0x1551      ; 'O' (+ 'o')
+00031b 0e51              .dw 0x0e51      ; 'P' (+ 'p')
+00031c 9551              .dw 0x9551      ; 'Q' (+ 'q')
+00031d 8e51              .dw 0x8e51      ; 'R' (+ 'r')
+00031e 9021              .dw 0x9021      ; 'S' (+ 's')
+00031f 2081              .dw 0x2081      ; 'T' (+ 't')
+000320 1550              .dw 0x1550      ; 'U' (+ 'u')
+000321 4448              .dw 0x4448      ; 'V' (+ 'v')
+000322 c550              .dw 0xc550      ; 'W' (+ 'w')
+000323 c028              .dw 0xc028      ; 'X' (+ 'x')
+000324 2028              .dw 0x2028      ; 'Y' (+ 'y')
+000325 5009              .dw 0x5009      ; 'Z' (+ 'z')
+000326 0000              .dw 0x0000      ; '[' (Not defined)
+000327 0000              .dw 0x0000      ; '\' (Not defined)
+000328 0000              .dw 0x0000      ; ']' (Not defined)
+000329 0000              .dw 0x0000      ; '^' (Not defined)
+00032a 0000              .dw 0x0000      ; '_'
+                 
+                 
+                 
+                 #include "WIZnet_001185_2.inc"
+                 
+                 ;
+                 ;       project title: "Terminalator II - The SQL"
+                 ;
+                 ;       support routines for the USART:
+                 ;         usart_init - initialize the USART
+                 ;         getchar    - read a character from the USART, if available
+                 ;         sendchar   - write a character to the USART
+                 ;
+                 
+                 ; -----------------------------------------------------------
+                 ;       usart_crlf - send a CRLF to the USART
+                 
+                 usart_crlf:
+00032b 930f              push    r16
+                 
+00032c e00d              ldi     r16,'\r'        ; CR
+00032d d029              rcall   sendchar
+00032e e00a              ldi     r16,'\n'        ; LF
+00032f d027              rcall   sendchar
+                 
+000330 910f              pop     r16
+000331 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       usart_flash - send a null terminated string in flash to the USART
+                 ;
+                 ;       z - points to flash byte address
+                 ;           advanced on return
+                 
+                 usart_flash:
+000332 930f              push    r16
+                 
+000333 9105      ulp:    lpm     r16,z+          ; grab next character
+000334 2300              tst     r16             ; check for null
+000335 f011              breq    ufd             ; quit if it is
+000336 d020              rcall   sendchar        ; otherwise send it out
+000337 cffb              rjmp    ulp             ; and repeat
+                 
+000338 910f      ufd:    pop     r16
+000339 9508              ret
+                 
+                 
+                 ; -----------------------------------------------------------
+                 ;       usart_init - initialize the USART
+                 
+                 usart_init:
+00033a 934f              push    r20
+                 
+00033b e149              ldi     r20,25          ; 19,200 bps constant
+00033c 9340 00c4         sts     UBRRL,r20       ; into low order
+00033e 2744              clr     r20             ; zero
+00033f 9340 00c5         sts     UBRRH,r20       ; into high order
+000341 9340 00c0         sts     UCSRA,r20       ; set normal speed
+                 
+000343 e148              ldi     r20,(1<<RXEN) | (1<<TXEN) ; enable rcvr and xmit
+000344 9340 00c1         sts     UCSRB,r20
+                 
+000346 e04e              ldi     r20,(1<<USBS) | (3<<UCSZ0) ; 8-N-2
+000347 9340 00c2         sts     UCSRC,r20
+                 
+000349 914f              pop     r20             ; restore register
+00034a 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       getchar - read a character from the USART, perhaps
+                 ;
+                 ;	returns:
+                 ;	  zero flag set if there's no character
+                 ;	  zero flag cleared if there's a character, and it
+                 ;	    will be in r16
+                 
+                 getchar:
+00034b 935f              push    r21
+                 
+00034c 9150 00c0         lds     r21,UCSRA       ; get USART flags
+00034e ff57              sbrs    r21,RXC         ; is a character ready?
+00034f c004              rjmp    nochar          ; jump if not
+000350 9100 00c6         lds     r16,UDR         ; yes - read it
+000352 9498              clz                     ; clear the zero flag
+000353 c001              rjmp    outnow
+                 
+000354 9418      nochar: sez                     ; set the zero flag
+000355 915f      outnow: pop     r21
+000356 9508              ret
+                 
+                 ; -----------------------------------------------------------
+                 ;       sendchar - send a character to the USART
+                 ;
+                 ;       character to send is in r16
+                 
+                 sendchar:
+000357 935f              push    r21
+                 
+000358 9150 00c0 snd2:   lds     r21,UCSRA       ; get USART flags
+00035a ff55              sbrs    r21,UDRE        ; is transmitter empty?
+00035b cffc              rjmp    snd2            ; if not, go check again
+00035c 9300 00c6         sts     UDR,r16         ; fire away
+                 
+00035e 915f              pop     r21
+00035f 9508              ret
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATmega169 register use summary:
+r0 :  25 r1 :   9 r2 :   4 r3 :   0 r4 :   0 r5 :   3 r6 :   0 r7 :   0 
+r8 :   0 r9 :   0 r10:   0 r11:   0 r12:   0 r13:   0 r14:   0 r15:   0 
+r16:  91 r17:  76 r18:  47 r19:   0 r20:  39 r21:   8 r22:   0 r23:   0 
+r24:  12 r25:  12 r26:  10 r27:  11 r28:  40 r29:  46 r30:  32 r31:  32 
+x  :   0 y  :   2 z  :  15 
+Registers used: 19 out of 35 (54.3%)
+
+ATmega169 instruction use summary:
+adc   :   2 add   :   4 adiw  :   4 and   :   0 andi  :  10 asr   :   0 
+bclr  :   0 bld   :   0 brbc  :   0 brbs  :   0 brcc  :   2 brcs  :   4 
+break :   0 breq  :  25 brge  :   0 brhc  :   0 brhs  :   0 brid  :   0 
+brie  :   0 brlo  :   2 brlt  :   0 brmi  :   0 brne  :  18 brpl  :   0 
+brsh  :   1 brtc  :   0 brts  :   0 brvc  :   0 brvs  :   0 bset  :   0 
+bst   :   0 call  :   0 cbi   :   4 cbr   :   0 clc   :   0 clh   :   0 
+cli   :   1 cln   :   0 clr   :  17 cls   :   0 clt   :   0 clv   :   0 
+clz   :   1 com   :   0 cp    :   1 cpc   :   0 cpi   :  17 cpse  :   0 
+dec   :  10 eor   :   0 fmul  :   0 fmuls :   0 fmulsu:   0 icall :   0 
+ijmp  :   0 in    :   3 inc   :   6 jmp   :  23 ld    :   5 ldd   :   1 
+ldi   : 108 lds   :   6 lpm   :   7 lsl   :   1 lsr   :   0 mov   :  25 
+movw  :   2 mul   :   0 muls  :   0 mulsu :   0 neg   :   0 nop   :   0 
+or    :   2 ori   :   2 out   :   6 pop   :  78 push  :  78 rcall :  87 
+ret   :  37 reti  :   2 rjmp  :  18 rol   :   0 ror   :   0 sbc   :   0 
+sbci  :   0 sbi   :  12 sbic  :   0 sbis  :   0 sbiw  :   2 sbr   :   0 
+sbrc  :   5 sbrs  :   3 sec   :   0 seh   :   0 sei   :   1 sen   :   0 
+ser   :   3 ses   :   0 set   :   0 sev   :   0 sez   :   1 sleep :   0 
+spm   :   0 st    :   5 std   :   0 sts   :  22 sub   :   0 subi  :   2 
+swap  :   3 tst   :  12 wdr   :   0 
+Instructions used: 49 out of 111 (44.1%)
+
+ATmega169 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x0006c0   1482    246   1728   16384  10.5%
+[.dseg] 0x000100 0x00028e      0    398    398    1024  38.9%
+[.eseg] 0x000000 0x000000      0      0      0     512   0.0%
+
+Assembly complete, 0 errors, 0 warnings

@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "C:\WizNet contest\WIZnet_001185\labels.tmp" -fI -W+ie -o "C:\WizNet contest\WIZnet_001185\WIZnet_001185.hex" -d "C:\WizNet contest\WIZnet_001185\WIZnet_001185.obj" -e "C:\WizNet contest\WIZnet_001185\WIZnet_001185.eep" -m "C:\WizNet contest\WIZnet_001185\WIZnet_001185.map" -l "C:\WizNet contest\WIZnet_001185\WIZnet_001185.lst" "C:\WizNet contest\WIZnet_001185\WIZnet_001185.asm"
