@@ -1,0 +1,61 @@
+/*
+	Moving average filter class-like implementation
+	using circular buffer and recursive equations
+
+	Basic operations:
+		-filter returns a moving average of last n elements
+		filter buffer must be greater then n, filter buffer must be 2^k length
+
+
+	Author: Krzysztof Pilasiewicz (koriel@o2.pl)
+	Version: 1.0 
+	Date: 28.03.08
+*/
+
+
+
+#include "ma.h"
+
+
+/*setups the filter
+INPUT: 
+	struct &f - address of file structure
+	int *buf - pointer to first element of buffer table
+	char buflen - length of buffer (max 256), must be 2^n
+	char fsize - length of moving average filter (should be odd number,!=buflen)
+OUTPUT: none
+*/
+void FilterInit(struct ma *f,unsigned int *buf,char bflen,char fsize)
+{
+	f->bufstart=buf;
+	f->filsize=fsize;
+	f->mask=bflen-1;
+	f->current=0;	
+	f->tmp=0;
+}
+
+/*
+Function returns new moving average value, input:new element value
+INPUT:
+	-pointer to filter structure
+	-value of new element
+OUTPUT: value of moving average(with new element included)
+*/
+int NextElement(struct ma *f,unsigned int newelement)
+{
+	f->current++;
+	f->current&=(f->mask);
+	*(f->bufstart+(f->current))=newelement;
+	(f->tmp)+=newelement;
+	(f->tmp)-=*(f->bufstart+((f->mask)&((f->current)-(f->filsize))));	
+	return (f->tmp)/(f->filsize);
+}
+
+//fills filter buffer with zeros
+//INPUT: pointer to filter structure
+void ResetFilter(struct ma *f)
+{
+	char i;
+	for(i=0;i<((f->mask)+1);i++) \
+		*(f->bufstart+i)=0;
+}
