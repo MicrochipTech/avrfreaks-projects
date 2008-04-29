@@ -1,0 +1,1 @@
+"goahead.bin" is generated in Xilinx WebPack ISE 9.1, by synthesizing goahead.vhd .
