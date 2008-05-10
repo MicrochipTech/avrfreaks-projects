@@ -1,0 +1,296 @@
+<html>
+<html><head><title>Open GPS Tracker: How it works</title></head><body>
+
+<font face="Georgia"><a href="http://www.opengpstracker.org/index.html">Intro</a> | <a href="http://www.opengpstracker.org/build.html">Build it!</a> | <a href="http://www.opengpstracker.org/commands.html">Command reference</a> | <a href="http://www.opengpstracker.org/howitworks.html">How it works</a> | <a href="http://www.opengpstracker.org/download.html">Download</a> | <a href="http://www.opengpstracker.org/customize.html">Customize</a> | <a href="http://www.opengpstracker.org/todo.html">Todo</a> | <a href="http://www.opengpstracker.org/wordpress/">User forum</a><p>
+
+
+<h3>Open GPS Tracker: how it works and how to modify it</h3>
+Too many open source projects give you a pile of code with no explanation. That makes
+it difficult for newcomers to work on the code. This page will explain how the Tracker
+works, from general principles to a walkthrough of the source code.<p>
+
+<h3>GPS and the Tyco A1035 receiver</h3>
+Wave energy, such as sound, radio signals, and light, travels at a known speed
+in a known medium. This allows measurement of distance to the energy source by measuring 
+the time required for the signal to arrive.<p>
+
+Suppose you have a long straight track, like a dragstrip or a runway. Put a speaker at each
+end of the track, a known distance apart. Simultaneously at regular intervals, each speaker
+generates a short tick. By comparing the arrival times of the ticks, you can find your
+position along the track.<p>
+
+If you hear the left speaker's tick two units before the right speaker, then you are one unit
+to the left of center. If you hear the right speaker's tick four units before the left
+speaker, you are two units to the right of center.<p>
+
+You can also determine the exact time the sounds were sent.  If it takes ten
+units of time for sound to go from one speaker to the other, and you are two
+units to the right of center, there are three more units of time to the right
+speaker, so the sound was sent three units of time before you heard the right
+speaker tick.<p> This is the trivial one-dimensional case: with two speakers
+you can solve for one spatial dimension plus time. With three speakers
+(arranged in a triangle, for example) and more complex math, you can solve for
+two spatial dimensions plus time. And with four speakers, you can find your
+position in three-dimensional space.<p>
+
+In GPS, the "speakers" are satellites sending radio signals. All the satellites send on
+the same channel using spread-spectrum techniques, so one radio receiver can receive all the
+satellites in view, and a chip can sort out the signals. When you read about a 
+"20-channel" GPS, like the A1035 used in the Tracker, it only has one radio.
+It has 20 decoder channels on the chip, so it can listen to 20 satellites at the same
+time. If at least four satellites are in view, the GPS receiver can solve for your position in
+three-dimensional space. With only three satellites, the receiver can get an approximate
+two-dimensional fix by essentially assuming you are close to the ground relative to the
+satellites.<p>
+
+In order to find your position, the receiver needs to know exactly where the satellites are.
+Each satellite transmits its position, called <strong>ephemeris</strong>, every 30 seconds
+in a continuous loop. The ephemeris is good for one hour. If the GPS has been off for
+an hour, it will take at least 30 seconds to get a fix. If the signal drops out,
+and a few bits are lost, you have to wait another 30 seconds for the data to repeat.
+So the first fix takes some multiple of 30 seconds. Additional fixes arrive one per second.<p>
+
+The A1035 receiver used in this project is one of the best GPS modules
+available, but it stil requires a substantial amount of battery power - around
+50 ma at 3.3V. It has a microwave radio and a CPU faster than the AVR
+microcontroller.  Leaving the module on would drain the battery in a few hours.
+The Tracker uses a PNP transistor to switch the module's power on and off. When
+off, the module retains its ephemeris data in static RAM, powered by the Vbak
+wire and the diode. The Tracker can switch the GPS on, get a fix within a few
+seconds, and switch it off again. After an hour, the ephemeris expires and
+there will be another 30-second or longer delay.<p>
+
+The A1035 outputs serial data at 4800 bps. This is similar to a PC's serial port but
+inverted and at a lower voltage. You can connect the A1035 to a PC using a MAX3232 chip
+as explained under Development below. The format, called NMEA, is a continuous stream of
+comma-delimited ASCII lines. The receiver starts outputting as soon as you apply power,
+although no position numbers appear until it obtains a valid fix.<p>
+
+Other GPSes should also work. I interfaced a Garmin ETrex Vista to the development
+board through a MAX3232 chip and it worked fine.<p>
+
+<a href="GPSA1035_D.pdf">Tyco A1035 short datasheet PDF</a><br>
+<a href="gpsa1035d2.pdf">Tyco A1035 long datasheet PDF</a><br>
+<a href="gpsa1035fw.pdf">Tyco A1035 firmware/NMEA PDF</a><br>
+
+<h3>Short Message Service and the Motorola C168i phone</h3>
+The GSM wireless standard includes SMS, more commonly known as text messaging.
+SMS sends 160-byte messages between mobile phones. The network will store and forward
+messages for a phone which is off or out of coverage. There is a standard set of
+commands, based on the old Hayes AT command set, for sending and receiving SMS
+under program control.<p>
+
+SMS is designed to communicate between phones. To send email from SMS, you send to
+an email gateway, and prefix the email address before your message. Long email addresses
+limit the length of the message you can send. SMS coming in from email comes from
+a random-looking number, with no reliable way to reply to it. This requires the
+Tracker to have a preset reply address, rather than parsing each incoming message
+and figuring out the reply address.<p>
+
+Most mobile phones today have USB interfaces on proprietary connectors. GSM modules
+are available with serial interfaces, but they are expensive. The C168i is a welcome
+exception - a $20 phone with a serial interface on a standard 2.5mm headset jack.
+The serial interface is CMOS level like the A1035, and can be connected directly to
+a microcontroller. It can also be connected to a PC with a MAX3232 chip.<p>
+
+The C168i is perfect for microcontroller interfacing, but GoPhone service has a few
+downsides. One is that it sends a "balance remaining" message to the phone after
+every message. Some phones, like the Samsung A437, can be set to ignore this, but the
+C168i cannot. The messages accumulate but appear to cause no harm. To prevent this
+and other memory leaks, the microcontroller reboots the phone periodically using the
+AT*SWRESET command. This can be disabled with a #define directive in the program.<p>
+
+Another nuisance is the annoying voice response system I have to use to buy the monthly
+SMS plan. Hopefully it will be available on the website soon.<p>
+
+The C168i can, in theory, be switched on and off by a +CFUN command. In practice,
+the +CFUN=0 command does a fine job of switching the transceiver off, but the
++CFUN=1 command does not turn it back on. Powersave mode currently uses the
+AT*SWRESET command to turn the phone back on. This can be changed to +CFUN=1
+with a #define, for use with other phones.<p>
+
+Other phones should work as long as they support AT commands on a serial interface.
+GSM modules should also work, but I don't have any to test.<p>
+
+<h3>Atmel ATTINY84 AVR microcontroller</h3>
+The ATTINY84 is a small but complete computer in a 14-pin integrated circuit.
+It works well for this application because it has a self-contained clock accurate enough
+for serial communication, interrupt timers, and nonvolatile memory. The development tools
+are free and the programmer is cheap. The AVR requires only a battery to run. The board
+includes the standard 6-pin connector for programming AVR processors.<p>
+
+The Tracker need two serial ports, one for the phone and one for the GPS. The smallest
+AVR processor with two hardware UARTs is a 40-pin chip, so the Tracker uses software
+UARTs, setting programmable timers to clock bits in and out. This works fine as long
+as you only need to communicate with one device at a time.<p>
+
+The AVR can be put into a low-power stop mode and can wake itself up when a timer
+expires, or can be woken by external input from the phone receiving a SMS. The processor
+spends most of its time in this state, waking up only to process a message or take a
+GPS fix. The processor runs at 1MHz for 4800-baud communication. It could run at 8MHz,
+if you need faster serial I/O. All the timing values would have to be adjusted.
+There is a setting or "fuse" bit to select the speed.<p>
+
+<a href="attiny84.pdf">ATTINY84 datasheet PDF</a><br>
+<a href="avrinst.pdf">AVR instruction set PDF</a><br>
+
+<h3>The circuit</h3>
+The ATTINY84 runs fine on unregulated battery power, but the GPS module requires a 
+3.3 volt regulated power supply. The AME8811 is a good regulator for this device
+because it has a low dropout voltage, has a low standby current, and is available as
+a TO-92 leaded part. It needs the capacitors to stabilize it against oscillation.<p>
+
+The Tracker needs to switch the power to the module with a PNP transistor. The ZTX1151
+is overkill, but I had some around and they have a low saturation voltage. There is also
+a two-color LED for status, another LED connected to the switched GPS power, and
+resistors for the LEDs and transistor base. That's all there is to the circuit.<p>
+
+<a href="ame8800.pdf">AME8811 regulator datasheet PDF</a><br>
+<a href="ZTX1151A.pdf">ZTX1151 datasheet PDF</a><br>
+
+<h3>The program</h3>
+The code is 5K bytes of assembly language, text strings, and control strings. 
+There is a main program and four interrupts. The four interrupts are:<br>
+<ol>
+<li>Timer 1 compare A: bit clock for serial send and receive.
+<li>Pin change interrupt 0: detects start bit of incoming byte.
+<li>Timer 0 overflow: four-per-second interrupt for countdown timers and blink codes.
+<li>Watchdog timer overflow: wakes the processor from sleep mode. Returns immediately,
+and is just used as a wakeup.
+</ol>
+
+<h3>Serial receiver</h3>
+There is a 256-byte serial receive buffer from 0x100 to 0x1ff in SRAM.
+The serial receiver is activated by the SERIAL_RECEIVE_ENABLE_FROM_{GPS,PHONE} functions.
+Once activated, the interrupt receives characters and adds them to the buffer at the
+position set by SERIAL_POINTER. The pin change interrupt detects a start bit, starts
+the Timer 1, and disables itself. The timer clocks the bits into SERIAL_DATA, writes
+the finished byte into RAM, increments the pointer, turns off the timer interrupt, 
+and re-enables the pin change interrupt.<p>
+
+The main program calls GET_NEXT_CHAR after setting RECEIVE_TIMEOUT. GET_NEXT_CHAR returns
+a pending character, waits for a character, or returns with the T flag set if the receiver
+timed out. The Y pointer keeps track of the main program's position in the buffer. The program
+often saves the Y pointer, looks ahead, and then resets the Y pointer. Parsing of the buffer
+is done "live" while characters are coming in. This works fine as long as the main program
+stays ahead of the incoming data.<p>
+
+<h3>Serial transmitter</h3>
+SERIAL_PORT selects the I/O line that will transmit data. Calling SERIAL_SEND_BYTE sends
+one character from SERIAL_DATA. Although the timer interrupt sends the bits,
+SERIAL_SEND_BYTE waits for completion before returning.<p>
+
+SERIAL_SEND_STRING_TO_PHONE is the string output function, and is analogous to printf() in C.
+It accepts a control string containing text and a series of special-function codes.
+The codes can insert SRAM or EEPROM fields, call substrings in program memory, or print
+numbers in decimal. All the special function codes are documented at the top of the function.<p>
+
+<h3>Text and numeric parsing</h3>
+The functions for parsing text are BRANCH_ON_STRING, PARSE_NMEA_OR_COMMAND_LINE, and
+PARSE_DECIMAL. BRANCH_ON_STRING takes a control string giving a list of program addresses
+and strings, scans the input buffer for matching strings, and jumps to the corresponding
+program label. This is used to identify user commands, phone responses, and NMEA strings.<p>
+
+PARSE_NMEA_OR_COMMAND_LINE parses space or comma delimited fields into SRAM. The flag
+FLAG_PARSE_NMEA makes it handle the NMEA format with checksum, $ and * characters, and
+empty fields. With this flag clear, it parses command lines and phone responses.
+This function also accepts a control string to determine which fields to save and
+where in SRAM to save them. There is a 64-byte area in memory reused for all such parsing.<p>
+
+PARSE_DECIMAL reads a string containing a decimal number, and returns the 16-bit number.
+It is used to parse user input and NMEA values where these need to be processed numerically.
+There are options for integer or dot-one format.<p>
+
+The GPS provides speed in knots and altitude in meters. We need to convert to other
+units (KPH, MPH, feet) and this is done by UNITS_CONVERT. The function multiplies a 16-bit
+number by a 16-bit conversion constant, keeping only the high-order 16 bits of the product.
+This scales the input down, so there are prefix entry points that double or quadruple the
+input before applying the constant.<p>
+
+All strings in SRAM and EEPROM are null-terminated and have a maximum field length.
+An eight-character field can hold eight characters of text, or if the string is
+shorter, it will be null-terminated.<p>
+
+<h3>GPS locate</h3>
+The function GPS_LOCATE turns on the GPS module, receives serial data until it
+gets a valid fix or times out, and then turns off the GPS module and returns
+with the fix status. It will wait a (shorter) time for a 3D fix, then will wait
+a (longer) time for any fix including a 2D fix, and then will return failure if
+no fix is obtained. It parses the GPRMC and GPGGA sentences.<p>
+
+The function waits a preset number of lines after the first valid fix to allow
+the data to smooth out.  It takes a second look if it gets a speed between 2
+and 10 knots, or if it gets a position displaced more than MIN_DISPLACEMENT
+from the last good fix. Without this additional filtering, the tracker
+generated a lot of spurious MOVED and STARTED messages.<p>
+
+<h3>Phone operations</h3>
+The function DO_PHONE_OPERATION takes a list of phone commands and runs them.
+Each command is null-terminated and there is a double null at the end of the last
+command. After each command, the function waits for a phone response and branches
+according to PHONE_MATCH_PATTERN. Each response has a handler, OK goes on to the
+next command, and ERROR retries from the beginning. Specific messages are sent
+using SEND_STRING_OFFSET_0.<p>
+
+<h3>Sleep mode</h3>
+When no commands are pending, the MCU goes into a sleep mode where it stops the processor
+and main oscillator. Only the watchdog timer continues to run. The MCU will be woken by
+either a watchdog timeout or a message from the phone. The phone is configured to send
+a message if it receives a SMS. This message is not actually parsed; it just wakes the
+MCU and the MCU then polls the phone. The poll interval depends on mode; in tracking
+mode it is configurable, and in normal mode it polls every 15 minutes if no messages
+are coming in.<p>
+
+
+<h3>Main loop</h3>
+</font><pre>
+Repeat forever
+  If tracking mode,
+    Get a location fix.
+    Decide on the basis of fix status and tracking state whether to send
+    a tracking message.
+    Update tracking state if it has changed. 
+  Poll the phone for incoming messages.
+  If messages found,
+    If not previous failures (CMGL_SAFETY_COUNT)
+      Get first message.
+      If password valid,
+        Call message-handling function based on command.
+    Delete first message.
+    Set FLAG_NEED_TO_POLL_MESSAGES.
+  else (no message found),
+    Clear FLAG_NEED_TO_POLL_MESSAGES.
+  If phone reset enabled and time to reset phone,
+    Reset phone.
+    Wait for it to come back online.
+    Clear PHONE_RESET_COUNT.
+  If callback command pending from message above,
+    Execute the callback command.
+    Clear the callback pointer.
+  Wait for blink codes to finish.
+  If FLAG_NEED_TO_POLL_MESSAGES set,
+    Go to top of main loop.
+  Sleep for POLL_INTERVAL or until interrupt wakes up.
+  If wakeup was an interrupt,
+    Set FLAG_NEED_TO_POLL_MESSAGES.
+    Go to top of main loop.
+  else (wakeup was timer expired)  
+    If in powersave and phone was off,
+      Turn on the phone.
+      Set state to waking up.
+      Set the powersave waking up poll interval.
+      Go to top of main loop.
+    else if in powersave and phone was waking up,
+      Set state to power on.
+      Set the power on poll interval.
+      Go to top of main loop. 
+    else if in powersave and phone was on,
+      Turn off the phone.
+      Set state to power off.
+      Go back to sleep.
+    else (not in powersave),
+      Go to top of main loop.
+</pre>
+
+</body></html>
+

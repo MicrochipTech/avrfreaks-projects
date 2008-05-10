@@ -1,0 +1,138 @@
+<html>
+<head><title>Open GPS Tracker command reference</title></head><body>
+<font face="Georgia"><a href="http://www.opengpstracker.org/index.html">Intro</a> | <a href="http://www.opengpstracker.org/build.html">Build it!</a> | <a href="http://www.opengpstracker.org/commands.html">Command reference</a> | <a href="http://www.opengpstracker.org/howitworks.html">How it works</a> | <a href="http://www.opengpstracker.org/download.html">Download</a> | <a href="http://www.opengpstracker.org/customize.html">Customize</a> | <a href="http://www.opengpstracker.org/todo.html">Todo</a> | <a href="http://www.opengpstracker.org/wordpress/">User forum</a><p>
+
+<h3>Commands for build 0.14</h3>
+Commands are sent to the tracker as SMS messages (not EMS/MMS/picture messaging.) All commands must be prefaced by the correct password, or they will be ignored without reply. One command per message. Commands can be upper or lower case, but passwords are case sensitive. All time values are approximate, because the tracker uses a fairly inaccurate clock. Timing values are intended to adjust power versus tracking resolution, not for precise timekeeping. Units of measurement for speed and altitude are set when the firmware is assembled, and cannot be changed without an AVR programmer.<p>
+
+<strong>SETADDRESS phone-number optional-email-address</strong><br>
+Sets the reply address. Phone-number is sent as the destination in the SMS message, and can be up to 32 digits. Email-address is prefixed to the message, and can be up to 64 characters. To send to a mobile phone, provide only the phone number. To send to an email address, provide the Email Gateway as the phone number, followed by a space and the email address. The Email Gateway for AT&amp;T is 121.<p>
+
+<strong>LOCATE</strong><br>
+Requests an immediate location report from the tracker. Tracking mode also generates location reports. In POWERSAVE mode, the locate will not occur until the next power-on interval.<br>
+Example location report:<br>
+LOCATE POS 34 05.8779 N 118 20.6368 W ALT 377 FT SPEED 0.0 MPH COURSE 11.05 AT 08/04/05 22:31:51 UTC SATS 04<br>
+<ul>
+<li><strong>LOCATE</strong> - event that caused the report to be sent.
+<li><strong>POS 34 05.8779 N 118 20.6368 W</strong> - latitude and longitude in degrees and decimal minutes. You can type or paste everything after POS right into Google Maps (<a href="maps.google.com" target="_blank">http://maps.google.com</a>) to see a map or satellite view of the location. 
+<li><strong>ALT 377 FT</strong> - measured GPS altitude, only accurate for four or more satellites (see below)
+<li><strong>SPEED 0.0 MPH</strong> - speed of the GPS unit when the fix was taken. A unit sitting still often reports up to 2 mph.
+<li><strong>COURSE 11.05</strong> - course in degrees if the unit was moving
+<li><strong>AT 08/04/05 22:31:51 UTC</strong> Year, month, day, hour, minute, second Universal Coordinated Time that the fix was taken. This is satellite time and is accurate.
+<li><strong>SATS 04</strong> - number of satellites providing the fix. Four or more indicates a 3D fix (altitude valid) while three satellites indicates a less-accurate 2D fix.<br>
+</ul>
+
+Report causes (first parameter of location report) - all but LOCATE and timeout are tracking mode only.<br>
+<ul>
+<li><strong>LOCATE</strong> - manual locate request.
+<li><strong>STARTED</strong> - the tracker has started moving.
+<li><strong>MOVING</strong> - the tracker was moving and continues moving.
+<li><strong>SPEEDING</strong> - the tracker is exceeding the speed limit (whether started or previously moving.)
+<li><strong>STOPPED</strong> - the tracker was moving and has stopped for the specified number of intervals.
+<li><strong>MOVED</strong> - the tracker was not moving when the fix was taken, but has been displaced since the previous fix. Setting the minimum displacement too short will generate spurious MOVED reports.
+<li><strong>GPS TIMED OUT WAITING FOR FIX, LAST GOOD FIX ...</strong> indicates the GPS receiver did not receive a valid satellite signal. Setting the fix wait too short will cause this error. The receiver needs at least 35 seconds, and often two minutes, to receive ephemeris if it has been off for over an hour. Steel and concrete buildings, including parking garages, block the signal. If the last good fix is all dashes, no valid fix was received since the tracker was powered up or rebooted.
+<li><strong>NO DATASTREAM FROM GPS DEVICE</strong> indicates the GPS module is not sending data. This is likely either a loose connection or a dead GPS battery.
+</ul>
+
+<strong>SALOCATE phone-number optional-email-address</strong><br>
+Sets the reply address and requests an immediate locate. The reply address remains changed to
+the new value. This is equivalent to SETADDRESS followed by LOCATE.<p>
+
+<strong>SETPASSWORD new-password new-password</strong><br>
+Changes the tracker's password. The same password must be repeated twice. It is case sensitive. Range: 3-16 characters.<p>
+
+<strong>SETNAME tracker-name</strong><br>
+Sets an identifier up to 16 characters that will be prefixed before all messages. This is useful when many trackers are reporting to the same address. SETNAME with no value removes the identifier.<p>
+
+<strong>TRACKON</strong><br>
+Activates TRACKING mode, and takes the device out of POWERSAVE mode if set. The device will respond with a tracking report, and will send unsolicited reports based on its motion. Tracking mode uses a lot more power than normal mode.<p>
+
+<strong>TRACKOFF</strong><br>
+Takes the device out of TRACKING mode and puts it in NORMAL mode. This command also cancels POWERSAVE mode if set.<p>
+
+<strong>POWERSAVE</strong><br>
+Activates POWERSAVE mode and takes the device out of TRACKING mode if set. The device will immediately go off the air, and will not accept additional commands until the next power-on interval. Set message delivery to SIM First (Message, Options, Memory Meter, Select SMS Memory, SIM First.) If you do not do this, powersave mode will not work, and you will lose remote control of the device.<p>
+
+
+<strong>POWERON</strong><br>
+Takes the device out of POWERSAVE mode and puts it in NORMAL mode. This command also cancels TRACKING mode if set.<p>
+
+<strong>STATUS</strong><br>
+Requests the status page. The SETTRACK and SETPOWER commands also return a status page showing the new settings.<br>Example status page:<br>
+SPDLMT=0 STOPD=120/2 BLKD=600/2 MOVNG=120/5 PSV=3600/600 3D/FIX/BLKD=72/136/96 MD=200 BAT=78 SIG=19 WDR=0 V=0.14 Open GPS Tracker<br>
+<ul>
+<li><strong>SPDLMT=0</strong> Speed limit, or 0 if disabled.
+<li><strong>STOPD=120/2</strong> Stopped fix interval and notify delay.
+<li><strong>BLKD=600/2</strong> Blocked fix interval and notify delay.
+<li><strong>MOVNG=120/5</strong> Moving fix interval and notify frequency.
+<li><strong>PSV=3600/600</strong> Powersave on/off intervals.
+<li><strong>3D/FIX/BLKD=72/136/96</strong> Four-satellite wait, fix wait, and blocked fix wait. Rounded down to a multiple of four seconds.
+<li><strong>MD=200</strong> Moved report distance in 1/1000 of a minute of longitude/latitude.
+<li><strong>BAT=78</strong> Phone battery charge, reported by +CBC command. Range: 0-100
+<li><strong>SIG=19</strong> Phone signal strength, reported by +CSQ command. Range: 0-31 ?
+<li><strong>WDR=0</strong> Watchdog reset count. Should remain zero. If the count is nonzero, the processor hung and was restarted by protective hardware. The most likely cause is either a software fault or electrical interference. This should not happen, but I need to know about it if it does. Watchdog reset cancels tracking and powersave modes. Range: 0-255 and will not roll over from 255 to 0. Cleared by reboot.
+<li><strong>V=0.14 Open GPS Tracker</strong> Tracker firmware revision.
+</ul>
+
+
+<strong>SETTRACK &lt;up to eight parameters&gt;</strong><br>
+<ol><li>Speed limit, in the same units used to report speed. If this speed is exceeded in tracking mode, the device sends a SPEEDING report. The first time the speed limit is exceeded, and each time the current fastest speed (above the limit) is exceeded, the device sends an immediate report. Otherwise, reports are sent at normal MOVING intervals, but with the tag SPEEDING. Current fastest speed is cleared by TRACKON. Range: 0-255, and 0 disables speed checking.
+<li>Stopped fix interval, in seconds. Sets how often the device takes GPS fixes in tracking mode, while stopped and in GPS coverage. Range: 0-65535
+<li>Stopped notify delay, in fix intervals. This determines for how many fixes in a row the device must be stopped, before sending a stopped report and switching to the stopped fix interval. Range: 0-255
+<li>Blocked fix interval, in seconds. Sets how often the device attempts to take GPS fixes in tracking mode, and with no GPS coverage. Setting this too short can drain the GPS battery. Range: 0-65535
+<li>Blocked notify delay. This determines for how many fixes the device must be blocked, before sending a blocked report and switching to the blocked fix interval. Range: 0-255
+<li>Moving fix interval, in seconds. Sets how often the device takes GPS fixes in tracking mode, while moving. Range: 0-65535
+<li>Moving notify frequency. Sets how often, in moving fix intervals, the device sends a MOVING report. Range: 0-255
+<li>Minimum displacement for MOVED report. Sets how far the device must be displaced to send a MOVED report. 1000 means one minute of longitude/latitude. Setting this too short will cause spurious MOVED reports. Range: 0-65535
+</ol>
+Example: SETTRACK 70 120 2 600 2 120 5 200<br>
+Parameters not specified will be left unchanged. The command returns a STATUS report.<br>
+Stopped and moving fix intervals can be set short without excessive battery drain, because the
+GPS module takes a fix in just a few seconds once it has ephemeris. Blocked fix interval should be set longer to prevent battery drain.<p>
+
+<strong>SETPOWER &lt;up to five parameters&gt;</strong><br>
+<ol><li>Powersave phone off interval, in seconds. Sets how long to leave the phone off for, when in POWERSAVE mode. The device will not respond to commands during this interval. Range: 0-65535
+<li>Powersave phone on interval, in seconds. Sets how long to leave the phone on for, when in POWERSAVE mode. The phone must stay on long enough to receive pending commands from the network. If this interval is set too short, you can lose remote control of the tracker, requiring a manual reset. Each incoming command restarts the power-on interval. Range: 0-65535
+<li>Four-satellite wait time, in seconds. Determines how long the tracker will wait for a four-satellite (3D) fix, before accepting a less accurate three-satellite (2D) fix. This should be less than fix wait time. Range: 0-1023, granularity 4 seconds.
+<li>Fix wait time, in seconds. Determines how long the tracker will wait for a fix before giving up and reporting a timeout. Range: 0-1023, granularity 4 seconds, lowest useful value is 64 seconds.
+<li>Blocked fix wait time, in seconds. Determines how long the device will wait for a fix before giving up, while in blocked state. This can be set shorter than the fix time above to prevent battery drain when the tracker is blocked. Setting it too short causes the device to stay in blocked mode after it moves into coverage. Range: 0-1023, granularity 4 seconds.
+</ol>
+Example: SETPOWER 3600 600 72 136 96<br>
+Parameters not specified will be left unchanged. The command returns a STATUS report.<p>
+
+<strong>REBOOT</strong><br>
+Reboots the tracker, and if phone rebooting is enabled in the firmware, also reboots the phone. This clears working memory but does not erase saved settings. Equivalent to shorting pins 5 and 6 on the programming connector, or unplugging the phone and removing the batteries.<p>
+
+<strong>REINIT</strong><br>
+Erases all settings and puts the device into "new chip" state. This wipes out the reply address and password, so the next command must be GPS SETADDRESS. Equivalent to the hardware reinit procedure. Also reboots the phone if phone rebooting is enabled in firmware.<p>
+
+<strong>Hardware reinit</strong><br>
+This manual procedure erases all settings if you are unable to communicate with the device
+over the air (usually because you lost the password.) Make sure you are electrically grounded
+to prevent static damage. You need a jumper of the type used on CD-ROM and hard drives to set
+master/slave modes. Put the jumper between pins 3 and 4 (middle two pins) on the
+programming header (bridge MCU pins 7 and 9.) Reboot the device by either applying power with no phone attached,
+or momentarily shorting pins 5 and 6 on the programming header.<p>
+The status LED should blink code 34. When it stops blinking, remove the jumper. The LED
+will now blink 33 and 31. The device is cleared and ready for a GPS SETADDRESS. The clearing
+occurs when you remove the jumper.<p>
+
+<strong>Status codes</strong> - first digit blinks green, second digit blinks red.<br>
+<table borderColor=#000000 cellSpacing=0 cellPadding=2 border=1>
+<tr><td align="center">Code</td><td>Description</td></tr>
+<tr><td align="center">11</td><td>phone polled</td></tr>
+<tr><td align="center">12</td><td>send message failed</td></tr>
+<tr><td align="center">13</td><td>phone poll failed</td></tr>
+<tr><td align="center">14</td><td>no phone number defined</td></tr>
+<tr><td align="center">21</td><td>invalid password</td></tr>
+<tr><td align="center">31</td><td>power on or reset</td></tr>
+<tr><td align="center">32</td><td>watchdog reset</td></tr>
+<tr><td align="center">33</td><td>eeprom initialized from defaults</td></tr>
+<tr><td align="center">34</td><td>remove jumper to reinit</td></tr>
+</table>
+
+
+
+</body></html>
+
+
