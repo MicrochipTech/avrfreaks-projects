@@ -1,0 +1,97 @@
+#!/bin/sh 
+prg="adude"
+#
+help()
+{
+	echo "prg_fusebit_uc -- read and write fuse bits of the atmega8"
+	echo ""
+	echo "Usage: prg_fusebit_uc [-hu] -r|-w Freq"
+	echo ""
+	echo "OPTIONS: -h this help"
+	echo "         -r read fuse bytes"
+	echo "         -u use uisp instead of avrdude"
+	echo "            avrdude can automatically detect dapa or avrusb500."
+	echo "            uisp can only be used with the parallel port dapa."
+	echo "         -w write fuse bytes such that a given Freq is used"
+	echo "            a frequency of 0 means external crystal. Possible"
+	echo "            values are 0,1,2,4,8"
+	echo ""
+	echo "EXAMPLE: program the fuses to 4MHz internal"
+	echo "         prg_fusebit_uc -w 4"
+	echo ""
+	echo "Warning: you can not undo the setting \"external crystal\" unless"
+	echo "         you have a crystal that works."
+	echo "This script can be easily adapted to different programmer types"
+	exit 0
+}
+while [ -n "$1" ]; do
+case $1 in
+    -h) help;shift 1;;
+    -u) prg="uisp";shift 1;;
+    -r) opt_r="1";shift 1;;
+    -w) opt_w="1";freq="$2";shift 2;;
+    -*) echo "error: no such option $1. -h for help";exit 1;;
+    *)  break;;
+esac
+done
+
+if [ -z "$opt_r" -a  -z "$opt_w" ];then
+	# one of those options is mandatory
+	help
+fi
+
+hf=0xd9
+if [ "$opt_w" = "1" ]; then
+	case $freq in
+	    0) lf=0xee;echo "Make sure you have a crystal otherwise you can not change this!";sleep 2;;
+	    1) lf=0xe1;;
+	    2) lf=0xe2;;
+	    4) lf=0xe3;;
+	    8) lf=0xe4;;
+	    *) echo "error: no such frequency, -h for help";exit 1;;
+	esac
+fi
+
+
+if [ "$prg" = "uisp" ]; then
+	if [ "$opt_r" = "1" ];then
+		set -x
+		uisp -dlpt=/dev/parport0 -dprog=dapa --rd_fuses
+		set +x
+		echo "Explanation: Fuse Low Byte: 0xe1 (1MHz intern), 0xe3 (4MHz intern), "
+		echo "             0xe4 (8MHz intern)"
+		echo "             Fuse High Byte should be 0xd9"
+		exit 0
+	fi
+	if [ "$opt_w" = "1" ]; then
+		set -x
+		uisp -dlpt=/dev/parport0 -dprog=dapa --wr_fuse_l=$lf
+		uisp -dlpt=/dev/parport0 -dprog=dapa --wr_fuse_h=$hf
+		set +x
+		exit 0
+	fi
+
+fi
+if [ "$prg" = "adude" ]; then
+	if grep "Vendor=0403 ProdID=6001" /proc/bus/usb/devices > /dev/null ; then
+		prg="avrusb500"
+	else
+		prg="dapa"
+	fi
+	if [ "$opt_r" = "1" ];then
+		set -x
+		avrdude -p m8 -c $prg -v -q
+		set +x
+		echo "Explanation: Fuse Low Byte: 0xe1 (1MHz intern), 0xe3 (4MHz intern), "
+		echo "             0xe4 (8MHz intern)"
+		echo "             Fuse High Byte should be 0xd9"
+		exit 0
+	fi
+	if [ "$opt_w" = "1" ]; then
+		set -x
+		avrdude -p m8 -c $prg -u -v -U lfuse:w:$lf:m
+		avrdude -p m8 -c $prg -u -v -U hfuse:w:$hf:m
+		set +x
+		exit 0
+	fi
+fi

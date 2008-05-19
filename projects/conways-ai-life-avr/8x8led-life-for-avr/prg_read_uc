@@ -1,0 +1,38 @@
+#!/bin/sh 
+prg="adude"
+if [ "$1" = "-u" ]; then
+	shift;
+	prg="uisp"
+fi
+if [ -z "$1" -o "$1" = "-h" -o "$1" = "--help" ]; then
+	echo "prg_read_uc -- read the flahs of an atmega8 microcontroller"
+	echo ""
+	echo "Usage: prg_load_uc [-hu] File.hex"
+	echo ""
+	echo "OPTIONS: -h this help"
+	echo "         -u use uisp instead of avrdude"
+	echo "            avrdude can automatically detect dapa or avrusb500."
+	echo "            uisp can only be used with the parallel port dapa."
+	echo ""
+	echo "This script can be easily adapted to different programmer types"
+	exit 0
+fi
+pfile="$1"
+
+if [ "$prg" = "uisp" ]; then
+	set -x
+	#uisp -dlpt=/dev/parport0 --erase  -dprog=dapa
+	#uisp -dlpt=/dev/parport0 --upload if="$pfile" -dprog=dapa  -v=3 --hash=32 --verify
+	set +x
+fi
+if [ "$prg" = "adude" ]; then
+	if grep "Vendor=0403 ProdID=6001" /proc/bus/usb/devices > /dev/null ; then
+		set -x
+		avrdude -v -v -p m8 -c avrusb500 -U flash:r:"$pfile:i"
+		set +x
+	else
+		set -x
+		avrdude -p m8 -c dapa -U flash:r:"$pfile:i"
+		set +x
+	fi
+fi
