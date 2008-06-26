@@ -1,0 +1,72 @@
+/***************************************************************************
+ *   Copyright (C) 2008 by Damian Kmiecik                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ *                                                                         *
+ ***************************************************************************/
+/***************************************************************************
+ *                                                                         *
+ *                               MAIN FILE                                 *
+ *                                                                         *
+ ***************************************************************************/
+//Headers
+#include "config/global.h"		//GLOBAL DEFINITIONS
+#include <avr/io.h>			//I/O
+#include <inttypes.h>			//
+#include <util/delay.h>			//SIMPLE DELAYS
+#include <avr/pgmspace.h>		//PGM space read
+#include "uart.h"			//UART transmission
+#include <math.h>			//Math
+//Main objects
+UART uart;				//make UART object
+//Main function
+int main(void) {
+
+#define START_TRANSMIT		0x10
+#define NEXT_BYTE_PLZ		0x11
+#define END_PLZ			0x12
+#define RCV_TRANSMIT		0xB0
+	
+	uint8_t y[256] = {0};
+
+	ADMUX = _BV(REFS0) | _BV(MUX2) | _BV(ADLAR);
+	SFIOR = _BV(ADTS0);
+	ADCSRA = _BV(ADEN);
+
+
+while(1) {
+
+	for(uint16_t i = 0; i < 256; i++) {
+		ADCSRA |= _BV(ADSC);
+		loop_until_bit_is_set(ADCSRA, ADSC);
+		_delay_us(100);
+		_delay_us(100);
+		_delay_us(100);
+		_delay_us(100);
+		_delay_us(100);
+		y[i] = (ADCH * 2) / 1024;
+	}
+
+	uart.get();
+
+	for(uint16_t i = 0; i < 256; i++) {
+		uart.send(i);
+		uart.send(y[i]);
+	}
+}
+
+	return 0;
+}
