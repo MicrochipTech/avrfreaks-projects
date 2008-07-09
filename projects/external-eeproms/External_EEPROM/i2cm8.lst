@@ -1,0 +1,1528 @@
+
+AVRASM ver. 2.1.2  i2cm8.asm Wed Jul 09 10:52:26 2008
+
+i2cm8.asm(84): Including file 'm8def.inc'
+                 
+                 
+                 ; version 0.9   July 8, 2008	alan_probandt@yahoo.com       Portland, Oregon USA
+                 ;
+                 ; Target CPU >> Atmel AVR Mega8
+                 ; Fuses: high:	11010111  EEPROM preserved through chip erase  [SP12 -wH10111]
+                 ;	 low:	11100100  clk/8=off, no clk out, 8MHz Int RC clock, full-swing, slow-rise power  [SP12 -wF11101111]
+                 ;
+                 ; Assemble with:  avrasm2  I2Cm8.asm -fI -l I2Cm8.lst -o I2Cm8.hex
+                 ; RealTerm cmd line: C:\Realterm\realterm.exe baud=9600 port=1 flow=2 capfile=g:\AVR\src\m8\capture.txt RTS=1 Display=0 rows=34
+                 ;
+                 ; Use unkerned font like Terminal or Lucida Console to view source formatted correctly.  Tab size = 8
+                 ;
+                 ;
+                 ; Connect to PC RS-232 serial port.
+                 ; Program starts by opening AVR Mega8 USART for 9600K baud 8/N/1.
+                 ; Then program prompts for input 'R', 'W', 'D', 'E', 'T', or 'P' on PC terminal.
+                 ;
+                 ;  >> 'R' entered (Procedure to read a single test page):
+                 ; 	< Prompt appears on PC terminal for a 24AA515 EEPROM page [range= 0x0000-0x03ff]
+                 ;	> Enter four hex characters on PC terminal.
+                 ;	< Eight rows of eight chars appear below the address.  These are the bytes (in hex) found at that page.
+                 ;	< Program returns to original prompt for 'R', 'W', 'D', 'E', or 'P'.
+                 ;  >> 'W' entered (Procedure to write a test page with predefined values):
+                 ; 	< Prompt appears on PC terminal for a 24AA515 EEPROM page [range= 0x0000-0x03ff ]
+                 ;	> Enter four hex characters on PC terminal.
+                 ;	< The selected page is filled with 64 bytes. The first four bytes are the ASCII of the first address of the page.
+                 ;	  Next is the colon char.  Then the values 0x05 to 0x3f are placed in the remaining chars of the page.
+                 ;	< program returns to original prompt for 'R', 'W', 'D', 'E', or 'P'.
+                 ;  >> 'D' entered (Dump Multiple Pages):
+                 ; 	< Prompt appears on PC terminal for page number. [range= 0x0000-0x03ff ]
+                 ;	> Enter four hex characters on PC terminal. This is the starting page of the data sent out.
+                 ; 	< Prompt appears on PC terminal for hex number. [range= 0x0000-0x03ff ]
+                 ;	> Enter four hex characters on PC terminal.  This is the number of pages to send.
+                 ;       < All bytes in the range of pages in the EEPROM dumped to RS232 as quickly as possible.
+                 ;  >> 'E' entered (Erase Multiple Pages):
+                 ; 	< Prompt appears on PC terminal for page number. [range= 0x0000-0x03ff ]
+                 ;	> Enter four hex characters on PC terminal. This is the starting page of the data sent out.
+                 ; 	< Prompt appears on PC terminal for page number. [range= 0x0000-0x03ff ]
+                 ;	> Enter four hex characters on PC terminal.  This is the number of pages to send.
+                 ;       < All bytes in the selected pages are written to 0xFF as quickly as possible.
+                 ;  >> 'T' entered:
+                 ;       > Test procedure to send two pages of 64 bytes and write these pages to the EEPROM at address 0x0000:0x0001
+                 ;  >> 'P'
+                 ;       > send multiple pages of 64 bytes and write the pages sequencially to the EEPROM
+                 ;
+                 ;
+                 ; >>>> Serial EEPROM types
+                 ;   This program as written works specifically for the MicroChip Corporation's 24AA515 serial EEPROM.  It also works
+                 ; unchanged (as yet untested) with 24LC515 and 24FC515.  These are a 64K byte 8-pin devices.  The address space is in
+                 ; two blocks of 32K each.  A Bank-Select bit in the I2C control byte determines the upper or lower block.  With the 24xx515, 
+                 ; pin 3 of the IC must be tied high to Vcc. There are only four I2C addresses, determined by A0 and A1.  Vcc can be 
+                 ; between +2.5v to +5v.
+                 ;
+                 ;   The more common high-density serial EEPROM 24LC512 can use this program after adjustment of the Bank-Select code
+                 ; subroutine.  24LC512 EEPROMs use the full 64K 16-bit address range in the I2C address bytes sent after the control byte.
+                 ; There is no Bank-Select bit in the control byte.  These ICs can also use pin 3 as a standard A2 address selector,
+                 ; giving eight I2C chip addresses.  Lower density EEPROMs such as 24LC32, 24LC64, 24LC128, and 24LC256 also use this format.
+                 ;
+                 ; Data Protocol - Standard I2C device protocol for writing data is: Start Condition, Control byte -ACK-, high address -ACK-,
+                 ; low address -ACK-, write data byte(s) -ACK-, and ending with a Stop Condition.  For reading data, the write protocol
+                 ; is used for latching the data address into the device, then a RepeatedStart followed with a Control byte with the
+                 ; read/write bit set.  One or more data bytes are then read with the AVR generating the Acknowledge bit. The master
+                 ; generates a NACK after the last read byte accepted. The lower density EEPROMs like 24LC32, 24LC64, 24LC128, and 24LC256
+                 ; also use this protocol.   24LC32 and 24LC64 use 32-byte page sizes; 24LC128, 24LC512, and 24LC515 use 64-byte pages.
+                 
+                 ;	This application's pinout - Atmel AVR Mega8                          MAX232
+                 ;   			  _______			 ;                  _______
+                 ;             reset/  PC6 |1  28| PC5 SCL		 ;           + Cap1 |1  16| Vcc  +5V
+                 ;		 RxD  PD0 |2  27| PC4 SDA                ;           + Cap2 |2  15| Gnd
+                 ;		 TxD  PD1 |3  26| PC3 (ADC3/PCINT11)	 ;           - Cap1 |3  14| CTS (to PC)
+                 ;		 RTS  PD2 |4  25| PC2 (ADC2/PCINT10)	 ;           + Cap3 |4  13| RTS (from PC)
+                 ;		 CTS  PD3 |5  24| PC1 (ADC1/PCINT9)      ;           - Cap3 |5  12| RTS (to AVR)
+                 ;                     PD4 |6  23| PC0 (ADC0/PCINT8)      ;           - Cap4 |6  11| CTS (from AVR)
+                 ;		 +5V  VCC |7  22| GND                    ;    RS232 TxD out |7  10| TTL TxD out (from AVR)
+                 ;		      GND |8  21| AREF  +5V              ;    RS232 RxD  in |8   9| TTL RxD in  (to AVR)
+                 ;(pcint6/XTAL1/TOSC1) PB6 |9  20| AVCC  +5V              ;                  -------
+                 ;   (pcint21/OC0B/T1) PD5 |11 18| PB4 (MISO/PCINT4)      ;           A0     |1   8| Vcc  +5V
+                 ; (pcint22/OC0A/AIN0) PD6 |12 17| PB3 (MOSI/OC2A/PCINT3) ;           A1     |2   7| WP (gnd)
+                 ;      (pcint23/AIN1) PD7 |13 16| PB2 (SS/OC1B/PCINT2)   ;           A2 (+5)|3   6| SCL
+                 ;  (pcint0/CLKO/ICP1) PB0 |14 15| PB1 (OC1A/PCINT1)      ;           gnd    |4   5| SDA
+                 ;			  -------                                           24AA515
+                 
+                 .list
+                 
+                 .equ	SRAMstart	= 0x060  ; 0x060 on Mega8 and 0x100 on Mega48
+                 .equ	clock		= 8000000; AVR system clock speed in Hertz. Internal RC generated.
+                 .equ	baud38K		= (clock/(38400*16))-1 ;14  AVR USART baud rate register value
+                 .equ	baud9600	= (clock/(9600*16))-1  ;59  
+                 .equ	PageWriteTimer	= ~ (42)	; 0xd5 ;0.0054 sec @ 8MHz {prescale/1024}    
+                 .equ	Eight_uSec_Val  =  45  ; @8 uSec delay in-line loop  135 cycles/0.125uS per cycle
+                 .equ	LineCounterValue = 8 ; # of lines of 8 bytes each when displaying the values of a page
+                 .equ	MaxPages	= 4 ; high byte of the maximium number of pages. 4= 64Kx8 EEPROM (0x0400 pages)
+                 
+                 ; AVR Device and I2C Target equates
+                 .equ	MostSigBit	= 7
+                 .equ	TWI_Port	= PortC ; Mega8, 48,88,168
+                 .equ	PAGE_SIZE	= 64 ; 128K - 512K bit EEPROM devices.  32K and 64K use 32-byte page sizes.
+                 .equ	PAGESHIFTS	= 6  ; log2 of PAGE_SIZE
+                 .equ	HandshakePort	= PortD  ; location of Clear_To_Send pin  (RTS is not used)
+                 .equ	HandshakeDDR	= DDRD
+                 .equ	RTS_pin		= 2 ; (not used) pulled high by PC when data is ready to be sent to the AVR and be programmed
+                 .equ	CTS_pin		= 3 ; PortD3 goes high to signal to the PC that the AVR is ready to receive the next page
+                 .equ	QUEUESIZE	= 128 ; must be 2^n and <256
+                 .equ	QUEUEWRAPMASK	= QUEUESIZE-1 ; creates a wrap-around input buffer for UART bytes
+                 
+                 ; Lower Registers
+                 .def	SREGtemp	= r1
+                 .def	UpperDigit	= r2
+                 .def	HighAddress	= r3
+                 .def	LowAddress	= r4
+                 .def	ControlByte	= r5
+                 .def	PageCounter	= r6
+                 .def	Counter		= r7	; doRead, doDump, doProgram
+                 .def	LineCounter	= r8
+                 .def	High16bitValue	= r9
+                 .def	Low16bitValue	= r10
+                 .def	InQueueHead	= r11
+                 .def	InQueueTail	= r12
+                 .def	zeroreg		= r15
+                 
+                 ; Upper Registers
+                 .def	temp		= r16
+                 .def	irqtemp		= r17
+                 .def	temp2		= r18
+                 .def	ReadCharStore	= r19	; doRead, Read_I2C_Page
+                 .def	DataByte	= r20
+                 .def	ErrorValue	= r21
+                 .def	FlagsReg	= r22
+                 .equ	ZeroPages	= 7	; doDump:set when number of pages to dump is zero.
+                 .equ	UART_TimeOut	= 6	; PC has stopped sending data, causing Timer0 to overflow
+                 
+                 
+                 ; ZH:ZL=R31:R30    YH:YL=R29:R28   XH:XL=R27:R26
+                 
+                 
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 .dseg ; 1024 bytes of static RAM in mega8
+                 .org	SRAMstart
+000060           Page_Buffer:		.byte 	PAGE_SIZE ; 0x060-0x09f
+0000a0           InQueue:		.byte	QUEUESIZE ; 0x0a0-0x11f    0x0df for 64 byte page
+                 ;-------------------------------------------
+000120           HighPageAddress: 	.byte	1 ; the start address of the page being worked. 0-0xffff
+000121           LowPageAddress:		.byte	1
+000122           HighPageNumber:		.byte	1 ; the number of the page being worked. 0x000-0x3ff
+000123           LowPageNumber:		.byte	1
+000124           FirstPgmPgOffset: 	.byte	1 ; offset of the first byte to be programmed in a page
+                 
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 .cseg
+                 .org 000
+000000 c012      	rjmp 	reset	; Reset Handler
+                 ; interrupt vectors for Mega8
+000001 9518      	reti	;	INT0addr= 0x0001
+000002 9518      	reti	;	INT1addr= 0x0002
+000003 9518      	reti	;	OC2addr	= 0x0003
+000004 9518      	reti	;	OVF2addr= 0x0004
+000005 9518      	reti	;	ICP1addr= 0x0005
+000006 9518      	reti	;	OC1Aaddr= 0x0006
+000007 9518      	reti	;	OC1Baddr= 0x0007
+000008 9518      	reti	;	OVF1addr= 0x0008
+000009 9518      	reti	;	OVF0addr= 0x0009
+00000a 9518      	reti	;	SPIaddr	= 0x000a
+00000b c317      	rjmp	RxC_IRQ ;URXCadd= 0x000b
+00000c 9518      	reti	;	UDREaddr= 0x000c
+00000d 9518      	reti	;	UTXCaddr= 0x000d
+00000e 9518      	reti	;	ADCCaddr= 0x000e
+00000f 9518      	reti	;	ERDYaddr= 0x000f
+000010 9518      	reti	;	ACIaddr	= 0x0010
+000011 9518      	reti	;	TWIaddr	= 0x0011
+000012 9518      	reti	;	SPMRaddr= 0x0012
+                 
+                 reset:
+                 ; initialize stack
+000013 e004      	ldi	temp, high (RAMEND) ; Main program start
+000014 bf0e      	out	SPH, temp	; Set Stack Pointer to top of RAM
+000015 e50f      	ldi	temp, low (RAMEND)
+000016 bf0d      	out	SPL, temp
+                 
+                 ; initialize I/O ports
+000017 9a8b      	sbi	HandshakeDDR, CTS_pin ; CTS [clear to send] is output from the AVR to the PC
+000018 9893      	cbi	HandshakePort, CTS_pin ; Bring CTS [PD3] low to signal to PC that the AVR is ready to receive serial data
+                 
+                 ; initialize USART   ; USCR0C default values OK for 8/N/1
+000019 e000      	ldi	temp, high (baud9600) ;Baud rate H
+00001a bd00      	out	UBRRH, temp
+00001b e303      	ldi	temp, low (baud9600) ;Baud rate L
+00001c b909      	out	UBRRL, temp
+00001d e908      	ldi	temp, (1<<RXEN) | (1<<TXEN) | (1<<RXCIE)
+00001e b90a      	out	UCSRB, temp  ; turn on receive and transmit
+                 
+                 ; initialize TwoWire Interface
+00001f e100      	ldi 	temp, 0x10 ; cpu clock / (16 + (2*twbr)* prescale
+000020 b900      	out 	twbr, temp ; 8000000/48=166,666 Hz =TWI clock rate
+000021 e000      	ldi 	temp, 0x00
+000022 b901      	out 	twsr, temp ; TW status Reg.
+000023 2700      	clr 	temp
+000024 b902      	out 	twar, temp	; TW address Reg.
+000025 e004      	ldi 	temp, (0<<TWINT)|(0<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|(0<<TWWC)|(1<<TWEN)|(0<<TWIE)
+                 ;                    bit  7         6          5         4          3        2         0
+000026 bf06      	out 	twcr, temp ; TW control Reg
+                 
+                 ; initialize application
+000027 ea00      	ldi	temp, 0xa0 ; bits 7-4 are EEPROM select; bit 3 is bank select for 24AA515; 2,1 chip addr; 0 bit=r/_w
+000028 2e50      	mov	ControlByte, temp
+000029 2766      	clr	FlagsReg
+00002a 24ff      	clr	zeroreg
+00002b 24bb      	clr	InQueueHead
+00002c 24cc      	clr	InQueueTail
+                 
+                 ; enable all selected interrupts
+00002d 9478      	sei
+                 
+                 ;************************************************
+                 ;
+                 ;  <<<<<<< MAIN CODE Loop >>>>>>>>>
+                 ;
+                 ;************************************************
+                 main:
+00002e e003      	ldi	temp, 3 ; FirstPrompt - display main menu options on terminal
+00002f d17c      	rcall 	DisplayMessage
+                 
+000030 d2e4      	rcall 	USART_Rx     ; get main menu option ~ char returned in DataByte
+000031 b94c      	out	UDR, DataByte
+                 
+                 ; one-instruction for converting an ASCII letter to uppercase. 0x41~0x5a is unchanged; 0x61~0x7a becomes 0x41~0x5a.
+000032 7d4f      	andi	DataByte, 0b11011111 ; DataByte must be a letter for this technique
+                 
+000033 3542      Main_R:	cpi 	DataByte,'R'  ; Read a single page and send to RS232 terminal
+000034 f411      	brne	main_W
+000035 d016      	rcall 	doRead
+000036 c014      	rjmp	MainLoop
+                 
+000037 3547      Main_W:	cpi 	DataByte,'W'  ; Write a single page with predetermined pattern
+000038 f411      	brne	Main_D
+000039 d056      	rcall	doWrite
+00003a c010      	rjmp	MainLoop
+                 
+00003b 3444      Main_D:	cpi 	DataByte,'D'  ; Dump the entire contents of the EEPROM
+00003c f411      	brne	Main_E
+00003d d07c      	rcall	doDump
+00003e c00c      	rjmp	MainLoop
+                 
+00003f 3445      Main_E:	cpi 	DataByte,'E'  ; load every EEPROM location with value 0xff
+000040 f411      	brne	Main_Q
+000041 d09a      	rcall	doErase
+000042 c008      	rjmp	MainLoop
+                 
+000043 3540      Main_Q:	cpi 	DataByte,'P' ; receive data from PC and write to EEPROM continously
+000044 f411      	brne	Main_T
+000045 d0e4      	rcall	doProgram
+000046 c004      	rjmp	MainLoop
+                 
+000047 3544      Main_T:	cpi 	DataByte,'T' ; receive several pages from PC and write to EEPROM
+000048 f411      	brne	MainLoop
+000049 d0b5      	rcall	doProgTwo
+00004a c000      	rjmp	MainLoop
+                 
+                 ;  add more options to the main loop here
+                 
+                 MainLoop:
+00004b cfe2      	rjmp 	main
+                 
+                 
+                 
+                 
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 ; doRead
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 doRead:
+00004c e000      	ldi	temp, 0		; prompt for four hex characters of EEPROM page 0x0000-0x03ff
+00004d d15e      	rcall 	DisplayMessage
+00004e d148      	rcall 	Get_16bitValue	;get EEPROM page Value (four hex chars)
+00004f 9290 0122 	sts	HighPageNumber, High16bitValue
+000051 92a0 0123 	sts	LowPageNumber, Low16bitValue
+000053 d111      	rcall	PageNumToAddress
+000054 d105      	rcall	Format_BankSelect ; set or clear the Bank-Select bit in the Control byte according to HighAddress
+000055 d250      	rcall 	read_I2C_Page	;read 64 bytes from i2c
+                 
+000056 e04d      	ldi	DataByte, 0x0d  ; carriage return
+000057 b12b      dR_2c:	in	temp2, UCSRA ; Wait for empty transmit buffer
+000058 ff25      	sbrs	temp2, UDRE
+000059 cffd      	rjmp 	dR_2c
+00005a b94c      	out	UDR, DataByte
+00005b e04a        	ldi	DataByte, 0x0a  ; line feed
+00005c b12b      dR_2d:	in	temp2, UCSRA ; Wait for empty transmit buffer
+00005d ff25      	sbrs	temp2, UDRE
+00005e cffd      	rjmp 	dR_2d
+00005f b94c      	out	UDR, DataByte
+                 
+000060 e400      	ldi	temp, PAGE_SIZE ; number of bytes in page buffer
+000061 2e70      	mov	Counter, temp   ; can't write immediate value to lower register
+000062 e008      	ldi	temp, PAGE_SIZE / LineCounterValue ; number of lines displayed on terminal with 8 bytes in a line
+000063 2e80      	mov	lineCounter, temp   ; can't write immediate value to lower register
+000064 e0f0      	ldi	ZH, high (Page_Buffer)
+000065 e6e0      	ldi	ZL, low  (Page_Buffer)
+                 
+000066 9131      dR_3a:	ld	ReadCharStore, z+
+000067 2f43      	mov	DataByte, ReadCharStore
+000068 7f40      	andi	DataByte, 0xf0
+000069 9542      	swap	DataByte
+00006a d1f2      	rcall	Hex2ASCII ;  send single hex digit in bits 3-0 of DataByte, return ASCII in temp
+00006b 2e20      	mov	UpperDigit, temp
+00006c 2f40      	mov	DataByte, temp
+                 
+00006d b12b      dR_3b:	in	temp2, UCSRA ; Wait for empty transmit buffer
+00006e ff25      	sbrs	temp2, UDRE
+00006f cffd      	rjmp 	dR_3b
+000070 b94c      	out	UDR, DataByte
+                 
+000071 2f43      	mov	DataByte, ReadCharStore
+000072 704f      	andi	DataByte, 0x0f
+000073 d1e9      	rcall	Hex2ASCII ;  send single hex digit in bits 3-0 of DataByte, return ASCII in temp
+000074 2f40      	mov	DataByte, temp
+000075 b12b      dR_3c:	in	temp2, UCSRA ; Wait for empty transmit buffer
+000076 ff25      	sbrs	temp2, UDRE
+000077 cffd      	rjmp 	dR_3c
+000078 b94c      	out	UDR, DataByte
+                 
+000079 e240      	ldi	DataByte, 0x20  ; space
+                 
+00007a b12b      dR_3d:	in	temp2, UCSRA ; Wait for empty transmit buffer
+00007b ff25      	sbrs	temp2, UDRE
+00007c cffd      	rjmp 	dR_3d
+00007d b94c      	out	UDR, DataByte
+                 
+00007e 947a      	dec	Counter
+00007f f079      	breq	dr_exit
+                 
+000080 948a      	dec	LineCounter
+000081 f721      	brne	dR_3a
+000082 e04d      	ldi	DataByte, 0x0d  ; carriage return
+                 
+000083 b12b      dR_3e:	in	temp2, UCSRA ; Wait for empty transmit buffer
+000084 ff25      	sbrs	temp2, UDRE
+000085 cffd      	rjmp 	dR_3e
+000086 b94c      	out	UDR, DataByte
+000087 e04a      	ldi	DataByte, 0x0a  ; line feed
+                 
+000088 b12b      dR_3f:	in	temp2, UCSRA ; Wait for empty transmit buffer
+000089 ff25      	sbrs	temp2, UDRE
+00008a cffd      	rjmp 	dR_3f
+00008b b94c      	out	UDR, DataByte
+00008c e008      	ldi	temp, LineCounterValue
+00008d 2e80      	mov	lineCounter, temp
+00008e cfd7      	rjmp	dR_3a  ; print next line
+                 
+00008f 9508      dR_exit: ret ; back to main
+                 
+                 
+                 
+                 
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 ; doWrite  - write a test pattern into a single 64-byte page
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 doWrite:
+000090 e000      	ldi	temp, 0
+000091 d11a      	rcall 	DisplayMessage ; prompt for four hex characters of EEPROM page 0x0000-0x03ff
+000092 d104      	rcall 	Get_16bitValue	;get EEPROM page Value (four hex chars)
+000093 9290 0122 	sts	HighPageNumber, High16bitValue
+000095 92a0 0123 	sts	LowPageNumber, Low16bitValue
+000097 d0cd      	rcall	PageNumToAddress; return HighAddress/LowAddress
+000098 d0c1      	rcall	Format_BankSelect ;send HighAddress: return ControlByte
+000099 2d05      	mov	temp, ControlByte
+00009a 7f0e      	andi	temp, ~ (0x01) ; clear r/_w bit for write
+00009b 2e50      	mov	ControlByte, temp
+                 ; put the ASCII value of the page's real start address into the first four bytes of the page.  Follow with the colon character.
+00009c e0f0      	ldi	ZH, high (Page_Buffer)
+00009d e6e0      	ldi	ZL, low  (Page_Buffer)
+00009e 2d43      	mov	DataByte, HighAddress
+00009f 7f40      	andi	DataByte, 0b11110000
+0000a0 9542      	swap	DataByte        ;DB 00001111 high nib of high addr
+0000a1 d1bb      	rcall	Hex2ASCII	; return: temp with ASCII value
+0000a2 9301      	st	z+, temp
+0000a3 2d43      	mov	DataByte, HighAddress
+0000a4 704f      	andi	DataByte, 0b00001111
+0000a5 d1b7      	rcall	Hex2ASCII
+0000a6 9301      	st	z+, temp
+0000a7 2d44      	mov	DataByte, LowAddress
+0000a8 7f40      	andi	DataByte, 0b11110000
+0000a9 9542      	swap	DataByte	;DB 0000hhhh  high nib of low addr
+0000aa d1b2      	rcall	Hex2ASCII	; return: temp with ASCII value
+0000ab 9301      	st	z+, temp
+0000ac 2d44      	mov	DataByte, LowAddress
+0000ad 704f      	andi	DataByte, 0b00001111    ;DB 0000llll  low nib of low addr
+0000ae d1ae      	rcall	Hex2ASCII
+0000af 9301      	st	z+, temp
+0000b0 e30a      	ldi	temp, ':'
+0000b1 9301      	st	z+, temp
+                 
+0000b2 e004      	ldi	temp, MaxPages  ; fill the page buffer with the binary value of each byte's page_offset_value
+0000b3 9503      dW_3a:	inc	temp
+0000b4 9301      	st	z+, temp
+0000b5 3400      	cpi	temp, PAGE_SIZE
+0000b6 f3e0      	brlo	dW_3a
+                 
+0000b7 d0a2      	rcall	Format_BankSelect ; send HighAddress :: return ControlByte with BankSelect bit adjusted to real address
+0000b8 d1b5      	rcall	Write_I2C_Page ; send HighAddress, LowAddress, ControlByte, Page_Buffer (in SRAM)
+                 
+                 dW_exit:
+0000b9 9508      	ret	; back to main
+                 
+                 
+                 
+                 
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 ; doDump:  get start Page and number of pages to send to USART. Send data.
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 doDump:
+0000ba d0be      	rcall	GetPageInfo
+                 ; returns with HPgNum,LPgNum=1stPage_YH:YL=#pages_HAdr,LAdr=1st page full adr_zeropg flag
+0000bb fd67      	sbrc	FlagsReg, ZeroPages
+0000bc c01d      	rjmp	dD_ZeroPgs
+0000bd d09c      dD_0:	rcall	Format_BankSelect ; send HighAddress :: return ControlByte with BankSelect bit adjusted to real address
+0000be d1e7      	rcall 	read_I2C_Page	;read 64 bytes from i2c to Page_Buffer
+                 ; send each byte in the Page_Buffer to the RS232 transmitter
+0000bf e0f0      	ldi	ZH, high (Page_Buffer)
+0000c0 e6e0      	ldi	ZL, low  (Page_Buffer)
+0000c1 e400      	ldi	temp, PAGE_SIZE
+0000c2 2e70      	mov	counter, temp
+0000c3 9141      dD_2:	ld	DataByte, z+
+0000c4 b12b      dD_2a:	in	temp2, UCSRA ; Wait for empty transmit buffer
+0000c5 ff25      	sbrs	temp2, UDRE
+0000c6 cffd      	rjmp 	dD_2a
+0000c7 b94c      	out	UDR, DataByte
+0000c8 947a      	dec	counter ; position in the page currently being transmitted
+0000c9 f7c9      	brne	dD_2
+                 
+0000ca 9721      	sbiw	YH:YL, 1 ; number of pages left to do
+0000cb f079      	breq	dD_exit
+                 
+0000cc 9100 0123 dD_3:	lds	temp, LowPageNumber ; increment Page Address for next Page_read
+0000ce 9503      	inc	temp ; H-L PgAdr = 0x000 ~ 0x3ff
+0000cf 9300 0123 	sts	LowPageNumber, temp
+0000d1 2300      	tst	temp
+0000d2 f429      	brne	dD_4
+0000d3 9100 0122 	lds	temp, HighPageNumber
+0000d5 9503      	inc	temp
+0000d6 9300 0122 	sts	HighPageNumber, temp
+0000d8 d0b1      dD_4:	rcall	PgI_0
+0000d9 cfe3      	rjmp	dD_0
+                 
+                 dD_ZeroPgs:
+0000da 776f      	cbr	FlagsReg, (1<<ZeroPages)
+                 dD_exit:
+0000db 9508      	ret
+                 
+                 
+                 
+                 
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 ; doErase:  get start Page and number of pages to send to USART.
+                 ;         Send 0xFF to each byte in each page.
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 doErase:
+0000dc d0b1      	rcall	FillPage0xFF
+0000dd d09b      	rcall	GetPageInfo
+                 ; returns with HPgAdr,LPgAdr=1stPage_YH:YL=#pages_HAdr,LAdr=1st page full adr_zeropg flag
+0000de fd67      	sbrc	FlagsReg, ZeroPages ; set if zero pages to erase
+0000df c01d      	rjmp	dE_ZeroPgs
+                 ;send 64 bytes of 0xFF from Page_Buffer to EEPROM
+0000e0 d079      dE_0:	rcall	Format_BankSelect ; send HighAddress :: return ControlByte with BankSelect bit adjusted to real address
+0000e1 d18c      	rcall 	Write_I2C_Page ; send HighAddress, LowAddress, ControlByte, Page_Buffer (in SRAM)
+                 
+                 ; **********  time out the 5mS page write  *****************************************
+0000e2 e001      	ldi	temp, (1<<Tov0)
+0000e3 bf08      	out	TIFR, temp  ; clear Timer 0 overflow flag (defaults to clear)
+0000e4 ed05      	ldi	temp, PageWriteTimer   ; time-out period is 0.0056 Sec
+0000e5 bf02      	out	TCNT0, temp
+0000e6 e005      	ldi	temp, (1<<CS02) | (0<<CS01) | (1<<CS00) ; prescale /1024
+0000e7 bf03      	out	TCCR0, temp
+0000e8 b708      dE_0a:	in	temp, TIFR	; wait until timer 0 overflow
+0000e9 ff00      	sbrs	temp, TOV0
+0000ea cffd      	rjmp	dE_0a        ; Timed out overflow happened
+0000eb e001      	ldi	temp, (1<<TOV0)
+0000ec bf08      	out	TIFR, temp
+                 ;************************************************************************************
+                 
+                 ; determine the number of pages left to do
+0000ed 9721      	sbiw	YH:YL, 1
+0000ee f079      	breq	dE_exit
+0000ef 9100 0123 	lds	temp, LowPageNumber ; increment Page Address for next Page_read
+0000f1 9503      	inc	temp ; H-L PgAdr = 0x000 ~ 0x3ff
+0000f2 9300 0123 	sts	LowPageNumber, temp
+0000f4 2300      	tst	temp
+0000f5 f429      	brne	dE_1
+0000f6 9100 0122 	lds	temp, HighPageNumber
+0000f8 9503      	inc	temp
+0000f9 9300 0122 	sts	HighPageNumber, temp
+0000fb d069      dE_1:	rcall	PageNumToAddress ; return with High+LowAddress
+0000fc cfe3      	rjmp	dE_0
+                 
+                 dE_ZeroPgs:
+0000fd 776f      	cbr	FlagsReg, (1<<ZeroPages)
+                 dE_exit:
+0000fe 9508      	ret
+                 
+                 
+                 
+                 
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 ; doProgTwo:  Test of UART data receive and CTS function   
+                 ;	Receive 64 bytes of data from PC. Write them to Page zero of the EEPROM.
+                 ;	Get another 64 bytes, write to page one of EEPROM.
+                 ;
+                 ; uses:	HighAddress, LowAddress, High16bitValue, Low16bitValue are low registers
+                 ;	HighPageNumber, LowPageNumber are SRAM variables.
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 DoProgTwo:
+0000ff 2700      	clr	temp
+000100 9300 0122 	sts	HighPageNumber, temp
+000102 9300 0123 	sts	LowPageNumber, temp
+000104 e002      	ldi	temp, 2 ; arbitrary number of pages to write for testing purposes only
+000105 2e60      	mov	PageCounter, temp
+                 
+                 dPT_NextPage:
+000106 d05e      	rcall	PageNumToAddress; send: HighPageNumber, LowPageNumber  ; return: HighAddress, LowAddress; uses: temp2
+000107 d052      	rcall	Format_BankSelect ; send ControlByte, HighAddress, LowAddress :: return:ControlByte with BankSelect bit adjusted to address
+000108 e6e0      	ldi	ZL, low  (Page_Buffer) ; Page_Buffer = 0x060 point to where the data from the PC will be stored in sRAM
+000109 e0f0      	ldi	ZH, high (Page_Buffer)
+00010a 2477      	clr	Counter
+00010b 9893      	cbi	HandshakePort, CTS_pin ; enable the PC to send data by activating ClearToSend signal
+00010c 0000      	nop
+                 ; First load 64 bytes from PC. Put each byte into the Page_Buffer as each byte arrives into the UART input buffer.
+                 dPT_PollQ:
+00010d 3420      	cpi	temp2, PAGE_SIZE ; keep getting bytes from PC if page buffer is not full
+00010e f420      	brsh	dPT_WrPg
+00010f d205      	rcall	USART_Rx ; wait until data byte arrives into UART, return it in DataByte
+000110 9341      	st	Z+, DataByte  ; put data byte into page buffer
+000111 9473      	inc	Counter ; check if page buffer if full
+000112 cffa      	rjmp	dPT_PollQ
+                 
+                 ;----------------------------------------------------------------
+                 ; received 64 bytes from the PC.  Now write them to the EEPROM.
+                 ;----------------------------------------------------------------
+                 dPT_WrPg:
+000113 9a93      	sbi	HandshakePort, CTS_pin ; signal the PC to stop sending data by deactivating ClearToSend
+000114 d159        	rcall	Write_I2C_Page	; send:HighAddress[r3], LowAddress[r4], ControlByte, Page_Buffer (in SRAM)
+000115 e001      	ldi	temp, (1<<Tov0)
+000116 bf08      	out	TIFR, temp	; clear Timer 0 overflow flag (defaults to clear)
+000117 ed05      	ldi	temp, PageWriteTimer	; time-out period is 0.014 Sec
+000118 bf02      	out	TCNT0, temp
+000119 e005      	ldi	temp, (1<<CS02) | (0<<CS01) | (1<<CS00) ; prescale /1024
+00011a bf03      	out	TCCR0, temp
+                 dPT_loop:
+00011b b708      	in	temp, TIFR	; wait until timer0 overflow
+00011c ff00      	sbrs	temp, TOV0
+00011d cffd      	rjmp	dPT_loop        ; Overflow happened
+00011e e001      	ldi	temp, (1<<TOV0) ; clear Timer 0 overflow flag (defaults to clear)
+00011f bf08      	out	TIFR, temp
+                 
+                 ; point to next EEPROM page
+000120 946a      	dec	PageCounter
+000121 f031      	breq	dPT_exit
+000122 9100 0123 	lds	temp, LowPageNumber
+000124 9503      	inc	temp
+000125 9300 0123 	sts	LowPageNumber, temp
+000127 cfde      	rjmp	dPT_NextPage
+                 
+                 dPT_exit:
+000128 9893      	cbi	HandshakePort, CTS_pin ; enable the PC to send data by activating ClearToSend signal
+000129 9508      	ret
+                 
+                 
+                 
+                 
+                 ;;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 ;; doProgram:  Get EEPROM Start Address. Receive data from PC.  If PC doesn't send a
+                 ;;	byte to the USART for 35 milliseconds, then exit this procedure.
+                 ;;	PC sends four hex chars for address of the page where writing begins.
+                 ;;
+                 ;; uses:	HighAddress, LowAddress, High16bitValue, Low16bitValue are low registers
+                 ;;	HighPageNumber, LowPageNumber are SRAM variables.
+                 ;;
+                 ;;  Get address from terminal (4 hex chars). Shift right six places to get page number. ANDI with 0xffc0 for boundary.
+                 ;;    :repeat until reset pressed:
+                 ;;      format control byte
+                 ;;      clear CLSpin to enable data transmission from the PC.
+                 ;;      get 64 data bytes from terminal (or timeout). 65mS to receive 64 bytes at 9600Kbaud.
+                 ;;      write control word and address to EEPROM.
+                 ;;      write 64-byte page to EEPROM.
+                 ;;      Send stop command to commence page write (5mS). Set CLSpin to stop data transmission from PC.
+                 ;;      adjust address to next page
+                 ;;
+                 ;;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 doProgram:
+00012a e002      	ldi	temp, 2   ;"Enter EEPROM address: 0x0000-0xffff  "
+00012b d080      	rcall 	DisplayMessage ; prompt for four hex characters of EEPROM address 0x0000-0ffff
+00012c d06a      	rcall 	Get_16bitValue ; get four hex chars of EEPROM address where programming starts 0x0000-0ffff
+00012d 2c39      	mov	HighAddress, High16bitValue
+00012e 2c4a      	mov	LowAddress, Low16bitValue
+00012f d03f      	rcall	AddressToPageNum
+                 ;--------------------------------------------------------
+                 ; read 64 bytes from the USART.
+                 ;----------------------------------------------------------
+                 dP_ProgramPage:
+000130 d029      	rcall	Format_BankSelect; send: HighAddress, return: adjusted ControlByte
+000131 9893      	cbi	HandshakePort, CTS_pin ; enable the PC to send data by activating ClearToSend signal
+000132 0000      	nop
+                 ; First load 64 bytes from PC. Put each byte into the Page_Buffer as each byte arrives into the UART input buffer.
+                 ; If 35mS passes without a byte arriving into the UART, set UART_TimeOut flag and return to Main.
+000133 e6e0      	ldi	ZL, low  (Page_Buffer) ; point to where the data from the PC will be stored in sRAM
+000134 e0f0      	ldi	ZH, high (Page_Buffer)
+000135 2477      	clr	Counter
+                 ;; wait until first byte arrives from PC into UART, then activate timer0 with new count
+                 dP_PollQ:
+000136 3420      	cpi	temp2, PAGE_SIZE ; keep getting bytes from PC if page buffer is not full
+000137 f420      	brsh	dP_WrPg
+000138 d1dc      	rcall	USART_Rx ; wait until data byte arrives into UART
+000139 9341      	st	Z+, DataByte  ; put data byte into page buffer
+00013a 9473      	inc	Counter ; check if page buffer if full
+00013b cffa      	rjmp	dP_PollQ
+                 ;;----------------------------------------------------------------
+                 ;; received 64 bytes from the PC.  Now write them to the EEPROM.
+                 ;;----------------------------------------------------------------
+                 dP_WrPg:
+00013c 9a93      	sbi	HandshakePort, CTS_pin ; signal the PC to stop sending data by deactivating ClearToSend
+00013d d130      	rcall	Write_I2C_Page  ; send HighAddress, LowAddress, ControlByte, Page_Buffer (in SRAM)
+                 ;; wait 5 mS for the page write to be completed in the EEPROM
+00013e e001      	ldi	temp, (1<<Tov0)
+00013f bf08      	out	TIFR, temp	; clear Timer 0 overflow flag (defaults to clear)
+000140 ed05      	ldi	temp, PageWriteTimer	; time-out period is 0.0054 Sec
+000141 bf02      	out	TCNT0, temp
+000142 e005      	ldi	temp, (1<<CS02) | (0<<CS01) | (1<<CS00) ; prescale /1024  [128uS per timer increment at 8MHz]
+000143 bf03      	out	TCCR0, temp
+                 dP_loop:
+000144 b708      	in	temp, TIFR	; wait until timer0 overflow
+000145 ff00      	sbrs	temp, TOV0
+000146 cffd      	rjmp	dP_loop        ; Overflow happened
+000147 e001      	ldi	temp, (1<<TOV0) ; clear Timer 0 overflow flag (defaults to clear)
+000148 bf08      	out	TIFR, temp
+                 ; ---------5mS timeout --  page written in EEPROM, ready for new data
+000149 91e0 0123 	lds	ZL, LowPageNumber
+00014b 91f0 0122 	lds	ZH, HighPageNumber
+00014d 9631      	adiw	ZH:ZL, 1
+00014e 93e0 0123 	sts	LowPageNumber, ZL
+000150 93f0 0122 	sts	HighPageNumber, ZH
+000152 d012      	rcall	PageNumToAddress   ; send: HighPageNumber, LowPageNumber return: HighAddress, LowAddress uses: temp2
+000153 30f4      	cpi	ZH, MaxPages
+000154 f009      	breq	dP_FilledAll
+000155 cfda        	rjmp	dP_ProgramPage
+                 dP_FilledAll:
+000156 e007      	ldi	temp, 7 ; "Filled 64Kx8 space of the EEPROM"
+000157 d054      	rcall	DisplayMessage
+000158 c000      	rjmp	dP_exit
+                 
+                 dP_exit:
+000159 9508      	ret
+                 
+                 
+                 
+                 
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 ;                 Subroutines
+                 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                 
+                 
+                 
+                 
+                 ;;**********************************************************************
+                 ;; Timer0Delay - pause until Timer0 overflows
+                 ;; send: TimerCount value in temp, prescaler in temp2
+                 ;; return:  ---
+                 ;; uses: temp
+                 ;;***********************************************************************
+                 ;Timer0Delay:
+                 ;	out	TCNT0, temp
+                 ;	in	temp, TIFR   ; clear Timer0 overflow flag
+                 ;	ori	temp, (1<<TOV0)
+                 ;	out	TIFR, temp ; clear flag by writing logic one to the flag
+                 ;	out	TCCR0, temp2 ; turn on timer 0
+                 ;T0D_loop:
+                 ;	in	temp, TIFR	; poll until timer 0 overflow flag gets set
+                 ;	andi	temp, (1<<TOV0)
+                 ;	breq	T0D_loop
+                 ;	clr	temp
+                 ;	out	TCCR0, temp	; turn off timer 0
+                 ;	in	temp, TIFR   ; clear Timer0 overflow flag
+                 ;	ori	temp, (1<<TOV0)
+                 ;	out	TIFR, temp ; clear flag by writing logic one to the flag
+                 ;	ret
+                 
+                 
+                 
+                 ;**********************************************************************************************
+                 ; Format_BankSelect - adjust the Bank-Select bit in the Control byte for 24AA515 EEPROM
+                 ; send: HighAddress
+                 ; return: ControlByte
+                 ; uses: temp
+                 ;**********************************************************************************************
+                 Format_BankSelect:
+00015a 2d03      	mov	temp, HighAddress	; adjust Bank-Select bit in the 24AA515 Control-Byte
+00015b fd07      	sbrc	temp, MostSigBit        ; skip next instruction if addr<0x8000, clear control byte bank-select bit
+00015c c002      	rjmp	FCB_1               	; SBRC can use R0-31, but LDI must use R16-31
+00015d ea01      	ldi	temp, 0b10100001    	; address < 0x8000
+00015e c001      	rjmp	FCB_2               	; 
+00015f ea09      FCB_1:	ldi	temp, 0b10101001    	; address => 0x8000
+000160 2e50      FCB_2:	mov	ControlByte, temp  	; 
+000161 2d03      	mov	temp, HighAddress	; clear bit 7 of high address to limit range of I2C address byte pair to 0-0x7fff 
+000162 770f      	cbr	temp, (1<<MostSigBit)	; for use with 24AA515 EEPROM
+000163 2e30      	mov	HighAddress, temp	; 
+000164 9508      	ret
+                 
+                 
+                 
+                 ;**********************************************************************************************
+                 ; PageNumToAddress
+                 ;
+                 ; send: HighPageNumber, LowPageNumber
+                 ; return: HighAddress, LowAddress
+                 ; uses: temp2
+                 ;**********************************************************************************************
+                 PageNumToAddress:
+000165 9030 0122 	lds	HighAddress, HighPageNumber
+000167 9040 0123 	lds	LowAddress,  LowPageNumber
+000169 e026      	ldi	temp2, PAGESHIFTS  ; expand Page Value into starting real address for that page
+00016a 0c44      PNtA_1:	lsl	LowAddress
+00016b 1c33      	rol	HighAddress
+00016c 952a      	dec	temp2
+00016d f7e1      	brne	PNtA_1
+00016e 9508      	ret
+                 
+                 
+                 
+                 ;**********************************************************************************************
+                 ; AddressToPageNum
+                 ;
+                 ; send: HighAddress, LowAddress
+                 ; return: HighPageNumber, LowPageNumber
+                 ; uses: temp2
+                 ;**********************************************************************************************
+                 AddressToPageNum:
+00016f e026      	ldi	temp2, PAGESHIFTS  ; expand Page Value into starting real address for that page
+000170 9436      AtPN_1: lsr	HighAddress
+000171 9447      	ror	LowAddress
+000172 952a      	dec	temp2
+000173 f7e1      	brne	AtPN_1
+000174 9230 0122 	sts	HighPageNumber, HighAddress
+000176 9240 0123 	sts	LowPageNumber,  LowAddress
+000178 9508      	ret
+                 
+                 
+                 
+                 ;**********************************************************************************************
+                 ; GetPageInfo  Sub with two entry points. Alt Enter at PgI_0
+                 ;
+                 ; called by: doErase, doDump
+                 ; send:
+                 ; return: HighPageAddress,LowPageAddress with FirstPageNumber 0-0x3ff
+                 ;	  YL, YH with the number of pages to be processed
+                 ;	  HighAddress, LowAddress with the full address of FirstPageNumber
+                 ;	  FlagsReg with ZeroPages flag set if num of pages is 0, cleared otherwise
+                 ; uses:  HighAddress, LowAddress, High16bitValue, Low16bitValue are low registers
+                 ;**********************************************************************************************
+                 GetPageInfo:
+000179 776f      	cbr	FlagsReg, (1<<ZeroPages)
+                 ;get four hex chars of initial page
+00017a e000      	ldi	temp, 0	; "Enter EEPROM page: 0x0000-0x03ff  "
+00017b d030      	rcall	DisplayMessage
+00017c d01a      	rcall 	Get_16bitValue
+00017d 9290 0122 	sts	HighPageNumber, High16bitValue; H-L PgAddr = 0x000 - 0x3ff
+00017f 92a0 0123 	sts	LowPageNumber, Low16bitValue
+                 ;get four hex chars of number of pages to erase
+000181 e001      	ldi	temp, 1 ; "Enter Number of Pages: 0x0000-0x03ff  "
+000182 d029      	rcall	DisplayMessage
+000183 d013      	rcall 	Get_16bitValue
+000184 2dd9      	mov	YH, High16bitValue
+000185 2dca      	mov	YL, Low16bitValue
+000186 23dd      	tst	YH
+000187 f411      	brne	PgI_0
+000188 23cc      	tst	YL
+000189 f011      	breq	PgInfo_noPgs; check for count of 0 pages initially entered
+                 
+                 ; expand PageAddress into starting real address for that page
+00018a dfda      PgI_0:	rcall	PageNumToAddress
+00018b c001      	rjmp	PgInfo_exit
+                 PgInfo_noPgs:
+00018c 6860      	sbr	FlagsReg, (1<<ZeroPages)
+                 PgInfo_exit:
+00018d 9508      	ret
+                 
+                 
+                 
+                 ;*************************************************************************************************
+                 ;  FillPage0xFF  - used to erase page and for programming pages with less than 64 bytes of data
+                 ;
+                 ; send, receive:  nothing
+                 ; uses: ZH, ZL, temp, counter
+                 ;*************************************************************************************************
+                 FillPage0xFF:       ; 327 cycles total  35uS
+00018e e0f0      	ldi	ZH, high (Page_Buffer) ; fill Page_Buffer with value 0xFF
+00018f e6e0      	ldi	ZL, low  (Page_Buffer)
+000190 e400      	ldi	temp, PAGE_SIZE
+000191 2e70      	mov	counter, temp
+000192 ef0f      	ser	temp
+000193 9301      FPff_1:	st	z+, temp
+000194 947a      	dec	counter
+000195 f7e9      	brne    FPff_1
+000196 9508      	ret
+                 
+                 
+                 
+                 ;******************************************************************************************************
+                 ; Get_16bitValue  -  Wait until user enters four hex characters on PC terminal.  No error checking.
+                 ;   	Convert chars to a binary value 0x0000~0xffff.
+                 ;
+                 ; send:	-
+                 ; return: valid values in High16bitValue, Low16bitValue
+                 ; uses registers: UpperDigit
+                 ; calls: ASCII2Hex
+                 ;******************************************************************************************************
+                 Get_16bitValue:
+000197 d004      	rcall	get_char ; return with temp
+000198 2e90      	mov	High16bitValue, temp
+000199 d002      	rcall	get_char
+00019a 2ea0      	mov	Low16bitValue, temp
+00019b 9508      	ret
+                 
+                 
+                 
+                 ;********************************************************************************************
+                 ; GetChar  -  Wait until user enters two hex characters on PC terminal.  No error checking.
+                 ;   	Convert chars to a binary value 0x00~0xff.
+                 ;
+                 ; send:	-
+                 ; return: temp with binary value 00~0xff
+                 ; uses registers: UpperDigit
+                 ; calls: ASCII2Hex
+                 ;********************************************************************************************
+                 get_char:
+00019c d178      	rcall	USART_Rx ; wait until single keypress on PC terminal arrives into USART
+00019d b12b      GC_0:	in	temp2, UCSRA ; Wait for empty transmit buffer
+00019e ff25      	sbrs	temp2, UDRE
+00019f cffd      	rjmp 	GC_0
+0001a0 b94c      	out 	UDR, DataByte ; echo character pressed
+                 
+0001a1 d0b3      	rcall	ASCII2Hex
+0001a2 2e20      	mov	UpperDigit, temp
+0001a3 d171      	rcall	USART_Rx ; wait until single keypress on PC terminal arrives into USART
+                 
+0001a4 b12b      GC_1:	in	temp2, UCSRA ; Wait for empty transmit buffer
+0001a5 ff25      	sbrs	temp2, UDRE
+0001a6 cffd      	rjmp 	GC_1
+0001a7 b94c      	out	UDR, DataByte   ; echo character pressed
+0001a8 d0ac      	rcall	ASCII2hex  ;send DataBye/return temp
+0001a9 9422      	swap	UpperDigit
+                 
+0001aa 2902      	or	temp, UpperDigit
+0001ab 9508      	ret
+                 
+                 
+                 
+                 
+                 ;************************************************************************************************************
+                 ; DisplayMessage  - select a message string from a set of multiple output strings using an address table.
+                 ; send:  temp with the number of the message string to be output
+                 ; return: nothing
+                 ; uses: ZH:ZL, temp, UART peripheral
+                 ;************************************************************************************************************
+                 DisplayMessage:
+0001ac e7ec      	ldi	ZL, low  (WriteTextAdrTable*2)
+0001ad e0f3      	ldi	ZH, high (WriteTextAdrTable*2)
+0001ae 0f00      	lsl	temp ; multiply by 2
+0001af 0fe0      	add	ZL,temp
+0001b0 1dff      	adc	ZH, zeroreg
+0001b1 9105      	lpm	temp, Z+ ; move to low addr byte after load
+0001b2 9124      	lpm	temp2, Z
+0001b3 2ff0      	mov	ZH, temp
+0001b4 2fe2      	mov	ZL, temp2
+0001b5 9105      DM_0:	lpm	temp, Z+
+0001b6 2300      	tst	temp
+0001b7 f029      	breq	DM_exit
+0001b8 b90c      	out	UDR, temp
+0001b9 b12b      DM_1:	in	temp2, UCSRA ; Wait for empty transmit buffer
+0001ba ff25      	sbrs	temp2, UDRE
+0001bb cffd      	rjmp 	DM_1
+0001bc cff8      	rjmp	DM_0
+                 DM_exit:
+0001bd 9508      	ret
+                 
+                 WriteTextAdrTable:
+0001be 8c03      	.db	high (PageText*2),	low  (PageText*2)   	;0
+0001bf b203      	.db	high (NmPgText*2),	low  (NmPgText*2)	;1
+0001c0 dc03      	.db	high (adrText*2),	low  (adrText*2)	;2
+0001c1 0404      	.db	high (FirstPromptTxt*2),low  (FirstPromptTxt*2) ;3
+0001c2 3a04      	.db	high (ErrorText*2),	low  (ErrorText*2)	;4
+0001c3 4604      	.db	high (DataText*2),	low  (DataText*2)   	;5
+0001c4 6a04      	.db	high (UARTtext*2),	low  (UARTtext*2)	;6
+0001c5 8404      	.db	high (FilledAllText*2),	low  (FilledAllText*2)  ;7
+                 
+0001c6 0d0a
+0001c7 6e45
+0001c8 6574
+0001c9 2072
+0001ca 4545
+0001cb 5250
+0001cc 4d4f
+0001cd 7020
+0001ce 6761
+0001cf 3a65
+0001d0 3020
+0001d1 3078
+0001d2 3030
+0001d3 2d30
+0001d4 7830
+0001d5 3330
+0001d6 6666
+0001d7 2020
+0001d8 0000      PageText: .db 0x0a,0x0d,"Enter EEPROM page: 0x0000-0x03ff  ",0,0   	;0
+0001d9 0d0a
+0001da 6e45
+0001db 6574
+0001dc 2072
+0001dd 754e
+0001de 626d
+0001df 7265
+0001e0 6f20
+0001e1 2066
+0001e2 6150
+0001e3 6567
+0001e4 3a73
+0001e5 3020
+0001e6 3078
+0001e7 3030
+0001e8 2d30
+0001e9 7830
+0001ea 3330
+0001eb 6666
+0001ec 2020
+0001ed 0000      NmPgText: .db 0x0a,0x0d,"Enter Number of Pages: 0x0000-0x03ff  ",0,0  	;1
+0001ee 0d0a
+0001ef 6e45
+0001f0 6574
+0001f1 2072
+0001f2 4545
+0001f3 5250
+0001f4 4d4f
+0001f5 6120
+0001f6 6464
+0001f7 6572
+0001f8 7373
+0001f9 203a
+0001fa 7830
+0001fb 3030
+0001fc 3030
+0001fd 302d
+0001fe 6678
+0001ff 6666
+000200 2066
+000201 0020      adrText:  .db 0x0a,0x0d,"Enter EEPROM address: 0x0000-0xffff  ",0	;2
+000202 0a0d
+000203 0a0d
+000204 3432
+000205 4141
+000206 3135
+000207 2035
+000208 6150
+000209 6567
+00020a 5420
+00020b 7365
+00020c 0d74
+00020d 500a
+00020e 6572
+00020f 7373
+000210 5220
+000211 202c
+000212 2c57
+000213 4420
+000214 202c
+000215 2c45
+000216 5420
+000217 202c
+000218 726f
+000219 5020
+00021a 203a
+00021b 0a0d
+00021c 0000      FirstPromptTxt: .db 0x0d, 0x0a, 0x0d, 0x0a,  "24AA515 Page Test", 0x0d, 0x0a, "Press R, W, D, E, T, or P: ", 0x0d, 0x0a, 0, 0 ;3
+00021d 0a0d
+00021e 0a0d
+00021f 7245
+000220 6f72
+000221 3a72
+000222 0020      ErrorText: .db 0x0d,0x0a,0x0d,0x0a,"Error: ",0				;4
+000223 0d0a
+000224 6e45
+000225 6574
+000226 2072
+000227 6553
+000228 6972
+000229 6c61
+00022a 4520
+00022b 5045
+00022c 4f52
+00022d 204d
+00022e 6144
+00022f 6174
+000230 203a
+000231 3030
+000232 462d
+000233 2046
+000234 0020      DataText: .db 0x0a,0x0d,"Enter Serial EEPROM Data: 00-FF  ",0		;5
+000235 0a0d
+000236 4155
+000237 5452
+000238 5220
+000239 6365
+00023a 6965
+00023b 6576
+00023c 5420
+00023d 6d69
+00023e 6f65
+00023f 7475
+000240 0a0d
+000241 0000      UARTtext: .db 0x0d,0x0a, "UART Receive Timeout", 0x0d,0x0a,0,0		;6
+000242 0a0d
+000243 6946
+000244 6c6c
+000245 6465
+000246 3620
+000247 4b34
+000248 3878
+000249 7320
+00024a 6170
+00024b 6563
+00024c 6f20
+00024d 2066
+00024e 6874
+00024f 2065
+000250 4545
+000251 5250
+000252 4d4f
+000253 0a0d
+000254 0000      FilledAllText: .db 0x0d,0x0a, "Filled 64Kx8 space of the EEPROM", 0x0d,0x0a,0,0 ;7
+                 
+                 
+                 
+                 ;************************************************************************************************
+                 ; ASCII2Hex  Convert an ASCII character of a hex digit (0-9,a-f) to a binary value in bits 0-3.
+                 ;
+                 ; ASCII hex chars are 0x30~0x39 for numbers and 0x41~0x46 (or 0x61~0x66) for letters.
+                 ; if bit 6 is set, it's a letter.  Convert letters by stripping upper nibble and adding 0x09.
+                 ; if bit 6 is clear, then it's a number.  Convert by stripping the upper nibble.
+                 ;
+                 ; send:	DataByte with ASCII char
+                 ; return: temp with binary in bits 0-3.  DataByte returns unchanged.
+                 ;************************************************************************************************
+                 ASCII2Hex:
+000255 2f04      	mov	temp, DataByte
+000256 fd06      	sbrc	temp, 6
+000257 c002      	rjmp	A2HLtr
+000258 700f      	andi	temp, 0b00001111
+000259 c002      	rjmp	A2H_exit	; single exit point for each routine
+00025a 7007      A2HLtr:	andi	temp, 0b00000111
+00025b 5f07      	subi	temp, -9
+00025c 9508      A2H_exit: ret
+                 
+                 
+                 
+                 ;********************************************************************************************
+                 ; Hex2ASCII  Convert a binary value 0x00~0x0f to an ASCII character.
+                 ;
+                 ; Point ZH:ZL to an array in program memory and use binary value as an offset into the array.
+                 ; Return the value at the offset. Some AVR devices don't have LPM z instruction.
+                 ;
+                 ; send:	DataByte (binary in bits 0-3)
+                 ; return: temp with ASCII value, letters are uppercase.  DataByte returns unchanged.
+                 ; uses registers: ZH, ZL
+                 ;********************************************************************************************
+                 Hex2ASCII: ; send single hex digit in bits 3-0 of DataByte, return ASCII in temp
+00025d 93ff      	push	ZH
+00025e 93ef      	push	ZL
+00025f e0f4      	ldi	ZH, high (hexchars*2)
+000260 ecec      	ldi	ZL, low  (hexchars*2)
+000261 0fe4      	add	ZL, DataByte
+000262 9104      H2A0:	lpm	temp, z
+000263 91ef      	pop	ZL
+000264 91ff      	pop	ZH
+000265 9508       	ret
+000266 3130
+000267 3332
+000268 3534
+000269 3736
+00026a 3938
+00026b 4241
+00026c 4443
+00026d 4645      hexchars: .db "0123456789ABCDEF"
+                 
+                 
+                 ;*****************************************************************************
+                 ; Write_I2C_Page -  Write a 64-byte page to an address in 64Kx8 serial
+                 ;    EEPROM using AVR TWI interface. Writing starts on a page boundary.
+                 ;    Either 0x**00, 0x**40, 0x**80, or 0x**c0.
+                 ;    The 64 bytes that are written are in the Page_Buffer in SRAM.
+                 ;
+                 ; send:	HighAddress, LowAddress, ControlByte, Page_Buffer (in SRAM)
+                 ; return: ~
+                 ; uses registers: temp
+                 ; calls: tw_wait
+                 ;****************************************************************************
+                 Write_I2C_Page:
+00026e ea04      	ldi	temp, (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)	;Transmit start cond
+00026f bf06      	out	TWCR, temp
+000270 d0a0      	rcall 	tw_wait
+                 
+000271 b151      	in	ErrorValue, TWSR
+000272 7f58      	andi	ErrorValue, 0xF8
+000273 e028      	ldi	temp2, 0x08
+000274 1352      	cpse	ErrorValue, temp2	;Read SReg. 0x08 received (START sent)
+000275 c080      	rjmp	ERROR
+                 ;----------------------------------------
+                 ; Send control byte [device code, address, and R/W bit]
+                 ; 24AA515 code with SLA and Bank-Select previously adjusted
+000276 2d05      	mov	temp, ControlByte
+000277 7f0e      	andi	temp, 0b11111110 ; clear R~/w bit for write
+000278 b903      	out 	TWDR, temp
+000279 e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+00027a bf06      	out 	TWCR, temp
+00027b d095      	rcall 	tw_wait
+                 
+00027c b151      	in	ErrorValue, TWSR ;Read Status Register for TWI
+00027d 7f58      	andi	ErrorValue, 0xF8
+00027e e128      	ldi	temp2, 0x18	;0x18 = Write SLA+w - received ACK
+00027f 1352      	cpse	ErrorValue, temp2
+000280 c075      	rjmp	ERROR ;0x40=SLA+R sent_ACK received
+                 ;--------------------------
+000281 b833      	out 	TWDR, HighAddress
+000282 e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+000283 bf06      	out 	TWCR, temp
+000284 d08c      	rcall 	tw_wait
+                 
+000285 b151      	in 	ErrorValue, TWSR
+000286 7f58      	andi 	ErrorValue, 0xF8
+000287 e228      	ldi	temp2, 0x28	;0x28 = Write Data - received ACK
+000288 1352      	cpse	ErrorValue, temp2
+000289 c06c      	rjmp	ERROR
+                 ;-----------------------------------
+00028a b843      	out 	TWDR, LowAddress
+00028b e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+00028c bf06      	out 	TWCR, temp
+00028d d083      	rcall 	tw_wait
+                 
+00028e b151      	in	ErrorValue,TWSR
+00028f 7f58      	andi	ErrorValue, 0xF8
+000290 e228      	ldi	temp2, 0x28	;0x28 = Write Data - received ACK
+000291 1352      	cpse	ErrorValue, temp2
+000292 c063      	rjmp	ERROR
+                 ;-----------------------------------
+000293 e0f0      	ldi	ZH, high (Page_Buffer)
+000294 e6e0      	ldi	ZL, low  (Page_Buffer)
+000295 e400      	ldi	temp, PAGE_SIZE
+000296 2e70      	mov	counter, temp
+000297 9141      WIP_0:	ld	DataByte, z+
+000298 b943      	out 	TWDR, DataByte
+000299 e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+00029a bf06      	out 	TWCR, temp
+00029b d075      	rcall 	tw_wait
+                 
+00029c b151      	in	ErrorValue, TWSR ;Read SReg. 0x28 received (Acknowledge)
+00029d 7f58      	andi	ErrorValue, 0xF8
+00029e e228      	ldi	temp2, 0x28
+00029f 1352      	cpse	ErrorValue, temp2 ;Read SReg. 0x28 received (Acknowledge)
+0002a0 c055      	rjmp	ERROR
+0002a1 947a      	dec	counter
+0002a2 f7a1      	brne	WIP_0 ; loop to write each byte to EEPROM page
+                 ;;-----------------------------
+0002a3 e904      	ldi 	temp, (1<<TWINT) | (1<<TWSTO) | (1<<TWEN)
+0002a4 bf06      	out 	TWCR, temp ;Transmit stop cond to start writing page to EEPROM
+                 ; page write takes 5 milliseconds
+0002a5 9508      	ret     ; one of two exit points for write_I2C_page subroutine, the other is in ERROR routine.
+                 
+                 
+                 
+                 ;***************************************************************************
+                 ; READ_I2C_Page
+                 ;
+                 ; Set up 64Kx8 serial EEPROM for a control byte write.  After sending START
+                 ; condition, WRITE command word, high address, and low address, do a REPEAT_START.
+                 ; Send control byte for READ. Then read 64 bytes of data, and send a STOP condition.
+                 ; Data goes into Page_Buffer Full Address range 0x0000~0xffff.
+                 ;
+                 ; send:	HighAddress, LowAddress (shifted to a page boundary), ControlByte
+                 ; return:  Page_Buffer (64 bytes in SRAM)
+                 ; uses registers: temp, counter
+                 ; calls: tw_wait
+                 ;*******************************************************************************
+                 Read_I2C_Page:
+0002a6 ea04      	ldi 	temp, (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)	;Transmit start cond
+0002a7 bf06      	out 	TWCR, temp
+0002a8 d068      	rcall 	tw_wait
+                 
+0002a9 b151      	in	ErrorValue, TWSR
+0002aa 7f58      	andi	ErrorValue, 0xF8
+0002ab e028      	ldi	temp2, 0x08
+0002ac 1352      	cpse	ErrorValue, temp2	;Read SReg. 0x08 received (START sent)
+0002ad c048      	rjmp	ERROR
+                 
+                 ;--------------------------------------------
+                 ; Send control byte [device code, address, and R/W bit]
+                 ; 24AA515 code with SLA =00 and Write bit=0
+0002ae 2d05      	mov	temp, ControlByte
+0002af 7f0e      	andi	temp, 0b11111110 ; write is always first control byte
+0002b0 b903      	out 	TWDR, temp
+0002b1 e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+0002b2 bf06      	out 	TWCR, temp
+0002b3 d05d      	rcall 	tw_wait
+                 
+0002b4 b151      	in	ErrorValue, TWSR
+0002b5 7f58      	andi	ErrorValue, 0xF8
+0002b6 e128      	ldi	temp2, 0x18      ; NACK received after SLA+R
+0002b7 1352      	cpse	ErrorValue, temp2
+0002b8 c03d      	rjmp	ERROR
+                 
+                 ;--------------------------------------------
+                 ; TWDR should only be written when TWINT is high
+0002b9 b833      	out 	TWDR, HighAddress
+0002ba e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+0002bb bf06      	out 	TWCR, temp
+0002bc d054      	rcall 	tw_wait
+                 
+0002bd b151      	in	ErrorValue,TWSR
+0002be 7f58      	andi	ErrorValue, 0xF8
+0002bf e228      	ldi	temp2, 0x28      ;  0x28 data sent ACK received
+0002c0 1352      	cpse	ErrorValue, temp2
+0002c1 c034      	rjmp	ERROR
+                 ;-----------------------------------
+0002c2 b843      	out 	TWDR, LowAddress ; Low address byte
+0002c3 e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+0002c4 bf06      	out 	TWCR, temp
+0002c5 d04b      	rcall 	tw_wait
+                 
+0002c6 b151      	in	ErrorValue,TWSR
+0002c7 7f58      	andi	ErrorValue, 0xF8
+0002c8 e228      	ldi	temp2, 0x28      ;  0x28 data sent ACK received
+0002c9 1352      	cpse	ErrorValue, temp2
+0002ca c02b      	rjmp	ERROR
+                 ;-----------------------------------
+                 ;  This is a REPEATED START and it tells the slave that the
+                 ;  write operation is aborted while keeping the address that was sent.
+0002cb ea04      	ldi 	temp, (1<<TWINT) | (1<<TWSTA) | (1<<TWEN)
+0002cc bf06      	out 	TWCR, temp
+0002cd d043      	rcall 	tw_wait
+                 
+0002ce b151      	in	ErrorValue,TWSR
+0002cf 7f58      	andi	ErrorValue, 0xF8
+0002d0 e120      	ldi	temp2, 0x10     ;RepeatedSTART sent
+0002d1 1352      	cpse	ErrorValue, temp2
+0002d2 c023      	rjmp	ERROR
+                 ;----------------------------------------------
+                 ; Send control byte [device code, address, and R/W bit]
+                 ; 24AA515 code with SLA=00 , read bit = 1
+0002d3 2d05      	mov	temp, ControlByte
+0002d4 6001      	ori	temp, 0b00000001 ; r~/w (bit 0) set (read data)
+0002d5 b903      	out 	TWDR, temp
+0002d6 e804      	ldi 	temp, (1<<TWINT) | (1<<TWEN)
+0002d7 bf06      	out 	TWCR, temp
+0002d8 d038      	rcall 	tw_wait
+                 
+0002d9 b151      	in	ErrorValue, TWSR
+0002da 7f58      	andi	ErrorValue, 0xF8
+0002db e420      	ldi	temp2, 0x40	; ACK received after SLA+R
+0002dc 1352      	cpse	ErrorValue, temp2
+0002dd c018      	rjmp	ERROR
+                 ;----------------------------------------------------------------
+                 ;  read 64 bytes from EEPROM
+0002de e0f0      	ldi	ZH, high (Page_Buffer)
+0002df e6e0      	ldi	ZL, low  (Page_Buffer)
+0002e0 e400      	ldi	temp, PAGE_SIZE
+0002e1 2e70      	mov	counter, temp
+                 
+0002e2 ec04      RIP_1:	ldi 	temp, (1<<TWINT) | (1<<TWEN) | (1<<TWEA) ;Read Data with Enable ACK
+0002e3 bf06      	out 	TWCR, temp
+0002e4 d02c      	rcall 	tw_wait
+                 
+0002e5 b133      	in	ReadCharStore, TWDR ; store the data byte read from the EEPROM
+                 
+0002e6 b151      	in	ErrorValue, TWSR
+0002e7 7f58      	andi 	ErrorValue, 0xF8
+0002e8 e520      	ldi	temp2, 0x50     ; 0x50 Master Read data received w/ Acknowledge
+0002e9 1352      	cpse	ErrorValue, temp2
+0002ea c00b      	rjmp	ERROR
+                 
+0002eb 9331      	st	z+, ReadCharStore
+0002ec 947a      	dec	counter
+0002ed f7a1      	brne	RIP_1  ; loop to read each byte in the EEPROM page
+                 
+                 ; This code doesn't use NACK to signal the last data read byte accepted by the master.
+                 ; Sending a STOP command to the TWI does that.  This may not work on non-24AA515 devices.
+                 ; When the master signals last-data-requested with NACK, the slave releases the SDA line.
+                 ; This allows the master to pull SDA and SCL low, then releasing SCL.  After a half period
+                 ; delay, the master creates a STOP condition by releasing SDA.  The master can't create
+                 ; a STOP if the slave is controlling SDA because the Most-Significant Bit of the next
+                 ; data byte that the slave is expecting to send might be logic 0.  In this case, the
+                 ; slave holds SDA low while the master controls SCL to make clock pulses.  The master
+                 ; needs SDA to be high in order to create a STOP.
+                 ;
+                 ; A STOP is a low-to-high transistion on SDA when SCL is high.   An ACK is a pulled-down
+                 ; SDA through a SCL rise-and-fall.  A NACK is a released SDA (pulled high by resistor)
+                 ; through a SCL rise-and-fall.
+                 ;-----------------------------------------------------------------------------------------
+0002ee e904      	ldi 	temp, (1<<TWINT) | (1<<TWSTO) | (1<<TWEN) ; do STOP condition
+0002ef bf06      	out 	TWCR, temp
+0002f0 e20d      	ldi	temp, Eight_uSec_Val  ; @8 uSec delay in-line loop::135 cycles/0.125uS per cycle
+0002f1 950a      RIP_2:	dec	temp
+0002f2 f7f1      	brne	RIP_2 ; wait TWI period after STOP before turning off TWI
+0002f3 e000      	ldi 	temp, (0<<TWEN)
+0002f4 bf06      	out 	TWCR, temp
+0002f5 9508      	ret     ; one of two exit points for read_I2C_page subroutine, the other is in ERROR routine.
+                 
+                 
+                 ;*************************************************************************************************************
+                 ; ERROR  not a subroutine itself, but an extension of the 'read_I2C_page' or 'write_I2C_page' subroutine
+                 ;  display text and TWI error-condition number.  Then close TWI and return to Main.
+                 ;*************************************************************************************************************
+                 ERROR:
+0002f6 e004       	ldi	temp, 4	; error message
+0002f7 deb4      	rcall 	DisplayMessage
+                 
+0002f8 2f45      dEr1:	mov	DataByte, ErrorValue
+0002f9 7f40      	andi	DataByte, 0xf0
+0002fa 9542      	swap	DataByte
+0002fb df61      	rcall	Hex2ASCII ;  send single hex digit in bits 3-0 of DataByte, return ASCII in temp
+0002fc 2f40      	mov	DataByte, temp
+                 
+0002fd b12b      ER_0:	in	temp2, UCSRA ; Wait for empty transmit buffer
+0002fe ff25      	sbrs	temp2, UDRE
+0002ff cffd      	rjmp 	ER_0
+000300 b94c      	out	UDR, DataByte
+                 
+000301 2f45      	mov	DataByte, ErrorValue
+000302 704f      	andi	DataByte, 0x0f
+000303 df59      	rcall	Hex2ASCII ;  send single hex digit in bits 3-0 of DataByte, return ASCII in temp
+000304 2f40      	mov	DataByte, temp
+                 
+000305 b12b      ER_1:	in	temp2, UCSRA ; Wait for empty transmit buffer
+000306 ff25      	sbrs	temp2, UDRE
+000307 cffd      	rjmp 	ER_1
+000308 b94c      	out	UDR, DataByte
+000309 e904      	ldi 	temp, (1<<TWINT) | (1<<TWSTO) | (1<<TWEN) ; create STOP condition
+00030a bf06      	out 	TWCR, temp
+00030b e20d      	ldi	temp, Eight_uSec_Val  ; @8 uSec delay in-line loop  135 cycles/0.125uS per cycle
+00030c 950a      dEr2:	dec	temp
+00030d f7f1      	brne	dEr2 ; wait TWI period after STOP before turning off TWI
+00030e e000      	ldi 	temp, (0<<TWEN)
+00030f bf06      	out 	TWCR, temp
+000310 9508      	ret ; return to code that called either read_I2C_page or write_I2C_page subroutine
+                 
+                 
+                 
+                 ;*********************************************
+                 ; TWI_WAIT   wait for TWINT flag to set
+                 ;
+                 ; send: -
+                 ; return: -
+                 ; uses and changes: temp
+                 ;*********************************************
+                 tw_wait:
+000311 b706      	in 	temp, TWCR
+000312 ff07      	sbrs 	temp, TWINT ;TWINT set means TWI is ready for new command
+000313 cffd      	rjmp 	tw_wait
+000314 9508      twaitx:	ret ;  TWINT is high now. TWDR should only be written when TWINT is high.
+                 
+                 
+                 
+                 ;*********************************************************************
+                 ; USART_Rx  -USART_RECEIVE using a queue
+                 ;
+                 ; send:	-
+                 ; returns: DataByte
+                 ; uses and changes: temp, InQueue, InQueueHead, InQueueTail
+                 ;*********************************************************************
+                 USART_Rx:
+000315 10bc      	cpse	InQueueHead, InQueueTail
+000316 c001      	rjmp	Rx_0
+000317 cffd      	rjmp	USART_Rx
+                 
+000318 e0b0      Rx_0:	ldi	XH, high (InQueue)
+000319 eaa0      	ldi	XL, low (InQueue)
+00031a 0dab      	add	XL, InQueueHead
+00031b f408      	brcc	Rx_1
+00031c 95b3      	inc	XH
+00031d 914c      Rx_1:	ld	DataByte, X
+00031e 94b3      	inc	InQueueHead
+00031f 2d0b      	mov	temp, InQueueHead
+000320 770f      	andi	temp, QUEUEWRAPMASK
+000321 2eb0      	mov	InQueueHead, temp
+000322 9508      	ret
+                 
+                 
+                 
+                 ;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+                 ;   Interrupt Routines
+                 ;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+                 
+                 
+                 ;;*************************************************************************************
+                 ;; Timer0 Overflow  - very quick, does nothing but set flag for main code.
+                 ;; Main code sets a flag to let this ISR know what timed out.
+                 ;; If overflow occurs, the flag that was set by the main code allows this ISR
+                 ;; to set correct flag for the main program indicating that an 35mS timeout happened.
+                 ;;************************************************************************************
+                 ;T0_Overflow:
+                 ;	in	SREGtemp, SREG
+                 ;	sbr	FlagsReg, (1<<UART_TimeOut)
+                 ;	out	SREG, SREGtemp
+                 ;	reti
+                 
+                 
+                 
+                 ;*************************************************************************************************
+                 ;   RxC_IRQ:  reads bytes from RS232 input. Puts RxD bytes into InQueueTail pointer location
+                 ; and then increments InQueueTail pointer.
+                 ;
+                 ; send: InQueueTail, InQueue
+                 ; return:
+                 ; used: XH,XL (nondestructive)
+                 ;*************************************************************************************************
+                 RxC_IRQ:
+000323 b61f      	in	SREGtemp, SREG
+000324 93bf      	push	XH
+000325 93af      	push	XL
+000326 e0b0      	ldi	XH, high (InQueue)
+000327 eaa0      	ldi	XL, low (InQueue)
+000328 0dac      	add	XL, InQueueTail
+000329 f408      	brcc	RxCa
+00032a 95b3      	inc	XH
+00032b b11c      RxCa:	in	irqtemp, UDR
+00032c 931c      	st	X, irqtemp
+00032d 94c3      	inc	InQueueTail
+00032e 2d1c      	mov	irqtemp, InQueueTail
+00032f 771f      	andi	irqtemp, QUEUEWRAPMASK
+000330 2ec1      	mov	InQueueTail, irqtemp
+                 
+000331 91af      	pop	XL
+000332 91bf      	pop	XH
+000333 be1f      	out	SREG, SREGtemp
+000334 9518      	reti
+                 
+                 
+                 
+                 
+                 ;*******************************************************************************************************************
+                 ; Program identification is ASCII characters inserted after the code.
+                 ; Download the embedded code from the programmed AVR with C:>SP12 -rpfh ThisCode.txt
+                 
+                 
+                 program_ID:
+                 ;	"****  I2Cm8.asm  v0.9  alan_probandt@yahoo.com"
+000335 2a2a
+000336 2a2a
+000337 2020
+000338 4932
+000339 436d
+00033a 382e
+00033b 6173
+00033c 6d20
+00033d 2076
+00033e 302e
+00033f 3920
+000340 2061
+000341 6c61
+000342 6e5f
+000343 7072
+000344 6f62
+000345 616e
+000346 6474
+000347 4079
+000348 6168
+000349 6f6f
+00034a 2e63
+00034b 6f6d      .db	"****  2ImC.8sa mv .0 9a al_nrpbonatdy@haooc.mo" 
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATmega8 register use summary:
+r0 :   0 r1 :   2 r2 :   4 r3 :  12 r4 :   9 r5 :   7 r6 :   2 r7 :  14 
+r8 :   3 r9 :   6 r10:   6 r11:   6 r12:   6 r13:   0 r14:   0 r15:   2 
+r16: 191 r17:   5 r18:  58 r19:   5 r20:  57 r21:  38 r22:   7 r23:   0 
+r24:   0 r25:   0 r26:   6 r27:   6 r28:   4 r29:   4 r30:  18 r31:  18 
+x  :   2 y  :   0 z  :  17 
+Registers used: 28 out of 35 (80.0%)
+
+ATmega8 instruction use summary:
+adc   :   1 add   :   4 adiw  :   1 and   :   0 andi  :  28 asr   :   0 
+bclr  :   0 bld   :   0 brbc  :   0 brbs  :   0 brcc  :   2 brcs  :   0 
+breq  :   7 brge  :   0 brhc  :   0 brhs  :   0 brid  :   0 brie  :   0 
+brlo  :   1 brlt  :   0 brmi  :   0 brne  :  18 brpl  :   0 brsh  :   2 
+brtc  :   0 brts  :   0 brvc  :   0 brvs  :   0 bset  :   0 bst   :   0 
+cbi   :   4 cbr   :   4 clc   :   0 clh   :   0 cli   :   0 cln   :   0 
+clr   :   8 cls   :   0 clt   :   0 clv   :   0 clz   :   0 com   :   0 
+cp    :   0 cpc   :   0 cpi   :  10 cpse  :  13 dec   :  11 eor   :   0 
+fmul  :   0 fmuls :   0 fmulsu:   0 icall :   0 ijmp  :   0 in    :  32 
+inc   :  12 ld    :   4 ldd   :   0 ldi   : 103 lds   :   9 lpm   :   4 
+lsl   :   2 lsr   :   1 mov   :  45 movw  :   0 mul   :   0 muls  :   0 
+mulsu :   0 neg   :   0 nop   :   2 or    :   1 ori   :   1 out   :  61 
+pop   :   4 push  :   4 rcall :  72 ret   :  21 reti  :  18 rjmp  :  56 
+rol   :   1 ror   :   1 sbc   :   0 sbci  :   0 sbi   :   3 sbic  :   0 
+sbis  :   0 sbiw  :   2 sbr   :   1 sbrc  :   4 sbrs  :  17 sec   :   0 
+seh   :   0 sei   :   1 sen   :   0 ser   :   1 ses   :   0 set   :   0 
+sev   :   0 sez   :   0 sleep :   0 spm   :   0 st    :  11 std   :   0 
+sts   :  17 sub   :   0 subi  :   1 swap  :   5 tst   :   5 wdr   :   0 
+
+Instructions used: 48 out of 108 (44.4%)
+
+ATmega8 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x000698   1324    364   1688    8192  20.6%
+[.dseg] 0x000060 0x000125      0    197    197    1024  19.2%
+[.eseg] 0x000000 0x000000      0      0      0     512   0.0%
+
+Assembly complete, 0 errors, 0 warnings
