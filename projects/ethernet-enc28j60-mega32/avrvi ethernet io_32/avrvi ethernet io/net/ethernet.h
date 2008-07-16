@@ -1,0 +1,9 @@
+#ifndef _ETHERNET_H_
+#define _ETHERNET_H_
+
+#define ETHERNET_POS_DST_MAC 0
+#define ETHERNET_POS_SRC_MAC 6
+
+#define ETHERNET_TYPE_IP  0x0800
+#define ETHERNET_TYPE_ARP 0x0806
+#endif
