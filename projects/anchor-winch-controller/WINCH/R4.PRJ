@@ -1,0 +1,90 @@
+;; ************************************************************
+; PROJECT:	Winch Controller
+; AUTHOR:	BobC
+; ************************************************************
+
+; Micro + software running
+; ------------------------------------------------------------
+.MICRO "AT90S2313"
+.PROGRAM "R4.asm""2313def.inc"
+.TARGET "R4.hex"
+
+;.TRACE              ; Activate micro trace
+
+; Following lines are optional; if not included
+; exactly these values are taken by default
+; ------------------------------------------------------------
+.POWER VDD=5 VSS=0  ; Power nodes
+.CLOCK 1meg         ; Micro clock
+;.STORE 250m         ; Trace (micro+signals) storage time
+; ------------------------------------------------------------
+ ;LCD connections:
+;		RS				PB6
+;		R/W			PB5
+;		E				PB4
+;		D4				PB0
+;		D5				PB1
+;		D6				PB2
+;		D7				PB3
+
+;  Winch Connections
+;
+;PD0  Lower I/P Active Hi					Pin 2
+;PD1  Raise I/P Active Hi        		Pin 3
+;PD2  Count I/P Hi to lo transition		Pin 6
+;PD3  Clear I/P                        Pin 7
+;PD4  Stop O/P Hi to activate	LED D2   Pin 8
+;PD5  0 ft 							LED D3   Pin 9
+;PD6  O/P Micro Running Lo 	LED D1   Pin 11
+
+; -------------------------------------------------------------------
+; LCD cell
+; Parameters are: (characters, lines, oscillator frequency)
+;
+; The software uses the  4 bit interface to save micro ports
+; The LCD has 8 bus lines, therefore, the 4 LSB must be connedted to
+; dummy nodes.
+;
+;                                                       not connect,
+;                    RS   R/W   E   4 bits interface   arbitrary nodes
+;                    ---  ---  ---  ----------------   ---------------
+Xdisp LCD(24 2 250K) PB6  PB5  PB4   PB3 PB2 PB1 PB0   nc3 nc2 nc1 nc0
+;
+;----------------------------------------------------------------------
+
+X0  ND2 in0 gen pd2
+
+K0 Vss PD0  LATCHED
+K1 Vss PD1  LATCHED
+K2 Vss pd3  LATCHED
+;K3 vdd pd2  MONOSTABLE (1m)
+K4	vss in0	latched
+
+D1 VDD pd0
+D2 VDD pd1
+D3 VDD pd4  ; x: Panel LEDs 1 - 8
+D4 VDD pd5
+D5 Vdd pd2
+
+K8 Vss reset ;  Reset Micro
+
+R0 vdd pd0 1k
+R1 vdd pd1 1k
+;r2 vdd pd2 1k
+r3 vdd pd3 1k
+r4 vdd in0 1k
+
+
+;-----------------------------------------------------
+;Pulse Generator
+
+;V[inst_name]  node VSS PULSE(v_initial v_final t_delay t_rise t_fall t_width t_period)
+
+Vmygen gen VSS PULSE(0 5 0 0 0 1m 100m)
+;
+;------------------------------------------------------------
+;Set up scope
+.PLOT V(pd0) V(pd1) V(pd2) V(pd3)
+
+
+

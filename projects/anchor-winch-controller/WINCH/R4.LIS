@@ -1,0 +1,830 @@
+
+AVRASM ver. 1.74  r4.asm Mon Jul 21 19:32:12 2008
+
+
+warning : Register already defined by the .DEF directive
+warning : Register already defined by the .DEF directive
+r4.asm(731): warning: A .db segment with an odd number of bytes is detected. A zero byte is added.
+         
+         ;************************************************************************
+         ;* Description:	Winch Controller with AT90S2313 AVR RISC Processor		*
+         ;*      		LCD display, Using 4-wire interface with EEPROM backup.	*
+         ;*																		*	
+         ;* Version:			4.00		     									*
+         ;*                                                                      *
+         ;* First writing:	07/11/2005											*
+         ;* Last Updated:	08/05/2006						  				    *
+         ;*																		*
+         ;* Target:			AT 90S2313											*
+         ;*																		*
+         ;* Author:			Bob Charlton                                        *
+         ;* Notes:                                                               *
+         ;			Divide by 3 added, with 16 bit arithmetic                   *
+         ;			Stop at 190ft  added										*
+         ;*																		*	
+         ;************************************************************************
+         ;   Micro I/O
+         ;LCD connections:
+         ; PB6		RS					Pin 18
+         ; PB5		R/W				    Pin 17
+         ; PB4		E				    Pin 16
+         ; PB3		D4			   		Pin 15
+         ; PB2		D5			    	Pin 14
+         ; PB1		D6			    	Pin 13
+         ; PB0		D7			      	Pin 12
+         
+         ;  Other Connections
+         
+         ;PD0  Lower I/P Active Hi				Pin 2
+         ;PD1  Raise I/P Active Hi       		Pin 3
+         ;PD2  Count I/P Hi to Lo 				Pin 6
+         ;PD3  I/P Lo to clear units        		Pin 7
+         ;PD4  Stop O/P active Hi 	(LED D2)  	Pin 8
+         ;PD5  0 ft 					(LED D3)   	Pin 9
+         ;PD6  O/P Micro active Lo 	(LED D1)   	Pin 11
+         ;
+         
+         ;**************  START OF ASSEMBLY LISTING **********************
+         
+          .nolist							;Suppress listing of include file
+         
+         ; **** Global register variables
+          .def	ldir		=R28		;last direction
+          .def	Zflag		=R15		;
+          .DEF  	TEMP  	 	=R16		;General use working register
+          .def	Dir			=R21		;Current direction - bit 1 set raising,
+         								; bit 2 set lowering
+         
+         ; **** BCD Conversion register variables
+         
+          .def 	UnitL		=R17		;capstan reveloutions 1 pulse = 4 inches
+          .def	UnitH		=R18
+          .def	rBin2L		=R19
+          .def	rBin2h		=R20
+         
+         ; **** Divide by 3 Registers
+         ;
+          .DEF rd1u		 	= R2 		; interim register
+          .DEF divisor	 	= R3 		; 8-bit-number to divide with
+          .DEF ResultL	 	= R4 		; LSB result
+          .DEF ResultH	 	= R5 		; MSB result
+          .def divendL		= R8
+          .def divendH		= R9
+         
+         ; **** EEPROM register variables
+         
+          .def	EEdrd		=R1			;data byte from EEPROM
+          .def	EEard		=R2
+          .def	EEdwr		=R22		;data byte to write to EEPROM
+          .def	EEawr		=R23
+         
+         ; ****  LCD Register assignments
+         
+          .DEF  	PARAM  		= R26  		; Parameter transfer register
+          .DEF  	DELAY  		= R12
+          .DEF  	DELAY1 		= R24		; To generate long delays
+          .DEF  	DELAY2 		= R25
+          .DEF	CHAR 		= R0
+          .DEF	STCMD		= R27   	 ; Stop counter
+         
+         ; **** LCD equates
+         
+          .EQU 	OE		= 0b00010000   	; bit 4 Port B LCD strobe lines
+          .EQU 	RS 		= 0b01000000   	; bit 6 Port B
+          .equ	counter = 0x0001
+         
+          .cseg
+          .org 0
+         
+         ;	Interrupt vectors
+         ;
+000000 c00a      	rjmp 	reset 			;Reset Vector location - 			$0000
+         	
+          .org		INT0addr		;External Interrupt0 Vector - 		$0001
+000001 c123      	rjmp	Turning
+          .org		INT1addr		;External Interrupt1 Vector - 		$0002
+000002 9518      	reti
+          .org		ICP1addr		;Input Capture1 Interrupt Vector -	$0003
+000003 9518      	reti
+          .org		OC1addr 		;Output Compare1 Interrupt Vector - $0004
+000004 9518      	reti
+          .org		OVF1addr		;Overflow1 Interrupt Vector - 		$0005
+000005 9518         reti
+          .org		OVF0addr		;Overflow0 Interrupt Vector - 		$0006
+000006 9518      	reti	
+          .org		URXCaddr		;UART Receive Complete Interrupt Vector - $0007
+000007 9518      	reti
+          .org		UDREaddr		;UART Data Register Empty Interrupt Vector - $0008
+000008 9518      	reti
+          .org		UTXCaddr		;UART Transmit Complete Interrupt Vector - $0009
+000009 9518      	reti
+          .org		ACIaddr			;Analog Comparator Interrupt Vector - $000A
+00000a 9518      	reti
+         
+         ;            MAIN PROGRAM
+         ;  program entry point on reset
+         
+          reset:
+00000b ed08       	ldi		temp,RAMEND			;Init Stack Pointer
+00000c bf0d      	out		SPL,temp
+00000d e000      	ldi		temp,$00
+00000e 2ef0      	mov		zflag,temp
+00000f 2fb0      	mov		stcmd,temp
+000010 2fc0      	mov		ldir,temp
+000011 2f20      	mov		unith,temp
+         	
+000012 e100      	ldi		temp,$10
+000013 d148      	rcall	read				;restore "old" units
+000014 2f10      	mov 	UnitL,temp
+000015 e101      	ldi		temp,$11
+000016 d145      	rcall	read				;restore "old" units
+000017 2f20      	mov 	UnitH,temp
+000018 ef0f      	ldi 	TEMP, 0xFF   		; 1111:1111 (FF) setting bits 0-7 as outputs
+000019 bb07          out 	DDRB, TEMP   		; set Port B direction as above
+00001a e800          ldi		TEMP, 0x80   		; 0000:0000,
+00001b bb08          out 	PORTB, TEMP
+         
+         ;	ldi		temp, 0xF0  		; PORTD BITS 0 - 3 as inputs
+         ;	out		DDRD, temp	
+         ;	ldi		temp, 0x70			; PORTD BITS 4,5,6 AS OUTPUTS
+         ;	out		PORTD, temp
+         ;	LDI		DIR,0X00
+         
+00001c d148      	rcall	Blockcopy
+         			
+         ;  LCD display Initalize
+00001d d0bc        	rcall 	lcdinit 			;Initialize LCD module
+00001e d127          rcall	runled				;turn on running indicator
+00001f ef0f         	ldi		temp,$FF
+000020 d05d      	rcall	wait_2M
+000021 ef0f      	ldi		temp,$FF
+000022 d05b      	rcall	Wait_2M
+000023 e700      	ldi		temp, 0x70			; PORTD BITS 4,5,6 AS OUTPUTS
+000024 bb02      	out		PORTD, temp
+000025 e050      	LDI		DIR,0X00
+000026 ef00      	ldi		temp, 0xF0  		; PORTD BITS 0 - 3 as inputs
+000027 bb01      	out		DDRD, temp
+         
+         ;Enable Int0
+000028 e003      	ldi		temp,$03			;set interrupt control register for rising edge
+000029 bf05      	out		MCUCR,temp
+00002a e400      	ldi		temp,$40			;set int mask register for Int 0
+00002b bf0b      	out		GIMSK,temp			
+00002c 9a47      	sbi 	ACSR,ACD 			;shut down comparator to save power
+00002d 9478      	sei							;enable interrupts
+         	
+         ;*****************************************************************************
+         ;           Main Program Loop
+         ;*****************************************************************************	
+         
+          Main:
+00002e b350      	IN			DIR,PIND
+00002f 7053      	andi		dir,3
+000030 2311      	tst			UnitL					; 0ft ?
+000031 f431      	brne		M1
+000032 20ff      	tst			zflag					;1st. time through?
+000033 f449      	brne		M3                		;No - then skip
+000034 9895      	cbi			PORTD,5 				; Set PortD low
+000035 e001      	ldi			temp,$01 				;Set 0ft flag
+000036 2ef0      	mov			ZFlag,temp
+000037 c005      	rjmp		M3
+          M1:
+000038 20ff      	tst			zflag
+000039 f019      	breq		M3
+00003a 9a95      	sbi			PORTD,5
+00003b e000      	ldi			temp,$00
+00003c 2ef0      	mov			zflag,temp
+         	                                  	
+           M3:
+00003d e0a2      	ldi 		PARAM, 0b00000010   	; Display home
+00003e d0b1        	rcall	 	LCD_CMD				  	;reset LCD to line 1
+00003f e208          ldi			temp,40
+000040 d03d      	rcall 		WAIT_2M        		 	; Wait after clear
+         
+000041 d044          rcall		DirInd
+000042 e8a0      	ldi 		param,0x80 				;Set address to line 1
+000043 d0ac      	rcall 		LCD_CMD
+000044 d12d      	rcall		divide3					;divide "rev" by 3 and put in "Unit"
+000045 d04f      	rcall		Bin2ToAsc				;Convert Units to ASCII
+         	
+000046 3050      	cpi			DIR,0
+000047 f161      	breq		Stopped
+000048 3051      	cpi			Dir,1				   ;Check direction
+000049 f029      	breq		Lowering
+00004a 3052      	cpi			Dir,2
+00004b f041      	breq		Raising
+00004c 3053      	cpi			dir,3
+00004d f049      	breq		error
+         
+           ;Program should never come here
+00004e cfdf      	rjmp		Main
+         
+          Lowering:
+00004f d01a      	RCALL	  	TWENTY
+000050 d01d      	rcall		One95
+000051 e0f7       	ldi 		ZH,high(message2*2)
+000052 e5ee      	ldi 		ZL,low(message2*2)		;Init Z-pointer
+000053 c005      	RJMP		nextc
+         
+          Raising:
+000054 e0f7        	ldi 		ZH,high(message*2)
+000055 e5e2      	ldi 		ZL,low(message*2)		;Init Z-pointer
+000056 c002      	RJMP		nextc
+         	
+          Error:
+000057 e0f7      	ldi		ZH, high(message4*2)
+000058 e7ea      	ldi		ZL, low(message4*2)
+         	
+          nextc:
+000059 95c8      	lpm 						;Get next character from ROM use Z pointer & put in R2
+00005a 2000      	tst 		R0 				;See if at end of message
+00005b f021      	breq 		line2 			;If so, do next message
+00005c 2da0      	mov 		param,R0 		;Send it
+00005d d0ad      	rcall 		LCD_DATA
+00005e 9631      	adiw 		ZL,1 			;Increment Z-pointer
+00005f cff9      	rjmp 		nextc 			;Loop for more
+         
+          line2:
+000060 eca0      	ldi 		param,0xC0 		;Set address to line 2
+000061 d08e      	rcall 		LCD_CMD
+000062 e0f0      	ldi			ZH, high(00)	; Start address data mem
+000063 e7e0      	ldi			ZL, low($70)
+         
+          nextc2:
+000064 81a0      	LD			PARAM,Z			;Get next character from ROM use Z pointer & put in R2
+000065 23aa      	tst 		PARAM 			;See if at end of message
+000066 f239      	breq 		main			;If so, refresh display
+000067 d0a3      	rcall 		LCD_DATA
+000068 9631      	adiw 		ZL,1 			;Increment Z-pointer
+000069 cffa      	rjmp 		nextc2 			;Loop for more
+         	
+          TWENTY:
+00006a 33bc      	cpi			stcmd,60 		;when lowering stop winch
+00006b f00c      	BRLT		BACK 			;every 20 ft
+00006c 9894      	cbi			portd,4     	;Stop pulse
+         	
+          BACK:
+00006d 9508      	RET
+         	
+          One95:
+00006e 3410      	cpi			unitl,$40
+00006f f3ec      	brlt		back
+000070 3022      	cpi			unith,$02
+000071 f3dc      	brlt		back
+000072 9894      	cbi			portd,4
+000073 9508      	ret	
+         	
+          Stopped:
+000074 9a94      	SBI			PORTD,4         ; Stop command
+000075 27bb      	clr			STCMD			 ;PD3 input clear command, test bit 3
+         			; reset counters on PB								
+000076 9983      	sbic		PIND,3          ;check for button pushed to reset count
+000077 c002      	rjmp		Store1         ; No check to see if current value saved in EEPROM
+000078 e010        	ldi			UNITL,0			;Clear units
+000079 e020      	ldi			UnitH,0
+         	
+          Store1:
+00007a d0cd      	rcall		write					;store units in EEPROM if changed
+00007b e0f7      	ldi			ZH, high(message3*2)
+00007c e6ec      	ldi			ZL, low(message3*2)
+00007d cfdb      	RJMP		nextc	
+         
+         ;****************************************
+         ; 			Subroutines
+         ;
+         ; 2.3 ms delay with 1 MHz clock.
+         ;
+          WAIT_2M:
+00007e 2f80         mov 		DELAY1, TEMP
+          W2_1:
+00007f 2799         clr 		DELAY2
+000080 959a         dec 		DELAY2         ; Start at 0xFF
+          W2_2:
+000081 959a         dec 		DELAY2
+000082 f7f1         brne		W2_2
+000083 958a         dec 		DELAY1
+000084 f7d1         brne		W2_1
+000085 9508         ret
+         
+         ;Set Direction Indicator	
+          DirInd:
+000086 e7ee      	LDI		ZL,$7E
+000087 e0f0      	LDI		ZH,00
+000088 e001      	LDI		temp,01
+000089 17c0      	cp		ldir,temp
+00008a f011      	BREQ	Minus
+00008b e20d      	ldi		temp,$2D			;UP ARROW
+00008c c002      	rjmp	Dend1
+         	
+          Minus:  	
+00008d e20b      	ldi		temp,$2B			;DOWN ARROW
+00008e 8300      	ST		Z,temp
+         	
+          Dend1:
+00008f 9301      	ST		Z+,temp
+000090 e003      	ldi		temp,03
+000091 2301      	and		temp,UnitL
+000092 5d00      	subi 	temp,-'0' 			; Add ASCII-0
+000093 9301      	st 		Z+,temp 			; store and inc pointer	
+          dir0:
+000094 9508      	RET
+         	
+         ;*******************************************	
+         ;Binary to ASCII  Conversion Routines
+         ;*******************************************
+         ; Bin2ToAsc
+         ; =========
+         
+          Start:
+         
+          Bin2ToAsc:
+000095 e7e5      	LDI		ZL,0x75
+000096 e0f0      	LDI		ZH,0x00			;Init Z-pointer
+000097 d008      	rcall 	Bin2ToAsc5 		; Convert binary to ASCII
+000098 e005      	ldi 	temp,5 			; Counter is 5
+000099 2f30      	mov 	rBin2L,temp
+         
+          Bin2ToAsca:
+00009a 953a      	dec 	rBin2L 			; decrement counter
+00009b 9101      	ld 		temp,Z+ 		; read char and inc pointer
+00009c 3200      	cpi 	temp,' ' 		; was a blank?
+00009d f3e1      	breq 	Bin2ToAsca 		; Yes, was a blank
+00009e 9731      	sbiw 	ZL,1 			; one char backwards
+00009f 9508      	ret 					; done
+         ;--------------------------------------------------------
+         ; Bin2ToAsc5
+         ; ==========
+         
+          Bin2ToAsc5:
+0000a0 d012      	rcall 	Bin2ToBcd5 		; convert binary to BCD
+0000a1 e004      	ldi 	temp,4			; Counter is 4 leading digits
+0000a2 2f30      	mov 	rBin2L,temp
+         
+          Bin2ToAsc5a:
+0000a3 8100      	ld 		temp,Z 			; read a BCD digit
+0000a4 2300      	tst 	temp 			; check if leading zero
+0000a5 f429      	brne 	Bin2ToAsc5b 	; No, found digit >0
+0000a6 e200      	ldi 	temp,' ' 		; overwrite with blank
+0000a7 9301      	st 		Z+,temp 		; store and set to next position
+0000a8 953a      	dec 	rBin2L 			; decrement counter
+0000a9 f7c9      	brne 	Bin2ToAsc5a 	; further leading blanks
+0000aa 8100      	ld 		temp,Z 			; Read the last BCD
+         
+          Bin2ToAsc5b:
+0000ab 9533      	inc 	rBin2L 			; one more char
+         
+          Bin2ToAsc5c:
+0000ac 5d00      	subi 	temp,-'0' 		; Add ASCII-0
+0000ad 9301      	st 		Z+,temp 			; store and inc pointer
+0000ae 8100      	ld 		temp,Z 			; read next char
+0000af 953a      	dec 	rBin2L 			; more chars?
+0000b0 f7d9      	brne 	Bin2ToAsc5c 		; yes, go on
+0000b1 9733      	sbiw 	ZL,3 			; Pointer to beginning of the BCD
+0000b2 9508      	ret 					; done
+         ;
+         ;
+         ;--------------------------------------------------------------
+         ;From binary to BCD
+         ;
+         ; Bin2ToBcd5
+         ; ==========
+         
+          Bin2ToBcd5:
+0000b3 925f      	push 	ResultH				; Save number
+0000b4 924f      	push 	ResultL
+0000b5 e207      	ldi 	temp,HIGH(10000) 	; Start with tenthousands
+0000b6 2f40      	mov 	rBin2H,temp
+0000b7 e100      	ldi 	temp,LOW(10000)
+0000b8 2f30      	mov 	rBin2L,temp
+0000b9 d014      	rcall 	Bin2ToDigit 		; Calculate digit
+0000ba e003      	ldi 	temp,HIGH(1000) 		; Next with thousands
+0000bb 2f40      	mov 	rBin2H,temp
+0000bc ee08      	ldi 	temp,LOW(1000)
+0000bd 2f30      	mov 	rBin2L,temp
+0000be d00f      	rcall 	Bin2ToDigit 		; Calculate digit
+0000bf e000      	ldi 	temp,HIGH(100) 		; Next with hundreds
+0000c0 2f40      	mov 	rBin2H,temp
+0000c1 e604      	ldi 	temp,LOW(100)
+0000c2 2f30      	mov 	rBin2L,temp
+0000c3 d00a      	rcall 	Bin2ToDigit 		; Calculate digit
+0000c4 e000      	ldi 	temp,HIGH(10) 		; Next with tens
+0000c5 2f40      	mov 	rBin2H,temp
+0000c6 e00a      	ldi 	temp,LOW(10)
+0000c7 2f30      	mov 	rBin2L,temp
+0000c8 d005      	rcall 	Bin2ToDigit 		; Calculate digit
+0000c9 8240      	st 		Z,ResultL 			; Remainder are ones
+0000ca 9734      	sbiw 	ZL,4				; Put pointer to first BCD
+0000cb 904f      	pop 	ResultL 			; Restore original binary
+0000cc 905f      	pop 	ResultH
+0000cd 9508      	ret 						; and return
+         ;
+         ;------------------------------------------------------------------------
+         ; Bin2ToDigit
+         ; ===========
+         
+          Bin2ToDigit:
+0000ce 2700      	clr 	temp 				; digit count is zero
+         
+          Bin2ToDigita:
+0000cf 1654      	cp 		ResultH,rBin2H 		; Compare 2H to 1H, bin to decimal
+0000d0 f038      	brcs 	Bin2ToDigitc 		; bin MSB smaller than decimal branch
+0000d1 f411      	brne 	Bin2ToDigitb 		; bin MSB bigger than decimal then branch
+0000d2 1643      	cp 		ResultL,rBin2L 		; LSB bigger or equal decimal
+0000d3 f020      	brcs 	Bin2ToDigitc 		; LSB smaller than decimal
+         
+          Bin2ToDigitb:
+0000d4 1a43      	sub 	ResultL,rBin2L 		; Subtract LSB decimal
+0000d5 0a54      	sbc 	ResultH,rBin2H 		; Subtract MSB decimal
+0000d6 9503      	inc 	temp 				; Increment digit count
+0000d7 cff7      	rjmp 	Bin2ToDigita 		; Next loop
+         
+          Bin2ToDigitc:
+0000d8 9301      	st 		Z+,temp 			; Save digit and increment
+0000d9 9508      	ret 						; done
+         
+         ;******************************************************************************
+         ;                       LCD Routines
+         ;******************************************************************************
+         ;
+         ;	Control 2-line LCD,	Using 4-wire interface
+         ;
+         ;   Initialize LCD module
+         
+          lcdinit:
+0000da ef00         ldi 		TEMP,240        	; Wait about 20msec after powerup
+0000db dfa2         rcall 	WAIT_2M
+         
+0000dc e102         ldi 		TEMP,  0b00010010   ; Set 4 bit interface (but we are
+0000dd bb08         out 		PORTB, TEMP         ; still in 8 bits!)
+0000de 0000         nop
+0000df 0000         nop
+0000e0 0000         nop
+0000e1 0000         nop   	                    ; Data write cycle must be > 1 ms
+0000e2 98c4         cbi 		PORTB,4        		; OE low to clock in data
+0000e3 e00c         ldi		temp,12
+0000e4 df99         rcall 	WAIT_2M
+         
+         ;      *** !! From now on, interface is 4 bits !! ***
+         
+0000e5 e2a8         ldi 		PARAM, 0b00101000    ; Send again to catch the bit N
+0000e6 d009         rcall 	LCD_CMD           	; Display is 2 lines, so N = 1
+         
+0000e7 e0a8         ldi 		PARAM, 0b00001000    ; Display off, cursor off, and blink off
+0000e8 d007         rcall 	LCD_CMD
+         
+0000e9 e0a1         ldi 		PARAM, 0b00000001   ; Display clear
+0000ea d005         rcall 	LCD_CMD
+0000eb e708         ldi		temp,120			
+0000ec df91         rcall 	WAIT_2M             ; Wait 2 sec after clear
+         
+0000ed e0ac         ldi 		PARAM, 0b00001100   ; ;Address increment, no scrolling
+0000ee d001         rcall 	LCD_CMD
+0000ef 9508         ret
+         
+         ;********************************************************
+         ;
+         ;  Sends a control function to the display (comes in PARAM)
+         ;
+          LCD_CMD:
+0000f0 93af         push		PARAM
+0000f1 2f0a         mov 		TEMP, PARAM
+0000f2 7fa0         andi		PARAM, 0xF0      ; Mask off lower 4 bits
+0000f3 95a2         swap		param
+0000f4 61a0         sbr 		PARAM, 0x10      ; OE bit high (bit 4)
+0000f5 bba8         out 		PORTB, PARAM     ; Send upper 4 bits to display
+0000f6 0000         nop                  	  ; Brief delay
+0000f7 0000         nop
+0000f8 0000         nop
+0000f9 0000         nop
+0000fa 0000         nop	               		
+0000fb 98c4         cbi 		PORTB,4          ; OE goes low to clock in data
+0000fc 2fa0         mov 		PARAM, TEMP      ; Data back
+0000fd 70af         andi		PARAM, 0x0F
+0000fe 61a0         sbr 		PARAM, 0x10      ; OE high (bit 4, port D)
+0000ff bba8         out 		PORTB, PARAM     ; Write lower 4 bits to LCD
+000100 0000         nop
+000101 0000         nop
+000102 0000         nop
+000103 0000         nop
+000104 e004         ldi 		TEMP,4			; Wait about 20msec after powerup
+000105 df78         rcall 	WAIT_2M  		; Brief delay to give reasonable OE
+          		               		 ; pulse width
+000106 98c4         cbi 		PORTB,4          ; OE clock low
+000107 e004         ldi		temp,4
+000108 df75         rcall	WAIT_2M
+000109 91af         pop 		PARAM
+00010a 9508         ret
+         
+         ;*******************************************************
+         ;
+         ; Sends an ASCII character to the display (comes in PARAM)
+         ;
+          LCD_DATA:
+         
+00010b 93af         push		PARAM
+00010c 930f         push		TEMP
+00010d 2f0a         mov 		TEMP, PARAM
+00010e 7fa0         andi		PARAM, 0xF0      ; Mask off lower 4 bits
+00010f 95a2         swap		param
+000110 61a0         sbr 		PARAM, OE        ; OE bit high
+000111 64a0         sbr 		PARAM, RS        ; Data/command bit high
+000112 bba8         out 		PORTB, PARAM     ; Write upper 4 bits to display
+000113 0000         nop                  	  ; Brief delay
+000114 0000         nop
+000115 0000         nop
+000116 0000         nop
+000117 0000         nop
+000118 98c4         cbi 		PORTB, 4         ; OE low to clock data
+000119 700f         andi		TEMP, 0x0F       ; Masked off
+00011a 6100         sbr 		TEMP, OE         ; OE high
+00011b 6400         sbr 		TEMP, RS
+00011c bb08         out 		PORTB, TEMP      ; Lower 4 bits to LCD
+00011d 0000         nop
+00011e 0000         nop
+00011f 98c4         cbi 		PORTB, 4         ; OE low to clock data
+000120 e002         ldi		temp,2     		  ; 50 usec
+000121 df5c         rcall	WAIT_2M
+000122 910f         pop 		TEMP
+000123 91af         pop 		PARAM
+000124 9508         ret
+         
+         ; *********************************************
+         ;      Int0 handler
+         
+          Turning:
+000125 930f      	push	TEMP
+000126 d01c      	RCALL	debounce
+000127 9980      	sbic	pind,0
+000128 c003      	rjmp	down
+000129 9981      	sbic	pind,1
+00012a c007      	rjmp	up
+00012b c010      	rjmp	stop
+         	
+          Down:
+00012c 95b3      	inc		stcmd
+00012d e001      	ldi		temp,1
+00012e 0f10      	add		unitl,temp
+00012f f420      	brcc    done
+000130 1f21      	adc		unith,unitl
+000131 c002      	rjmp	done
+         	
+          Up:
+000132 5011      	subi	unitl,low(counter)
+000133 4020      	sbci	unith,high(counter)
+         		
+          done:
+000134 b350         IN		DIR,PIND
+000135 7053         andi		dir,3
+000136 3053         cpi		dir,3			;On Error skip count update
+000137 f041         breq		D1	
+000138 3050         cpi		dir,0			;update 'last direction'
+000139 f031         breq		D1  			;if stopped
+00013a 2fc5         mov		ldir,dir		; Update 'Last Direction"
+00013b c004         rjmp		D1
+         
+          Stop:                      ; continue counting based on last direction
+00013c 30c1      	cpi		ldir,1
+00013d f371      	breq	down
+00013e 30c2      	cpi		ldir,2
+00013f f391      	breq	up
+         
+          D1:	
+000140 910f      	pop		temp
+000141 9478      	sei 					;Enable interrupts
+000142 9518      	reti
+         	
+         ; ****  Switch Debounce
+          debounce:
+000143 9b82      	SBIS	PIND,2
+000144 cffe      	RJMP	DEBOUNCE
+000145 9508      	RET						;Done, return
+         
+         ; ********* Running Light
+          runled:
+000146 9ac6       	sbi		portb,6     	; set pin 19 low
+000147 9508       	ret
+         ;
+         ;***************************************************************************
+         ;*
+         ;* EEWrite
+         ;*
+         ;***************************************************************************
+         
+          Write:
+000148 94f8      	cli						;suspend global interrupts
+000149 e100      	ldi		temp,$10
+00014a d011      	rcall	read
+00014b 1701      	cp		temp,UnitL
+00014c f031      	breq	nochange		;skip in no change in count
+00014d e170      	ldi		EEawr,$10		;set location
+00014e 2f61      	mov		EEdwr,unitL
+         	
+00014f d005      	rcall	EEWrite			;store data in EEPROM location $0010
+000150 e171      	ldi		EEawr,$11
+000151 2f62      	mov		EEDwr,unitH
+000152 d002      	rcall	EEWrite
+         	
+          nochange:
+000153 9478      	sei						;enable global interrupts
+000154 9508      	ret
+         
+          EEWrite:
+000155 99e1      	sbic	EECR,EEWE		;if EEWE not clear
+000156 cffe      	rjmp	EEWrite			;wait more
+         	
+000157 bb7e      	out		EEARL,EEawr		;output address low byte
+000158 bb6d      	out		EEDR,EEdwr		;output data
+000159 9ae2      	sbi 	EECR,EEMWE		;set master write enable, remove if 90S1200 is used	
+00015a 9ae1      	sbi		EECR,EEWE		;set EEPROM Write strobe
+         							;This instruction takes 4 clock cycles since
+         							;it halts the CPU for two clock cycles
+00015b 9508      	ret
+         
+         ;***************************************************************************
+         ;*
+         ;* EERead
+         ;*
+         ;***************************************************************************
+         
+          Read:
+00015c 2e20      	mov		EEard,temp		;set location
+00015d d001      	rcall	EERead			;read address $10
+00015e 9508      	ret
+         
+          EERead:
+00015f 99e1      	sbic	EECR,EEWE		;if EEWE not clear
+000160 cffe      	rjmp	EERead			;wait more
+000161 ba2e      	out		EEARL,EEard		;output address low byte
+000162 9ae0      	sbi		EECR,EERE		;set EEPROM Read strobe
+         							;This instruction takes 4 clock cycles since
+         							;it halts the CPU for two clock cycles
+000163 b30d      	in		temp,EEDR		;get data
+000164 9508      	ret
+         	
+         ;***** Copy 16 bytes ROM -> RAM
+          Blockcopy:
+000165 e0f7      	ldi		ZH,high(linetwo*2)
+000166 e4e0      	ldi		ZL,low(linetwo*2)		;init Z-pointer
+000167 e0d0      	ldi		YH,high(00)
+000168 e7c0      	ldi		YL,low(0X70)			;init Y-pointer
+000169 e102      	ldi		temp,18
+00016a d001      	rcall	flash2ram				;copy 20 bytes
+00016b 9508      	ret
+             			
+          flash2ram:
+00016c 95c8      	lpm							;get constant pointed to by Z and load into R0
+00016d 9209      	st		Y+,r0				;store in SRAM and increment Y-pointer
+00016e 9631      	adiw	ZL,1				;increment Z-pointer
+00016f 950a      	dec		temp
+000170 f7d9      	brne	flash2ram			;if not end of table, loop more
+000171 9508      	ret
+         ;******************************************
+         ;Divide by 3 Routines  16 bit no by 8 bit no
+         
+         ; Load the test numbers to the appropriate registers
+         ;
+          Divide3:	
+000172 2e81      	mov 	DivendL,UnitL
+000173 2e92      	mov 	DivendH,UnitH
+000174 e003      	ldi 	temp,0x03 				; 0x55 to be divided with
+000175 2e30      	mov 	divisor,temp
+         ;
+         ; Divide UnitH:UnitL by divisor
+         ;
+          div8:
+000176 2422      	clr 	rd1u 				; clear interim register
+000177 2455      	clr 	ResultH				; clear result (the result registers
+000178 2444      	clr 	ResultL				 ; are also used to count to 16 for the
+000179 9443      	inc 	ResultL				 ; division steps, is set to 1 at start)
+         ;
+         ; Here the division loop starts
+         ;
+          div8a:
+00017a 9488      	clc 							; clear carry-bit
+00017b 1c88      	rol 	divendL					 ; rotate the next-upper bit of the number
+00017c 1c99      	rol 	divendH					 ; to the interim register (multiply by 2)
+00017d 1c22      	rol 	rd1u
+00017e f010      	brcs	div8b					 ; a one has rolled left, so subtract
+00017f 1423      	cp 		rd1u,divisor			 ; Division result 1 or 0?
+000180 f018      	brcs	div8c 					; jump over subtraction, if smaller
+         	
+          div8b:
+000181 1823      	sub 	rd1u,divisor			; subtract number to divide with
+000182 9408      	sec 							; set carry-bit, result is a 1
+000183 c001      	rjmp	div8d 					; jump to shift of the result bit
+         	
+          div8c:
+000184 9488      	clc 							; clear carry-bit, resulting bit is a 0
+         	
+          div8d:
+000185 1c44      	rol 	ResultL 				; rotate carry-bit into result registers
+000186 1c55      	rol 	ResultH
+000187 f790      	brcc	div8a 					; as long as zero rotate out of the result
+         					 			; registers: go on with the division loop
+000188 9508      	ret							; End of the division reached
+          	
+         ;******************************************
+         ; Message Data
+         
+          .org 0x03A0
+         
+0003a0      LineTwo:	.db	"  >> 00000 ft #  ",0	;DATA MEM Starting at 0076
+0003a0 2020
+0003a1 3e3e
+0003a2 3020
+0003a3 3030
+0003a4 3030
+0003a5 6620
+0003a6 2074
+0003a7 2023
+0003a8 0020
+0003a9      Message:	.db	"   Raising ",0
+0003a9 2020
+0003aa 5220
+0003ab 6961
+0003ac 6973
+0003ad 676e
+0003ae 0020
+0003af      Message2:	.db	"   Lowering  ",0
+0003af 2020
+0003b0 4c20
+0003b1 776f
+0003b2 7265
+0003b3 6e69
+0003b4 2067
+0003b5 0020
+0003b6      Message3:	.db	"   Stopped   ",0
+0003b6 2020
+0003b7 5320
+0003b8 6f74
+0003b9 7070
+0003ba 6465
+0003bb 2020
+0003bc 0020
+0003bd      Message4:	.db	" * ERROR * ",0
+0003bd 2a20
+0003be 4520
+0003bf 5252
+0003c0 524f
+0003c1 2a20
+0003c2 0020
+0003c3      ID:			.db	"Ver. R4.10 08/05/06"
+0003c3 6556
+0003c4 2e72
+0003c5 5220
+0003c6 2e34
+0003c7 3031
+0003c8 3020
+0003c9 2f38
+0003ca 3530
+0003cb 302f
+0003cc 0036
+         ;******************************************************************************************************************
+         
+          .eseg
+          .org $10
+000010      	EEConst:.db 0,0,0,0,0,0
+000010 00
+000011 00
+000012 00
+000013 00
+000014 00
+000015 00
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+
+Assembly complete with no errors.
