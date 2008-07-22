@@ -1,0 +1,11 @@
+void LcdSetup(void);
+void LcdSetPos(uint8_t pos);
+void LcdLine1(void);
+void LcdLine2(void);
+void LcdClearLine1(void);
+void LcdClearLine2(void);
+void LcdWriteChar(char num);
+void LcdWriteStr(const char *s);
+void LcdWriteStr_p(const char *s);
+void LcdBacklight(uint8_t state);
+void LcdClearToEnd();

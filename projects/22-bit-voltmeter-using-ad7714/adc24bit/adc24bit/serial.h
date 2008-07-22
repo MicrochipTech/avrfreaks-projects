@@ -1,0 +1,10 @@
+void init_serial();
+void putchr(char c);
+char getchr();
+uint8_t chr_avail();
+uint8_t readhex();
+void printstr(const char *s);
+void printstr_p(const char *s);
+void zeropad(char *s, int target_len);
+void print_uint16(uint16_t val);
+void print_uint32(uint32_t val);

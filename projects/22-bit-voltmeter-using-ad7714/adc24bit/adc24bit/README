@@ -1,0 +1,84 @@
+This package contains the code for a digital voltmeter based upon
+an ATMEGA168 controller, an AD7714 22-bit ADC, and an LCD panel.
+The AVR is clocked at 16MHz and the ADC is clocked at 2.4576MHz,
+with sampling rates suitable for filtering out 60Hz noise.
+
+The LCD panel is accessed via the SPI port by using the 74HC595
+shift register chip.  The LCD is programmed in 4-bit mode.
+Menus can be navigated using a couple of rotary switches.
+Data values are also sent to the serial port which is set to 
+115200 baud.
+
+The AD7714 driver is capable of operating in either interrupt mode
+(triggered by the DRDY pin going low) or in non-threaded mode, depending
+on a definition in config.h.  The ADC is set to bipolar 24-bit mode.
+
+A Ruby script is included for visualizing the measurements on a
+series of strip charts.  There are six charts, each with a gain ten
+times more than the previous.  The script requires the gtk2 and
+serialport Ruby libraries.  It is probably a lot easier to get the
+gtk2 libraries working on Linux rather than Windows.
+
+Some notes regarding the AD7714:
+* I was using about 6 inches of cable between the SPI port
+  and the ADC chip.  Occasional communication errors would lock
+  the chip up no matter how slow the SPI port was clocked.
+  Application note AN-406 mentioned something about wire inductance
+  and internal blocking diodes.  The solution is to add 100 ohm
+  resistors in front of all the digital inputs on the ADC.
+* There is an internal buffer which, when enabled, allows the use of
+  "high impedance" loads.  However, the datasheet specifies a
+  leakage current of 1nA which is enough to induce a 1ppm error
+  for loads with impedance greater than 2k ohm even at a gain of 1.
+  There are op-amps with leakage of less than 10fA which could
+  help here.
+* I am getting an offset of about 20 units after doing an
+  internal calibration, even on the AIN6-AIN6 test input which
+  should always read zero.  I don't know if this is supposed to
+  be normal.
+
+AD7714 pins       To
+-----------       ---------
+SCLK              AVR PB5 (SCK)
+DOUT              AVR PB4 (MISO)
+DIN               AVR PB3 (MOSI)
+/CS               AVR PB2 (/SS) with an external pull-up resistor
+                  (the pull-up ensures that the ADC is disabled during
+				  programming of the AVR via SPI port)
+/DRDY             AVR PD2 (INT0)
+BUFFER            AVR PD3
+POL               +5V
+/SYNC,/RESET      GND
+/STANDBY          GND
+MCLK IN,OUT       2.4576 MHz XTAL
+REF IN(+)         Precision 2.5V source (AD780)
+REF IN(-)         Analog ground
+
+74HC595 pins      To
+------------      ---------
+Shift Clock       AVR PB5 (SCK)
+Serial In         AVR PB3 (MOSI)
+Latch Clock       AVR PB1
+QA                LCD RS
+QB                LCD R/W
+QC                LCD SEL
+QD                LCD Backlight
+QE                LCD D4
+QF                LCD D5
+QG                LCD D6
+QH                LCD D7
+/G                GND
+/SCLR             +5V
+
+Rotary Switch     To
+-------------     ---------
+Rotary 1 Pin A    AVR PD4
+Rotary 1 Pin B    AVR PD5
+Rotary 2 Pin A    AVR PD6
+Rotary 2 Pin B    AVR PD7
+
+Other AVR Pins
+--------------
+PB6, PB7 => 16MHz Ceramic Resonator
+PD0, PD1 => Serial Port
+PB0 is reserved for a third SPI device (eg. memory card)
