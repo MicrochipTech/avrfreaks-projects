@@ -1,0 +1,267 @@
+
+AVRASM ver. 2.1.12  i2csniff.asm Mon Jun 23 22:26:39 2008
+
+i2csniff.asm(9): Including file 'C:\Programme\Atmel\AVR Tools\AvrAssembler2\Appnotes\tn85def.inc'
+i2csniff.asm(65): Including file 'uart.inc'
+                 
+                 
+                 ;*                                                                      */
+                 ;*                      I2C Sniffer					*/
+                 ;*                                                                      */
+                 ;*              Author: Peter Dannegger                                 */
+                 ;*                                                                      */
+                 ;************************************************************************/
+                 .list
+000000 c052      	rjmp	init				; must be rjmp !
+                 ;-------------------------------------------------------------------------
+                 .include "uart.inc"
+                 
+                 ;-------------------------------------------------------------------------
+                 ;		Software UART transmitter up to 460800 Baud
+                 ;-------------------------------------------------------------------------
+                 .org	OC1Aaddr
+000003 b60f      	in	sregi, sreg
+000004 3030      	cpi	tx_state, 0			; byte finished ?
+000005 f461      	brne	_txi3
+000006 164a      	cp	txipl, xl			; new data to send ?
+000007 065b      	cpc	txiph, xh
+000008 f039      	breq	_txi2
+000009 901d      	ld	tx_data, x+
+00000a e039      	ldi	tx_state, 9			; start next byte
+00000b 35a6      	cpi	xl, low( fifo_end )		; end of FIFO
+00000c 07b0      	cpc	xh, fifo_end_hi
+00000d f409      	brne	_txi1
+00000e 01d1      	movw	xh:xl, fifoh:fifol		; wrap around
+                 _txi1:
+00000f bf10      	out	TCCR1, tx_low			; send start bit (low)
+                 _txi2:
+000010 be0f      	out	SREG, sregi
+000011 9518      	reti					; max 23 cycle
+                 _txi3:
+000012 953a      	dec	tx_state
+000013 9416      	lsr	tx_data
+000014 f3d0      	brcs	_txi1				; bit inverted
+000015 bf20      	out	TCCR1, tx_high
+000016 be0f      	out	SREG, sregi
+000017 9518      	reti
+                 ;-------------------------------------------------------------------------
+                 init_uart:
+000018 eb11      	ldi	tx_low, 1<<CTC1^1<<COM1A1^1<<CS10^INVERT
+000019 c003      	rjmp	_inu2
+                 _inu1:
+00001a 9513      	inc	tx_low
+00001b 95f6      	lsr	zh
+00001c 95e7      	ror	zl
+                 _inu2:
+00001d 30f0      	cpi	zh, 0
+00001e f7d9      	brne	_inu1
+00001f 95ea      	dec	zl
+000020 bdee      	out	OCR1A, zl
+000021 bded      	out	OCR1C, zl
+000022 e120      	ldi	tx_high, 1<<COM1A0
+000023 2721      	eor	tx_high, tx_low
+000024 bf20      	out	TCCR1, tx_high
+000025 e044      	ldi	a0, 1<<FOC1A
+000026 bd4c      	out	GTCCR, a0			; force output level high
+000027 9ab9      	sbi	TXD_DDR, TXD			; output
+000028 e6a0      	ldi	xl, low ( fifo_start )
+000029 e0b0      	ldi	xh, high( fifo_start )
+00002a 012d      	movw	txiph:txipl, xh:xl
+00002b 011d      	movw	fifoh:fifol, xh:xl
+00002c e002      	ldi	fifo_end_hi, high( fifo_end )
+00002d e030      	ldi	tx_state, 0
+00002e e440      	ldi	a0, 1<<OCIE1A
+00002f bf49      	out	TIMSK, a0
+000030 9508      	ret
+                 ;-------------------------------------------------------------------------
+                 ;                               transmit byte hexadecimal
+                 ;-------------------------------------------------------------------------
+                 ;input: a0 = byte
+                 ;use:	a0, b0, b1, b2, yl, yh
+                 ;
+                 puthex:
+000031 2e84      	mov     b2, a0
+000032 9542      	swap    a0
+000033 d001      	rcall   _phe1
+000034 2d48      	mov     a0, b2
+                 _phe1:
+000035 704f      	andi    a0, 0x0F
+000036 304a      	cpi     a0, 10
+000037 f008      	brcs    _phe2
+000038 5f49      	subi    a0, -('A' - '0' - 10)
+                 _phe2:
+000039 5d40      	subi    a0, -'0'
+                 ;	rjmp    putchar
+                 ;-------------------------------------------------------------------------
+                 ;                               transmit byte
+                 ;-------------------------------------------------------------------------
+                 ;input: a0 = byte
+                 ;use:	a0, b0, b1, yl, yh
+                 ;
+                 putchar:
+00003a 01e2      	movw	yh:yl, txiph:txipl
+00003b 9540      	com	a0				; invert byte
+00003c 9349      	st	y+, a0				; store byte in FIFO
+00003d 35c6      	cpi	yl, low( fifo_end )		; end of FIFO ?
+00003e 07d0      	cpc	yh, fifo_end_hi
+00003f f409      	brne	_pch1
+000040 01e1      	movw	yh:yl, fifoh:fifol		; roll over
+                 _pch1:
+000041 013d      	movw	b1:b0, xh:xl			; atomic word read !
+000042 166c      	cp	b0, yl
+000043 067d      	cpc	b1, yh
+000044 f3e1      	breq	_pch1				; until not equal
+000045 012e      	movw	txiph:txipl, yh:yl		; atomic word write !
+000046 9508      	ret
+                 ;-------------------------------------------------------------------------
+                 ;                       send zero terminated string after call
+                 ;-------------------------------------------------------------------------
+                 ;input:	constant string after call
+                 ;use:   a0, b0, b1, yl, yh, zl, zh
+                 ;
+                 puts:
+000047 91ff      	pop     zh                      ; get address after call
+000048 91ef      	pop     zl
+000049 0fee      	lsl     zl                      ; *2 to get byte pointer
+00004a 1fff      	rol     zh
+00004b c001      	rjmp    _pts2
+                 _pts1:
+00004c dfed      	rcall   putchar
+                 _pts2:
+00004d 9145      	lpm     a0, Z+
+00004e 3040      	cpi	a0, 0			; check zero byte
+00004f f7e1      	brne    _pts1
+000050 95f6      	lsr     zh                      ; /2 to get word pointer
+000051 95e7      	ror     zl
+000052 9409      	ijmp				; return after string
+                 ;-------------------------------------------------------------------------
+                 .list
+                 ;-------------------------------------------------------------------------
+                 init:
+000053 e5ef      	ldi	zl, low (RAMEND)
+000054 e0f2      	ldi	zh, high(RAMEND)
+000055 bfed      	out	SPL, zl
+000056 bffe      	out	SPH, zh
+000057 e2e0      	ldi	zl,  low(XTAL / BAUD)
+000058 e0f0      	ldi	zh, high(XTAL / BAUD)
+000059 dfbe      	rcall	init_uart
+00005a 9478      	sei
+00005b dfeb      	rcall	puts
+00005c 3249
+00005d 2d43
+00005e 6e53
+00005f 6669
+000060 6566
+000061 3a72
+000062 0a0d
+000063 0000      	.db	"I2C-Sniffer:", 13, 10, 0, 0
+                 init_i2c:
+000064 e340      	ldi	a0, 1<<USIWM1^1<<USIWM0		; I2C, no counter
+000065 b94d      	out	USICR, a0
+000066 9ac2      	sbi	I2C_PORT, SCL
+000067 9aba      	sbi	I2C_DDR, SCL
+000068 9ac0      	sbi	I2C_PORT, SDA
+000069 98b8      	cbi	I2C_DDR, SDA
+                 ;-------------------------------------------------------------------------
+                 i2c_sniff:
+00006a b14e      	in	a0, USISR
+00006b ff45      	sbrs	a0, USIPF			; STOP received ?
+00006c c008      	rjmp	_isn1
+00006d e340      	ldi	a0, 1<<USIWM1^1<<USIWM0		; I2C, no counter
+00006e b94e      	out	USISR, a0
+00006f e240      	ldi	a0, 1<<USIPF			; clear USISIF
+000070 b94e      	out	USISR, a0
+000071 dfd5      	rcall	puts
+000072 0d70
+000073 000a      	.db	STOP, 13, 10, 0
+000074 cff5      	rjmp	i2c_sniff
+                 ;-------------------------------------------------------------------------
+                 _isn1:
+000075 ff46      	sbrs	a0, USIOIF			; Data / ACK received ?
+000076 c010      	rjmp	_isn3
+000077 b06f      	in	b0, USIDR
+000078 949a      	dec	get_ack				; toggle get ACK / Data
+000079 fe90      	sbrs	get_ack, 0
+00007a c005      	rjmp	_isn2
+00007b e44e      	ldi	a0, 1<<USIOIF^(0x0F & -2)	; count 2 edges
+00007c b94e      	out	USISR, a0
+00007d 2d46      	mov	a0, b0
+00007e dfb2      	rcall	puthex
+00007f cfea      	rjmp	i2c_sniff
+                 _isn2:
+000080 e440      	ldi	a0, 1<<USIOIF^(0x0F & -16)	; count 16 edges
+000081 b94e      	out	USISR, a0
+000082 e64e      	ldi	a0, NACK
+000083 fe60      	sbrs	b0, 0
+000084 e641      	ldi	a0, ACK 
+000085 dfb4      	rcall	putchar
+000086 cfe3      	rjmp	i2c_sniff
+                 ;-------------------------------------------------------------------------
+                 _isn3:
+000087 ff47      	sbrs	a0, USISIF			; START received ?
+000088 cfe1      	rjmp	i2c_sniff
+                 _isn4:
+000089 99b2      	sbic	I2C_PIN, SCL			; wait until SCL = low
+00008a cffe      	rjmp	_isn4
+00008b e34c      	ldi	a0, 1<<USIWM1^1<<USIWM0^1<<USICS1^1<<USICS0;
+00008c b94d      	out	USICR, a0			; I2C, get data on neg. edge
+00008d e840      	ldi	a0, 1<<USISIF^(0x0F & -16)
+00008e b94e      	out	USISR, a0			; clear USISIF, count 16 edges
+00008f 2499      	clr	get_ack
+000090 e743      	ldi	a0, START
+000091 dfa8      	rcall	putchar
+000092 cfd7      	rjmp	i2c_sniff
+                 ;-------------------------------------------------------------------------
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATtiny85 register use summary:
+r0 :   3 r1 :   2 r2 :   3 r3 :   3 r4 :   4 r5 :   4 r6 :   5 r7 :   2 
+r8 :   2 r9 :   3 r10:   0 r11:   0 r12:   0 r13:   0 r14:   0 r15:   0 
+r16:   3 r17:   4 r18:   4 r19:   4 r20:  37 r21:   0 r22:   0 r23:   0 
+r24:   0 r25:   0 r26:   7 r27:   7 r28:   5 r29:   5 r30:  10 r31:   8 
+x  :   1 y  :   1 z  :   1 
+Registers used: 24 out of 35 (68.6%)
+
+ATtiny85 instruction use summary:
+adc   :   0 add   :   0 adiw  :   0 and   :   0 andi  :   1 asr   :   0 
+bclr  :   0 bld   :   0 brbc  :   0 brbs  :   0 brcc  :   0 brcs  :   2 
+break :   0 breq  :   2 brge  :   0 brhc  :   0 brhs  :   0 brid  :   0 
+brie  :   0 brlo  :   0 brlt  :   0 brmi  :   0 brne  :   5 brpl  :   0 
+brsh  :   0 brtc  :   0 brts  :   0 brvc  :   0 brvs  :   0 bset  :   0 
+bst   :   0 cbi   :   1 cbr   :   0 clc   :   0 clh   :   0 cli   :   0 
+cln   :   0 clr   :   1 cls   :   0 clt   :   0 clv   :   0 clz   :   0 
+com   :   1 cp    :   2 cpc   :   4 cpi   :   6 cpse  :   0 dec   :   3 
+eor   :   1 icall :   0 ijmp  :   1 in    :   3 inc   :   1 ld    :   1 
+ldd   :   0 ldi   :  23 lds   :   0 lpm   :   1 lsl   :   1 lsr   :   3 
+mov   :   3 movw  :   7 neg   :   0 nop   :   0 or    :   0 ori   :   0 
+out   :  18 pop   :   2 push  :   0 rcall :   8 ret   :   2 reti  :   2 
+rjmp  :  12 rol   :   1 ror   :   2 sbc   :   0 sbci  :   0 sbi   :   4 
+sbic  :   1 sbis  :   0 sbiw  :   0 sbr   :   0 sbrc  :   0 sbrs  :   5 
+sec   :   0 seh   :   0 sei   :   1 sen   :   0 ser   :   0 ses   :   0 
+set   :   0 sev   :   0 sez   :   0 sleep :   0 spm   :   0 st    :   1 
+std   :   0 sts   :   0 sub   :   0 subi  :   2 swap  :   1 tst   :   0 
+wdr   :   0 
+Instructions used: 37 out of 103 (35.9%)
+
+ATtiny85 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x000126    270     20    290    8192   3.5%
+[.dseg] 0x000060 0x000256      0    502    502     512  98.0%
+[.eseg] 0x000000 0x000000      0      0      0     512   0.0%
+
+Assembly complete, 0 errors, 0 warnings
