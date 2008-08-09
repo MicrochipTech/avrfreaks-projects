@@ -1,0 +1,83 @@
+###############################################################################
+# Makefile
+###############################################################################
+
+## General Flags
+PROJECT = avrirdownloader_pemrogram
+MCU = atmega8
+TARGET = $(PROJECT).elf
+CC = avr-gcc.exe
+
+## Options common to compile, link and assembly rules
+COMMON = -mmcu=$(MCU)
+
+## Compile options common for all C compilation units.
+CFLAGS = $(COMMON)
+CFLAGS += -Wall -DF_CPU=12000000UL -O2 -fsigned-char
+
+## Assembly specific flags
+ASMFLAGS = $(COMMON)
+ASMFLAGS += -x assembler-with-cpp -Wa,
+
+## Linker flags
+LDFLAGS = $(COMMON)
+LDFLAGS +=  -Wl,-Map=$(PROJECT).map
+
+## Intel Hex file production flags
+HEX_FLASH_FLAGS = -R .eeprom
+
+## Include Directories
+INCLUDES = -I"." -I".\usbdrv" -I".\timer" -I".\usart" -I".\inframerah" -I".\crc" -I".\debug"
+
+## Objects that must be built in order to link
+OBJECTS = timer.o usart.o inframerah.o crc.o debug.o usbdrv.o usbdrvasm.o main.o
+
+## Objects explicitly added by the user
+LINKONLYOBJECTS = 
+
+## Build
+all: $(TARGET) $(PROJECT).hex $(PROJECT).lss size
+
+## Compile
+timer.o: timer/timer.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+usart.o: usart/usart.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+inframerah.o: inframerah/inframerah.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+crc.o: crc/crc.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+debug.o: debug/debug.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+usbdrv.o: usbdrv/usbdrv.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+usbdrvasm.o: usbdrv/usbdrvasm.S
+	$(CC) $(INCLUDES) $(ASMFLAGS) -c  $<
+
+main.o: main.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+##Link
+$(TARGET): $(OBJECTS)
+	 $(CC) $(LDFLAGS) $(OBJECTS) $(LINKONLYOBJECTS) $(LIBDIRS) $(LIBS) -o $(TARGET)
+
+%.hex: $(TARGET)
+	avr-objcopy -O ihex $(HEX_FLASH_FLAGS)  $< $@
+
+%.lss: $(TARGET)
+	avr-objdump -h -S $< > $@
+
+size: ${TARGET}
+	@echo
+	@avr-size -C --mcu=${MCU} ${TARGET}
+
+## Clean target
+.PHONY: clean
+clean:
+	-rm -rf $(OBJECTS) $(PROJECT).*
