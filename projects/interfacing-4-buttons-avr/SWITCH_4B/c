@@ -1,0 +1,97 @@
+#include <avr/io.h>
+#include <util/delay.h>
+
+//this program utilizes the 4 switches on teh development board
+//and executes a basic keypad routine to determine key press
+
+int GET_KEY(void);
+int VALID_KEY(void);
+unsigned char KEY_LOOKUP(unsigned char ucKEY);
+
+int main()
+{
+	unsigned char key,valid;
+
+	//PORT C pins 0-3 are inputs and ignore rest of Port C pins
+	//Port D pins 0-3 are outputs and connected to leds for testing
+	DDRD = (1<<PD0)|(1<<PD1)|(1<<PD2)|(1<<PD3);
+	DDRC = 0xF0;
+
+	PORTC = 0x00;	//use internal pull-ups for PORT C
+	PORTD = 0x00;	//all LEDs off
+
+	while(1)
+	{
+		valid = VALID_KEY();
+
+		if((valid != 0))
+		{
+			key = KEY_LOOKUP(valid);
+		}
+		else
+		{
+			key = 0x00;
+			//return null if invalid key press
+		}
+
+		PORTD = key;
+		
+		_delay_ms(1);
+
+	}
+	return(0);
+}
+
+int GET_KEY(void)
+{
+	return PINC;
+}
+int VALID_KEY(void)
+{
+	unsigned char before, after;
+
+	before = GET_KEY();
+
+	_delay_ms(2);
+
+	after = GET_KEY();
+
+	//determine key debounce
+	if((before = after))
+	{
+		return after;
+	}
+	else
+	{
+		return 0;
+	}
+}
+unsigned char KEY_LOOKUP(unsigned char ucKEY)
+{
+	unsigned char temp;
+
+	if(ucKEY == 0x0E)
+	{
+		temp = 0x01;	//switch 0 pressed
+	}
+	else if(ucKEY == 0x0D)
+	{
+		temp = 0x02;	//switch 1 pressed
+	}
+	else if(ucKEY == 0x0B)
+	{
+		temp = 0x04;	//switch 2 pressed
+	}
+	else if(ucKEY == 0x07)
+	{
+		temp = 0x08;	//switch 3 pressed
+	}
+	else 
+	{	
+		temp = 0x00;	//return null if no switch is pressed
+	}
+
+	return temp;
+}
+
+
