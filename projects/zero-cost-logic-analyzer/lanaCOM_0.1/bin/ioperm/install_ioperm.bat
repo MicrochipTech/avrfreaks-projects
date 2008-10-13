@@ -1,0 +1,1 @@
+.\ioperm.exe -i -f ./ioperm.sys -v 
