@@ -1,0 +1,323 @@
+//Electronic Assembly EA DOG M 16X SERIES...
+//SPI only VERSION
+#include <avr/io.h>
+#include <util/delay.h>
+#include "DOGM16X.h"
+
+//Author: 	JAMRICH, Viktor (nitroxide@centrum.sk)
+//Date:		15th Novemebr 2008
+//Version:	1.0.0
+
+//TODO TODO TODO TODO TODO TODO TODO TODO
+//Connections...
+#define SPI_PORT			PORTB
+#define SPI_DDR				DDRB
+#define SPI_MOSI			PB5
+#define SPI_MISO			PB6
+#define SPI_SCK				PB7
+#define SPI_SS				PB4
+
+#define DISPLAY_RS_PORT		PORTD
+#define DISPLAY_RS_PIN		PD6
+
+//!! Display's CSB# pin MUST be interconnected with
+//SPI SS pin (slave select) !!
+//To enable/disable the display by another logic, use AND gate
+//because CSB# has to be used for synchonization.
+
+//TODO TODO TODO TODO TODO TODO TODO TODO
+
+//Definitions...
+#define VOID		void
+#define INT			int
+#define UINT		unsigned int
+#define CHAR		char
+#define WORD		unsigned long
+#define FLOAT		float
+#define DOUBLE		double
+#define LONGDOUBLE 	long double
+#define LPSTR		char*
+#define BOOL		char
+#define BYTE		char
+
+//=========================================================
+//Functions
+//=========================================================
+//=> SPI <=
+//SPISendByte( CHAR nByte )
+//Send a byte via SPI interface. SPI has to be already
+//configured by SPIInitialize() or your own function.
+//Also strobes the SS and CSB# pins => sync...
+VOID SPISendByte( CHAR nByte )
+{
+	//Send a byte...
+	//Activate DOG...
+	DisplayEnable();
+
+	//Send...
+	SPDR = nByte;
+
+	//Wait until sending is completed...
+	while(!(SPSR & (1<<SPIF) ) )
+		;
+
+	//Deactivate DOG...
+	DisplayDisable();
+}
+
+//SPIInititalize()
+//Initializes SPI interface...
+VOID SPIInitialize()
+{
+	//Init...
+	//Set MOSI, SCK and SS to output...
+	SPI_DDR = (1<<SPI_MOSI) | (1<<SPI_SCK) | (1<<SPI_SS);
+
+	//Set them low...
+	SPI_PORT &= !((1<<SPI_MOSI) | (1<<SPI_SCK) | (1<<SPI_SS));
+
+	//Set SPI to master and enable it...
+	SPCR = (1<<SPE) | (1<<MSTR);
+}
+
+//=> DISPLAY FUNCTIONS <==
+//DisplayDisable()
+//Disables DOG's SPI interface => puts CSB# high +
+//used to synchronize MCU with display
+//(after each byte sent you must strobe DOG's CSB#)
+VOID DisplayDisable()
+{
+	//Pull CSB# up...
+	SPI_PORT |= (1<<SPI_SS);
+}
+
+//DisplayEnable()
+//Pulls down CSB# => enables the display's interface...
+VOID DisplayEnable()
+{
+	//Pull SS down.
+	SPI_PORT &= !(1<<SPI_SS);
+}
+
+//DisplayInit()
+//Initializes display... refer to ST7036 controller datasheet
+//for more information (DOG's controller)...
+VOID DisplayInit()
+{
+	//Display initialization...
+	SPISendByte( 0x39 ); //Function set...
+	_delay_us( 40 );
+	SPISendByte( 0x1D ); //Bias
+	_delay_us( 40 );
+	SPISendByte( 0x50 ); //Power
+	_delay_us( 40 );
+	SPISendByte( 0x6C ); //Follower
+	_delay_us( 40 );
+	SPISendByte( 0x76 ); //Contrast
+	_delay_us( 40 );
+
+	SPISendByte( 0x38 ); //Function set..
+	_delay_us( 40 );
+	SPISendByte( 0x0F ); //Display on
+	_delay_us( 40 );
+	DisplayClear(); //Clear...
+	SPISendByte( 0x06 ); //Entry mode
+	_delay_us( 40 );
+}
+
+//DisplayWriteChar( CHAR nChar )
+//Writes a single character. It's placed at address
+//specified before by DisplaySetAddress
+VOID DisplayWriteChar( CHAR nChar )
+{
+	//Write a character to memory...
+	DISPLAY_RS_PORT |= 1<<DISPLAY_RS_PIN; //Activate RS...
+
+	//Write...
+	SPISendByte( nChar );
+
+	//Deactivate RS...
+	DISPLAY_RS_PORT &= !(1<<DISPLAY_RS_PIN);
+
+	//Wait...
+	_delay_us( 40 );
+}
+
+//DisplaySetAddress( CHAR nAddress )
+//Sets DOG's address pointer to nAddress...
+//This is the address of our character to be written.
+VOID DisplaySetAddress( CHAR nAddress )
+{
+	//Change the address...
+	SPISendByte( (nAddress | 0x80) );
+
+	//Wait...
+	_delay_us( 40 );
+}
+
+//DisplayWriteInteger( UINT nNumber, BOOL bFixed )
+//Write an unsigned integer on display. If bFixed is set,
+//the number is fixed to 6 places since 16bit number can
+//have a value up to 65536.
+//EXAMPLE: 	bFixed = TRUE		1258 => 01258
+//			bFixed = FALSE		1258 => 1258
+VOID DisplayWriteInteger( UINT nNumber, CHAR bFixed )
+{
+	//Write an integer...
+	//ABCDE
+	//99999
+	CHAR nA = 0, nB = 0, nC = 0, nD = 0, nE = 0;
+
+	//Split and add required offset according to character set...
+	nA = (nNumber / 10000) + 0x30;
+	nB = ((nNumber % 10000) / 1000) + 0x30;
+	nC = (((nNumber % 10000) % 1000) / 100) + 0x30;
+	nD = ((((nNumber % 10000) % 1000) % 100) / 10) + 0x30;
+	nE = ((((nNumber % 10000) % 1000 ) % 100) % 10) + 0x30;
+
+	//Write...
+	if( bFixed )
+	{
+		//Write every number regardless of its value...
+		DisplayWriteChar( nA );
+		DisplayWriteChar( nB );
+		DisplayWriteChar( nC );
+		DisplayWriteChar( nD );
+		DisplayWriteChar( nE );
+	}
+	else
+	{
+		//Don't format the output number...
+		//How many digits do we have to write ??
+		CHAR nCount = 0;
+		if( nA != 0 )
+			nCount = 5;
+		else if( nB != 0 )
+			nCount = 4;
+		else if( nC != 0 )
+			nCount = 3;
+		else if( nD != 0 )
+			nCount = 2;
+		else
+			nCount = 1;
+
+		//Let's write...
+		switch( nCount )
+		{
+			case 5:
+			{
+				//5 digits...
+				DisplayWriteChar( nA );
+				DisplayWriteChar( nB );
+				DisplayWriteChar( nC );
+				DisplayWriteChar( nD );
+				DisplayWriteChar( nE );
+				break;
+			}
+			case 4:
+			{
+				//4 digits...
+				DisplayWriteChar( nB );
+				DisplayWriteChar( nC );
+				DisplayWriteChar( nD );
+				DisplayWriteChar( nE );
+				break;
+			}
+			case 3:
+			{
+				//3 digits...
+				DisplayWriteChar( nC );
+				DisplayWriteChar( nD );
+				DisplayWriteChar( nE );
+				break;
+			}
+			case 2:
+			{
+				//2 digits...
+				DisplayWriteChar( nD );
+				DisplayWriteChar( nE );
+				break;
+			}
+			case 1:
+			{
+				//Single digit...
+				DisplayWriteChar( nE );
+				break;
+			}
+		}
+	}
+
+	//Completed!
+	return;
+}
+
+//DisplayClear()
+//Clear display's entire RAM...
+VOID DisplayClear()
+{
+	//Clear the display...
+	DisplayEnable();
+
+	//Send...
+	SPISendByte( 0x01 );
+
+	//Deactivate...
+	DisplayDisable();
+
+	//Wait...
+	_delay_ms( 2 );
+}
+
+//DisplayWriteEEPROMString( UINT nAddressn CHAR nUserTermination, UINT nMaxCount, BYTE bWhiteBreak )
+//Loads a string (user-character-terminated ANSI) from EEPROM
+//and writes it at and address specified before by
+//DisplaySetAddress()
+//Any white character except space breaks the writing is bWhiteBreak is set (to 1)...
+//If not, the white character is converted to space and the
+//writing continues.
+//If there's no need for user termination character, use 0
+//(in that case the string is a null-terminated string)...
+//nMaxCount specifies the maximum character count. When
+//reached, the writing is ended. Use 0 if you don't need that...
+VOID DisplayWriteEEPROMString( UINT nAddress, CHAR nUserTermination, UINT nMaxCount, BYTE bWhiteBreak )
+{
+	//Load all the characters, one by one...
+	UINT nCounter = 0;
+
+	//Setup the address...
+	EEAR = nAddress;
+
+	//Loop
+	while( 1 )
+	{
+		//Read!
+		EECR |= 1<<EERE;
+
+		//Write our character if it isn't a zero nor a white char...
+		if( EEDR == nUserTermination )
+			break;
+		if( (bWhiteBreak == 1) && (EEDR < 0x20) )
+			break;
+		if( (bWhiteBreak == 0) && (EEDR < 0x20) )
+			EEDR = 0x20;
+
+		//Write!
+		DisplayWriteChar( EEDR );
+
+		//Increment the address until end of memory...
+		if( EEAR == E2END )
+			EEAR = nAddress;
+		else
+			EEAR++;
+
+		//Increment the counter...
+		nCounter++;
+
+		//Check...
+		if( nCounter == nMaxCount )
+			break;
+	}
+	
+	//Completed!
+	return;
+}
