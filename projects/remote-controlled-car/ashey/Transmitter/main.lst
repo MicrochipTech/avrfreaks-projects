@@ -1,0 +1,672 @@
+   1               		.file	"main.c"
+   2               		.arch atmega8
+   3               	__SREG__ = 0x3f
+   4               	__SP_H__ = 0x3e
+   5               	__SP_L__ = 0x3d
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.global __do_copy_data
+   9               		.global __do_clear_bss
+  11               		.text
+  12               	.Ltext0:
+  70               	.global	array0
+  71               		.data
+  74               	array0:
+  75 0000 0100      		.word	1
+  76 0002 0000      		.word	0
+  77 0004 0000      		.word	0
+  78 0006 0100      		.word	1
+  79 0008 0100      		.word	1
+  80               	.global	array1
+  83               	array1:
+  84 000a 0100      		.word	1
+  85 000c 0000      		.word	0
+  86 000e 0100      		.word	1
+  87 0010 0000      		.word	0
+  88 0012 0000      		.word	0
+  89               	.global	array2
+  92               	array2:
+  93 0014 0100      		.word	1
+  94 0016 0100      		.word	1
+  95 0018 0000      		.word	0
+  96 001a 0100      		.word	1
+  97 001c 0000      		.word	0
+  98               	.global	array3
+ 101               	array3:
+ 102 001e 0100      		.word	1
+ 103 0020 0100      		.word	1
+ 104 0022 0100      		.word	1
+ 105 0024 0100      		.word	1
+ 106 0026 0100      		.word	1
+ 107               		.text
+ 112               	.global	SetIR
+ 114               	SetIR:
+ 116               	.Ltext1:
+   1:test.c        **** //Checking for the Timer to set the IR pulse 
+   2:test.c        **** unsigned char high,Low;
+   3:test.c        **** void SetIR(unsigned char width , unsigned char low, unsigned char OCR_value)
+   4:test.c        **** {
+ 118               	.LM1:
+ 119               	/* prologue: frame size=0 */
+ 120               	/* prologue end (size=0) */
+   5:test.c        ****     OCR2 = OCR_value;
+ 122               	.LM2:
+ 123 0000 43BD      		out 67-0x20,r20
+   6:test.c        ****     high = width ;
+ 125               	.LM3:
+ 126 0002 8093 0000 		sts high,r24
+   7:test.c        **** 	Low  = width+low;
+ 128               	.LM4:
+ 129 0006 860F      		add r24,r22
+ 130 0008 8093 0000 		sts Low,r24
+ 131               	.L2:
+   8:test.c        ****     while(TCCR2!=0);    
+ 133               	.LM5:
+ 134 000c 85B5      		in r24,69-0x20
+ 135 000e 8823      		tst r24
+ 136 0010 E9F7      		brne .L2
+ 137               	/* epilogue: frame size=0 */
+ 138 0012 0895      		ret
+ 139               	/* epilogue end (size=1) */
+ 140               	/* function SetIR size 10 (9) */
+ 142               	.Lscope0:
+ 143               		.lcomm cycles.1,1
+ 145               	.global	__vector_3
+ 147               	__vector_3:
+   9:test.c        **** } 
+  10:test.c        **** INTERRUPT (SIG_OUTPUT_COMPARE2)
+  11:test.c        **** { 
+ 149               	.LM6:
+ 150               	/* prologue: frame size=0 */
+ 151 0014 7894      		sei
+ 152 0016 1F92      		push __zero_reg__
+ 153 0018 0F92      		push __tmp_reg__
+ 154 001a 0FB6      		in __tmp_reg__,__SREG__
+ 155 001c 0F92      		push __tmp_reg__
+ 156 001e 1124      		clr __zero_reg__
+ 157 0020 8F93      		push r24
+ 158 0022 9F93      		push r25
+ 159               	/* prologue end (size=8) */
+  12:test.c        ****    unsigned static char cycles = 0 ;
+  13:test.c        ****    if(cycles < high )
+ 161               	.LM7:
+ 162 0024 9091 0000 		lds r25,cycles.1
+ 163 0028 8091 0000 		lds r24,high
+ 164 002c 9817      		cp r25,r24
+ 165 002e 20F4      		brsh .L6
+  14:test.c        ****    {
+  15:test.c        ****    
+  16:test.c        ****         //keep toggling 
+  17:test.c        ****         if (cycles%2)        
+ 167               	.LM8:
+ 168 0030 90FD      		sbrc r25,0
+ 169 0032 04C0      		rjmp .L13
+  18:test.c        **** 			PORTB = PORTB & ~(_BV(IR));
+  19:test.c        **** 		else
+  20:test.c        **** 			PORTB = PORTB | _BV(IR);
+ 171               	.LM9:
+ 172 0034 C29A      		sbi 56-0x20,2
+ 173 0036 0FC0      		rjmp .L9
+ 174               	.L6:
+  21:test.c        **** 	  
+  22:test.c        ****    }
+  23:test.c        ****    // making it zero after 50 cycles 
+  24:test.c        ****    else if(cycles == high)
+ 176               	.LM10:
+ 177 0038 9817      		cp r25,r24
+ 178 003a 11F4      		brne .L10
+ 179               	.L13:
+  25:test.c        ****         PORTB&=~(_BV(IR));
+ 181               	.LM11:
+ 182 003c C298      		cbi 56-0x20,2
+ 183 003e 0BC0      		rjmp .L9
+ 184               	.L10:
+  26:test.c        ****    //waiting till the cycles become 150
+  27:test.c        ****    else if(cycles == Low)
+ 186               	.LM12:
+ 187 0040 8091 0000 		lds r24,Low
+ 188 0044 9817      		cp r25,r24
+ 189 0046 39F4      		brne .L9
+  28:test.c        ****    {
+  29:test.c        ****         // make it low 
+  30:test.c        ****         cycles = 0 ;
+ 191               	.LM13:
+ 192 0048 1092 0000 		sts cycles.1,__zero_reg__
+  31:test.c        **** 		TCCR2  = 0 ;
+ 194               	.LM14:
+ 195 004c 15BC      		out 69-0x20,__zero_reg__
+  32:test.c        **** 		high   = 0 ;
+ 197               	.LM15:
+ 198 004e 1092 0000 		sts high,__zero_reg__
+  33:test.c        **** 		Low    = 0 ;
+ 200               	.LM16:
+ 201 0052 1092 0000 		sts Low,__zero_reg__
+ 202               	.L9:
+  34:test.c        ****    }
+  35:test.c        ****    cycles ++  ;
+ 204               	.LM17:
+ 205 0056 8091 0000 		lds r24,cycles.1
+ 206 005a 8F5F      		subi r24,lo8(-(1))
+ 207 005c 8093 0000 		sts cycles.1,r24
+ 208               	/* epilogue: frame size=0 */
+ 209 0060 9F91      		pop r25
+ 210 0062 8F91      		pop r24
+ 211 0064 0F90      		pop __tmp_reg__
+ 212 0066 0FBE      		out __SREG__,__tmp_reg__
+ 213 0068 0F90      		pop __tmp_reg__
+ 214 006a 1F90      		pop __zero_reg__
+ 215 006c 1895      		reti
+ 216               	/* epilogue end (size=7) */
+ 217               	/* function __vector_3 size 45 (30) */
+ 222               	.Lscope1:
+ 227               	.global	delay
+ 229               	delay:
+  36:test.c        **** }
+  37:test.c        **** // This Timer starts the delay 
+  38:test.c        **** void delay(unsigned char value , unsigned char low , unsigned char OCR_value)
+  39:test.c        **** {   
+ 231               	.LM18:
+ 232               	/* prologue: frame size=0 */
+ 233               	/* prologue end (size=0) */
+ 234 006e 382F      		mov r19,r24
+ 235 0070 262F      		mov r18,r22
+ 236 0072 842F      		mov r24,r20
+  40:test.c        ****     OCR1A  = OCR_value;
+ 238               	.LM19:
+ 239 0074 9927      		clr r25
+ 240 0076 9BBD      		out (74)+1-0x20,r25
+ 241 0078 8ABD      		out 74-0x20,r24
+  41:test.c        ****     high   = value;
+ 243               	.LM20:
+ 244 007a 3093 0000 		sts high,r19
+  42:test.c        **** 	Low    = low + value ;
+ 246               	.LM21:
+ 247 007e 230F      		add r18,r19
+ 248 0080 2093 0000 		sts Low,r18
+ 249               	.L15:
+  43:test.c        ****     while(TCCR1B!=0);
+ 251               	.LM22:
+ 252 0084 8EB5      		in r24,78-0x20
+ 253 0086 8823      		tst r24
+ 254 0088 E9F7      		brne .L15
+ 255               	/* epilogue: frame size=0 */
+ 256 008a 0895      		ret
+ 257               	/* epilogue end (size=1) */
+ 258               	/* function delay size 15 (14) */
+ 260               	.Lscope2:
+ 261               		.lcomm cycles.0,1
+ 263               	.global	__vector_6
+ 265               	__vector_6:
+  44:test.c        **** 
+  45:test.c        **** }
+  46:test.c        **** INTERRUPT(SIG_OUTPUT_COMPARE1A)
+  47:test.c        **** {
+ 267               	.LM23:
+ 268               	/* prologue: frame size=0 */
+ 269 008c 7894      		sei
+ 270 008e 1F92      		push __zero_reg__
+ 271 0090 0F92      		push __tmp_reg__
+ 272 0092 0FB6      		in __tmp_reg__,__SREG__
+ 273 0094 0F92      		push __tmp_reg__
+ 274 0096 1124      		clr __zero_reg__
+ 275 0098 8F93      		push r24
+ 276 009a 9F93      		push r25
+ 277               	/* prologue end (size=8) */
+  48:test.c        ****     unsigned  static  char cycles = 0; 
+  49:test.c        ****     if (cycles < high )
+ 279               	.LM24:
+ 280 009c 9091 0000 		lds r25,cycles.0
+ 281 00a0 8091 0000 		lds r24,high
+ 282 00a4 9817      		cp r25,r24
+ 283 00a6 10F0      		brlo .L25
+  50:test.c        ****     {
+  51:test.c        ****         if (cycles%2)        
+  52:test.c        **** 			PORTB = PORTB & ~(_BV(IR));
+  53:test.c        **** 		else
+  54:test.c        **** 			PORTB = PORTB & ~(_BV(IR));
+  55:test.c        **** 	}
+  56:test.c        ****     else if(cycles == high)   
+ 285               	.LM25:
+ 286 00a8 9817      		cp r25,r24
+ 287 00aa 09F4      		brne .L22
+ 288               	.L25:
+  57:test.c        **** 		PORTB&=~(_BV(IR));
+ 290               	.LM26:
+ 291 00ac C298      		cbi 56-0x20,2
+ 292               	.L22:
+  58:test.c        ****     if(cycles == Low )
+ 294               	.LM27:
+ 295 00ae 8091 0000 		lds r24,Low
+ 296 00b2 9817      		cp r25,r24
+ 297 00b4 39F4      		brne .L24
+  59:test.c        **** 	 {
+  60:test.c        **** 	   cycles = 0 ;
+ 299               	.LM28:
+ 300 00b6 1092 0000 		sts cycles.0,__zero_reg__
+  61:test.c        **** 	   TCCR1B = 0 ;
+ 302               	.LM29:
+ 303 00ba 1EBC      		out 78-0x20,__zero_reg__
+  62:test.c        **** 	   Low    = 0 ;
+ 305               	.LM30:
+ 306 00bc 1092 0000 		sts Low,__zero_reg__
+  63:test.c        **** 	   high   = 0 ;
+ 308               	.LM31:
+ 309 00c0 1092 0000 		sts high,__zero_reg__
+ 310               	.L24:
+  64:test.c        **** 	 }
+  65:test.c        ****     cycles ++;   
+ 312               	.LM32:
+ 313 00c4 8091 0000 		lds r24,cycles.0
+ 314 00c8 8F5F      		subi r24,lo8(-(1))
+ 315 00ca 8093 0000 		sts cycles.0,r24
+ 316               	/* epilogue: frame size=0 */
+ 317 00ce 9F91      		pop r25
+ 318 00d0 8F91      		pop r24
+ 319 00d2 0F90      		pop __tmp_reg__
+ 320 00d4 0FBE      		out __SREG__,__tmp_reg__
+ 321 00d6 0F90      		pop __tmp_reg__
+ 322 00d8 1F90      		pop __zero_reg__
+ 323 00da 1895      		reti
+ 324               	/* epilogue end (size=7) */
+ 325               	/* function __vector_6 size 40 (25) */
+ 330               	.Lscope3:
+ 332               	.global	initDDRs
+ 334               	initDDRs:
+ 336               	.Ltext2:
+   1:init.c        **** void initDDRs(void)
+   2:init.c        **** {
+ 338               	.LM33:
+ 339               	/* prologue: frame size=0 */
+ 340               	/* prologue end (size=0) */
+   3:init.c        **** 	DDRB = _BV(RED_LED) | _BV(GREEN_LED) | _BV(IR);
+ 342               	.LM34:
+ 343 00dc 87E0      		ldi r24,lo8(7)
+ 344 00de 87BB      		out 55-0x20,r24
+   4:init.c        **** 	DDRC = 0;
+ 346               	.LM35:
+ 347 00e0 14BA      		out 52-0x20,__zero_reg__
+   5:init.c        **** 	DDRD = 0;
+ 349               	.LM36:
+ 350 00e2 11BA      		out 49-0x20,__zero_reg__
+   6:init.c        **** 	PORTB = PORTC = PORTD = 0;
+ 352               	.LM37:
+ 353 00e4 12BA      		out 50-0x20,__zero_reg__
+ 354 00e6 82B3      		in r24,50-0x20
+ 355 00e8 85BB      		out 53-0x20,r24
+ 356 00ea 85B3      		in r24,53-0x20
+ 357 00ec 88BB      		out 56-0x20,r24
+ 358               	/* epilogue: frame size=0 */
+ 359 00ee 0895      		ret
+ 360               	/* epilogue end (size=1) */
+ 361               	/* function initDDRs size 10 (9) */
+ 363               	.Lscope4:
+ 365               	.global	setupTimer1
+ 367               	setupTimer1:
+   7:init.c        **** 	/* All LEDs off , TSOP pins in High Z mode */
+   8:init.c        **** }
+   9:init.c        **** 
+  10:init.c        **** void setupTimer1(void)
+  11:init.c        **** {
+ 369               	.LM38:
+ 370               	/* prologue: frame size=0 */
+ 371               	/* prologue end (size=0) */
+  12:init.c        ****    //8 Bit timer counter 2 
+  13:init.c        ****    TIMSK = TIMSK | _BV(OCIE2) ; //output Compare Interrupt
+ 373               	.LM39:
+ 374 00f0 89B7      		in r24,89-0x20
+ 375 00f2 8068      		ori r24,lo8(-128)
+ 376 00f4 89BF      		out 89-0x20,r24
+  14:init.c        ****    TCCR2 = TCCR2 | _BV(WGM21) | _BV(CS20) ; // for CTC mode
+ 378               	.LM40:
+ 379 00f6 85B5      		in r24,69-0x20
+ 380 00f8 8960      		ori r24,lo8(9)
+ 381 00fa 85BD      		out 69-0x20,r24
+ 382               	/* epilogue: frame size=0 */
+ 383 00fc 0895      		ret
+ 384               	/* epilogue end (size=1) */
+ 385               	/* function setupTimer1 size 7 (6) */
+ 387               	.Lscope5:
+ 389               	.global	setupTimer2
+ 391               	setupTimer2:
+  15:init.c        ****    
+  16:init.c        **** }
+  17:init.c        **** void setupTimer2(void)
+  18:init.c        **** {   // setting the Timer 16 Bit .....
+ 393               	.LM41:
+ 394               	/* prologue: frame size=0 */
+ 395               	/* prologue end (size=0) */
+  19:init.c        ****     TCCR1B = TCCR1B | _BV(WGM12)  | _BV(CS10); // CTC mode and no prescaler
+ 397               	.LM42:
+ 398 00fe 8EB5      		in r24,78-0x20
+ 399 0100 8960      		ori r24,lo8(9)
+ 400 0102 8EBD      		out 78-0x20,r24
+  20:init.c        **** 	TIMSK  = TIMSK  | _BV(OCIE1A) ;        // compare match interrupt 
+ 402               	.LM43:
+ 403 0104 89B7      		in r24,89-0x20
+ 404 0106 8061      		ori r24,lo8(16)
+ 405 0108 89BF      		out 89-0x20,r24
+ 406               	/* epilogue: frame size=0 */
+ 407 010a 0895      		ret
+ 408               	/* epilogue end (size=1) */
+ 409               	/* function setupTimer2 size 7 (6) */
+ 411               	.Lscope6:
+ 414               	.global	StartTransmit
+ 416               	StartTransmit:
+ 418               	.Ltext3:
+   1:main.c        **** // This is the Code For Transmission .....
+   2:main.c        **** 
+   3:main.c        **** //    _____________ 
+   4:main.c        **** /*1  |            | 28
+   5:main.c        ****   2  | A        P | 27
+   6:main.c        ****   3  | T        I | 26 (Switch 3)
+   7:main.c        ****   4  | M        N | 25 (Switch 2)
+   8:main.c        ****   5  | E          | 24 (Switch 1)
+   9:main.c        ****   6  | G        C | 23 (Switch 0)
+  10:main.c        ****   7  | A        O | 22 (GND)
+  11:main.c        ****   8  | 8        N | 21 
+  12:main.c        ****   9  |          F | 20
+  13:main.c        ****   10 |          I | 19 
+  14:main.c        ****   11 |          G | 18
+  15:main.c        ****   12 |            | 17
+  16:main.c        ****   13 |            | 16 (IR Leds)
+  17:main.c        ****   14 |____________| 15        
+  18:main.c        ****    
+  19:main.c        **** 	
+  20:main.c        **** 	
+  21:main.c        **** */	
+  22:main.c        **** 
+  23:main.c        **** 
+  24:main.c        **** #include<avr/io.h>
+  25:main.c        **** #include<avr/interrupt.h>
+  26:main.c        **** #include<avr/signal.h>
+  27:main.c        **** #include<stdio.h>
+  28:main.c        **** #include<stdlib.h>
+  29:main.c        **** #include<string.h>
+  30:main.c        **** #include "main.h"
+  31:main.c        **** #include "test.c"
+  32:main.c        **** #include "init.c"
+  33:main.c        **** 
+  34:main.c        **** int array3[5]= {1,1,1,1,1}; // on receiver it is 15
+  35:main.c        **** int array2[5]= {1,1,0,1,0}; // on receiver it is 5
+  36:main.c        **** int array1[5]= {1,0,1,0,0}; // on receiver it is 2
+  37:main.c        **** int array0[5]= {1,0,0,1,1}; // on receiver it is 12
+  38:main.c        **** int main(void)
+  39:main.c        **** {
+  40:main.c        **** 	unsigned char i = 0 ;
+  41:main.c        **** 	
+  42:main.c        **** 	//unsigned int  a=1;
+  43:main.c        ****     initDDRs();
+  44:main.c        **** 	DDRC = 0 ; // As inputs ...
+  45:main.c        **** 	PORTD  = PORTD | _BV(PD0) | _BV(PD1) ; // Setting all of them to high 
+  46:main.c        **** 	PORTC  = PORTC | _BV(PC3) | _BV(PC2) | _BV(PC1) | _BV(PC0); // Setting all of them to high
+  47:main.c        **** 	sei();
+  48:main.c        **** 	for(;;)
+  49:main.c        ****    { 
+  50:main.c        ****       while(S3)                      // For When the 3rd Switch is Pressed 
+  51:main.c        ****       {
+  52:main.c        **** 	    StartTransmit(array3);        // start Transmitting 
+  53:main.c        **** 		for( i = 0 ; i < 10 ; i++ ) // delay of 2 Bytes 
+  54:main.c        **** 		{
+  55:main.c        **** 	    	setupTimer2();
+  56:main.c        **** 		    delay(30,90,105);
+  57:main.c        **** 		}	
+  58:main.c        **** 	  }	
+  59:main.c        **** 	  while(S2)                      // For When the 2nd Switch is Pressed
+  60:main.c        **** 	  {
+  61:main.c        **** 	    StartTransmit(array2);        // start Transmitting 
+  62:main.c        **** 		for( i = 0 ; i < 10 ; i++ ) // delay of 2 Bytes 
+  63:main.c        **** 		{
+  64:main.c        **** 	    	setupTimer2();
+  65:main.c        **** 		    delay(30,90,105);
+  66:main.c        **** 		}	
+  67:main.c        **** 	  }
+  68:main.c        **** 	  while(S1)                      //  For When the 1st Switch is Pressed
+  69:main.c        **** 	  {
+  70:main.c        **** 	    StartTransmit(array1);        // start Transmitting 
+  71:main.c        **** 		for( i = 0 ; i < 10 ; i++ ) // delay of 2 Bytes 
+  72:main.c        **** 		{
+  73:main.c        **** 	    	setupTimer2();
+  74:main.c        **** 		    delay(30,90,105);
+  75:main.c        **** 		}	
+  76:main.c        **** 	  } 
+  77:main.c        **** 	  while(S0)                     // For When the 0th Switch is Pressed
+  78:main.c        **** 	  {
+  79:main.c        **** 	    StartTransmit(array0);        // start Transmitting 
+  80:main.c        **** 		for( i = 0 ; i < 10 ; i++ ) // delay of 2 Bytes 
+  81:main.c        **** 		{
+  82:main.c        **** 	    	setupTimer2();
+  83:main.c        **** 		    delay(30,90,105);
+  84:main.c        **** 		}	
+  85:main.c        **** 	  }
+  86:main.c        **** 	} 
+  87:main.c        **** }
+  88:main.c        **** void StartTransmit( int *array )
+  89:main.c        **** {  
+ 420               	.LM44:
+ 421               	/* prologue: frame size=0 */
+ 422 010c 0F93      		push r16
+ 423 010e 1F93      		push r17
+ 424 0110 CF93      		push r28
+ 425 0112 DF93      		push r29
+ 426               	/* prologue end (size=4) */
+ 427 0114 EC01      		movw r28,r24
+ 428 0116 8C01      		movw r16,r24
+ 429 0118 085F      		subi r16,lo8(-(8))
+ 430 011a 1F4F      		sbci r17,hi8(-(8))
+ 431               	.L35:
+  90:main.c        ****     unsigned int i = 0;
+  91:main.c        ****     for(i=0;i<5;i++)
+  92:main.c        **** 	{
+  93:main.c        **** 	  if(array[i])
+ 433               	.LM45:
+ 434 011c 8991      		ld r24,Y+
+ 435 011e 9991      		ld r25,Y+
+ 436 0120 892B      		or r24,r25
+ 437 0122 31F0      		breq .L33
+  94:main.c        **** 	   {
+  95:main.c        **** 	    setupTimer1();
+ 439               	.LM46:
+ 440 0124 E5DF      		rcall setupTimer1
+  96:main.c        **** 		SetIR(30,90,105);
+ 442               	.LM47:
+ 443 0126 49E6      		ldi r20,lo8(105)
+ 444 0128 6AE5      		ldi r22,lo8(90)
+ 445 012a 8EE1      		ldi r24,lo8(30)
+ 446 012c 69DF      		rcall SetIR
+ 447 012e 05C0      		rjmp .L38
+ 448               	.L33:
+  97:main.c        **** 		PORTB = PORTB & ~(_BV(IR));
+  98:main.c        **** 	   }
+  99:main.c        **** 	  else 
+ 100:main.c        **** 	   {
+ 101:main.c        ****         setupTimer2();  
+ 450               	.LM48:
+ 451 0130 E6DF      		rcall setupTimer2
+ 102:main.c        **** 	    delay(30,90,105);
+ 453               	.LM49:
+ 454 0132 49E6      		ldi r20,lo8(105)
+ 455 0134 6AE5      		ldi r22,lo8(90)
+ 456 0136 8EE1      		ldi r24,lo8(30)
+ 457 0138 9ADF      		rcall delay
+ 458               	.L38:
+ 103:main.c        **** 		PORTB = PORTB & ~(_BV(IR));
+ 460               	.LM50:
+ 461 013a C298      		cbi 56-0x20,2
+ 463               	.LM51:
+ 464 013c 0C17      		cp r16,r28
+ 465 013e 1D07      		cpc r17,r29
+ 466 0140 68F7      		brsh .L35
+ 467               	/* epilogue: frame size=0 */
+ 468 0142 DF91      		pop r29
+ 469 0144 CF91      		pop r28
+ 470 0146 1F91      		pop r17
+ 471 0148 0F91      		pop r16
+ 472 014a 0895      		ret
+ 473               	/* epilogue end (size=5) */
+ 474               	/* function StartTransmit size 32 (23) */
+ 476               	.Lscope7:
+ 478               	.global	main
+ 480               	main:
+ 482               	.LM52:
+ 483               	/* prologue: frame size=0 */
+ 484 014c C0E0      		ldi r28,lo8(__stack - 0)
+ 485 014e D0E0      		ldi r29,hi8(__stack - 0)
+ 486 0150 DEBF      		out __SP_H__,r29
+ 487 0152 CDBF      		out __SP_L__,r28
+ 488               	/* prologue end (size=4) */
+ 490               	.LM53:
+ 491 0154 C0E0      		ldi r28,lo8(0)
+ 493               	.LM54:
+ 494 0156 C2DF      		rcall initDDRs
+ 496               	.LM55:
+ 497 0158 C4BB      		out 52-0x20,r28
+ 499               	.LM56:
+ 500 015a 82B3      		in r24,50-0x20
+ 501 015c 8360      		ori r24,lo8(3)
+ 502 015e 82BB      		out 50-0x20,r24
+ 504               	.LM57:
+ 505 0160 85B3      		in r24,53-0x20
+ 506 0162 8F60      		ori r24,lo8(15)
+ 507 0164 85BB      		out 53-0x20,r24
+ 509               	.LM58:
+ 510               	/* #APP */
+ 511 0166 7894      		sei
+ 512               	/* #NOAPP */
+ 513               	.L89:
+ 515               	.LM59:
+ 516 0168 9B99      		sbic 51-0x20,3
+ 517 016a 0EC0      		rjmp .L71
+ 518               	.L48:
+ 520               	.LM60:
+ 521 016c 80E0      		ldi r24,lo8(array3)
+ 522 016e 90E0      		ldi r25,hi8(array3)
+ 523 0170 CDDF      		rcall StartTransmit
+ 524 0172 C9E0      		ldi r28,lo8(9)
+ 525               	.L47:
+ 527               	.LM61:
+ 528 0174 C4DF      		rcall setupTimer2
+ 530               	.LM62:
+ 531 0176 49E6      		ldi r20,lo8(105)
+ 532 0178 6AE5      		ldi r22,lo8(90)
+ 533 017a 8EE1      		ldi r24,lo8(30)
+ 534 017c 78DF      		rcall delay
+ 536               	.LM63:
+ 537 017e C150      		subi r28,lo8(-(-1))
+ 538 0180 C7FF      		sbrs r28,7
+ 539 0182 F8CF      		rjmp .L47
+ 540 0184 9B9B      		sbis 51-0x20,3
+ 541 0186 F2CF      		rjmp .L48
+ 542               	.L71:
+ 544               	.LM64:
+ 545 0188 9A99      		sbic 51-0x20,2
+ 546 018a 0EC0      		rjmp .L75
+ 547               	.L55:
+ 549               	.LM65:
+ 550 018c 80E0      		ldi r24,lo8(array2)
+ 551 018e 90E0      		ldi r25,hi8(array2)
+ 552 0190 BDDF      		rcall StartTransmit
+ 553 0192 C9E0      		ldi r28,lo8(9)
+ 554               	.L54:
+ 556               	.LM66:
+ 557 0194 B4DF      		rcall setupTimer2
+ 559               	.LM67:
+ 560 0196 49E6      		ldi r20,lo8(105)
+ 561 0198 6AE5      		ldi r22,lo8(90)
+ 562 019a 8EE1      		ldi r24,lo8(30)
+ 563 019c 68DF      		rcall delay
+ 565               	.LM68:
+ 566 019e C150      		subi r28,lo8(-(-1))
+ 567 01a0 C7FF      		sbrs r28,7
+ 568 01a2 F8CF      		rjmp .L54
+ 569 01a4 9A9B      		sbis 51-0x20,2
+ 570 01a6 F2CF      		rjmp .L55
+ 571               	.L75:
+ 573               	.LM69:
+ 574 01a8 9999      		sbic 51-0x20,1
+ 575 01aa 0EC0      		rjmp .L79
+ 576               	.L62:
+ 578               	.LM70:
+ 579 01ac 80E0      		ldi r24,lo8(array1)
+ 580 01ae 90E0      		ldi r25,hi8(array1)
+ 581 01b0 ADDF      		rcall StartTransmit
+ 582 01b2 C9E0      		ldi r28,lo8(9)
+ 583               	.L61:
+ 585               	.LM71:
+ 586 01b4 A4DF      		rcall setupTimer2
+ 588               	.LM72:
+ 589 01b6 49E6      		ldi r20,lo8(105)
+ 590 01b8 6AE5      		ldi r22,lo8(90)
+ 591 01ba 8EE1      		ldi r24,lo8(30)
+ 592 01bc 58DF      		rcall delay
+ 594               	.LM73:
+ 595 01be C150      		subi r28,lo8(-(-1))
+ 596 01c0 C7FF      		sbrs r28,7
+ 597 01c2 F8CF      		rjmp .L61
+ 598 01c4 999B      		sbis 51-0x20,1
+ 599 01c6 F2CF      		rjmp .L62
+ 600               	.L79:
+ 602               	.LM74:
+ 603 01c8 9899      		sbic 51-0x20,0
+ 604 01ca CECF      		rjmp .L89
+ 605               	.L69:
+ 607               	.LM75:
+ 608 01cc 80E0      		ldi r24,lo8(array0)
+ 609 01ce 90E0      		ldi r25,hi8(array0)
+ 610 01d0 9DDF      		rcall StartTransmit
+ 611 01d2 C9E0      		ldi r28,lo8(9)
+ 612               	.L68:
+ 614               	.LM76:
+ 615 01d4 94DF      		rcall setupTimer2
+ 617               	.LM77:
+ 618 01d6 49E6      		ldi r20,lo8(105)
+ 619 01d8 6AE5      		ldi r22,lo8(90)
+ 620 01da 8EE1      		ldi r24,lo8(30)
+ 621 01dc 48DF      		rcall delay
+ 623               	.LM78:
+ 624 01de C150      		subi r28,lo8(-(-1))
+ 625 01e0 C7FF      		sbrs r28,7
+ 626 01e2 F8CF      		rjmp .L68
+ 627 01e4 989B      		sbis 51-0x20,0
+ 628 01e6 F2CF      		rjmp .L69
+ 630               	.LM79:
+ 631 01e8 BFCF      		rjmp .L89
+ 632               	/* epilogue: frame size=0 */
+ 633               	/* epilogue: noreturn */
+ 634               	/* epilogue end (size=0) */
+ 635               	/* function main size 80 (76) */
+ 640               	.Lscope8:
+ 641               		.comm high,1,1
+ 642               		.comm Low,1,1
+ 649               		.text
+ 651               	Letext:
+ 652               	/* File "main.c": code  246 = 0x00f6 ( 198), prologues  24, epilogues  24 */
+DEFINED SYMBOLS
+                            *ABS*:00000000 main.c
+                            *ABS*:0000003f __SREG__
+                            *ABS*:0000003e __SP_H__
+                            *ABS*:0000003d __SP_L__
+                            *ABS*:00000000 __tmp_reg__
+                            *ABS*:00000001 __zero_reg__
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:74     .data:00000000 array0
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:83     .data:0000000a array1
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:92     .data:00000014 array2
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:101    .data:0000001e array3
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:114    .text:00000000 SetIR
+                            *COM*:00000001 high
+                            *COM*:00000001 Low
+                             .bss:00000000 cycles.1
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:147    .text:00000014 __vector_3
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:229    .text:0000006e delay
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:143    .bss:00000001 cycles.0
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:265    .text:0000008c __vector_6
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:334    .text:000000dc initDDRs
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:367    .text:000000f0 setupTimer1
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:391    .text:000000fe setupTimer2
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:416    .text:0000010c StartTransmit
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:480    .text:0000014c main
+C:\DOCUME~1\Ankur\LOCALS~1\Temp/cceWaaaa.s:651    .text:000001ea Letext
+
+UNDEFINED SYMBOLS
+__do_copy_data
+__do_clear_bss
+__stack
