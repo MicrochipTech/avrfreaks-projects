@@ -1,0 +1,748 @@
+
+AVRASM ver. 1.54  C:\Studio+\Demos\AVR_Studio4\ATmega103_Bounce\Bounce.asm Sat Apr 06 17:26:33 2002
+
+
+         ; Bounce.asm
+         ;
+         ; Flash Studio+ & In-System-Debugger (ISD) "Bounce" demo.
+         ; Use with any ATMEL AVR CPU that has internal SRAM and an RS232
+         ; port or with Flash 5in1 AVR Starter Kits for added features.
+         
+          .nolist
+         
+         ; ****** USER SETTINGS ******
+         
+         ; Clock frequency - set this to your clock frequency
+          .equ FOSC = 3686400						; 3.6864Mhz
+          
+         ; Serial comms Baud rate - set this to your desired baud rate
+          .equ BAUD = 115200
+         
+         ; ***** END USER SETTINGS *****
+         
+          .equ SIZEX = 16							; Size of bounce area
+          .equ SIZEY = 8
+         
+          .def ballX = r1
+          .def ballY = r2
+          .def oldBallX = r3
+          .def oldBallY = r4
+          .def ballDX = r5
+          .def ballDY = r6
+         
+          .dseg
+          .org $60
+          title:
+000060      		.byte 2*SIZEX					; Title
+          bounceArea:
+000080      		.byte SIZEY*SIZEX				; Bounce area
+         
+          .cseg
+          .org $0
+000000 940c 0089 		jmp main						; Reset Vector
+         
+          .cseg
+          .org $4
+000004 940c 0089 		jmp main						; Unused Interrupt Vectors
+000006 940c 0089 		jmp main
+000008 940c 0089 		jmp main
+00000a 940c 0089 		jmp main
+00000c 940c 0089 		jmp main
+00000e 940c 0089 		jmp main
+000010 940c 0089 		jmp main
+000012 940c 0089 		jmp main
+000014 940c 0089 		jmp main
+000016 940c 0089 		jmp main
+000018 940c 0089 		jmp main
+         		
+          .cseg
+          titleText:
+          		.db "   Flash Demo      AVR Bounce   "
+00001a 2020
+00001b 4620
+00001c 616c
+00001d 6873
+00001e 4420
+00001f 6d65
+000020 206f
+000021 2020
+000022 2020
+000023 4120
+000024 5256
+000025 4220
+000026 756f
+000027 636e
+000028 2065
+000029 2020
+          message:
+          		.db "                  THE WORLD'S      SMALLEST,       FASTEST,         NO-ICE,        IN-SYSTEM       DEBUGGER!                    "
+00002a 2020
+00002b 2020
+00002c 2020
+00002d 2020
+00002e 2020
+00002f 2020
+000030 2020
+000031 2020
+000032 2020
+000033 4854
+000034 2045
+000035 4f57
+000036 4c52
+000037 2744
+000038 2053
+000039 2020
+00003a 2020
+00003b 5320
+00003c 414d
+00003d 4c4c
+00003e 5345
+00003f 2c54
+000040 2020
+000041 2020
+000042 2020
+000043 4620
+000044 5341
+000045 4554
+000046 5453
+000047 202c
+000048 2020
+000049 2020
+00004a 2020
+00004b 2020
+00004c 4f4e
+00004d 492d
+00004e 4543
+00004f 202c
+000050 2020
+000051 2020
+000052 2020
+000053 4920
+000054 2d4e
+000055 5953
+000056 5453
+000057 4d45
+000058 2020
+000059 2020
+00005a 2020
+00005b 4420
+00005c 4245
+00005d 4755
+00005e 4547
+00005f 2152
+000060 2020
+000061 2020
+000062 2020
+000063 2020
+000064 2020
+000065 2020
+000066 2020
+000067 2020
+000068 2020
+000069 2020
+         
+          UART0_Init:
+         
+00006a 2788      		clr r24							; Disable while setting baud rate
+00006b b98a      		out UCR,r24
+00006c e081      		ldi r24, (FOSC/(16*BAUD))-1;
+00006d b989      		out UBRR, r24					; Set baud rate
+00006e e188      		ldi r24, (1<<RXEN)|(1<<TXEN)
+00006f b98a      		out UCR, r24					; Enable Tx & Rx
+000070 9508      		ret
+         
+          INT0_Init:
+000071 9a90      		sbi PORTD,0
+000072 9508      		ret
+         
+          MakeLedRed:								; Turn on red LED
+000073 b381      		in r24, DDRD
+000074 7f87      		andi r24, $f7
+000075 bb81      		out DDRD, r24
+000076 9508      		ret
+         
+          MakeLedGreen:							; Turn off red LED
+000077 9a8b      		sbi DDRD, 3
+000078 9508      		ret
+         
+          DrawBall:								; Draw the Ball
+000079 e41f      		ldi r17, 'O'
+00007a ff10      		sbrs r17, 0						; Skip next instruction
+          EraseBall:
+00007b e210      		ldi r17, ' '
+00007c e8a0      		ldi XL, low(bounceArea)
+00007d e0b0      		ldi XH, high(bounceArea)
+00007e 2d02      		mov r16, ballY
+00007f 2300      		tst r16
+000080 f019      		breq DrawBall_MulX
+          DrawBall_Mul:
+000081 9650      		adiw XL, SIZEX
+000082 950a      		dec r16
+000083 f7e9      		brne DrawBall_Mul
+          DrawBall_MulX:
+000084 2700      		clr r16
+000085 0da1      		add XL, ballX
+000086 1fb0      		adc XH, r16
+000087 931c      		st X, r17
+000088 9508      		ret
+         
+          main:
+000089 e00f      		ldi r16,0x0F					; Put stack near top of SRAM (0x0FFF)
+00008a bf0e      		out SPH,r16
+00008b ef0f      		ldi r16,0xFF
+00008c bf0d      		out SPL,r16
+         
+00008d dfe3      		rcall INT0_Init					; Init Interrupt 0
+00008e dfdb      		rcall UART0_Init				; Init the UART
+         
+00008f b789      		in r24, EIMSK					; Enable INT0 (ATmega103)
+000090 6081      		ori r24, 1
+000091 bf89      		out EIMSK, r24
+         
+000092 9478      		sei								; Enable interrupts
+         
+         										; Initialise Title
+000093 e3e4      		ldi ZL, low(titleText*2)
+000094 e0f0      		ldi ZH, high(titleText*2)
+000095 e6a0      		ldi XL, low(title)
+000096 e0b0      		ldi XH, high(title)
+000097 e200      		ldi r16, 2*SIZEX
+          WriteTitle:
+000098 95c8      		lpm
+000099 920d      		st X+, r0
+00009a 9631      		adiw ZL, 1
+00009b 950a      		dec r16
+00009c f7d9      		brne WriteTitle
+         										; Initialise Bounce area
+00009d e5e4      		ldi ZL, low(message*2)
+00009e e0f0      		ldi ZH, high(message*2)
+00009f e8a0      		ldi XL, low(bounceArea)
+0000a0 e0b0      		ldi XH, high(bounceArea)
+0000a1 e800      		ldi r16, SIZEY*SIZEX
+          WriteBounceArea:
+0000a2 95c8      		lpm
+0000a3 920d      		st X+, r0
+0000a4 9631      		adiw ZL, 1
+0000a5 950a      		dec r16
+0000a6 f7d9      		brne WriteBounceArea
+         
+0000a7 dfcb      		rcall MakeLedRed				; Turn on Red LED
+         
+0000a8 2411      		clr ballX						; Starting position (0, 3)
+0000a9 e083      		ldi r24, 3
+0000aa 2e28      		mov ballY, r24
+         
+0000ab dfcd      		rcall DrawBall					; Draw Ball
+         
+0000ac 2c31      		mov oldBallX, ballX
+0000ad 2c42      		mov oldBallY, ballY
+         
+0000ae 2455      		clr ballDX						; Ball is moving right & down
+0000af 9453      		inc ballDX
+0000b0 2466      		clr ballDY
+0000b1 9463      		inc ballDY
+         
+          MainLoop:
+         
+0000b2 940e 00dd 		call SetBreakHere				; Set a Hard Breakpoint here
+         
+0000b4 e5e4      		ldi ZL, low(message*2)			; Restore message
+0000b5 e0f0      		ldi ZH, high(message*2)
+0000b6 e8a0      		ldi XL, low(bounceArea)
+0000b7 e0b0      		ldi XH, high(bounceArea)
+0000b8 2d04      		mov r16, oldBallY
+0000b9 2300      		tst r16
+0000ba f021      		breq Restore_MulX
+          Restore_Mul:
+0000bb 9670      		adiw ZL, SIZEX
+0000bc 9650      		adiw XL, SIZEX
+0000bd 950a      		dec r16
+0000be f7e1      		brne Restore_Mul
+          Restore_MulX:
+0000bf 2700      		clr r16
+0000c0 0de3      		add ZL, oldBallX
+0000c1 1ff0      		adc ZH, r16
+0000c2 0da3      		add XL, oldBallX
+0000c3 1fb0      		adc XH, r16
+0000c4 95c8      		lpm
+0000c5 920c      		st X, r0
+         
+0000c6 0c15      		add ballX, ballDX				; Update ball's position
+0000c7 0c26      		add ballY, ballDY
+         
+0000c8 dfb0      		rcall DrawBall					; Draw the Ball
+         
+          TestBallX:
+0000c9 2011      		tst ballX						; If ball is at left or right edge
+0000ca f019      		breq BallOnXEdge
+0000cb 2d81      		mov r24, ballX
+0000cc 308f      		cpi r24, SIZEX-1
+0000cd f411      		brne TestBallY
+          BallOnXEdge:
+0000ce 9451      		neg ballDX						; Change direction
+0000cf dfa7      		rcall MakeLedGreen
+         		
+          TestBallY:
+0000d0 2022      		tst ballY						; If ball is at top or bottom edge
+0000d1 f019      		breq BallOnYEdge
+0000d2 2d82      		mov r24, ballY
+0000d3 3087      		cpi r24, SIZEY-1
+0000d4 f411      		brne SaveBallPos
+          BallOnYEdge:
+0000d5 9461      		neg ballDY						; Change direction
+0000d6 df9c      		rcall MakeLedRed
+         
+          SaveBallPos:
+0000d7 2c31      		mov oldBallX, ballX
+0000d8 2c42      		mov oldBallY, ballY
+         
+0000d9 cfd8      		rjmp MainLoop					; Loop forever
+         
+          .include "ISD16_ATmega103.asm"			; ISD
+         
+         ; Filename: ISD16_ATmega103.asm
+         ; Version: 1.6 (13/3/2002)
+         ; Copyright 2002 Flash Microsystems
+         ; Translated to AVR Studio Assembler (CB 7/2/2002)
+         ; Moved "SetBreakHere" into the ISD signature (CB 7/3/2002)
+         ; Removed "to PC" echoes to speed up "PC only" mode (CB 13/3/2002)
+         ; Info-Block has a switch for Custom SRAM & EEPROM sizes (CB 13/3/2002)
+         ; SRAM & EEPROM addresses are now 24 bit (CB 13/3/2002)
+         ; Request codes are values now, not bit flags (CB 13/3/2002)
+         
+         ;******************************************************************************
+         ;* AVR Studio+ ISD - THE WORLD'S SMALLEST, FASTEST, NO-ICE IN-SYSTEM DEBUGGER *
+         ;******************************************************************************
+         
+         ; Studio+ In-System-Debugger (ISD) for use in the Atmel ATmega103.
+         
+         ; ** LICENSE AGREEMENT **
+         ; This program is made available FREE of CHARGE, providing it is used ONLY
+         ; with the Flash PC WINDOWS STUDIO+ Software and in accordance with
+         ; the license agreement terms of that software (refer to www.flash.co.uk web
+         ; site for further details). You may also try out this program with a standard
+         ; Windows ASCII Terminal Program.
+         ; You may modify this program only for the purposes of merging-in your own
+         ; Interrupt Routine as indicated, changing the AVR CPU program parameters,
+         ; you may also remove sections of this program where indicated
+         ; in order to reduce its size, any other user modifications are
+         ; NOT permitted without the written consent of the Copyright Owner.
+         ; Flash may offer variants of this program including a version which
+         ; can simulate a UART via any two spare I/O pins of the AVR CPU. This license
+         ; agreement also applies to any variants of this program which offer a
+         ; SIMULATED UART.
+         ; This program is protected by International Copyright Laws. 
+         
+          .equ VERSION = 0x16		; ISD version (1.6)
+         
+          .include "ISDAVR.inc"	; CPU definitions
+         ; ISDAVR.inc
+         ; Definitions for the AVR ISDs
+         ; These ID values *MUST* match those in the Studio+ AVR DLL.
+         
+          .equ FAMILY_ATMELAVR = 1
+         
+          .equ CHIP_AT90S1200 = 1
+          .equ CHIP_AT90S2313 = 2
+          .equ CHIP_AT90S2323 = 3
+          .equ CHIP_AT90S2343 = 4
+          .equ CHIP_AT90S2333 = 5
+          .equ CHIP_AT90S4433 = 6
+          .equ CHIP_AT90S4414 = 7
+          .equ CHIP_AT90S4434 = 8
+          .equ CHIP_AT90C8534 = 9
+          .equ CHIP_AT90S8515 = 10
+          .equ CHIP_AT90S8535 = 11
+          .equ CHIP_ATMEGA8 = 12
+          .equ CHIP_ATMEGA16 = 13
+          .equ CHIP_ATMEGA161 = 14
+          .equ CHIP_ATMEGA163 = 15
+          .equ CHIP_ATMEGA323 = 16
+          .equ CHIP_ATMEGA64 = 17
+          .equ CHIP_ATMEGA103 = 18
+          .equ CHIP_ATMEGA128 = 19
+          .equ CHIP_ATTINY11 = 20
+          .equ CHIP_ATTINY12 = 21
+          .equ CHIP_ATTINY15 = 22
+          .equ CHIP_ATTINY22 = 23
+          .equ CHIP_ATTINY28 = 24
+         
+         ; ****** Customizable settings START ******
+         ; Adjust these settings to tailor the ISD for your target CPU.
+         
+          .equ CUSTOM_MEMORY = 0	; 1: Use Custom SRAMSIZE & EEPROMSIZE below
+         						; 0: Use default memory sizes for CPU
+          .equ SRAMSIZE = 4096	; Size of custom SRAM
+          .equ EEPROMSIZE = 4096	; Size of custom EEPROM
+         ; ****** Customizable settings END ******
+         
+          .equ INFOBLOCKSIZE = 6+(6*CUSTOM_MEMORY) ; Info-Block size
+         
+          .equ STACKBYTES = 10	; Number of stack bytes needed by this debugger
+         
+         ; ** CPU RESOURCES REQUIRED **
+         ; Stack Space: 10 Bytes (Included in SP value displayed).
+         ; Flash Memory: 374 bytes.
+         ; The UART: The UART is used to Tx/Rx data to/from Studio+ running on your PC.
+         
+         ; ** USER'S INTERRUPT ROUTINE **
+         ; Using Highest Priority Maskable Interrupt eg INT0. (Pin PD2 on the AT90S8515)
+         ; The User can merge in their own ISR by placing the label "INT0_ISR::" just
+         ; before it and a "ret" instruction to exit it.  The User's ISR should only
+         ; push rigisters it uses onto the stack.  Also, they should put a 220 ohm
+         ; resistor in series with the INT0 pin of the AVR CPU.
+         ; To add an ISR to this file, comment out the call instruction where
+         ; indicated and place the ISR code between the markers:
+         ;    ****** Custom ISR ******
+         ; To use INT0 for your own application, put a 220 ohm resistor in series
+         ; with the INT0 pin of the AVR CPU.
+         ; To make it easy to add an ISR, all the code labels defined within
+         ; the ISD are prefixed with "isd_". To avoid conflicts, make sure the
+         ; labels in the ISR start with something else.
+         
+         ; ** CPU STATUS TRANSMISSION **
+         ; CPU Status Information is transmitted as follows:
+         ;	ISD -> PC  'D'
+         ;	If INFOBLOCK is required:
+         ;		PC  -> ISD 'I'
+         ;		ISD -> PC  <INFOBLOCK, see below>
+         ;	PC  -> ISD <STUDIO+ REQUEST CODE, see below>
+         ;		See "STUDIO+ REQUEST CODES" for info format.
+         ;	ISD -> PC  'E' (End Condition)
+         ;	PC  -> ISD <Continue Code, see below>
+         ;	If more data is required (Continue Code = 'R'):
+         ;		Start again!
+          
+         ; ** INFOBLOCK FORMAT **
+         ;    Size (number of bytes inc. this one)
+         ;    ISD Version
+         ;    IC family code
+         ;    IC code
+         ;    Custom memory flag (1 = custom memory sizes follow)
+         ;       SRAM size (Low byte)
+         ;       SRAM size (Mid byte)
+         ;       SRAM size (High byte)
+         ;       EEPROM size (Low byte)
+         ;       EEPROM size (Mid byte)
+         ;       EEPROM size (High byte)
+         ;    Number of stack bytes needed by debugger
+         
+         ; ** STUDIO+ REQUEST CODES **
+          .equ SENDPC = 0			; Get the PC
+         		   	 			; ISD Sends PC
+          .equ SENDREGISTERS = 1	; Get the Registers
+         						; ISD Sends Registers
+          .equ SENDSFRS = 2		; Get SFRs
+         						; ISD Sends SFRs (SRAM 0x20->0x5F)
+          .equ SENDSRAM = 3		; Get SRAM
+         			   			; PC Sends SRAMSTARTLOW (ISD echos)
+         						; PC Sends SRAMSTARTHIGH (ISD echos)
+         						; PC Sends SRAMENDLOW (ISD echos)
+         						; PC Sends SRAMENDHIGH (ISD echos)
+         						; ISD Sends SRAM DATA
+          .equ SENDEEPROM = 4		; Get EEPROM
+         						; PC Sends EEPROMLOW (ISD echos)
+         						; PC Sends EEPROMHIGH (ISD echos) 
+         						; PC Sends EEPROMENDLOW (ISD echos)
+         						; PC Sends EEPROMENDHIGH (ISD echos)
+         						; ISD Sends EEPROM DATA
+         
+         ; ** CONTINUE CODES **
+         ;	'S' = Single Step
+         ;	'C' = Continue to next breakpoint
+         ;	'R' = Repeat (send more data)
+         
+          .cseg
+          isd_ISD:
+0000da c005      		rjmp isd_PreserveRegs ; Bypass ISD Signature
+          .db 'I','S','D',0		; ISD Signature,
+0000db 5349
+0000dc 0044
+         						; *MUST* be here (2 bytes from the
+         						; beginning of the ISD routine)
+         
+         						; The Set Breakpoint Routine
+         						; Call it to set a hard breakpoint.
+          SetBreakHere:
+0000dd 9a88      		sbi DDRD, 0		; Set INT0 data direction to output
+0000de 9890      		cbi PORTD, 0	; Force INT0 low, cause an interrupt
+0000df 9508      		ret
+         
+          isd_PreserveRegs:
+         						; PC pushed automatically
+0000e0 938f      		push r24		; Preserve r24
+0000e1 939f      		push r25		; Preserve r25
+0000e2 93af      		push r26		; Preserve X
+0000e3 93bf      		push r27
+0000e4 93cf      		push r28		; Preserve Y
+0000e5 93df      		push r29
+0000e6 93ef      		push r30		; Preserve Z
+0000e7 93ff      		push r31
+0000e8 b78f      		in r24, SREG	; Preserve SREG in r24
+         
+         ; Check the cause of the interrupt (INT0),
+         ; Was it external (user) or internal (code breakpoint)?
+         						; ATmega103: Check the data direction register
+0000e9 9988      		sbic DDRD, 0	; Skip if bit is clear, user's interrupt
+0000ea c001      		rjmp isd_DebugRoutine ; Jump to start of this debug routine
+         
+         ;    ****** Custom ISR ******
+         
+         ;		call INT0_ISR	; Call User's ISR
+         						; Comment this line out if your not using INT0
+         						; or when adding an ISR to this file here.
+         
+         						; Add ISR here!!
+         
+0000eb c096      		rjmp isd_RestoreStack ; Restore the stack & return from interrupt
+         
+         ;    ****** Custom ISR ******
+         
+          isd_DebugRoutine:		; Flash Microsystems ISD debugger
+0000ec e4c4      		ldi r28, 'D'
+0000ed d09f      		rcall isd_Put28	; Send "D"
+          isd_WaitForPC:
+0000ee 9b5f      		sbis USR, 7		; Wait for response from PC
+0000ef cffe      		rjmp isd_WaitForPC
+         		
+0000f0 9b5c      		sbis USR, 4		; Check for framing error
+0000f1 c002      		rjmp isd_PCAcked ; No error, send data
+0000f2 b1dc      		in r29, UDR		; read UDR to clear RXC
+0000f3 cff8      		rjmp isd_DebugRoutine ; Try again		
+         				
+          isd_PCAcked:
+0000f4 b1dc      		in r29, UDR		; Get Studio+ request code
+0000f5 34d9      		cpi r29, 'I'	; Check if Studio+ wants an INFOBLOCK
+0000f6 f469      		brne isd_TryJustPC ; If not, bypass INFOBLOCK output
+         
+0000f7 e0c6      		ldi r28, INFOBLOCKSIZE
+0000f8 d094      		rcall isd_Put28	; Send Size
+0000f9 e1c6      		ldi r28, VERSION
+0000fa d092      		rcall isd_Put28	; Send version
+0000fb e0c1      		ldi r28, FAMILY_ATMELAVR
+0000fc d090      		rcall isd_Put28	; Send IC family code
+0000fd e1c2      		ldi r28, CHIP_ATMEGA103
+0000fe d08e      		rcall isd_Put28	; Send CPU code
+0000ff e0c0      		ldi r28, CUSTOM_MEMORY
+000100 d08c      		rcall isd_Put28	; Send "Custom Memory" flag
+         
+         ; ** Comment out this section if you're using the default memory sizes
+         ;		ldi r28, SRAMSIZE&0xff
+         ;		rcall isd_Put28
+         ;		ldi r28, (SRAMSIZE>>8)&0xff
+         ;		rcall isd_Put28
+         ;		ldi r28, SRAMSIZE>>16
+         ;		rcall isd_Put28	; Send SRAM size
+         ;		ldi r28, EEPROMSIZE&0xff
+         ;		rcall isd_Put28
+         ;		ldi r28, (EEPROMSIZE>>8)&0xff
+         ;		rcall isd_Put28
+         ;		ldi r28, EEPROMSIZE>>16
+         ;		rcall isd_Put28	; Send EEPROM size
+         ; ** Section end
+         
+000101 e0ca      		ldi r28, STACKBYTES
+000102 d08a      		rcall isd_Put28	; Send number of stack bytes used 
+000103 b1dc      		in r29, UDR		; Read the request code	
+         
+          isd_TryJustPC:
+000104 94e8      		clt				; Clear T Bit (send PC flag)
+000105 30d0      		cpi r29, SENDPC	; If other data is wanted
+000106 f411      		brne isd_TryRegs ; Don't set the PC flag
+000107 9468      		set				; Set the PC flag
+000108 c002      		rjmp isd_SendRegs ; Send PC only
+         
+          isd_TryRegs:
+000109 30d1      		cpi r29, SENDREGISTERS ; Does Studio+ want the Registers?
+00010a f4d1      		brne isd_TrySFRs ; If not, try SRAM
+         
+          isd_SendRegs:
+00010b b7ad      		in r26, SPL		; Set the pointer
+00010c b7be      		in r27, SPH
+00010d 9611      		adiw r26, 1
+         
+00010e e0f8      		ldi r31, 8		; Sending (or skipping for PC only) 8 bytes
+          isd_SendReg1:
+00010f f00e      		brts isd_SkipReg ; If sending the registers
+000110 d07b      		rcall isd_PutXP	; Send the registers on the stack (R31->R24)
+          isd_SkipReg:
+000111 f40e      		brtc isd_NextReg ; If only sending the PC
+000112 91cd      		ld r28, X+		; Get the pointer ready for sending the PC
+          isd_NextReg:
+000113 95fa      		dec r31
+000114 30f0      		cpi r31, 0		; Done yet?
+000115 f7c9      		brne isd_SendReg1 ; If not, send the next register
+000116 f05e      		brts isd_SendPC	; branch if T bit SET to output PC Only
+         						; Send Registers R23 to R0
+000117 e1e8      		ldi	r30, 0x18	; Z points to R24 
+          isd_SendReg2:
+000118 91c2      		ld	r28, -Z		; Get next register
+000119 d073      		rcall isd_Put28	; Send it
+00011a 13ef      		cpse r30, r31	; Done ?
+00011b cffc      		rjmp isd_SendReg2
+         		
+00011c 2fc8      		mov r28, r24	; Get SREG
+00011d d06f      		rcall isd_Put28	; Send SREG
+         
+00011e b7cd      		in	r28, SPL
+00011f d06d      		rcall isd_Put28	; Send SPL
+000120 b7ce      		in	r28, SPH
+000121 d06b      		rcall isd_Put28	; Send SPH
+         
+          isd_SendPC:
+000122 d069      		rcall isd_PutXP	; Send PC (High byte), X = SP+1
+000123 d068      		rcall isd_PutXP	; Send PC (Low byte),  X = SP+2
+         		
+000124 c04e      		rjmp isd_End	; Go to End Condition
+         
+          isd_TrySFRs:
+000125 30d2      		cpi r29, SENDSFRS ; Does Studio+ want the SFRs?
+000126 f439      		brne isd_TrySram ; If not, try SRAM
+         						; Send the SFRs
+000127 e2a0      		ldi r26, 0x20	; Start of SFR block
+000128 e0b0      		ldi r27, 0x00
+000129 e090      		ldi r25, 0x00
+00012a e6e0      		ldi r30, 0x60	; End of SFR block
+00012b e0f0      		ldi r31, 0x00
+00012c e0d0      		ldi r29, 0x00
+00012d c014      		rjmp isd_SendSram
+         
+          isd_TrySram:
+00012e 30d3      		cpi r29, SENDSRAM ; Does Studio+ want the SRAM?
+00012f f511      		brne isd_TryEeprom ; If not, try EEPROM
+         						; Send SRAM
+000130 d060      		rcall isd_Get28	; Read from PC SRAM start address (lo)
+000131 2fac      		mov r26, r28	; Copy r28 to r26
+000132 d05a      		rcall isd_Put28	; Echo back to PC
+000133 d05d      		rcall isd_Get28	; Read from PC SRAM start address (mid)
+000134 2fbc      		mov r27, r28	; Copy r28 to r27
+000135 d057      		rcall isd_Put28	; Echo back to PC
+000136 d05a      		rcall isd_Get28	; Read from PC SRAM start address (hi)
+000137 2f9c      		mov r25, r28	; Copy r28 to r25
+000138 d054      		rcall isd_Put28	; Echo back to PC
+000139 d057      		rcall isd_Get28	; Read from PC SRAM end address (lo)
+00013a 2fec      		mov r30, r28	; Copy r28 to r30
+00013b d051      		rcall isd_Put28	; Echo back to PC
+00013c d054      		rcall isd_Get28	; Read from PC SRAM end address (mid)
+00013d 2ffc      		mov r31, r28	; Copy r28 to r31
+00013e d04e      		rcall isd_Put28	; Echo back to PC
+00013f d051      		rcall isd_Get28	; Read from PC SRAM end address (hi)
+000140 2fdc      		mov r29, r28	; Copy r28 to r29
+000141 d04b      		rcall isd_Put28	; Echo back to PC
+          isd_SendSram:
+000142 32ac      		cpi r26, 0x2C	; Cannot read UDR because we are using it!!
+000143 f431      		brne isd_NextSram
+000144 30b0      		cpi r27, 0x00
+000145 f421      		brne isd_NextSram
+000146 e3cf      		ldi r28, '?'	
+000147 d045      		rcall isd_Put28	; Send a '?' character in place of UDR
+000148 95a3      		inc r26
+000149 fdb0      		sbrc r27, 0		; Skip (Bit 0 will always be clear here!!)
+          isd_NextSram:
+00014a d041      		rcall isd_PutXP	; Send next SRAM byte
+00014b 17ae      		cp r26, r30		; If not done
+00014c f7a9      		brne isd_SendSram ; Send next byte
+00014d 17bf      		cp r27, r31		; If not done
+00014e f799      		brne isd_SendSram ; Send next byte
+00014f 179d      		cp r25, r29		; If not done
+000150 f789      		brne isd_SendSram ; Send next byte
+         		
+000151 c021      		rjmp isd_End	; Go to End Condition
+         
+          isd_TryEeprom:
+000152 30d4      		cpi r29, SENDEEPROM ; Does Studio+ want EEPROM?
+000153 f4f9      		brne isd_End	; If not, done!!
+         						; Send EEPROM
+000154 d03c      		rcall isd_Get28	; Read from PC EEPROM start address (lo)
+000155 2fac      		mov r26, r28	; Copy r28 to r26
+000156 d036      		rcall isd_Put28	; Echo back to PC
+000157 d039      		rcall isd_Get28	; Read from PC EEPROM start address (mid)
+000158 2fbc      		mov r27, r28	; Copy r28 to r27
+000159 d033      		rcall isd_Put28	; Echo back to PC
+00015a d036      		rcall isd_Get28	; Read from PC EEPROM start address (hi)
+00015b 2f9c      		mov r25, r28	; Copy r28 to r25
+00015c d030      		rcall isd_Put28	; Echo back to PC
+00015d d033      		rcall isd_Get28	; Read from PC EEPROM end address (lo)
+00015e 2fec      		mov r30, r28	; Copy r28 to r30
+00015f d02d      		rcall isd_Put28	; Echo back to PC
+000160 d030      		rcall isd_Get28	; Read from PC EEPROM end address (mid)
+000161 2ffc      		mov r31, r28	; Copy r28 to r31
+000162 d02a      		rcall isd_Put28	; Echo back to PC
+000163 d02d      		rcall isd_Get28	; Read from PC EEPROM end address (hi)
+000164 2fdc      		mov r29, r28	; Copy r28 to r29
+000165 d027      		rcall isd_Put28	; Echo back to PC
+          isd_SendEeprom:
+000166 bbaf      		out	EEARH, r26
+000167 bbbe      		out	EEARL, r27	; EEPROM read Address
+000168 9ae0      		sbi	EECR, EERE	; Read EEPROM
+000169 98e0      		cbi	EECR, EERE
+00016a b3cd      		in	r28, EEDR	; Get EEPROM value
+00016b d021      		rcall isd_Put28	; Send it
+00016c 9611      		adiw r26,1
+00016d 17ae      		cp r26, r30		; If not done
+00016e f7b9      		brne isd_SendEeprom ; Send next byte
+00016f 17bf      		cp r27, r31		; If not done
+000170 f7a9      		brne isd_SendEeprom ; Send next byte
+000171 179d      		cp r25, r29		; If not done
+000172 f799      		brne isd_SendEeprom ; Send next byte
+         
+          isd_End:				; End Condition
+         						; Send 'E' to Studio+
+         						; then wait for continue code: 'S', 'C' or 'R' 
+000173 e4c5      		ldi r28, 'E'
+000174 d018      		rcall isd_Put28	; Send 'E'
+          isd_WaitForPC2:
+000175 9b5f      		sbis USR, 7		; Wait for Studio+ to send continue code
+000176 cffe      		rjmp isd_WaitForPC2   
+000177 9b5c      		sbis USR, 4		; If no framing error
+000178 c002      		rjmp isd_GotContCode ; Continue
+000179 b1cc      		in r28, UDR		; Read UDR to clear RXC
+00017a cff8      		rjmp isd_End	; Try again		
+          isd_GotContCode:
+00017b b1cc      		in r28, UDR		; Continue Code
+00017c ffc0      		sbrs r28, 0		; If Studio+ wants more data (sent an "R")
+00017d cf6e      		rjmp isd_DebugRoutine ; Loop back and repeat
+00017e fdc4      		sbrc r28, 4		; Here for "C" and "S" Skip if "C"
+00017f c002      		rjmp isd_RestoreStack ; Jump if "S" Single-Step
+         						; Continue to next break
+         							
+000180 9a90      		sbi PORTD, 0	; Here for CONT Turn on INT0's Pull-Up
+000181 9888      		cbi	DDRD, 0		; Set data direction to input
+         
+          isd_RestoreStack:
+000182 bf8f      		out SREG, r24	; Restore SREG
+000183 91ff      		pop r31			; Restore preserved registers
+000184 91ef      		pop r30
+000185 91df      		pop r29
+000186 91cf      		pop r28
+000187 91bf      		pop r27
+000188 91af      		pop r26
+000189 919f      		pop r25
+00018a 918f      		pop r24
+00018b 9518      		reti			; Return from interrupt
+         
+         						; Send Data Subroutines
+          isd_PutXP:
+00018c 91cd      		ld r28, X+		; Get data via pointer (X)
+          isd_Put28:
+00018d b9cc      		out UDR,r28		; Send it 
+          isd_WaitToSend:
+00018e 9b5d      		sbis USR,5		; Wait for it to send
+00018f cffe       		rjmp isd_WaitToSend
+000190 9508      		ret				; Done
+         
+          isd_Get28:
+000191 9b5f      		sbis USR, 7		; Wait for the PC to send
+000192 cffe      		rjmp isd_Get28
+000193 b1cc      		in r28, UDR		; Read from PC
+000194 9508      		ret				; Done
+         
+          .cseg					; External Interrupt 0 Vector
+          .org $2
+000002 940c 00da 	jmp isd_ISD
+         		
+          .exit
+         
+          .exit
+
+Assembly complete with no errors.

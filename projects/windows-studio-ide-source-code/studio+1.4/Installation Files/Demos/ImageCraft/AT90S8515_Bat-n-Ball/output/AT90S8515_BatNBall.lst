@@ -1,0 +1,964 @@
+__text_start:
+__start:
+    005D E5CF      LDI	R28,0x5F
+    005E E0D2      LDI	R29,2
+    005F BFCD      OUT	P3D,R28
+    0060 BFDE      OUT	P3E,R29
+    0061 52C0      SUBI	R28,0x20
+    0062 40D0      SBCI	R29,0
+    0063 EA0A      LDI	R16,0xAA
+    0064 8308      STD	R16,0+Y
+    0065 2400      CLR	R0
+    0066 E0E0      LDI	R30,0
+    0067 E0F1      LDI	R31,1
+    0068 E011      LDI	R17,1
+    0069 30E2      CPI	R30,2
+    006A 07F1      CPC	R31,R17
+    006B F011      BEQ	0x006E
+    006C 9201      ST	R0,Z+
+    006D CFFB      RJMP	0x0069
+    006E 8300      STD	R16,0+Z
+    006F E1EA      LDI	R30,0x1A
+    0070 E0F0      LDI	R31,0
+    0071 E6A0      LDI	R26,0x60
+    0072 E0B0      LDI	R27,0
+    0073 E010      LDI	R17,0
+    0074 3BEA      CPI	R30,0xBA
+    0075 07F1      CPC	R31,R17
+    0076 F021      BEQ	0x007B
+    0077 95C8      LPM
+    0078 9631      ADIW	R30,1
+    0079 920D      ST	R0,X+
+    007A CFF9      RJMP	0x0074
+    007B D03C      RCALL	_main
+_exit:
+    007C CFFF      RJMP	_exit
+FILE: C:\Studio+\Demos\ImageCraft\AT90S8515_Bat-n-Ball\Bat-n-Ball.c
+(0000) // Bat-n-Ball.c
+(0001) // Chris Brown 6th Feb, 2002
+(0002) //
+(0003) // Flash Studio+ & In-System-Debugger (ISD) "Bat-n-Ball" demo.
+(0004) //
+(0005) // Use with any ATMEL AVR CPU that has internal SRAM and an RS232
+(0006) // port or with Flash 5in1 AVR Starter Kits for added features.
+(0007) //
+(0008) // Requires a version 1.6 (or later) ISD library or source file:
+(0009) //    libISD16ATx.a or ISD16_ATx.s
+(0010) 
+(0011) // ****** USER SETTINGS ******
+(0012) 
+(0013) // Un-comment the CPU you are using.
+(0014) // Remember to set the CPU & ISD library (if you are using one)
+(0015) // in your ImageCraft project settings too!
+(0016) #define AT90S8515
+(0017) //#define ATMEGA103
+(0018) 
+(0019) // Clock frequency - set this to your clock frequency
+(0020) #define FOSC 3686400					// 3.6864Mhz
+(0021) 
+(0022) // Serial comms Baud rate - set this to your desired baud rate
+(0023) #define BAUD 115200
+(0024) 
+(0025) // ***** END USER SETTINGS *****
+(0026) 
+(0027) #include <stdio.h>
+(0028) #include <ina90.h>
+(0029) #ifdef AT90S8515
+(0030) #include <io8515.h>
+(0031) #endif
+(0032) #ifdef ATMEGA103
+(0033) #include <iom103.h>
+(0034) #endif
+(0035) 
+(0036) #define SIZEX 15						// Size of the court
+(0037) #define SIZEY 6
+(0038) 
+(0039) char memory[(SIZEY+4)*(SIZEX+1)] = {"Bat-n-Ball Demo     00 : 00     "};
+(0040) unsigned char leftScore, rightScore;
+(0041) 
+(0042) 
+(0043) void UART0_Init(void)
+(0044) {
+(0045) 	UCR  = 0x00;						// Disable while setting baud rate
+_UART0_Init:
+    007D 2422      CLR	R2
+    007E B82A      OUT	P0A,R2
+(0046) 	UBRR = (FOSC/(16*BAUD))-1;			// Set baud rate
+    007F E081      LDI	R24,1
+    0080 B989      OUT	P09,R24
+(0047) 	UCR  = 0x18;						// Enable Tx & Rx
+    0081 E188      LDI	R24,0x18
+    0082 B98A      OUT	P0A,R24
+(0048) }
+    0083 9508      RET
+(0049) 
+(0050) 
+(0051) void INT0_Init(void)
+(0052) {
+(0053) #ifdef AT90S8515
+(0054) 	DDRD |= 0x08;						// Set up PD3 (AVRDIL LED) = Output
+_INT0_Init:
+    0084 9A8B      SBI	P11,3
+(0055) 	PORTD |= 0x04;						// Turn on Pull-Up PD2 (INT0) = 1
+    0085 9A92      SBI	P12,2
+(0056) #endif
+(0057) #ifdef ATMEGA103
+(0058) 	PORTD |= 0x01;						// Turn on Pull-Up PD0 (INT0) = 1
+(0059) #endif
+(0060) }
+    0086 9508      RET
+(0061) 
+(0062) 
+(0063) void MakeLedRed(void)
+(0064) {
+(0065) 	DDRD &= 0xf7;						// Turn on red LED
+_MakeLedRed:
+    0087 B381      IN	R24,P11
+    0088 7F87      ANDI	R24,0xF7
+    0089 BB81      OUT	P11,R24
+(0066) }
+    008A 9508      RET
+(0067) 
+(0068) 
+(0069) void MakeLedGreen(void)
+(0070) {
+(0071) 	DDRD |= 0x08;						// Turn off red LED
+_MakeLedGreen:
+    008B 9A8B      SBI	P11,3
+(0072) }
+    008C 9508      RET
+(0073) 
+(0074) 
+(0075) void DrawScores(void)
+(0076) {
+(0077) 	memory[16+4] = (leftScore/10)+'0';
+_DrawScores:
+    008D E01A      LDI	R17,0xA
+    008E 91000101  LDS	R16,_leftScore
+    0090 D2A3      RCALL	div8u
+    0091 2F80      MOV	R24,R16
+    0092 5D80      SUBI	R24,0xD0
+    0093 93800074  STS	R24,0x74
+(0078) 	memory[16+5] = (leftScore-((leftScore/10)*10))+'0';
+    0095 E01A      LDI	R17,0xA
+    0096 91000101  LDS	R16,_leftScore
+    0098 D29B      RCALL	div8u
+    0099 2F10      MOV	R17,R16
+    009A E00A      LDI	R16,0xA
+    009B D28A      RCALL	mpy8s
+    009C 91800101  LDS	R24,_leftScore
+    009E 1B80      SUB	R24,R16
+    009F 5D80      SUBI	R24,0xD0
+    00A0 93800075  STS	R24,0x75
+(0079) 	memory[16+9] = (rightScore/10)+'0';
+    00A2 E01A      LDI	R17,0xA
+    00A3 91000100  LDS	R16,_rightScore
+    00A5 D28E      RCALL	div8u
+    00A6 2F80      MOV	R24,R16
+    00A7 5D80      SUBI	R24,0xD0
+    00A8 93800079  STS	R24,0x79
+(0080) 	memory[16+10] = (rightScore-((rightScore/10)*10))+'0';
+    00AA E01A      LDI	R17,0xA
+    00AB 91000100  LDS	R16,_rightScore
+    00AD D286      RCALL	div8u
+    00AE 2F10      MOV	R17,R16
+    00AF E00A      LDI	R16,0xA
+    00B0 D275      RCALL	mpy8s
+    00B1 91800100  LDS	R24,_rightScore
+    00B3 1B80      SUB	R24,R16
+    00B4 5D80      SUBI	R24,0xD0
+    00B5 9380007A  STS	R24,0x7A
+(0081) }
+    00B7 9508      RET
+_main:
+  oldY                 --> R20
+  oldX                 --> R22
+  dy                   --> R14
+  rightPos             --> R12
+  leftPos              --> Y+0
+  dx                   --> R10
+  y                    --> R6
+  x                    --> R4
+    00B8 9721      SBIW	R28,1
+(0082) 
+(0083) 
+(0084) void main(void)
+(0085) {
+(0086) 	unsigned char x, y, oldX, oldY;
+(0087) 	char dx, dy;
+(0088) 	unsigned char leftPos, rightPos;
+(0089) 
+(0090) //	MCUCR |= 0x80;						// Enable external sram (optional)
+(0091) 
+(0092) 	INT0_Init();
+    00B9 DFCA      RCALL	_INT0_Init
+(0093) 	UART0_Init();
+    00BA DFC2      RCALL	_UART0_Init
+(0094) #ifdef AT90S8515
+(0095) 	GIMSK |= 0x40;						// Enable INT0 (AT90S8515)
+    00BB B78B      IN	R24,P3B
+    00BC 6480      ORI	R24,0x40
+    00BD BF8B      OUT	P3B,R24
+(0096) #endif
+(0097) #ifdef ATMEGA103
+(0098) 	EIMSK |= 0x01;						// Enable INT0 (ATmega103)
+(0099) #endif
+(0100) 	SEI();								// Enable interrupts
+    00BE 9478      BSET	7
+(0101) 
+(0102) 	for (y=0; y<SIZEY+2; y++)			// Initialise the court
+    00BF 2466      CLR	R6
+    00C0 C031      RJMP	0x00F2
+(0103) 	{
+(0104) 		for (x=0; x<SIZEX+1; x++)
+    00C1 2444      CLR	R4
+    00C2 C02B      RJMP	0x00EE
+(0105) 		{
+(0106) 			if (x == 7)
+    00C3 2D84      MOV	R24,R4
+    00C4 3087      CPI	R24,7
+    00C5 F491      BNE	0x00D8
+(0107) 				memory[((y+2)<<4)+7] = '|';
+    00C6 E687      LDI	R24,0x67
+    00C7 E090      LDI	R25,0
+    00C8 2DE6      MOV	R30,R6
+    00C9 27FF      CLR	R31
+    00CA 9632      ADIW	R30,2
+    00CB 0FEE      LSL	R30
+    00CC 1FFF      ROL	R31
+    00CD 0FEE      LSL	R30
+    00CE 1FFF      ROL	R31
+    00CF 0FEE      LSL	R30
+    00D0 1FFF      ROL	R31
+    00D1 0FEE      LSL	R30
+    00D2 1FFF      ROL	R31
+    00D3 0FE8      ADD	R30,R24
+    00D4 1FF9      ADC	R31,R25
+    00D5 E78C      LDI	R24,0x7C
+    00D6 8380      STD	R24,0+Z
+    00D7 C015      RJMP	0x00ED
+(0108) 			else
+(0109) 				memory[((y+2)<<4)+x] = ' ';
+    00D8 2C24      MOV	R2,R4
+    00D9 2433      CLR	R3
+    00DA 2DE6      MOV	R30,R6
+    00DB 27FF      CLR	R31
+    00DC 9632      ADIW	R30,2
+    00DD 0FEE      LSL	R30
+    00DE 1FFF      ROL	R31
+    00DF 0FEE      LSL	R30
+    00E0 1FFF      ROL	R31
+    00E1 0FEE      LSL	R30
+    00E2 1FFF      ROL	R31
+    00E3 0FEE      LSL	R30
+    00E4 1FFF      ROL	R31
+    00E5 0DE2      ADD	R30,R2
+    00E6 1DF3      ADC	R31,R3
+    00E7 E680      LDI	R24,0x60
+    00E8 E090      LDI	R25,0
+    00E9 0FE8      ADD	R30,R24
+    00EA 1FF9      ADC	R31,R25
+    00EB E280      LDI	R24,0x20
+    00EC 8380      STD	R24,0+Z
+(0110) 		}
+    00ED 9443      INC	R4
+    00EE 2D84      MOV	R24,R4
+    00EF 3180      CPI	R24,0x10
+    00F0 F290      BCS	0x00C3
+(0111) 	}
+    00F1 9463      INC	R6
+    00F2 2D86      MOV	R24,R6
+    00F3 3088      CPI	R24,0x8
+    00F4 F260      BCS	0x00C1
+(0112) 	for (x=0; x<15; x++)
+    00F5 2444      CLR	R4
+    00F6 C011      RJMP	0x0108
+(0113) 	{
+(0114) 		memory[32+x] = '-';
+    00F7 E880      LDI	R24,0x80
+    00F8 E090      LDI	R25,0
+    00F9 2DE4      MOV	R30,R4
+    00FA 27FF      CLR	R31
+    00FB 0FE8      ADD	R30,R24
+    00FC 1FF9      ADC	R31,R25
+    00FD E28D      LDI	R24,0x2D
+    00FE 8380      STD	R24,0+Z
+(0115) 		memory[48+(SIZEY*16)+x] = '-';
+    00FF EF80      LDI	R24,0xF0
+    0100 E090      LDI	R25,0
+    0101 2DE4      MOV	R30,R4
+    0102 27FF      CLR	R31
+    0103 0FE8      ADD	R30,R24
+    0104 1FF9      ADC	R31,R25
+    0105 E28D      LDI	R24,0x2D
+    0106 8380      STD	R24,0+Z
+(0116) 	}
+    0107 9443      INC	R4
+    0108 2D84      MOV	R24,R4
+    0109 308F      CPI	R24,0xF
+    010A F360      BCS	0x00F7
+(0117) 
+(0118) 	leftScore = 10;						// Start new game
+    010B E08A      LDI	R24,0xA
+    010C 93800101  STS	R24,_leftScore
+(0119) 	rightScore = 10;
+    010E 93800100  STS	R24,_rightScore
+(0120) 	leftPos = 3;
+    0110 E083      LDI	R24,3
+    0111 8388      STD	R24,0+Y
+(0121) 	rightPos = 3;
+    0112 2EC8      MOV	R12,R24
+(0122) 
+(0123) 	for (;;)							// Loop forever!!
+(0124) 	{
+(0125) 
+(0126) 		SetBreakHere();					// Hard Breakpoint here
+    0113 924F      PUSH	R4
+    0114 926F      PUSH	R6
+    0115 D156      RCALL	_SetBreakHere
+    0116 906F      POP	R6
+    0117 904F      POP	R4
+(0127) 
+(0128) 		if (leftScore == 10 || rightScore == 10) // If game is over
+    0118 91800101  LDS	R24,_leftScore
+    011A 308A      CPI	R24,0xA
+    011B F029      BEQ	0x0121
+    011C 91800100  LDS	R24,_rightScore
+    011E 308A      CPI	R24,0xA
+    011F F009      BEQ	0x0121
+    0120 C03E      RJMP	0x015F
+(0129) 		{
+(0130) 			leftScore = 0;				// Reset scores
+    0121 2422      CLR	R2
+    0122 92200101  STS	R2,_leftScore
+(0131) 			rightScore = 0;
+    0124 92200100  STS	R2,_rightScore
+(0132) 			memory[(3+leftPos)<<4] = ' '; // Erase the old bats
+    0126 E680      LDI	R24,0x60
+    0127 E090      LDI	R25,0
+    0128 81E8      LDD	R30,0+Y
+    0129 27FF      CLR	R31
+    012A 9633      ADIW	R30,3
+    012B 0FEE      LSL	R30
+    012C 1FFF      ROL	R31
+    012D 0FEE      LSL	R30
+    012E 1FFF      ROL	R31
+    012F 0FEE      LSL	R30
+    0130 1FFF      ROL	R31
+    0131 0FEE      LSL	R30
+    0132 1FFF      ROL	R31
+    0133 0FE8      ADD	R30,R24
+    0134 1FF9      ADC	R31,R25
+    0135 E280      LDI	R24,0x20
+    0136 8380      STD	R24,0+Z
+(0133) 			memory[((3+rightPos)<<4)+(SIZEX-1)] = ' ';
+    0137 E68E      LDI	R24,0x6E
+    0138 E090      LDI	R25,0
+    0139 2DEC      MOV	R30,R12
+    013A 27FF      CLR	R31
+    013B 9633      ADIW	R30,3
+    013C 0FEE      LSL	R30
+    013D 1FFF      ROL	R31
+    013E 0FEE      LSL	R30
+    013F 1FFF      ROL	R31
+    0140 0FEE      LSL	R30
+    0141 1FFF      ROL	R31
+    0142 0FEE      LSL	R30
+    0143 1FFF      ROL	R31
+    0144 0FE8      ADD	R30,R24
+    0145 1FF9      ADC	R31,R25
+    0146 E280      LDI	R24,0x20
+    0147 8380      STD	R24,0+Z
+(0134) 			leftPos = 3;
+    0148 E083      LDI	R24,3
+    0149 8388      STD	R24,0+Y
+(0135) 			rightPos = 3;
+    014A 2EC8      MOV	R12,R24
+(0136) 			memory[(3+3)<<4] = '|';		// Draw the bats
+    014B E78C      LDI	R24,0x7C
+    014C 938000C0  STS	R24,0xC0
+(0137) 			memory[((3+3)<<4)+(SIZEX-1)] = '|';
+    014E 938000CE  STS	R24,0xCE
+(0138) 			x = 7;						// Ball's starting position
+    0150 E087      LDI	R24,7
+    0151 2E48      MOV	R4,R24
+(0139) 			y = 3;
+    0152 E083      LDI	R24,3
+    0153 2E68      MOV	R6,R24
+(0140) 			oldX = x;
+    0154 2D64      MOV	R22,R4
+(0141) 			oldY = y;
+    0155 2D46      MOV	R20,R6
+(0142) 			MakeLedGreen();
+    0156 924F      PUSH	R4
+    0157 926F      PUSH	R6
+    0158 DF32      RCALL	_MakeLedGreen
+    0159 906F      POP	R6
+    015A 904F      POP	R4
+(0143) 			dx = 1;						// Ball is going right & down
+    015B 24AA      CLR	R10
+    015C 94A3      INC	R10
+(0144) 			dy = 1;
+    015D 24EE      CLR	R14
+    015E 94E3      INC	R14
+(0145) 		}
+(0146) 
+(0147) 		DrawScores();					// Draw the scores
+    015F 924F      PUSH	R4
+    0160 926F      PUSH	R6
+    0161 DF2B      RCALL	_DrawScores
+    0162 906F      POP	R6
+    0163 904F      POP	R4
+(0148) 
+(0149) 		if (oldX == 7)
+    0164 3067      CPI	R22,7
+    0165 F491      BNE	0x0178
+(0150) 			memory[((oldY+3)<<4)+7] = '|';
+    0166 E687      LDI	R24,0x67
+    0167 E090      LDI	R25,0
+    0168 2FE4      MOV	R30,R20
+    0169 27FF      CLR	R31
+    016A 9633      ADIW	R30,3
+    016B 0FEE      LSL	R30
+    016C 1FFF      ROL	R31
+    016D 0FEE      LSL	R30
+    016E 1FFF      ROL	R31
+    016F 0FEE      LSL	R30
+    0170 1FFF      ROL	R31
+    0171 0FEE      LSL	R30
+    0172 1FFF      ROL	R31
+    0173 0FE8      ADD	R30,R24
+    0174 1FF9      ADC	R31,R25
+    0175 E78C      LDI	R24,0x7C
+    0176 8380      STD	R24,0+Z
+    0177 C015      RJMP	0x018D
+(0151) 		else
+(0152) 			memory[((oldY+3)<<4)+oldX] = ' ';
+    0178 2E26      MOV	R2,R22
+    0179 2433      CLR	R3
+    017A 2FE4      MOV	R30,R20
+    017B 27FF      CLR	R31
+    017C 9633      ADIW	R30,3
+    017D 0FEE      LSL	R30
+    017E 1FFF      ROL	R31
+    017F 0FEE      LSL	R30
+    0180 1FFF      ROL	R31
+    0181 0FEE      LSL	R30
+    0182 1FFF      ROL	R31
+    0183 0FEE      LSL	R30
+    0184 1FFF      ROL	R31
+    0185 0DE2      ADD	R30,R2
+    0186 1DF3      ADC	R31,R3
+    0187 E680      LDI	R24,0x60
+    0188 E090      LDI	R25,0
+    0189 0FE8      ADD	R30,R24
+    018A 1FF9      ADC	R31,R25
+    018B E280      LDI	R24,0x20
+    018C 8380      STD	R24,0+Z
+(0153) 		x += dx;						// Update ball's position
+    018D 0C4A      ADD	R4,R10
+(0154) 		y += dy;
+    018E 0C6E      ADD	R6,R14
+(0155) 		memory[((3+y)<<4)+x] = 'o';
+    018F 2C24      MOV	R2,R4
+    0190 2433      CLR	R3
+    0191 2DE6      MOV	R30,R6
+    0192 27FF      CLR	R31
+    0193 9633      ADIW	R30,3
+    0194 0FEE      LSL	R30
+    0195 1FFF      ROL	R31
+    0196 0FEE      LSL	R30
+    0197 1FFF      ROL	R31
+    0198 0FEE      LSL	R30
+    0199 1FFF      ROL	R31
+    019A 0FEE      LSL	R30
+    019B 1FFF      ROL	R31
+    019C 0DE2      ADD	R30,R2
+    019D 1DF3      ADC	R31,R3
+    019E E680      LDI	R24,0x60
+    019F E090      LDI	R25,0
+    01A0 0FE8      ADD	R30,R24
+    01A1 1FF9      ADC	R31,R25
+    01A2 E68F      LDI	R24,0x6F
+    01A3 8380      STD	R24,0+Z
+(0156) 
+(0157) 		if (dx == -1)					// If ball is moving left
+    01A4 2D8A      MOV	R24,R10
+    01A5 3F8F      CPI	R24,0xFF
+    01A6 F561      BNE	0x01D3
+(0158) 		{
+(0159) 			memory[(3+leftPos)<<4] = ' '; // Erase left's bat
+    01A7 E680      LDI	R24,0x60
+    01A8 E090      LDI	R25,0
+    01A9 81E8      LDD	R30,0+Y
+    01AA 27FF      CLR	R31
+    01AB 9633      ADIW	R30,3
+    01AC 0FEE      LSL	R30
+    01AD 1FFF      ROL	R31
+    01AE 0FEE      LSL	R30
+    01AF 1FFF      ROL	R31
+    01B0 0FEE      LSL	R30
+    01B1 1FFF      ROL	R31
+    01B2 0FEE      LSL	R30
+    01B3 1FFF      ROL	R31
+    01B4 0FE8      ADD	R30,R24
+    01B5 1FF9      ADC	R31,R25
+    01B6 E280      LDI	R24,0x20
+    01B7 8380      STD	R24,0+Z
+(0160) 			if (y > leftPos)			// Move bat towards the ball
+    01B8 8008      LDD	R0,0+Y
+    01B9 1406      CP	R0,R6
+    01BA F410      BCC	0x01BD
+(0161) 				leftPos++;
+    01BB 9403      INC	R0
+    01BC 8208      STD	R0,0+Y
+(0162) 			if (y < leftPos)
+    01BD 8008      LDD	R0,0+Y
+    01BE 1460      CP	R6,R0
+    01BF F410      BCC	0x01C2
+(0163) 				leftPos--;
+    01C0 940A      DEC	R0
+    01C1 8208      STD	R0,0+Y
+(0164) 			memory[(3+leftPos)<<4] = '|'; // Draw left's bat
+    01C2 E680      LDI	R24,0x60
+    01C3 E090      LDI	R25,0
+    01C4 81E8      LDD	R30,0+Y
+    01C5 27FF      CLR	R31
+    01C6 9633      ADIW	R30,3
+    01C7 0FEE      LSL	R30
+    01C8 1FFF      ROL	R31
+    01C9 0FEE      LSL	R30
+    01CA 1FFF      ROL	R31
+    01CB 0FEE      LSL	R30
+    01CC 1FFF      ROL	R31
+    01CD 0FEE      LSL	R30
+    01CE 1FFF      ROL	R31
+    01CF 0FE8      ADD	R30,R24
+    01D0 1FF9      ADC	R31,R25
+    01D1 E78C      LDI	R24,0x7C
+    01D2 8380      STD	R24,0+Z
+(0165) 		}
+(0166) 
+(0167) 		if (dx == 1)					// If ball is moving right
+    01D3 2D8A      MOV	R24,R10
+    01D4 3081      CPI	R24,1
+    01D5 F541      BNE	0x01FE
+(0168) 		{
+(0169) 			memory[((3+rightPos)<<4)+(SIZEX-1)] = ' '; // Erase right's bat
+    01D6 E68E      LDI	R24,0x6E
+    01D7 E090      LDI	R25,0
+    01D8 2DEC      MOV	R30,R12
+    01D9 27FF      CLR	R31
+    01DA 9633      ADIW	R30,3
+    01DB 0FEE      LSL	R30
+    01DC 1FFF      ROL	R31
+    01DD 0FEE      LSL	R30
+    01DE 1FFF      ROL	R31
+    01DF 0FEE      LSL	R30
+    01E0 1FFF      ROL	R31
+    01E1 0FEE      LSL	R30
+    01E2 1FFF      ROL	R31
+    01E3 0FE8      ADD	R30,R24
+    01E4 1FF9      ADC	R31,R25
+    01E5 E280      LDI	R24,0x20
+    01E6 8380      STD	R24,0+Z
+(0170) 			if (y > rightPos)			// Move bat towards the ball
+    01E7 14C6      CP	R12,R6
+    01E8 F408      BCC	0x01EA
+(0171) 				rightPos++;
+    01E9 94C3      INC	R12
+(0172) 			if (y < rightPos)
+    01EA 146C      CP	R6,R12
+    01EB F408      BCC	0x01ED
+(0173) 				rightPos--;
+    01EC 94CA      DEC	R12
+(0174) 			memory[((3+rightPos)<<4)+(SIZEX-1)] = '|'; // Draw right's bat
+    01ED E68E      LDI	R24,0x6E
+    01EE E090      LDI	R25,0
+    01EF 2DEC      MOV	R30,R12
+    01F0 27FF      CLR	R31
+    01F1 9633      ADIW	R30,3
+    01F2 0FEE      LSL	R30
+    01F3 1FFF      ROL	R31
+    01F4 0FEE      LSL	R30
+    01F5 1FFF      ROL	R31
+    01F6 0FEE      LSL	R30
+    01F7 1FFF      ROL	R31
+    01F8 0FEE      LSL	R30
+    01F9 1FFF      ROL	R31
+    01FA 0FE8      ADD	R30,R24
+    01FB 1FF9      ADC	R31,R25
+    01FC E78C      LDI	R24,0x7C
+    01FD 8380      STD	R24,0+Z
+(0175) 		}
+(0176) 
+(0177) 		if (x == 1 && leftPos == y)		// If left is hitting the ball
+    01FE 2D84      MOV	R24,R4
+    01FF 3081      CPI	R24,1
+    0200 F451      BNE	0x020B
+    0201 8008      LDD	R0,0+Y
+    0202 1406      CP	R0,R6
+    0203 F439      BNE	0x020B
+(0178) 		{
+(0179) 			dx = 1;						// Hit it back
+    0204 24AA      CLR	R10
+    0205 94A3      INC	R10
+(0180) 			MakeLedGreen();
+    0206 924F      PUSH	R4
+    0207 926F      PUSH	R6
+    0208 DE82      RCALL	_MakeLedGreen
+    0209 906F      POP	R6
+    020A 904F      POP	R4
+(0181) 		}
+(0182) 
+(0183) 		if (x == SIZEX-2 && rightPos == y) // If right is hitting the ball
+    020B 2D84      MOV	R24,R4
+    020C 308D      CPI	R24,0xD
+    020D F449      BNE	0x0217
+    020E 14C6      CP	R12,R6
+    020F F439      BNE	0x0217
+(0184) 		{
+(0185) 			dx = -1;					// Hit it back
+    0210 EF8F      LDI	R24,0xFF
+    0211 2EA8      MOV	R10,R24
+(0186) 			MakeLedRed();
+    0212 924F      PUSH	R4
+    0213 926F      PUSH	R6
+    0214 DE72      RCALL	_MakeLedRed
+    0215 906F      POP	R6
+    0216 904F      POP	R4
+(0187) 		}
+(0188) 
+(0189) 		if (x == 0)						// If left missed
+    0217 2044      TST	R4
+    0218 F509      BNE	0x023A
+(0190) 		{
+(0191) 			rightScore++;				// Add 1 to right's score
+    0219 91800100  LDS	R24,_rightScore
+    021B 5F8F      SUBI	R24,0xFF
+    021C 93800100  STS	R24,_rightScore
+(0192) 			memory[((3+y)<<4)+x] = ' ';
+    021E 2C24      MOV	R2,R4
+    021F 2433      CLR	R3
+    0220 2DE6      MOV	R30,R6
+    0221 27FF      CLR	R31
+    0222 9633      ADIW	R30,3
+    0223 0FEE      LSL	R30
+    0224 1FFF      ROL	R31
+    0225 0FEE      LSL	R30
+    0226 1FFF      ROL	R31
+    0227 0FEE      LSL	R30
+    0228 1FFF      ROL	R31
+    0229 0FEE      LSL	R30
+    022A 1FFF      ROL	R31
+    022B 0DE2      ADD	R30,R2
+    022C 1DF3      ADC	R31,R3
+    022D E680      LDI	R24,0x60
+    022E E090      LDI	R25,0
+    022F 0FE8      ADD	R30,R24
+    0230 1FF9      ADC	R31,R25
+    0231 E280      LDI	R24,0x20
+    0232 8380      STD	R24,0+Z
+(0193) 			x = 1;						// Left serves
+    0233 2444      CLR	R4
+    0234 9443      INC	R4
+(0194) 			y = leftPos;
+    0235 8068      LDD	R6,0+Y
+(0195) 			dx = 1;
+    0236 24AA      CLR	R10
+    0237 94A3      INC	R10
+(0196) 			dy = 1;
+    0238 24EE      CLR	R14
+    0239 94E3      INC	R14
+(0197) 		}
+(0198) 
+(0199) 		if (x == SIZEX-1)				// If right missed
+    023A 2D84      MOV	R24,R4
+    023B 308E      CPI	R24,0xE
+    023C F509      BNE	0x025E
+(0200) 		{
+(0201) 			leftScore++;				// Add 1 to left's score
+    023D 91800101  LDS	R24,_leftScore
+    023F 5F8F      SUBI	R24,0xFF
+    0240 93800101  STS	R24,_leftScore
+(0202) 			memory[((3+y)<<4)+x] = ' ';
+    0242 2C24      MOV	R2,R4
+    0243 2433      CLR	R3
+    0244 2DE6      MOV	R30,R6
+    0245 27FF      CLR	R31
+    0246 9633      ADIW	R30,3
+    0247 0FEE      LSL	R30
+    0248 1FFF      ROL	R31
+    0249 0FEE      LSL	R30
+    024A 1FFF      ROL	R31
+    024B 0FEE      LSL	R30
+    024C 1FFF      ROL	R31
+    024D 0FEE      LSL	R30
+    024E 1FFF      ROL	R31
+    024F 0DE2      ADD	R30,R2
+    0250 1DF3      ADC	R31,R3
+    0251 E680      LDI	R24,0x60
+    0252 E090      LDI	R25,0
+    0253 0FE8      ADD	R30,R24
+    0254 1FF9      ADC	R31,R25
+    0255 E280      LDI	R24,0x20
+    0256 8380      STD	R24,0+Z
+(0203) 			x = SIZEX-2;				// Right serves
+    0257 E08D      LDI	R24,0xD
+    0258 2E48      MOV	R4,R24
+(0204) 			y = rightPos;
+    0259 2C6C      MOV	R6,R12
+(0205) 			dx = -1;
+    025A EF8F      LDI	R24,0xFF
+    025B 2EA8      MOV	R10,R24
+(0206) 			dy = 1;
+    025C 24EE      CLR	R14
+    025D 94E3      INC	R14
+(0207) 		}
+(0208) 
+(0209) 		if (y == 0 || y == (SIZEY-1))	// If ball is at the top or bottom edge
+    025E 2066      TST	R6
+    025F F019      BEQ	0x0263
+    0260 2D86      MOV	R24,R6
+    0261 3085      CPI	R24,5
+    0262 F409      BNE	0x0264
+(0210) 			dy =- dy;					// Bounce
+    0263 94E1      NEG	R14
+(0211) 
+(0212) 		oldX = x;						// Save ball's position
+    0264 2D64      MOV	R22,R4
+(0213) 		oldY = y;
+    0265 2D46      MOV	R20,R6
+(0214) 	}
+FILE: <library>
+    0266 CEAC      RJMP	0x0113
+    0267 9621      ADIW	R28,1
+    0268 9508      RET
+isd_ISD:
+    0269 C005      RJMP	0x026F
+    026A 5349      SUBI	R20,0x39
+    026B 0044      NOP
+_SetBreakHere:
+    026C 9A8A      SBI	P11,2
+    026D 9892      CBI	P12,2
+    026E 9508      RET
+    026F 938F      PUSH	R24
+    0270 939F      PUSH	R25
+    0271 93AF      PUSH	R26
+    0272 93BF      PUSH	R27
+    0273 93CF      PUSH	R28
+    0274 93DF      PUSH	R29
+    0275 93EF      PUSH	R30
+    0276 93FF      PUSH	R31
+    0277 B78F      IN	R24,P3F
+    0278 9B92      SBIS	P12,2
+    0279 C002      RJMP	0x027C
+    027A D0AA      RCALL	_INT0_ISR
+    027B C096      RJMP	0x0312
+    027C E4C4      LDI	R28,0x44
+    027D D09F      RCALL	0x031D
+    027E 9B5F      SBIS	P0B,7
+    027F CFFE      RJMP	0x027E
+    0280 9B5C      SBIS	P0B,4
+    0281 C002      RJMP	0x0284
+    0282 B1DC      IN	R29,P0C
+    0283 CFF8      RJMP	0x027C
+    0284 B1DC      IN	R29,P0C
+    0285 34D9      CPI	R29,0x49
+    0286 F469      BNE	0x0294
+    0287 E0C6      LDI	R28,6
+    0288 D094      RCALL	0x031D
+    0289 E1C6      LDI	R28,0x16
+    028A D092      RCALL	0x031D
+    028B E0C1      LDI	R28,1
+    028C D090      RCALL	0x031D
+    028D E0CA      LDI	R28,0xA
+    028E D08E      RCALL	0x031D
+    028F E0C0      LDI	R28,0
+    0290 D08C      RCALL	0x031D
+    0291 E0CA      LDI	R28,0xA
+    0292 D08A      RCALL	0x031D
+    0293 B1DC      IN	R29,P0C
+    0294 94E8      BCLR	6
+    0295 30D0      CPI	R29,0
+    0296 F411      BNE	0x0299
+    0297 9468      BSET	6
+    0298 C002      RJMP	0x029B
+    0299 30D1      CPI	R29,1
+    029A F4D1      BNE	0x02B5
+    029B B7AD      IN	R26,P3D
+    029C B7BE      IN	R27,P3E
+    029D 9611      ADIW	R26,1
+    029E E0F8      LDI	R31,0x8
+    029F F00E      BRTS	0x02A1
+    02A0 D07B      RCALL	0x031C
+    02A1 F40E      BRTC	0x02A3
+    02A2 91CD      LD	R28,X+
+    02A3 95FA      DEC	R31
+    02A4 30F0      CPI	R31,0
+    02A5 F7C9      BNE	0x029F
+    02A6 F05E      BRTS	0x02B2
+    02A7 E1E8      LDI	R30,0x18
+    02A8 91C2      LD	R28,-Z
+    02A9 D073      RCALL	0x031D
+    02AA 13EF      CPSE	R30,R31
+    02AB CFFC      RJMP	0x02A8
+    02AC 2FC8      MOV	R28,R24
+    02AD D06F      RCALL	0x031D
+    02AE B7CD      IN	R28,P3D
+    02AF D06D      RCALL	0x031D
+    02B0 B7CE      IN	R28,P3E
+    02B1 D06B      RCALL	0x031D
+    02B2 D069      RCALL	0x031C
+    02B3 D068      RCALL	0x031C
+    02B4 C04E      RJMP	0x0303
+    02B5 30D2      CPI	R29,2
+    02B6 F439      BNE	0x02BE
+    02B7 E2A0      LDI	R26,0x20
+    02B8 E0B0      LDI	R27,0
+    02B9 E090      LDI	R25,0
+    02BA E6E0      LDI	R30,0x60
+    02BB E0F0      LDI	R31,0
+    02BC E0D0      LDI	R29,0
+    02BD C014      RJMP	0x02D2
+    02BE 30D3      CPI	R29,3
+    02BF F511      BNE	0x02E2
+    02C0 D060      RCALL	0x0321
+    02C1 2FAC      MOV	R26,R28
+    02C2 D05A      RCALL	0x031D
+    02C3 D05D      RCALL	0x0321
+    02C4 2FBC      MOV	R27,R28
+    02C5 D057      RCALL	0x031D
+    02C6 D05A      RCALL	0x0321
+    02C7 2F9C      MOV	R25,R28
+    02C8 D054      RCALL	0x031D
+    02C9 D057      RCALL	0x0321
+    02CA 2FEC      MOV	R30,R28
+    02CB D051      RCALL	0x031D
+    02CC D054      RCALL	0x0321
+    02CD 2FFC      MOV	R31,R28
+    02CE D04E      RCALL	0x031D
+    02CF D051      RCALL	0x0321
+    02D0 2FDC      MOV	R29,R28
+    02D1 D04B      RCALL	0x031D
+    02D2 32AC      CPI	R26,0x2C
+    02D3 F431      BNE	0x02DA
+    02D4 30B0      CPI	R27,0
+    02D5 F421      BNE	0x02DA
+    02D6 E3CF      LDI	R28,0x3F
+    02D7 D045      RCALL	0x031D
+    02D8 95A3      INC	R26
+    02D9 FDB0      SBRC	R27,0
+    02DA D041      RCALL	0x031C
+    02DB 17AE      CP	R26,R30
+    02DC F7A9      BNE	0x02D2
+    02DD 17BF      CP	R27,R31
+    02DE F799      BNE	0x02D2
+    02DF 179D      CP	R25,R29
+    02E0 F789      BNE	0x02D2
+    02E1 C021      RJMP	0x0303
+    02E2 30D4      CPI	R29,4
+    02E3 F4F9      BNE	0x0303
+    02E4 D03C      RCALL	0x0321
+    02E5 2FAC      MOV	R26,R28
+    02E6 D036      RCALL	0x031D
+    02E7 D039      RCALL	0x0321
+    02E8 2FBC      MOV	R27,R28
+    02E9 D033      RCALL	0x031D
+    02EA D036      RCALL	0x0321
+    02EB 2F9C      MOV	R25,R28
+    02EC D030      RCALL	0x031D
+    02ED D033      RCALL	0x0321
+    02EE 2FEC      MOV	R30,R28
+    02EF D02D      RCALL	0x031D
+    02F0 D030      RCALL	0x0321
+    02F1 2FFC      MOV	R31,R28
+    02F2 D02A      RCALL	0x031D
+    02F3 D02D      RCALL	0x0321
+    02F4 2FDC      MOV	R29,R28
+    02F5 D027      RCALL	0x031D
+    02F6 BBAF      OUT	P1F,R26
+    02F7 BBBE      OUT	P1E,R27
+    02F8 9AE0      SBI	P1C,0
+    02F9 98E0      CBI	P1C,0
+    02FA B3CD      IN	R28,P1D
+    02FB D021      RCALL	0x031D
+    02FC 9611      ADIW	R26,1
+    02FD 17AE      CP	R26,R30
+    02FE F7B9      BNE	0x02F6
+    02FF 17BF      CP	R27,R31
+    0300 F7A9      BNE	0x02F6
+    0301 179D      CP	R25,R29
+    0302 F799      BNE	0x02F6
+    0303 E4C5      LDI	R28,0x45
+    0304 D018      RCALL	0x031D
+    0305 9B5F      SBIS	P0B,7
+    0306 CFFE      RJMP	0x0305
+    0307 9B5C      SBIS	P0B,4
+    0308 C002      RJMP	0x030B
+    0309 B1CC      IN	R28,P0C
+    030A CFF8      RJMP	0x0303
+    030B B1CC      IN	R28,P0C
+    030C FFC0      SBRS	R28,0
+    030D CF6E      RJMP	0x027C
+    030E FDC4      SBRC	R28,4
+    030F C002      RJMP	0x0312
+    0310 9A92      SBI	P12,2
+    0311 988A      CBI	P11,2
+    0312 BF8F      OUT	P3F,R24
+    0313 91FF      POP	R31
+    0314 91EF      POP	R30
+    0315 91DF      POP	R29
+    0316 91CF      POP	R28
+    0317 91BF      POP	R27
+    0318 91AF      POP	R26
+    0319 919F      POP	R25
+    031A 918F      POP	R24
+    031B 9518      RETI
+    031C 91CD      LD	R28,X+
+    031D B9CC      OUT	P0C,R28
+    031E 9B5D      SBIS	P0B,5
+    031F CFFE      RJMP	0x031E
+    0320 9508      RET
+    0321 9B5F      SBIS	P0B,7
+    0322 CFFE      RJMP	0x0321
+    0323 B1CC      IN	R28,P0C
+    0324 9508      RET
+_INT0_ISR:
+    0325 9508      RET
+mpy8s:
+    0326 920A      ST	R0,-Y
+    0327 2400      CLR	R0
+    0328 2300      TST	R16
+    0329 F029      BEQ	0x032F
+    032A 9506      LSR	R16
+    032B F408      BCC	0x032D
+    032C 0E01      ADD	R0,R17
+    032D 0F11      LSL	R17
+    032E CFF9      RJMP	0x0328
+    032F 2D00      MOV	R16,R0
+    0330 9009      LD	R0,Y+
+    0331 9508      RET
+mod8u:
+    0332 9468      BSET	6
+    0333 C001      RJMP	xdiv8u
+div8u:
+    0334 94E8      BCLR	6
+xdiv8u:
+    0335 932A      ST	R18,-Y
+    0336 92FA      ST	R15,-Y
+    0337 24FF      CLR	R15
+    0338 E028      LDI	R18,0x8
+    0339 0F00      LSL	R16
+    033A 1CFF      ROL	R15
+    033B 16F1      CP	R15,R17
+    033C F010      BCS	0x033F
+    033D 1AF1      SUB	R15,R17
+    033E 9503      INC	R16
+    033F 952A      DEC	R18
+    0340 F7C1      BNE	0x0339
+    0341 F40E      BRTC	0x0343
+    0342 2D0F      MOV	R16,R15
+    0343 90F9      LD	R15,Y+
+    0344 9129      LD	R18,Y+
+    0345 9508      RET

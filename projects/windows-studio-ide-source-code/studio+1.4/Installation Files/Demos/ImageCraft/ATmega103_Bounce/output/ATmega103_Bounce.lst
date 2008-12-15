@@ -1,0 +1,567 @@
+__text_start:
+__start:
+    00C0 EFCF      LDI	R28,0xFF
+    00C1 E0DF      LDI	R29,0xF
+    00C2 BFCD      OUT	P3D,R28
+    00C3 BFDE      OUT	P3E,R29
+    00C4 52C0      SUBI	R28,0x20
+    00C5 40D0      SBCI	R29,0
+    00C6 EA0A      LDI	R16,0xAA
+    00C7 8308      STD	R16,0+Y
+    00C8 2400      CLR	R0
+    00C9 E8E0      LDI	R30,0x80
+    00CA E0F1      LDI	R31,1
+    00CB E011      LDI	R17,1
+    00CC 38E0      CPI	R30,0x80
+    00CD 07F1      CPC	R31,R17
+    00CE F011      BEQ	0x00D1
+    00CF 9201      ST	R0,Z+
+    00D0 CFFB      RJMP	0x00CC
+    00D1 8300      STD	R16,0+Z
+    00D2 E6E0      LDI	R30,0x60
+    00D3 E0F0      LDI	R31,0
+    00D4 E6A0      LDI	R26,0x60
+    00D5 E0B0      LDI	R27,0
+    00D6 E011      LDI	R17,1
+    00D7 38E0      CPI	R30,0x80
+    00D8 07F1      CPC	R31,R17
+    00D9 F021      BEQ	0x00DE
+    00DA 95C8      LPM
+    00DB 9631      ADIW	R30,1
+    00DC 920D      ST	R0,X+
+    00DD CFF9      RJMP	0x00D7
+    00DE 940E00F0  CALL	_main
+_exit:
+    00E0 CFFF      RJMP	_exit
+FILE: C:\Studio+\Demos\ImageCraft\ATmega103_Bounce\Bounce.c
+(0000) // Bounce.c
+(0001) //
+(0002) // Flash Studio+ & In-System-Debugger (ISD) "Bounce" demo.
+(0003) //
+(0004) // Use with any ATMEL AVR CPU that has internal SRAM and an RS232
+(0005) // port or with Flash 5in1 AVR Starter Kits for added features.
+(0006) //
+(0007) // Requires a version 1.6 (or later) ISD library or source file:
+(0008) //    libISD16ATx.a or ISD16_ATx.s
+(0009) 
+(0010) // ****** USER SETTINGS ******
+(0011) 
+(0012) // Un-comment the CPU you are using.
+(0013) // Remember to set the CPU & ISD library (if you are using one)
+(0014) // in your ImageCraft project settings too!
+(0015) //#define AT90S8515
+(0016) #define ATMEGA103
+(0017) 
+(0018) // Clock frequency - set this to your clock frequency
+(0019) #define FOSC 3686400					// 3.6864Mhz
+(0020) 
+(0021) // Serial comms Baud rate - set this to your desired baud rate
+(0022) #define BAUD 115200
+(0023) 
+(0024) // ***** END USER SETTINGS *****
+(0025) 
+(0026) #include <stdio.h>
+(0027) #include <ina90.h>
+(0028) #ifdef AT90S8515
+(0029) #include <io8515.h>
+(0030) #endif
+(0031) #ifdef ATMEGA103
+(0032) #include <iom103.h>
+(0033) #endif
+(0034) 
+(0035) #define SIZEX 16						// Size of bounce area
+(0036) #define SIZEY 8
+(0037) 
+(0038) char memory[SIZEY+2][SIZEX] = {"   Flash Demo   ","   AVR Bounce   "};
+(0039) char message[SIZEY][SIZEX] = {"                ","  THE WORLD'S   ",
+(0040) 	"   SMALLEST,    ","   FASTEST,     ","    NO-ICE,     ",
+(0041) 	"   IN-SYSTEM    ","   DEBUGGER!    ","                "};
+(0042) 
+(0043) 
+(0044) void UART0_Init(void)
+(0045) {
+(0046) 	UCR  = 0x00;						// Disable while setting baud rate
+_UART0_Init:
+    00E1 2422      CLR	R2
+    00E2 B82A      OUT	P0A,R2
+(0047) 	UBRR = (FOSC/(16*BAUD))-1;			// Set baud rate
+    00E3 E081      LDI	R24,1
+    00E4 B989      OUT	P09,R24
+(0048) 	UCR  = 0x18;						// Enable Tx & Rx
+    00E5 E188      LDI	R24,0x18
+    00E6 B98A      OUT	P0A,R24
+(0049) }
+    00E7 9508      RET
+(0050) 
+(0051) 
+(0052) void INT0_Init(void)
+(0053) {
+(0054) #ifdef AT90S8515
+(0055) 	DDRD |= 0x08;						// Set up PD3 (AVRDIL LED) = Output
+(0056) 	PORTD |= 0x04;						// Turn on Pull-Up PD2 (INT0) = 1
+(0057) #endif
+(0058) #ifdef ATMEGA103
+(0059) 	PORTD |= 0x01;						// Turn on Pull-Up PD0 (INT0) = 1
+_INT0_Init:
+    00E8 9A90      SBI	P12,0
+(0060) #endif
+(0061) }
+    00E9 9508      RET
+(0062) 
+(0063) 
+(0064) void MakeLedRed(void)
+(0065) {
+(0066) 	DDRD &= 0xf7;						// Turn on red LED
+_MakeLedRed:
+    00EA B381      IN	R24,P11
+    00EB 7F87      ANDI	R24,0xF7
+    00EC BB81      OUT	P11,R24
+(0067) }
+    00ED 9508      RET
+(0068) 
+(0069) 
+(0070) void MakeLedGreen(void)
+(0071) {
+(0072) 	DDRD |= 0x08;						// Turn off red LED
+_MakeLedGreen:
+    00EE 9A8B      SBI	P11,3
+(0073) }
+    00EF 9508      RET
+_main:
+  dy                   --> R14
+  dx                   --> R10
+  oldY                 --> R20
+  oldX                 --> R22
+  y                    --> Y+0
+  x                    --> R12
+    00F0 9721      SBIW	R28,1
+(0074) 
+(0075) 
+(0076) void main(void)
+(0077) {
+(0078) 	unsigned char x, y, oldX, oldY;
+(0079) 	char dx, dy;
+(0080) 
+(0081) 	MCUCR |= 0x80;						// Enable external sram (optional)
+    00F1 B785      IN	R24,P35
+    00F2 6880      ORI	R24,0x80
+    00F3 BF85      OUT	P35,R24
+(0082) 
+(0083) 	INT0_Init();
+    00F4 DFF3      RCALL	_INT0_Init
+(0084) 	UART0_Init();
+    00F5 DFEB      RCALL	_UART0_Init
+(0085) #ifdef AT90S8515
+(0086) 	GIMSK |= 0x40;						// Enable INT0 (AT90S8515)
+(0087) #endif
+(0088) #ifdef ATMEGA103
+(0089) 	EIMSK |= 0x01;						// Enable INT0 (ATmega103)
+    00F6 B789      IN	R24,P39
+    00F7 6081      ORI	R24,1
+    00F8 BF89      OUT	P39,R24
+(0090) #endif
+(0091) 	SEI();								// Enable interrupts
+    00F9 9478      BSET	7
+(0092) 
+(0093) 	for (y=0; y<SIZEY; y++)				// Initialise grid
+    00FA 2400      CLR	R0
+    00FB 8208      STD	R0,0+Y
+    00FC C030      RJMP	0x012D
+(0094) 	{
+(0095) 		for (x=0; x<SIZEX; x++)
+    00FD 24CC      CLR	R12
+    00FE C028      RJMP	0x0127
+(0096) 		{
+(0097) 			memory[y+2][x] = message[y][x];
+    00FF E080      LDI	R24,0
+    0100 E091      LDI	R25,1
+    0101 8028      LDD	R2,0+Y
+    0102 2433      CLR	R3
+    0103 0C22      LSL	R2
+    0104 1C33      ROL	R3
+    0105 0C22      LSL	R2
+    0106 1C33      ROL	R3
+    0107 0C22      LSL	R2
+    0108 1C33      ROL	R3
+    0109 0C22      LSL	R2
+    010A 1C33      ROL	R3
+    010B 0E28      ADD	R2,R24
+    010C 1E39      ADC	R3,R25
+    010D 2DEC      MOV	R30,R12
+    010E 27FF      CLR	R31
+    010F 0DE2      ADD	R30,R2
+    0110 1DF3      ADC	R31,R3
+    0111 8020      LDD	R2,0+Z
+    0112 E680      LDI	R24,0x60
+    0113 E090      LDI	R25,0
+    0114 81E8      LDD	R30,0+Y
+    0115 27FF      CLR	R31
+    0116 9632      ADIW	R30,2
+    0117 0FEE      LSL	R30
+    0118 1FFF      ROL	R31
+    0119 0FEE      LSL	R30
+    011A 1FFF      ROL	R31
+    011B 0FEE      LSL	R30
+    011C 1FFF      ROL	R31
+    011D 0FEE      LSL	R30
+    011E 1FFF      ROL	R31
+    011F 0FE8      ADD	R30,R24
+    0120 1FF9      ADC	R31,R25
+    0121 2DAC      MOV	R26,R12
+    0122 27BB      CLR	R27
+    0123 0FAE      ADD	R26,R30
+    0124 1FBF      ADC	R27,R31
+    0125 922C      ST	R2,0(X)
+(0098) 		}
+    0126 94C3      INC	R12
+    0127 2D8C      MOV	R24,R12
+    0128 3180      CPI	R24,0x10
+    0129 F2A8      BCS	0x00FF
+(0099) 	}
+    012A 8008      LDD	R0,0+Y
+    012B 9403      INC	R0
+    012C 8208      STD	R0,0+Y
+    012D 8188      LDD	R24,0+Y
+    012E 3088      CPI	R24,0x8
+    012F F268      BCS	0x00FD
+(0100) 
+(0101) 	MakeLedRed();
+    0130 DFB9      RCALL	_MakeLedRed
+(0102) 	x = 0;								// Starting position
+    0131 24CC      CLR	R12
+(0103) 	y = 3;
+    0132 E083      LDI	R24,3
+    0133 8388      STD	R24,0+Y
+(0104) 	memory[y+2][x] = 'O';
+    0134 E680      LDI	R24,0x60
+    0135 E090      LDI	R25,0
+    0136 81E8      LDD	R30,0+Y
+    0137 27FF      CLR	R31
+    0138 9632      ADIW	R30,2
+    0139 0FEE      LSL	R30
+    013A 1FFF      ROL	R31
+    013B 0FEE      LSL	R30
+    013C 1FFF      ROL	R31
+    013D 0FEE      LSL	R30
+    013E 1FFF      ROL	R31
+    013F 0FEE      LSL	R30
+    0140 1FFF      ROL	R31
+    0141 0FE8      ADD	R30,R24
+    0142 1FF9      ADC	R31,R25
+    0143 2DAC      MOV	R26,R12
+    0144 27BB      CLR	R27
+    0145 0FAE      ADD	R26,R30
+    0146 1FBF      ADC	R27,R31
+    0147 E48F      LDI	R24,0x4F
+    0148 938C      ST	R24,0(X)
+(0105) 	oldX = x;
+    0149 2D6C      MOV	R22,R12
+(0106) 	oldY = y;
+    014A 8148      LDD	R20,0+Y
+(0107) 	dx = 1;								// Right & down
+    014B 24AA      CLR	R10
+    014C 94A3      INC	R10
+(0108) 	dy = 1;
+    014D 24EE      CLR	R14
+    014E 94E3      INC	R14
+(0109) 
+(0110) 	for (;;)							// Loop forever!!
+(0111) 	{
+(0112) 		memory[2+oldY][oldX] = message[oldY][oldX];
+    014F E080      LDI	R24,0
+    0150 E091      LDI	R25,1
+    0151 2E24      MOV	R2,R20
+    0152 2433      CLR	R3
+    0153 0C22      LSL	R2
+    0154 1C33      ROL	R3
+    0155 0C22      LSL	R2
+    0156 1C33      ROL	R3
+    0157 0C22      LSL	R2
+    0158 1C33      ROL	R3
+    0159 0C22      LSL	R2
+    015A 1C33      ROL	R3
+    015B 0E28      ADD	R2,R24
+    015C 1E39      ADC	R3,R25
+    015D 2FE6      MOV	R30,R22
+    015E 27FF      CLR	R31
+    015F 0DE2      ADD	R30,R2
+    0160 1DF3      ADC	R31,R3
+    0161 8020      LDD	R2,0+Z
+    0162 E680      LDI	R24,0x60
+    0163 E090      LDI	R25,0
+    0164 2FE4      MOV	R30,R20
+    0165 27FF      CLR	R31
+    0166 9632      ADIW	R30,2
+    0167 0FEE      LSL	R30
+    0168 1FFF      ROL	R31
+    0169 0FEE      LSL	R30
+    016A 1FFF      ROL	R31
+    016B 0FEE      LSL	R30
+    016C 1FFF      ROL	R31
+    016D 0FEE      LSL	R30
+    016E 1FFF      ROL	R31
+    016F 0FE8      ADD	R30,R24
+    0170 1FF9      ADC	R31,R25
+    0171 2FA6      MOV	R26,R22
+    0172 27BB      CLR	R27
+    0173 0FAE      ADD	R26,R30
+    0174 1FBF      ADC	R27,R31
+    0175 922C      ST	R2,0(X)
+(0113) 		x += dx;						// Update ball's position
+    0176 0CCA      ADD	R12,R10
+(0114) 		y += dy;
+    0177 8028      LDD	R2,0+Y
+    0178 0C2E      ADD	R2,R14
+    0179 8228      STD	R2,0+Y
+(0115) 		memory[2+y][x] = 'O';
+    017A 81E8      LDD	R30,0+Y
+    017B 27FF      CLR	R31
+    017C 9632      ADIW	R30,2
+    017D 0FEE      LSL	R30
+    017E 1FFF      ROL	R31
+    017F 0FEE      LSL	R30
+    0180 1FFF      ROL	R31
+    0181 0FEE      LSL	R30
+    0182 1FFF      ROL	R31
+    0183 0FEE      LSL	R30
+    0184 1FFF      ROL	R31
+    0185 0FE8      ADD	R30,R24
+    0186 1FF9      ADC	R31,R25
+    0187 2DAC      MOV	R26,R12
+    0188 27BB      CLR	R27
+    0189 0FAE      ADD	R26,R30
+    018A 1FBF      ADC	R27,R31
+    018B E48F      LDI	R24,0x4F
+    018C 938C      ST	R24,0(X)
+(0116) 
+(0117) 		if (x == 0 || x == (SIZEX-1))	// If ball is at the left or right edge
+    018D 20CC      TST	R12
+    018E F019      BEQ	0x0192
+    018F 2D8C      MOV	R24,R12
+    0190 308F      CPI	R24,0xF
+    0191 F411      BNE	0x0194
+(0118) 		{
+(0119) 			dx =- dx;					// Change direction
+    0192 94A1      NEG	R10
+(0120) 			MakeLedGreen();
+    0193 DF5A      RCALL	_MakeLedGreen
+(0121) 		}
+(0122) 
+(0123) 		SetBreakHere();					// Hard Breakpoint here
+    0194 940E01A6  CALL	_SetBreakHere
+(0124) 
+(0125) 		if (y==0 || y== (SIZEY-1))		// If ball is at the top or bottom edge
+    0196 8008      LDD	R0,0+Y
+    0197 2000      TST	R0
+    0198 F019      BEQ	0x019C
+    0199 8188      LDD	R24,0+Y
+    019A 3087      CPI	R24,7
+    019B F411      BNE	0x019E
+(0126) 		{
+(0127) 			dy =- dy;					// Change direction
+    019C 94E1      NEG	R14
+(0128) 			MakeLedRed();
+    019D DF4C      RCALL	_MakeLedRed
+(0129) 		}
+(0130) 
+(0131) 		oldX = x;						// Save ball's position
+    019E 2D6C      MOV	R22,R12
+(0132) 		oldY = y;
+    019F 8148      LDD	R20,0+Y
+(0133) 	}
+FILE: <library>
+    01A0 CFAE      RJMP	0x014F
+    01A1 9621      ADIW	R28,1
+    01A2 9508      RET
+isd_ISD:
+    01A3 C005      RJMP	0x01A9
+    01A4 5349      SUBI	R20,0x39
+    01A5 0044      NOP
+_SetBreakHere:
+    01A6 9A88      SBI	P11,0
+    01A7 9890      CBI	P12,0
+    01A8 9508      RET
+    01A9 938F      PUSH	R24
+    01AA 939F      PUSH	R25
+    01AB 93AF      PUSH	R26
+    01AC 93BF      PUSH	R27
+    01AD 93CF      PUSH	R28
+    01AE 93DF      PUSH	R29
+    01AF 93EF      PUSH	R30
+    01B0 93FF      PUSH	R31
+    01B1 B78F      IN	R24,P3F
+    01B2 9988      SBIC	P11,0
+    01B3 C003      RJMP	0x01B7
+    01B4 940E0260  CALL	_INT0_ISR
+    01B6 C096      RJMP	0x024D
+    01B7 E4C4      LDI	R28,0x44
+    01B8 D09F      RCALL	0x0258
+    01B9 9B5F      SBIS	P0B,7
+    01BA CFFE      RJMP	0x01B9
+    01BB 9B5C      SBIS	P0B,4
+    01BC C002      RJMP	0x01BF
+    01BD B1DC      IN	R29,P0C
+    01BE CFF8      RJMP	0x01B7
+    01BF B1DC      IN	R29,P0C
+    01C0 34D9      CPI	R29,0x49
+    01C1 F469      BNE	0x01CF
+    01C2 E0C6      LDI	R28,6
+    01C3 D094      RCALL	0x0258
+    01C4 E1C6      LDI	R28,0x16
+    01C5 D092      RCALL	0x0258
+    01C6 E0C1      LDI	R28,1
+    01C7 D090      RCALL	0x0258
+    01C8 E1C2      LDI	R28,0x12
+    01C9 D08E      RCALL	0x0258
+    01CA E0C0      LDI	R28,0
+    01CB D08C      RCALL	0x0258
+    01CC E0CA      LDI	R28,0xA
+    01CD D08A      RCALL	0x0258
+    01CE B1DC      IN	R29,P0C
+    01CF 94E8      BCLR	6
+    01D0 30D0      CPI	R29,0
+    01D1 F411      BNE	0x01D4
+    01D2 9468      BSET	6
+    01D3 C002      RJMP	0x01D6
+    01D4 30D1      CPI	R29,1
+    01D5 F4D1      BNE	0x01F0
+    01D6 B7AD      IN	R26,P3D
+    01D7 B7BE      IN	R27,P3E
+    01D8 9611      ADIW	R26,1
+    01D9 E0F8      LDI	R31,0x8
+    01DA F00E      BRTS	0x01DC
+    01DB D07B      RCALL	0x0257
+    01DC F40E      BRTC	0x01DE
+    01DD 91CD      LD	R28,X+
+    01DE 95FA      DEC	R31
+    01DF 30F0      CPI	R31,0
+    01E0 F7C9      BNE	0x01DA
+    01E1 F05E      BRTS	0x01ED
+    01E2 E1E8      LDI	R30,0x18
+    01E3 91C2      LD	R28,-Z
+    01E4 D073      RCALL	0x0258
+    01E5 13EF      CPSE	R30,R31
+    01E6 CFFC      RJMP	0x01E3
+    01E7 2FC8      MOV	R28,R24
+    01E8 D06F      RCALL	0x0258
+    01E9 B7CD      IN	R28,P3D
+    01EA D06D      RCALL	0x0258
+    01EB B7CE      IN	R28,P3E
+    01EC D06B      RCALL	0x0258
+    01ED D069      RCALL	0x0257
+    01EE D068      RCALL	0x0257
+    01EF C04E      RJMP	0x023E
+    01F0 30D2      CPI	R29,2
+    01F1 F439      BNE	0x01F9
+    01F2 E2A0      LDI	R26,0x20
+    01F3 E0B0      LDI	R27,0
+    01F4 E090      LDI	R25,0
+    01F5 E6E0      LDI	R30,0x60
+    01F6 E0F0      LDI	R31,0
+    01F7 E0D0      LDI	R29,0
+    01F8 C014      RJMP	0x020D
+    01F9 30D3      CPI	R29,3
+    01FA F511      BNE	0x021D
+    01FB D060      RCALL	0x025C
+    01FC 2FAC      MOV	R26,R28
+    01FD D05A      RCALL	0x0258
+    01FE D05D      RCALL	0x025C
+    01FF 2FBC      MOV	R27,R28
+    0200 D057      RCALL	0x0258
+    0201 D05A      RCALL	0x025C
+    0202 2F9C      MOV	R25,R28
+    0203 D054      RCALL	0x0258
+    0204 D057      RCALL	0x025C
+    0205 2FEC      MOV	R30,R28
+    0206 D051      RCALL	0x0258
+    0207 D054      RCALL	0x025C
+    0208 2FFC      MOV	R31,R28
+    0209 D04E      RCALL	0x0258
+    020A D051      RCALL	0x025C
+    020B 2FDC      MOV	R29,R28
+    020C D04B      RCALL	0x0258
+    020D 32AC      CPI	R26,0x2C
+    020E F431      BNE	0x0215
+    020F 30B0      CPI	R27,0
+    0210 F421      BNE	0x0215
+    0211 E3CF      LDI	R28,0x3F
+    0212 D045      RCALL	0x0258
+    0213 95A3      INC	R26
+    0214 FDB0      SBRC	R27,0
+    0215 D041      RCALL	0x0257
+    0216 17AE      CP	R26,R30
+    0217 F7A9      BNE	0x020D
+    0218 17BF      CP	R27,R31
+    0219 F799      BNE	0x020D
+    021A 179D      CP	R25,R29
+    021B F789      BNE	0x020D
+    021C C021      RJMP	0x023E
+    021D 30D4      CPI	R29,4
+    021E F4F9      BNE	0x023E
+    021F D03C      RCALL	0x025C
+    0220 2FAC      MOV	R26,R28
+    0221 D036      RCALL	0x0258
+    0222 D039      RCALL	0x025C
+    0223 2FBC      MOV	R27,R28
+    0224 D033      RCALL	0x0258
+    0225 D036      RCALL	0x025C
+    0226 2F9C      MOV	R25,R28
+    0227 D030      RCALL	0x0258
+    0228 D033      RCALL	0x025C
+    0229 2FEC      MOV	R30,R28
+    022A D02D      RCALL	0x0258
+    022B D030      RCALL	0x025C
+    022C 2FFC      MOV	R31,R28
+    022D D02A      RCALL	0x0258
+    022E D02D      RCALL	0x025C
+    022F 2FDC      MOV	R29,R28
+    0230 D027      RCALL	0x0258
+    0231 BBAF      OUT	P1F,R26
+    0232 BBBE      OUT	P1E,R27
+    0233 9AE0      SBI	P1C,0
+    0234 98E0      CBI	P1C,0
+    0235 B3CD      IN	R28,P1D
+    0236 D021      RCALL	0x0258
+    0237 9611      ADIW	R26,1
+    0238 17AE      CP	R26,R30
+    0239 F7B9      BNE	0x0231
+    023A 17BF      CP	R27,R31
+    023B F7A9      BNE	0x0231
+    023C 179D      CP	R25,R29
+    023D F799      BNE	0x0231
+    023E E4C5      LDI	R28,0x45
+    023F D018      RCALL	0x0258
+    0240 9B5F      SBIS	P0B,7
+    0241 CFFE      RJMP	0x0240
+    0242 9B5C      SBIS	P0B,4
+    0243 C002      RJMP	0x0246
+    0244 B1CC      IN	R28,P0C
+    0245 CFF8      RJMP	0x023E
+    0246 B1CC      IN	R28,P0C
+    0247 FFC0      SBRS	R28,0
+    0248 CF6E      RJMP	0x01B7
+    0249 FDC4      SBRC	R28,4
+    024A C002      RJMP	0x024D
+    024B 9A90      SBI	P12,0
+    024C 9888      CBI	P11,0
+    024D BF8F      OUT	P3F,R24
+    024E 91FF      POP	R31
+    024F 91EF      POP	R30
+    0250 91DF      POP	R29
+    0251 91CF      POP	R28
+    0252 91BF      POP	R27
+    0253 91AF      POP	R26
+    0254 919F      POP	R25
+    0255 918F      POP	R24
+    0256 9518      RETI
+    0257 91CD      LD	R28,X+
+    0258 B9CC      OUT	P0C,R28
+    0259 9B5D      SBIS	P0B,5
+    025A CFFE      RJMP	0x0259
+    025B 9508      RET
+    025C 9B5F      SBIS	P0B,7
+    025D CFFE      RJMP	0x025C
+    025E B1CC      IN	R28,P0C
+    025F 9508      RET
+_INT0_ISR:
+    0260 9508      RET

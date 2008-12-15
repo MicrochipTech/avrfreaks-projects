@@ -1,0 +1,1 @@
+COPY Release\*.dll "C:\Studio+\Installation Files"

@@ -1,0 +1,924 @@
+                         .module Bat-n-Ball.c
+                         .area data(ram, con, rel)
+ 0000                 _memory::
+ 0000                   .blkb 33
+                         .area idata
+ 0000 4261742D6E2D42616C6C2044656D6F20   .byte 'B,'a,'t,45,'n,45,'B,'a,'l,'l,32,'D,'e,'m,'o,32
+ 0010 202020203030203A2030302020202020   .byte 32,32,32,32,48,48,32,58,32,48,48,32,32,32,32,32
+ 0020 00                .byte 0
+                         .area data(ram, con, rel)
+ 0021                   .blkb 127
+                         .area idata
+ 0021 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000   .word 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 005D 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000   .word 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 0099 00000000000000    .byte 0,0,0,0,0,0,0
+                         .area data(ram, con, rel)
+ 00A0                   .dbfile C:\Studio+\Demos\ImageCraft\ATmega103_Bat-n-Ball\Bat-n-Ball.c
+ 00A0                   .dbsym s memory _memory A[160:160]c
+                         .area text(rom, con, rel)
+ 0000                   .dbfile C:\Studio+\Demos\ImageCraft\ATmega103_Bat-n-Ball\Bat-n-Ball.c
+ 0000                   .dbfunc s UART0_Init _UART0_Init fI
+                         .even
+ 0000                 _UART0_Init::
+ 0000                   .dbline -1
+ 0000                   .dbline 44
+                       ; // Bat-n-Ball.c
+                       ; // Chris Brown 6th Feb, 2002
+                       ; //
+                       ; // Flash Studio+ & In-System-Debugger (ISD) "Bat-n-Ball" demo.
+                       ; //
+                       ; // Use with any ATMEL AVR CPU that has internal SRAM and an RS232
+                       ; // port or with Flash 5in1 AVR Starter Kits for added features.
+                       ; //
+                       ; // Requires a version 1.6 (or later) ISD library or source file:
+                       ; //    libISD16ATx.a or ISD16_ATx.s
+                       ; 
+                       ; // ****** USER SETTINGS ******
+                       ; 
+                       ; // Un-comment the CPU you are using.
+                       ; // Remember to set the CPU & ISD library (if you are using one)
+                       ; // in your ImageCraft project settings too!
+                       ; //#define AT90S8515
+                       ; #define ATMEGA103
+                       ; 
+                       ; // Clock frequency - set this to your clock frequency
+                       ; #define FOSC 3686400                    // 3.6864Mhz
+                       ; 
+                       ; // Serial comms Baud rate - set this to your desired baud rate
+                       ; #define BAUD 115200
+                       ; 
+                       ; // ***** END USER SETTINGS *****
+                       ; 
+                       ; #include <stdio.h>
+                       ; #include <ina90.h>
+                       ; #ifdef AT90S8515
+                       ; #include <io8515.h>
+                       ; #endif
+                       ; #ifdef ATMEGA103
+                       ; #include <iom103.h>
+                       ; #endif
+                       ; 
+                       ; #define SIZEX 15                        // Size of the court
+                       ; #define SIZEY 6
+                       ; 
+                       ; char memory[(SIZEY+4)*(SIZEX+1)] = {"Bat-n-Ball Demo     00 : 00     "};
+                       ; unsigned char leftScore, rightScore;
+                       ; 
+                       ; void UART0_Init(void)
+                       ; {
+ 0000                   .dbline 45
+                       ;     UCR  = 0x00;                        // Disable while setting baud rate
+ 0000 2224              clr R2
+ 0002 2AB8              out 0xa,R2
+ 0004                   .dbline 46
+                       ;     UBRR = (FOSC/(16*BAUD))-1;          // Set baud rate
+ 0004 81E0              ldi R24,1
+ 0006 89B9              out 0x9,R24
+ 0008                   .dbline 47
+                       ;     UCR  = 0x18;                        // Enable Tx & Rx
+ 0008 88E1              ldi R24,24
+ 000A 8AB9              out 0xa,R24
+ 000C                   .dbline -2
+ 000C                   .dbline 48
+                       ; }
+ 000C                 L1:
+ 000C                   .dbline 0 ; func end
+ 000C 0895              ret
+ 000E                   .dbfunc s INT0_Init _INT0_Init fI
+                         .even
+ 000E                 _INT0_Init::
+ 000E                   .dbline -1
+ 000E                   .dbline 52
+                       ; 
+                       ; 
+                       ; void INT0_Init(void)
+                       ; {
+ 000E                   .dbline 58
+                       ; #ifdef AT90S8515
+                       ;     DDRD |= 0x08;                       // Set up PD3 (AVRDIL LED) = Output
+                       ;     PORTD |= 0x04;                      // Turn on Pull-Up PD2 (INT0) = 1
+                       ; #endif
+                       ; #ifdef ATMEGA103
+                       ;     PORTD |= 0x01;                      // Turn on Pull-Up PD0 (INT0) = 1
+ 000E 909A              sbi 0x12,0
+ 0010                   .dbline -2
+ 0010                   .dbline 60
+                       ; #endif
+                       ; }
+ 0010                 L2:
+ 0010                   .dbline 0 ; func end
+ 0010 0895              ret
+ 0012                   .dbfunc s MakeLedRed _MakeLedRed fI
+                         .even
+ 0012                 _MakeLedRed::
+ 0012                   .dbline -1
+ 0012                   .dbline 64
+                       ; 
+                       ; 
+                       ; void MakeLedRed(void)
+                       ; {
+ 0012                   .dbline 65
+                       ;     DDRD &= 0xf7;                       // Turn on red LED
+ 0012 81B3              in R24,0x11
+ 0014 877F              andi R24,247
+ 0016 81BB              out 0x11,R24
+ 0018                   .dbline -2
+ 0018                   .dbline 66
+                       ; }
+ 0018                 L3:
+ 0018                   .dbline 0 ; func end
+ 0018 0895              ret
+ 001A                   .dbfunc s MakeLedGreen _MakeLedGreen fI
+                         .even
+ 001A                 _MakeLedGreen::
+ 001A                   .dbline -1
+ 001A                   .dbline 70
+                       ; 
+                       ; 
+                       ; void MakeLedGreen(void)
+                       ; {
+ 001A                   .dbline 71
+                       ;     DDRD |= 0x08;                       // Turn off red LED
+ 001A 8B9A              sbi 0x11,3
+ 001C                   .dbline -2
+ 001C                   .dbline 72
+                       ; }
+ 001C                 L4:
+ 001C                   .dbline 0 ; func end
+ 001C 0895              ret
+ 001E                   .dbfunc s DrawScores _DrawScores fI
+                         .even
+ 001E                 _DrawScores::
+ 001E                   .dbline -1
+ 001E                   .dbline 76
+                       ; 
+                       ; 
+                       ; void DrawScores(void)
+                       ; {
+ 001E                   .dbline 77
+                       ;     memory[16+4] = (leftScore/10)+'0';
+ 001E 1AE0              ldi R17,10
+ 0020 00910100          lds R16,_leftScore
+ 0024 0E940000          xcall div8u
+ 0028 802F              mov R24,R16
+ 002A 805D              subi R24,208    ; addi 48
+ 002C 80931400          sts _memory+20,R24
+ 0030                   .dbline 78
+                       ;     memory[16+5] = (leftScore-((leftScore/10)*10))+'0';
+ 0030 1AE0              ldi R17,10
+ 0032 00910100          lds R16,_leftScore
+ 0036 0E940000          xcall div8u
+ 003A 102F              mov R17,R16
+ 003C 0AE0              ldi R16,10
+ 003E 0E940000          xcall mpy8s
+ 0042 80910100          lds R24,_leftScore
+ 0046 801B              sub R24,R16
+ 0048 805D              subi R24,208    ; addi 48
+ 004A 80931500          sts _memory+21,R24
+ 004E                   .dbline 79
+                       ;     memory[16+9] = (rightScore/10)+'0';
+ 004E 1AE0              ldi R17,10
+ 0050 00910000          lds R16,_rightScore
+ 0054 0E940000          xcall div8u
+ 0058 802F              mov R24,R16
+ 005A 805D              subi R24,208    ; addi 48
+ 005C 80931900          sts _memory+25,R24
+ 0060                   .dbline 80
+                       ;     memory[16+10] = (rightScore-((rightScore/10)*10))+'0';
+ 0060 1AE0              ldi R17,10
+ 0062 00910000          lds R16,_rightScore
+ 0066 0E940000          xcall div8u
+ 006A 102F              mov R17,R16
+ 006C 0AE0              ldi R16,10
+ 006E 0E940000          xcall mpy8s
+ 0072 80910000          lds R24,_rightScore
+ 0076 801B              sub R24,R16
+ 0078 805D              subi R24,208    ; addi 48
+ 007A 80931A00          sts _memory+26,R24
+ 007E                   .dbline -2
+ 007E                   .dbline 81
+                       ; }
+ 007E                 L5:
+ 007E                   .dbline 0 ; func end
+ 007E 0895              ret
+ 0080                   .dbfunc s main _main fI
+                       ;           oldY -> R20
+                       ;           oldX -> R22
+                       ;             dy -> R14
+                       ;       rightPos -> R12
+                       ;        leftPos -> y+0
+                       ;             dx -> R10
+                       ;              y -> R6
+                       ;              x -> R4
+                         .even
+ 0080                 _main::
+ 0080 2197              sbiw R28,1
+ 0082                   .dbline -1
+ 0082                   .dbline 85
+                       ; 
+                       ; 
+                       ; void main(void)
+                       ; {
+ 0082                   .dbline 92
+                       ;     unsigned char x, y, oldX, oldY;
+                       ;     char dx, dy;
+                       ;     unsigned char leftPos, rightPos;
+                       ; 
+                       ; //  MCUCR |= 0x80;                      // Enable external sram (optional)
+                       ; 
+                       ;     INT0_Init();
+ 0082 C5DF              xcall _INT0_Init
+ 0084                   .dbline 93
+                       ;     UART0_Init();
+ 0084 BDDF              xcall _UART0_Init
+ 0086                   .dbline 98
+                       ; #ifdef AT90S8515
+                       ;     GIMSK |= 0x40;                      // Enable INT0 (AT90S8515)
+                       ; #endif
+                       ; #ifdef ATMEGA103
+                       ;     EIMSK |= 0x01;                      // Enable INT0 (ATmega103)
+ 0086 89B7              in R24,0x39
+ 0088 8160              ori R24,1
+ 008A 89BF              out 0x39,R24
+ 008C                   .dbline 100
+                       ; #endif
+                       ;     SEI();                              // Enable interrupts
+ 008C 7894              sei
+ 008E                   .dbline 102
+                       ; 
+                       ;     for (y=0; y<SIZEY+2; y++)           // Initialise the court
+ 008E 6624              clr R6
+ 0090 31C0              xjmp L14
+ 0092                 L11:
+ 0092                   .dbline 103
+                       ;     {
+ 0092                   .dbline 104
+                       ;         for (x=0; x<SIZEX+1; x++)
+ 0092 4424              clr R4
+ 0094 2BC0              xjmp L18
+ 0096                 L15:
+ 0096                   .dbline 105
+                       ;         {
+ 0096                   .dbline 106
+                       ;             if (x == 7)
+ 0096 842D              mov R24,R4
+ 0098 8730              cpi R24,7
+ 009A 91F4              brne L19
+ 009C                   .dbline 107
+                       ;                 memory[((y+2)<<4)+7] = '|';
+ 009C 80E0              ldi R24,<_memory+7
+ 009E 90E0              ldi R25,>_memory+7
+ 00A0 E62D              mov R30,R6
+ 00A2 FF27              clr R31
+ 00A4 3296              adiw R30,2
+ 00A6 EE0F              lsl R30
+ 00A8 FF1F              rol R31
+ 00AA EE0F              lsl R30
+ 00AC FF1F              rol R31
+ 00AE EE0F              lsl R30
+ 00B0 FF1F              rol R31
+ 00B2 EE0F              lsl R30
+ 00B4 FF1F              rol R31
+ 00B6 E80F              add R30,R24
+ 00B8 F91F              adc R31,R25
+ 00BA 8CE7              ldi R24,124
+ 00BC 8083              std z+0,R24
+ 00BE 15C0              xjmp L20
+ 00C0                 L19:
+ 00C0                   .dbline 109
+                       ;             else
+                       ;                 memory[((y+2)<<4)+x] = ' ';
+ 00C0 242C              mov R2,R4
+ 00C2 3324              clr R3
+ 00C4 E62D              mov R30,R6
+ 00C6 FF27              clr R31
+ 00C8 3296              adiw R30,2
+ 00CA EE0F              lsl R30
+ 00CC FF1F              rol R31
+ 00CE EE0F              lsl R30
+ 00D0 FF1F              rol R31
+ 00D2 EE0F              lsl R30
+ 00D4 FF1F              rol R31
+ 00D6 EE0F              lsl R30
+ 00D8 FF1F              rol R31
+ 00DA E20D              add R30,R2
+ 00DC F31D              adc R31,R3
+ 00DE 80E0              ldi R24,<_memory
+ 00E0 90E0              ldi R25,>_memory
+ 00E2 E80F              add R30,R24
+ 00E4 F91F              adc R31,R25
+ 00E6 80E2              ldi R24,32
+ 00E8 8083              std z+0,R24
+ 00EA                 L20:
+ 00EA                   .dbline 110
+ 00EA                 L16:
+ 00EA                   .dbline 104
+ 00EA 4394              inc R4
+ 00EC                 L18:
+ 00EC                   .dbline 104
+ 00EC 842D              mov R24,R4
+ 00EE 8031              cpi R24,16
+ 00F0 90F2              brlo L15
+ 00F2                   .dbline 111
+ 00F2                 L12:
+ 00F2                   .dbline 102
+ 00F2 6394              inc R6
+ 00F4                 L14:
+ 00F4                   .dbline 102
+ 00F4 862D              mov R24,R6
+ 00F6 8830              cpi R24,8
+ 00F8 60F2              brlo L11
+ 00FA                   .dbline 112
+                       ;         }
+                       ;     }
+                       ;     for (x=0; x<15; x++)
+ 00FA 4424              clr R4
+ 00FC 11C0              xjmp L25
+ 00FE                 L22:
+ 00FE                   .dbline 113
+ 00FE                   .dbline 114
+ 00FE 80E0              ldi R24,<_memory+32
+ 0100 90E0              ldi R25,>_memory+32
+ 0102 E42D              mov R30,R4
+ 0104 FF27              clr R31
+ 0106 E80F              add R30,R24
+ 0108 F91F              adc R31,R25
+ 010A 8DE2              ldi R24,45
+ 010C 8083              std z+0,R24
+ 010E                   .dbline 115
+ 010E 80E0              ldi R24,<_memory+144
+ 0110 90E0              ldi R25,>_memory+144
+ 0112 E42D              mov R30,R4
+ 0114 FF27              clr R31
+ 0116 E80F              add R30,R24
+ 0118 F91F              adc R31,R25
+ 011A 8DE2              ldi R24,45
+ 011C 8083              std z+0,R24
+ 011E                   .dbline 116
+ 011E                 L23:
+ 011E                   .dbline 112
+ 011E 4394              inc R4
+ 0120                 L25:
+ 0120                   .dbline 112
+ 0120 842D              mov R24,R4
+ 0122 8F30              cpi R24,15
+ 0124 60F3              brlo L22
+ 0126                   .dbline 118
+                       ;     {
+                       ;         memory[32+x] = '-';
+                       ;         memory[48+(SIZEY*16)+x] = '-';
+                       ;     }
+                       ; 
+                       ;     leftScore = 10;                     // Start new game
+ 0126 8AE0              ldi R24,10
+ 0128 80930100          sts _leftScore,R24
+ 012C                   .dbline 119
+                       ;     rightScore = 10;
+ 012C 80930000          sts _rightScore,R24
+ 0130                   .dbline 120
+                       ;     leftPos = 3;
+ 0130 83E0              ldi R24,3
+ 0132 8883              std y+0,R24
+ 0134                   .dbline 121
+                       ;     rightPos = 3;
+ 0134 C82E              mov R12,R24
+ 0136                   .dbline 123
+                       ; 
+                       ;     for (;;)                            // Loop forever!!
+ 0136                 L28:
+ 0136                   .dbline 124
+                       ;     {
+ 0136                   .dbline 126
+                       ; 
+                       ;         SetBreakHere();                 // Hard Breakpoint here
+ 0136 4F92              push R4
+ 0138 6F92              push R6
+ 013A 0E940000          xcall _SetBreakHere
+ 013E 6F90              pop R6
+ 0140 4F90              pop R4
+ 0142                   .dbline 128
+                       ; 
+                       ;         if (leftScore == 10 || rightScore == 10) // If game is over
+ 0142 80910100          lds R24,_leftScore
+ 0146 8A30              cpi R24,10
+ 0148 29F0              breq L34
+ 014A 80910000          lds R24,_rightScore
+ 014E 8A30              cpi R24,10
+ 0150 09F0              breq X1
+ 0152 3EC0              xjmp L32
+ 0154                 X1:
+ 0154                 L34:
+ 0154                   .dbline 129
+                       ;         {
+ 0154                   .dbline 130
+                       ;             leftScore = 0;              // Reset scores
+ 0154 2224              clr R2
+ 0156 20920100          sts _leftScore,R2
+ 015A                   .dbline 131
+                       ;             rightScore = 0;
+ 015A 20920000          sts _rightScore,R2
+ 015E                   .dbline 132
+                       ;             memory[(3+leftPos)<<4] = ' '; // Erase the old bats
+ 015E 80E0              ldi R24,<_memory
+ 0160 90E0              ldi R25,>_memory
+ 0162 E881              ldd R30,y+0
+ 0164 FF27              clr R31
+ 0166 3396              adiw R30,3
+ 0168 EE0F              lsl R30
+ 016A FF1F              rol R31
+ 016C EE0F              lsl R30
+ 016E FF1F              rol R31
+ 0170 EE0F              lsl R30
+ 0172 FF1F              rol R31
+ 0174 EE0F              lsl R30
+ 0176 FF1F              rol R31
+ 0178 E80F              add R30,R24
+ 017A F91F              adc R31,R25
+ 017C 80E2              ldi R24,32
+ 017E 8083              std z+0,R24
+ 0180                   .dbline 133
+                       ;             memory[((3+rightPos)<<4)+(SIZEX-1)] = ' ';
+ 0180 80E0              ldi R24,<_memory+14
+ 0182 90E0              ldi R25,>_memory+14
+ 0184 EC2D              mov R30,R12
+ 0186 FF27              clr R31
+ 0188 3396              adiw R30,3
+ 018A EE0F              lsl R30
+ 018C FF1F              rol R31
+ 018E EE0F              lsl R30
+ 0190 FF1F              rol R31
+ 0192 EE0F              lsl R30
+ 0194 FF1F              rol R31
+ 0196 EE0F              lsl R30
+ 0198 FF1F              rol R31
+ 019A E80F              add R30,R24
+ 019C F91F              adc R31,R25
+ 019E 80E2              ldi R24,32
+ 01A0 8083              std z+0,R24
+ 01A2                   .dbline 134
+                       ;             leftPos = 3;
+ 01A2 83E0              ldi R24,3
+ 01A4 8883              std y+0,R24
+ 01A6                   .dbline 135
+                       ;             rightPos = 3;
+ 01A6 C82E              mov R12,R24
+ 01A8                   .dbline 136
+                       ;             memory[(3+3)<<4] = '|';     // Draw the bats
+ 01A8 8CE7              ldi R24,124
+ 01AA 80936000          sts _memory+96,R24
+ 01AE                   .dbline 137
+                       ;             memory[((3+3)<<4)+(SIZEX-1)] = '|';
+ 01AE 80936E00          sts _memory+110,R24
+ 01B2                   .dbline 138
+                       ;             x = 7;                      // Ball's starting position
+ 01B2 87E0              ldi R24,7
+ 01B4 482E              mov R4,R24
+ 01B6                   .dbline 139
+                       ;             y = 3;
+ 01B6 83E0              ldi R24,3
+ 01B8 682E              mov R6,R24
+ 01BA                   .dbline 140
+                       ;             oldX = x;
+ 01BA 642D              mov R22,R4
+ 01BC                   .dbline 141
+                       ;             oldY = y;
+ 01BC 462D              mov R20,R6
+ 01BE                   .dbline 142
+                       ;             MakeLedGreen();
+ 01BE 4F92              push R4
+ 01C0 6F92              push R6
+ 01C2 2BDF              xcall _MakeLedGreen
+ 01C4 6F90              pop R6
+ 01C6 4F90              pop R4
+ 01C8                   .dbline 143
+                       ;             dx = 1;                     // Ball is going right & down
+ 01C8 AA24              clr R10
+ 01CA A394              inc R10
+ 01CC                   .dbline 144
+                       ;             dy = 1;
+ 01CC EE24              clr R14
+ 01CE E394              inc R14
+ 01D0                   .dbline 145
+                       ;         }
+ 01D0                 L32:
+ 01D0                   .dbline 147
+                       ; 
+                       ;         DrawScores();                   // Draw the scores
+ 01D0 4F92              push R4
+ 01D2 6F92              push R6
+ 01D4 24DF              xcall _DrawScores
+ 01D6 6F90              pop R6
+ 01D8 4F90              pop R4
+ 01DA                   .dbline 149
+                       ; 
+                       ;         if (oldX == 7)
+ 01DA 6730              cpi R22,7
+ 01DC 91F4              brne L38
+ 01DE                   .dbline 150
+                       ;             memory[((oldY+3)<<4)+7] = '|';
+ 01DE 80E0              ldi R24,<_memory+7
+ 01E0 90E0              ldi R25,>_memory+7
+ 01E2 E42F              mov R30,R20
+ 01E4 FF27              clr R31
+ 01E6 3396              adiw R30,3
+ 01E8 EE0F              lsl R30
+ 01EA FF1F              rol R31
+ 01EC EE0F              lsl R30
+ 01EE FF1F              rol R31
+ 01F0 EE0F              lsl R30
+ 01F2 FF1F              rol R31
+ 01F4 EE0F              lsl R30
+ 01F6 FF1F              rol R31
+ 01F8 E80F              add R30,R24
+ 01FA F91F              adc R31,R25
+ 01FC 8CE7              ldi R24,124
+ 01FE 8083              std z+0,R24
+ 0200 15C0              xjmp L39
+ 0202                 L38:
+ 0202                   .dbline 152
+                       ;         else
+                       ;             memory[((oldY+3)<<4)+oldX] = ' ';
+ 0202 262E              mov R2,R22
+ 0204 3324              clr R3
+ 0206 E42F              mov R30,R20
+ 0208 FF27              clr R31
+ 020A 3396              adiw R30,3
+ 020C EE0F              lsl R30
+ 020E FF1F              rol R31
+ 0210 EE0F              lsl R30
+ 0212 FF1F              rol R31
+ 0214 EE0F              lsl R30
+ 0216 FF1F              rol R31
+ 0218 EE0F              lsl R30
+ 021A FF1F              rol R31
+ 021C E20D              add R30,R2
+ 021E F31D              adc R31,R3
+ 0220 80E0              ldi R24,<_memory
+ 0222 90E0              ldi R25,>_memory
+ 0224 E80F              add R30,R24
+ 0226 F91F              adc R31,R25
+ 0228 80E2              ldi R24,32
+ 022A 8083              std z+0,R24
+ 022C                 L39:
+ 022C                   .dbline 153
+                       ;         x += dx;                        // Update ball's position
+ 022C 4A0C              add R4,R10
+ 022E                   .dbline 154
+                       ;         y += dy;
+ 022E 6E0C              add R6,R14
+ 0230                   .dbline 155
+                       ;         memory[((3+y)<<4)+x] = 'o';
+ 0230 242C              mov R2,R4
+ 0232 3324              clr R3
+ 0234 E62D              mov R30,R6
+ 0236 FF27              clr R31
+ 0238 3396              adiw R30,3
+ 023A EE0F              lsl R30
+ 023C FF1F              rol R31
+ 023E EE0F              lsl R30
+ 0240 FF1F              rol R31
+ 0242 EE0F              lsl R30
+ 0244 FF1F              rol R31
+ 0246 EE0F              lsl R30
+ 0248 FF1F              rol R31
+ 024A E20D              add R30,R2
+ 024C F31D              adc R31,R3
+ 024E 80E0              ldi R24,<_memory
+ 0250 90E0              ldi R25,>_memory
+ 0252 E80F              add R30,R24
+ 0254 F91F              adc R31,R25
+ 0256 8FE6              ldi R24,111
+ 0258 8083              std z+0,R24
+ 025A                   .dbline 157
+                       ; 
+                       ;         if (dx == -1)                   // If ball is moving left
+ 025A 8A2D              mov R24,R10
+ 025C 8F3F              cpi R24,255
+ 025E 61F5              brne L41
+ 0260                   .dbline 158
+                       ;         {
+ 0260                   .dbline 159
+                       ;             memory[(3+leftPos)<<4] = ' '; // Erase left's bat
+ 0260 80E0              ldi R24,<_memory
+ 0262 90E0              ldi R25,>_memory
+ 0264 E881              ldd R30,y+0
+ 0266 FF27              clr R31
+ 0268 3396              adiw R30,3
+ 026A EE0F              lsl R30
+ 026C FF1F              rol R31
+ 026E EE0F              lsl R30
+ 0270 FF1F              rol R31
+ 0272 EE0F              lsl R30
+ 0274 FF1F              rol R31
+ 0276 EE0F              lsl R30
+ 0278 FF1F              rol R31
+ 027A E80F              add R30,R24
+ 027C F91F              adc R31,R25
+ 027E 80E2              ldi R24,32
+ 0280 8083              std z+0,R24
+ 0282                   .dbline 160
+                       ;             if (y > leftPos)            // Move bat towards the ball
+ 0282 0880              ldd R0,y+0
+ 0284 0614              cp R0,R6
+ 0286 10F4              brsh L43
+ 0288                   .dbline 161
+                       ;                 leftPos++;
+ 0288 0394              inc R0
+ 028A 0882              std y+0,R0
+ 028C                 L43:
+ 028C                   .dbline 162
+                       ;             if (y < leftPos)
+ 028C 0880              ldd R0,y+0
+ 028E 6014              cp R6,R0
+ 0290 10F4              brsh L45
+ 0292                   .dbline 163
+                       ;                 leftPos--;
+ 0292 0A94              dec R0
+ 0294 0882              std y+0,R0
+ 0296                 L45:
+ 0296                   .dbline 164
+                       ;             memory[(3+leftPos)<<4] = '|'; // Draw left's bat
+ 0296 80E0              ldi R24,<_memory
+ 0298 90E0              ldi R25,>_memory
+ 029A E881              ldd R30,y+0
+ 029C FF27              clr R31
+ 029E 3396              adiw R30,3
+ 02A0 EE0F              lsl R30
+ 02A2 FF1F              rol R31
+ 02A4 EE0F              lsl R30
+ 02A6 FF1F              rol R31
+ 02A8 EE0F              lsl R30
+ 02AA FF1F              rol R31
+ 02AC EE0F              lsl R30
+ 02AE FF1F              rol R31
+ 02B0 E80F              add R30,R24
+ 02B2 F91F              adc R31,R25
+ 02B4 8CE7              ldi R24,124
+ 02B6 8083              std z+0,R24
+ 02B8                   .dbline 165
+                       ;         }
+ 02B8                 L41:
+ 02B8                   .dbline 167
+                       ; 
+                       ;         if (dx == 1)                    // If ball is moving right
+ 02B8 8A2D              mov R24,R10
+ 02BA 8130              cpi R24,1
+ 02BC 41F5              brne L47
+ 02BE                   .dbline 168
+                       ;         {
+ 02BE                   .dbline 169
+                       ;             memory[((3+rightPos)<<4)+(SIZEX-1)] = ' '; // Erase right's bat
+ 02BE 80E0              ldi R24,<_memory+14
+ 02C0 90E0              ldi R25,>_memory+14
+ 02C2 EC2D              mov R30,R12
+ 02C4 FF27              clr R31
+ 02C6 3396              adiw R30,3
+ 02C8 EE0F              lsl R30
+ 02CA FF1F              rol R31
+ 02CC EE0F              lsl R30
+ 02CE FF1F              rol R31
+ 02D0 EE0F              lsl R30
+ 02D2 FF1F              rol R31
+ 02D4 EE0F              lsl R30
+ 02D6 FF1F              rol R31
+ 02D8 E80F              add R30,R24
+ 02DA F91F              adc R31,R25
+ 02DC 80E2              ldi R24,32
+ 02DE 8083              std z+0,R24
+ 02E0                   .dbline 170
+                       ;             if (y > rightPos)           // Move bat towards the ball
+ 02E0 C614              cp R12,R6
+ 02E2 08F4              brsh L50
+ 02E4                   .dbline 171
+                       ;                 rightPos++;
+ 02E4 C394              inc R12
+ 02E6                 L50:
+ 02E6                   .dbline 172
+                       ;             if (y < rightPos)
+ 02E6 6C14              cp R6,R12
+ 02E8 08F4              brsh L52
+ 02EA                   .dbline 173
+                       ;                 rightPos--;
+ 02EA CA94              dec R12
+ 02EC                 L52:
+ 02EC                   .dbline 174
+                       ;             memory[((3+rightPos)<<4)+(SIZEX-1)] = '|'; // Draw right's bat
+ 02EC 80E0              ldi R24,<_memory+14
+ 02EE 90E0              ldi R25,>_memory+14
+ 02F0 EC2D              mov R30,R12
+ 02F2 FF27              clr R31
+ 02F4 3396              adiw R30,3
+ 02F6 EE0F              lsl R30
+ 02F8 FF1F              rol R31
+ 02FA EE0F              lsl R30
+ 02FC FF1F              rol R31
+ 02FE EE0F              lsl R30
+ 0300 FF1F              rol R31
+ 0302 EE0F              lsl R30
+ 0304 FF1F              rol R31
+ 0306 E80F              add R30,R24
+ 0308 F91F              adc R31,R25
+ 030A 8CE7              ldi R24,124
+ 030C 8083              std z+0,R24
+ 030E                   .dbline 175
+                       ;         }
+ 030E                 L47:
+ 030E                   .dbline 177
+                       ; 
+                       ;         if (x == 1 && leftPos == y)     // If left is hitting the ball
+ 030E 842D              mov R24,R4
+ 0310 8130              cpi R24,1
+ 0312 51F4              brne L55
+ 0314 0880              ldd R0,y+0
+ 0316 0614              cp R0,R6
+ 0318 39F4              brne L55
+ 031A                   .dbline 178
+                       ;         {
+ 031A                   .dbline 179
+                       ;             dx = 1;                     // Hit it back
+ 031A AA24              clr R10
+ 031C A394              inc R10
+ 031E                   .dbline 180
+                       ;             MakeLedGreen();
+ 031E 4F92              push R4
+ 0320 6F92              push R6
+ 0322 7BDE              xcall _MakeLedGreen
+ 0324 6F90              pop R6
+ 0326 4F90              pop R4
+ 0328                   .dbline 181
+                       ;         }
+ 0328                 L55:
+ 0328                   .dbline 183
+                       ; 
+                       ;         if (x == SIZEX-2 && rightPos == y) // If right is hitting the ball
+ 0328 842D              mov R24,R4
+ 032A 8D30              cpi R24,13
+ 032C 49F4              brne L57
+ 032E C614              cp R12,R6
+ 0330 39F4              brne L57
+ 0332                   .dbline 184
+                       ;         {
+ 0332                   .dbline 185
+                       ;             dx = -1;                    // Hit it back
+ 0332 8FEF              ldi R24,255
+ 0334 A82E              mov R10,R24
+ 0336                   .dbline 186
+                       ;             MakeLedRed();
+ 0336 4F92              push R4
+ 0338 6F92              push R6
+ 033A 6BDE              xcall _MakeLedRed
+ 033C 6F90              pop R6
+ 033E 4F90              pop R4
+ 0340                   .dbline 187
+                       ;         }
+ 0340                 L57:
+ 0340                   .dbline 189
+                       ; 
+                       ;         if (x == 0)                     // If left missed
+ 0340 4420              tst R4
+ 0342 09F5              brne L59
+ 0344                   .dbline 190
+                       ;         {
+ 0344                   .dbline 191
+                       ;             rightScore++;               // Add 1 to right's score
+ 0344 80910000          lds R24,_rightScore
+ 0348 8F5F              subi R24,255    ; addi 1
+ 034A 80930000          sts _rightScore,R24
+ 034E                   .dbline 192
+                       ;             memory[((3+y)<<4)+x] = ' ';
+ 034E 242C              mov R2,R4
+ 0350 3324              clr R3
+ 0352 E62D              mov R30,R6
+ 0354 FF27              clr R31
+ 0356 3396              adiw R30,3
+ 0358 EE0F              lsl R30
+ 035A FF1F              rol R31
+ 035C EE0F              lsl R30
+ 035E FF1F              rol R31
+ 0360 EE0F              lsl R30
+ 0362 FF1F              rol R31
+ 0364 EE0F              lsl R30
+ 0366 FF1F              rol R31
+ 0368 E20D              add R30,R2
+ 036A F31D              adc R31,R3
+ 036C 80E0              ldi R24,<_memory
+ 036E 90E0              ldi R25,>_memory
+ 0370 E80F              add R30,R24
+ 0372 F91F              adc R31,R25
+ 0374 80E2              ldi R24,32
+ 0376 8083              std z+0,R24
+ 0378                   .dbline 193
+                       ;             x = 1;                      // Left serves
+ 0378 4424              clr R4
+ 037A 4394              inc R4
+ 037C                   .dbline 194
+                       ;             y = leftPos;
+ 037C 6880              ldd R6,y+0
+ 037E                   .dbline 195
+                       ;             dx = 1;
+ 037E AA24              clr R10
+ 0380 A394              inc R10
+ 0382                   .dbline 196
+                       ;             dy = 1;
+ 0382 EE24              clr R14
+ 0384 E394              inc R14
+ 0386                   .dbline 197
+                       ;         }
+ 0386                 L59:
+ 0386                   .dbline 199
+                       ; 
+                       ;         if (x == SIZEX-1)               // If right missed
+ 0386 842D              mov R24,R4
+ 0388 8E30              cpi R24,14
+ 038A 09F5              brne L61
+ 038C                   .dbline 200
+                       ;         {
+ 038C                   .dbline 201
+                       ;             leftScore++;                // Add 1 to left's score
+ 038C 80910100          lds R24,_leftScore
+ 0390 8F5F              subi R24,255    ; addi 1
+ 0392 80930100          sts _leftScore,R24
+ 0396                   .dbline 202
+                       ;             memory[((3+y)<<4)+x] = ' ';
+ 0396 242C              mov R2,R4
+ 0398 3324              clr R3
+ 039A E62D              mov R30,R6
+ 039C FF27              clr R31
+ 039E 3396              adiw R30,3
+ 03A0 EE0F              lsl R30
+ 03A2 FF1F              rol R31
+ 03A4 EE0F              lsl R30
+ 03A6 FF1F              rol R31
+ 03A8 EE0F              lsl R30
+ 03AA FF1F              rol R31
+ 03AC EE0F              lsl R30
+ 03AE FF1F              rol R31
+ 03B0 E20D              add R30,R2
+ 03B2 F31D              adc R31,R3
+ 03B4 80E0              ldi R24,<_memory
+ 03B6 90E0              ldi R25,>_memory
+ 03B8 E80F              add R30,R24
+ 03BA F91F              adc R31,R25
+ 03BC 80E2              ldi R24,32
+ 03BE 8083              std z+0,R24
+ 03C0                   .dbline 203
+                       ;             x = SIZEX-2;                // Right serves
+ 03C0 8DE0              ldi R24,13
+ 03C2 482E              mov R4,R24
+ 03C4                   .dbline 204
+                       ;             y = rightPos;
+ 03C4 6C2C              mov R6,R12
+ 03C6                   .dbline 205
+                       ;             dx = -1;
+ 03C6 8FEF              ldi R24,255
+ 03C8 A82E              mov R10,R24
+ 03CA                   .dbline 206
+                       ;             dy = 1;
+ 03CA EE24              clr R14
+ 03CC E394              inc R14
+ 03CE                   .dbline 207
+                       ;         }
+ 03CE                 L61:
+ 03CE                   .dbline 209
+                       ; 
+                       ;         if (y == 0 || y == (SIZEY-1))   // If ball is at the top or bottom edge
+ 03CE 6620              tst R6
+ 03D0 19F0              breq L65
+ 03D2 862D              mov R24,R6
+ 03D4 8530              cpi R24,5
+ 03D6 09F4              brne L63
+ 03D8                 L65:
+ 03D8                   .dbline 210
+                       ;             dy =- dy;                   // Bounce
+ 03D8 E194              neg R14
+ 03DA                 L63:
+ 03DA                   .dbline 212
+ 03DA 642D              mov R22,R4
+ 03DC                   .dbline 213
+ 03DC 462D              mov R20,R6
+ 03DE                   .dbline 214
+ 03DE                   .dbline 123
+ 03DE                   .dbline 123
+ 03DE ABCE              xjmp L28
+ 03E0                 X0:
+ 03E0                   .dbline -2
+ 03E0                 L10:
+ 03E0 2196              adiw R28,1
+ 03E2                   .dbline 0 ; func end
+ 03E2 0895              ret
+ 03E4                   .dbsym r oldY 20 c
+ 03E4                   .dbsym r oldX 22 c
+ 03E4                   .dbsym r dy 14 c
+ 03E4                   .dbsym r rightPos 12 c
+ 03E4                   .dbsym l leftPos 0 c
+ 03E4                   .dbsym r dx 10 c
+ 03E4                   .dbsym r y 6 c
+ 03E4                   .dbsym r x 4 c
+                         .area bss(ram, con, rel)
+ 0000                   .dbfile C:\Studio+\Demos\ImageCraft\ATmega103_Bat-n-Ball\Bat-n-Ball.c
+ 0000                 _rightScore::
+ 0000                   .blkb 1
+ 0001                   .dbsym s rightScore _rightScore c
+ 0001                 _leftScore::
+ 0001                   .blkb 1
+ 0002                   .dbsym s leftScore _leftScore c
