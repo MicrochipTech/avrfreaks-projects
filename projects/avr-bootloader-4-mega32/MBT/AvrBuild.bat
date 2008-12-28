@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "C:\Documents and Settings\Belivan\Desktop\MBT\labels.tmp" -fI -W+ie -o "C:\Documents and Settings\Belivan\Desktop\MBT\MBootL.hex" -d "C:\Documents and Settings\Belivan\Desktop\MBT\MBootL.obj" -e "C:\Documents and Settings\Belivan\Desktop\MBT\MBootL.eep" -m "C:\Documents and Settings\Belivan\Desktop\MBT\MBootL.map" "C:\Documents and Settings\Belivan\Desktop\MBT\bootldr.c"
