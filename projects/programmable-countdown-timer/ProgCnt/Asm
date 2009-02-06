@@ -1,0 +1,947 @@
+;***********************************************************************
+;* Project           : Programmable Timer (1sec to 1h:40min)
+;* Author            : Nikos Bovos
+;* Contact	     : tano@hol.gr
+;* Created 	     : 20 January 2009
+;* Device To Use     : Atmel AT90S2313
+;*                   : In the future will be ported to ATtiny2313
+;* Timing Of MCU     : Crystal of 2.000 MHz
+;* Firmware Revision : 1.00 / Start 20 January 2009
+;* Other Info        : Based on similar project of mine (0.01 May 2002)
+;*                   : Atmel's datasheet of AT90S2313
+;*                   : 2MHz crystal selected to further reduce the
+;*                   : power consumption (unit powered from batteries)
+;***********************************************************************
+;* Hellenic (Greek):
+;* Το πρόγραμμα αυτό γράφεται για προγραμματιζόμενη καταμέτρηση. 
+;* Ο μετρητής μετρά αντίστροφα, δηλαδή θέτω την ώρα που θέλω να μετρήσει
+;* και με το πάτημα ενός πλήκτρου ξεκινά την αντίστροφη καταμέτρηση.
+;* Μόλις φτάσει στο μηδέν, θα ηχεί ένας ήχος, ή θα ανοίγει ένα ρελέ
+;* (το τι ακριβώς θα εξαρτηθεί από το τι θέλω να κάνω ακριβώς με αυτό).
+;*
+;* Δεν έχει νόημα να βάλω χρονομετρητή για πολλές ώρες, θα φτιάξω τον
+;* χρονομετρητή για 0 έως 99 λεπτά (όσα δηλαδή τα 2 ψηφία που θα 
+;* χρησιμοποιηθούν για λεπτά (και άλλα 2 για τα δευτερόλεπτα). Έτσι
+;* ο μέγιστος χρόνος καθυστέρησης θα είναι 99 λεπτά και 59 δευτερόλεπτα
+;* δηλαδή 1 ώρα και 40 λεπτά αφού οι πολλές ώρες θα φέρουν στο τέλος
+;* και μεγαλύτερες αποκλίσεις
+;*
+;* English:
+;* This program/firmware is a countdown timer.
+;* At first you setup the time you want to be counted (minutes, secs)
+;* and after pressing the go button, begins the counting procedure
+;* When the time reaches down to 00:00 a buzzer sounds (or a relay
+;* closes) to notify you.
+;* There is no need to build a huge timer (i.e hours and hours)
+;* for 2 reasons: first i don't need such a big timer and second
+;* even we have the slightest defference every second, when counting
+;* hours and hours this different will be significant (i haven't test
+;* it yet, but i will soon), so adjustments have to be made.
+;*
+;*----------------------------------------------------------------------
+;*
+;* Hellenic:
+;* Επειδή ο MCU κάνει καλύτερα Sink παρά Source, θα χρησιμοποιήσω
+;* τα 7 Segment Displays κοινής ανόδου (SA-52) αφού θα οδηγήσω απευθείας
+;* από τον μικροελεκτή (άρα με 0 θα ανάβει και με 1 θα είναι σβυστό)
+;* οπότε θα χρησιμοποιηθεί ΑΡΝΗΤΙΚΗ λογική για τις τιμές των display
+;*
+;* Στην EEPROM του 2313 έχω αποθηκεύσει τις 10 τιμές (από 0-9) των
+;* ισοδύναμων δυαδικών/δεκαεξαδικών για τον κάθε αριθμό
+;* ΠΡΟΣΟΧΗ ! Από τη θέση 1 και μετά (λόγω του γνωστού Errata για τη θέση
+;* μηδέν) οπότε τα ισοδυναμα θα είναι αριθμός+1 ως θέση
+;*        
+;* Για καθυστέρηση για κάθε μέτρημα θα είναι τόση ώστε να προλαβαίνω
+;* να δείχνω στα display (που θα οδηγούνται διαδοχικά σε χρόνο
+;* μικρότερου του μεταισθήματος του ματιού) και να μπορώ να έχω την 
+;* άνεση για όποιες άλλες ενέργειες.
+;*
+;* English:
+;* Because the microcontroller sinks better than source, we will use
+;* common anode displays (SA-52 or equivalents) and so the logic
+;* of driving will be negative (0 = ON, 1=OFF)
+;* In the EEPROM of the MCU the equivalents of the 10 digits have been
+;* saved, starting from position $001 of EEPROM (due to the Errata
+;* published by Atmel of $000 corruption when in low power), so the
+;* whole displaying procedure must add 1 to the number to display.
+;* This is handled by the program in the Macro ShowDigit
+;* The refresh time of the displays is not critical and will be
+;* tested with various delays.
+;*
+;*----------------------------------------------------------------------
+;*
+;* Hellenic:
+;* Η καταμέτρηση θα γίνει μέσου του Timer0 Overflow Interrupt
+;* (νέο για τη Firmware 1.00)
+;* Ο χρόνος που θα βάλω τον Timer να μετρά και να κάνει Overflow θα
+;* εξαρτηθεί από το χρόνο που μπορεί να μετρήσει με τις διάφορες
+;* τιμές κρυστάλλων/ρολογιών'
+;* Το "κοπρόσκυλο" (watchdog) δεν χρησιμοποιείται (για την 1.00, 01/2009)
+;*
+;*
+;* English:
+;* For firmware 1.00 (January 2009) the timing will be through the 
+;* Timer0/Counter interrupt and not by delays by commands as of 0.01
+;* for better precision and to learn the Timer/Counter procedure
+;* Depending on the crystal, we will set it's prescaller.
+;* Watchdog as for firmware 1.00 is not used.
+;*
+;**********************************************************************
+
+;**********************************************************************
+;* File    : 1_Defs.Asm
+;* Purpose : Registers Definitions
+;* Author  : Nikos Bovos
+;* Contact : tano@hol.gr
+;* Created : 20 January 2009
+;* Info    : The registers r4,r5,r6,r7 declared below are used for a
+;*         : 'cool' service: When the Timer reaches 0 and the counting
+;*         : finishes, if we push the GO button, the counter will start
+;*         : to countdown the same amount of time without re-enter it
+;*         : using the 'setup' routine ! (as long as no reset is done)
+;*         : In fact the GO button is GO / Pause / Restart / Recount
+;*         : These registers are named sXXXXXX (from Saved)
+;*         : Of course we could also store these values to the SRAM
+;*         : of the MCU, but since we haven't occupie all registers
+;*         : this is not a problem.
+;*         : As you can see we have a 'fairly loose' declaration of
+;*         : the registers to use (since AVR provides 32 registers)
+;*         : we declare for every job a single register.
+;**********************************************************************
+	
+	.nolist			;Don't include the def file to listing
+	.include "def2313.inc"	;Include MCU Definition File
+	.list			;include the following lines to listing
+
+	.def	saveSREG=r1	;To Save Status Register On Interrupts
+
+	.def	sSecsLo =r4	;Seconds (LSD / ones)
+	.def	sSecsHi	=r5	;Seconds (MSD / tens)
+	.def	sMinsLo	=r6	;Minutes (LSD / ones)
+	.def	sMinsHi	=r7	;Minutes (MSD / tens)
+
+	.def	ForTimer=r16	;To Count Timer's overflows until 1 sec
+	.def	genio	=r17	;General purpose i/o register
+	.def	save  	=r18	;save EEPROM value of 7-Seg Equivalent
+
+	.def	SecsLo  =r19	;Seconds (LSD / ones)
+	.def	SecsHi	=r20	;Seconds (MSD / tens)
+	.def	MinsLo	=r21	;Minutes (LSD / ones)
+	.def	MinsHi	=r22	;Minutes (MSD / tens)
+
+	.def	medium  =r23	;For Delay routine
+	.def	fine	=r24	;  -//-     -//- 
+
+	.def	ForPause=r25	;For Pause subroutine (see asm code)
+	.def	saveEEP =r26	;To save value readed from EEPROM
+;**********************************************************************
+;* File    : 2_Macros.Asm
+;* Purpose : Usefull Macros For Various Jobs
+;* Author  : Nikos Bovos
+;* Contact : tano@hol.gr
+;* Created : 20 January 2009
+;* Info    : Most of the macros are straigthforward, only the ShowDigit
+;*         : has something "extra" which is the parameter passed by
+;*         : @0 (first parameter), could have others (@1, @2 etc)
+;**********************************************************************
+;*
+;* Digits are referred ("numbered") as : 4321 -> 00:00 
+;* ---------------------------------------------------
+;* Digit1 = Least Significant Digit of seconds (ones)
+;* Digit2 = Most Significant Digit of seconds (tens)
+;* Digit3 = LSD of minutes (ones)
+;* Digit4 = MSD of minutes (tens)
+;*
+;* For using less i/o pins (but unfortunately more PCB space),
+;* 2 pins control the 4 digits in the following way:
+;*
+;* PORTD.D1    PORTD.D0    Digit to drive ON
+;* ---------------------------------------------
+;*    0            0       Digit1 (secs ones)
+;*    0            1       Digit2 (secs tens)
+;*    1            0       Digit3 (minutes ones)
+;*    1            1       Digit4 (minutes tens)
+;*
+;* These port pins are connected to the four digits through a 
+;* 1 of 4 lines selector/demultiplexer and drive each segment 
+;* through a BC547 BJT (any other equivalent can do the job)
+;* The demux is made with one 74HC04 and one 74HC08 
+;* as shown in the ProgCnt.PDF file
+;*
+;* The drive to the 7-segment displays is made by connecting all the
+;* pins of the segments in parallel, with the MCU PORTB (we loose 
+;* 1 I/O pin (the PORTB.P7) but it's worth because we drive the
+;* displays with only 1 command (out PORTB,value). This could be held
+;* true if we wanted to use PB7 for some other purpose. Then we had
+;* to retrive its state (in PINB,PB7) in a register, XOR it with
+;* a register with 1 or 0 in bit7 and depending the result to
+;* add or substract 128 from the value we wanted to output, so to not
+;* loose the state of the pb7 pin. Not done here, maybe in the future.
+;* We could also use individual pins high or low (if we used not continues 
+;* pins (i.e PB0,PB1,PB5,PB6,PD0,PD3,PD5 for displays), but it's not
+;* worth to do such a thing.It's just a timer for God sake !
+;*
+;* The 8th bit of PORTB (PB7) for Firmware 1.00 is left unconnected.
+;*
+;**********************************************************************
+
+
+;***** Macro to light Digit1 (seconds ones), drive demux with 00
+.MACRO Digit1			
+	cbi	PORTD,PD1	;Clear Bit In I/O PORTD, Bit1 }
+	cbi	PORTD,PD0	;Clear Bit In I/O PORTD, Bit0 } 00
+.ENDMACRO
+
+
+
+;***** Macro to light Digit2 (seconds tens), drive demux with 01
+.MACRO Digit2			
+	cbi	PORTD,PD1	;Clear Bit In I/O PORTD, Bit1 }
+	sbi	PORTD,PD0	;Set   Bit In I/O PORTD, Bit0 } 01
+.ENDMACRO
+
+
+
+;***** Macro to light Digit3 (minutes ones), drive demux with 10
+.MACRO Digit3			
+	sbi	PORTD,PD1	;Set   Bit In I/O PORTD, Bit1 } 
+	cbi	PORTD,PD0	;Clear Bit In I/O PORTD, Bit0 } 10
+.ENDMACRO
+
+
+
+;***** Macro to light Digit4 (minutes tens), drive demux with 11
+.MACRO Digit4			
+	sbi	PORTD,PD1	;Set Bit In I/O PORTD, Bit1 }
+	sbi	PORTD,PD0	;Set Bit In I/O PORTD, Bit0 } 11
+.ENDMACRO
+
+
+
+;***** Macro to retrieve & display 7segment equivalent to PORTB
+.MACRO ShowDigit 	
+	mov	saveEEP,@0	;Store Parameter's value(number to display)
+	inc	saveEEP		;Increase Parameter's Value (on EEPROM is +1 place)
+	out	eear,saveEEP	;Define EEPROM Address as DigitNum+1
+	sbi	eecr,0		;READ from EEPROM (EECR bit0=1)
+	in	saveEEP,eedr	;Store value read
+	out	portb,saveEEP	;Out to PORTB
+	rcall	Delay1ms	;Delay 1ms
+.ENDMACRO
+;**********************************************************************
+;* File    : 3_Main.Asm
+;* Purpose : Main Program's Code is here
+;* Author  : Nikos Bovos
+;* Contact : tano@hol.gr
+;* Created : 21-25 January 2009
+;**********************************************************************
+;*
+;* As we don't have space-problems, it's not a bad idea to place
+;* reti (or nop) instructions to the corresponding Interrupt vector 
+;* addresses of the microcontroller for all interrupts not in use 
+;* right now, for the case we will use any interrupt in the future 
+;* firmwares, or else you have to check with the include file of the 
+;* mcu for the correct address of every interrupt vector
+;*
+;**********************************************************************
+
+.cseg				;Code Segment
+.org 	$000			;Reset Vector at address 0
+
+	rjmp	Start		;On Reset Jump To Start
+	reti			;or rjmp EXT_INT0 / IRQ0 Handler
+	reti			;or rjmp EXT_INT1 / IRQ1 Handler
+	reti			;or rjmp TIM_CAPT1 / Timer1 Capture Handler
+	reti			;or rjmp TIM_COMP1 / Timer1 Compare Handler
+	reti			;or rjmp TIM_OVF1 / Timer1 Overflow Handler
+	rjmp	Timer0INT	;On Timer0 Overflow Goto ISR (TIM_OVF0)
+	reti			;or rjmp UART_RXC / UART RX Complete Handler
+	reti			;or rjmp UART_DRE / UDR Empty Handler
+	reti			;or rjmp UART_TXC / UART TX Complete Handler
+	reti			;or rjmp ANA_COMP / Analog Comparator Handler
+
+
+;**********************************************************************
+;*  Rjump Of Reset Vector. Initialization of all peripherals used 
+;*---------------------------------------------------------------------
+;* All PORTB pins will be set to output
+;* 
+;* For the PORTD, we have the following:
+;* PD0 = Output } Will drive the multiplexer along with PD1
+;* PD1 = Output } Will drive the multiplexer along with PD0
+;* PD2 = Output } Setup Button (or replace with PD5)
+;* PD3 = Input  } Seconds button (for setup) 
+;* PD4 = Input  } Minutes button (for setup)
+;* PD5 = Input  } Start Counting / Pause Counting / Restart Counting
+;* PD6 = Output } Buzzer or Relay output (buzzer for Firmware 1.00)
+;*
+;* There is no PD7 in AT90S2313
+;**********************************************************************
+Start:	
+	ldi 	genio,low(RAMEND) ;Init Stack Pointer (2313 SPL only)
+	out 	SPL,genio	  ;To Point At End Of Internal RAM
+
+;----------------------------- PORTB Setup ----------------------------
+	ser 	genio       	;Initialize PORT B all pins as outputs
+	out 	ddrb,genio  	;through genio (=11111111b)   
+	out 	PORTB,genio 	;All segments off (negative logic)
+
+;------------------------------ PORTD Setup ---------------------------
+; PD2, PD3, PD4, PD5=INPUT, All Other pins=OUT
+
+	ldi	genio,$47       ;Initialize PORT D = 1000111 (7 bit only)
+	out	ddrd,genio	;through genio (PD3,4,5=IN,Other=OUT)
+	clr	genio		;We will use EXTERNAL pull-up in inputs
+	out	PORTD,genio	;(no internal) and value=0 for outputs
+
+;---------------------- Analog Comparator Setup -----------------------
+
+	ldi	genio,$80	;Load $80 = 128 = 10000000b to shut down
+	out	ACSR,genio	;Analog Comparator to save more power
+
+;------------------------------- TIMER0 Setup --------------------------
+	ldi 	genio,$9E	;Startup Value Of Timer = $9E = 158dec
+	out	TCNT0,genio	;Set it on timer (TCNT0 on .INC file)
+	ldi	genio,(1<<TOIE0);load genio with mask to enable interrupt
+	out	TIMSK,genio	;Set bit 1 (TOIE0) of TIMSK = 1
+	ldi	genio,$00       ;At the begining, STOP the TIMER
+	out	TCCR0,genio	;CS02=0, CS01=0, CS00=0 (Timer Stop)
+				;Later (just before we want to start the 
+				;counting, we will load the value $05 for 
+				;the prescaler CK/1024
+
+
+;**********************************************************************
+;*                           Pre - Main Loop
+;*
+;* Display the messege 'PUSH' on displays and wait for Setup Key to
+;* be pressed (PORTD.PD2) or the Go button if replaced below
+;* If otherwise stay there for ever (until reset)
+;* The equivalents for the letters are: 
+;* P,U,S,H = $0C, $41, $12, $09  (beware! negative logic)
+;* PORTB.pb7 is not connected to any pin
+;* The digits equivalents were retrieved by a free program of mine
+;* 7DigDW (7-Segment Display Wizard V0.05 Build 29/06/2003)
+;* but can easily calculated looking at the display's datasheet
+;*
+;**********************************************************************
+PreBegin:
+	rcall	DisplayPush     ;Call subroutine to display 'PUSH'
+	sbic	PIND,PD5	;Skip Next If PD5=0 (pressed)
+	;sbic	PIND,PD2	;For PD2 uncomment this, comment up
+	rjmp	PreBegin	;If no, return to message display
+
+;**********************************************************************
+;*         Debounce The Setup Button (wait for release of button)
+;**********************************************************************
+DebSetup:
+	sbic	PIND,PD5	;Skip Next If PD5=0 (still pressed)
+	;sbic	PIND,PD2	;For PD2 uncomment this, comment up
+	rjmp 	BeginSetup	;Else BEGIN Setup Procedure
+	rcall	DisplayPush     ;Display Push message again
+	rjmp	DebSetup	;Repeat the above commands
+
+
+;**********************************************************************
+;*
+;*    Setup Procedure - Used to setup minutes and seconds of timer
+;*
+;* PD2 = Don't care here, maybe in future firmwares
+;* PD3 = Increase Seconds
+;* PD4 = Increase Minutes
+;* PD5 = Start The Counting
+;*
+;* Nominal values on startup = 00:00
+;* First,  check minutes button  (PD4)
+;* Second, check seconds button  (PD3)
+;* Third,  check START/GO button (PD5)
+;*
+;**********************************************************************
+BeginSetup:
+	ldi	SecsLo,$00	;Startup value 00:00
+	ldi	SecsHi,$00	; -//-      -//-    
+	ldi	MinsLo,$00	; -//-      -//-    
+	ldi	MinsHi,$00	; -//-      -//-   
+ForTheLoop:
+	rcall	ShowTime	;Display Current Time
+
+;*********** Read If Minutes (PD4) Pressed ***********
+ReadMins:
+	sbic	PIND,PD4	;Skip Next If PD4=Cleared (pressed)
+	rjmp	ReadSecs	;Go read seconds button state
+	inc	MinsLo		;PD4=0 so increase Minutes Low(0-9)
+	cpi	MinsLo,$0A	;Check if MinsLo reached 10
+	breq	ResetMinsLo	;If yes clear Low, inc minutes hi
+	rjmp	WaitPD4         ;Else wait PD4 to be released
+ResetMinsLo:
+	ldi	MinsLo,$00	;Clear MinsLo (clr also work)
+	inc	MinsHi          ;Increase MinsHi
+	cpi	MinsHi,$0A      ;Check if MinsHi=10
+	breq	ResetMinsHi     ;If yes start from 0 again
+	rjmp	WaitPD4		;Jump to debounce of minutes (PD4)
+ResetMinsHi:
+	ldi	MinsHi,$00	;Clear MinsHi (clr also working)
+	ldi	MinsLo,$00      ;Clear MinsLo
+WaitPD4:
+	sbic	PIND,PD4	;Skip Next If PD4 still pressed(=0)
+	rjmp	ReadSecs	;Else PD4=1, Read Seconds button
+	rcall	ShowTime   	;Show Time so setup'ed
+	rjmp	WaitPD4		;Repeat the above commands
+
+
+;****** Read If Seconds (PD3) button pressed ******
+ReadSecs:
+	sbic	PIND,PD3	;Skip Next If PD3=Cleared/pressed
+	rjmp	ReadGO		;Else read state of GO/START button
+	inc	SecsLo		;Increase by 1
+	cpi	SecsLo,$0A      ;Check if reached 10
+	breq	ResetSecsLo     ;If yes, clear Low, Increase hi
+	rjmp	WaitPD3		;Wait for debouncing of button
+ResetSecsLo:
+	ldi	SecsLo,$00	;clr SecsLo also works in 1 cycle
+	inc	SecsHi		;Increase secs tens
+	cpi	SecsHi,$06	;Maximum for seconds tens = 6 
+	breq	ResetSecsHi	;if reached 6 start all over
+	rjmp	WaitPD3		;Wait for debouncing of button
+ResetSecsHi:
+	ldi	SecsHi,$00	;Clear both registers
+	ldi	SecsLo,$00	;We could use the clr command also
+WaitPD3:
+	sbic	PIND,PD3	;Skip If PD3=0 (still pressed)
+	rjmp	ReadGO		;otherwise check GO button
+	rcall	ShowTime	;Show Digits Setup So Far
+	rjmp	WaitPD3		;Repeat the above commands
+
+;****** Read state of START/GO (PD5) button ******
+ReadGO:
+	sbic	PIND,PD5	;Skip Next If PD5=0 (pressed)
+	rjmp	ForTheLoop	;Repeat Showtime & Setup Procedure
+
+;****** Wait for releasing of START/GO button (PD5) ******
+DebounceGO:
+	sbic	PIND,PD5	;Skip Next If PD5=0
+	rjmp 	StartToRun	;Else BEGIN COUNTING !!!
+	rcall	ShowTime	;Show Time Setup So Far
+	rjmp	DebounceGO	;Loop until button released
+
+
+
+
+;*****************************************************************
+;* 								 *
+;*              START TO RUN - MAIN COUNTING ROUTINE             *
+;* 								 *
+;* 1. Copy setup time to "save" registers for easy recounting	 *
+;* 2. Load the prescaler and startup value of timer		 *
+;* 3. ENABLE INTERRUPTS (so to "catch" timer overflow)           *
+;*								 *
+;*---------------------------------------------------------------*
+;* The real main counting loop is after StartToRun and contains: *
+;*								 *
+;* 1. Display the current time					 *
+;* 2. Check if ForTimer Register Reached 20 (1 sec passed)       *
+;*       If yes, decrease registers(counters) involved	         *
+;* 3. Check If START/GO button Pressed again (Means PAUSE now)   *
+;*       If yes :						 *
+;*          1) Disable interrupts 				 *
+;*          2) Display current time				 *
+;*	    3) Wait for Start/Go key to be pressed again	 *
+;* 								 *
+;*****************************************************************
+StartToRun:
+	mov	sSecsLo,SecsLo	;Copy SecsLo to Save SecsLo
+	mov	sSecsHi,SecsHi	;Copy SecsHi to Save SecsHi
+	mov	sMinsLo,MinsLo	;Copy MinsLo to Save MinsLo
+	mov	sMinsHi,MinsHi	;Copy MinsHi to Save MinsHi
+	ldi 	genio,$9E	;Not really needed again
+	out	TCNT0,genio	;to set startup time of TIMER0
+	ldi	genio,$05	;Timer Prescaler = 5dec (00000101b)
+	out	TCCR0,genio	;CS02=1, CS01=0, CS00=1 (CK/1024)
+
+	sei			;ENABLE INTERRUPTS and off we go !
+
+;****** MainRun, this is the main running process *****
+MainRun:
+	rcall	ShowTime	;Show the current time
+	cpi	ForTimer,$14	;Compare ForTimer with $14 (20dec)
+	breq	SecondElapsed	;If equal branch to SecondElapsed
+	sbic	PIND,PD5	;Skip next if PD5=0 (pressed)
+	rjmp	MainRun		;Jump to main run again if unpressed
+	rjmp	PauseTimerNow	;*** Jump To 'Pause timer now' ***
+
+
+;****** 1 Second Elapsed, decrease and check values *******
+SecondElapsed:
+	clr	ForTimer	;Clear counter (ldi $00 also work)
+	dec	SecsLo		;Decrease SecsLo by 1
+	cpi	SecsLo,$00	;Compare SecsLo with 0
+	brlt	DecSecsHi	;Carefull ! Branch If Less Than
+	rjmp	MainRun		;Else return to main run
+
+DecSecsHi:
+	ldi	SecsLo,$09	;Load 9 to secs lo
+	dec	SecsHi		;Decrease SecsHi
+	cpi	SecsHi,$00	;Copmare with 0
+	brlt	DecMinsLo	;Branch if SecsHi < 0
+	rjmp	MainRun		;else return to main run
+
+DecMinsLo:
+	ldi	SecsHi,$05	;A minute passed, load 59 on seconds
+	ldi	SecsLo,$09	;for the next run
+	dec	MinsLo		;decrease MinsLo
+	cpi	MinsLo,$00	;Compare with 0
+	brlt	DecMinsHi	;If MinsLo<0 branch
+	rjmp	MainRun		;Else jump to main run
+
+DecMinsHi:
+	ldi	MinsLo,$09	;Ten minutes passed, load 9 on MinsLo
+	dec	MinsHi		;Descrease Minutes High
+	cpi	MinsHi,$00	;Compare with 0
+	brlt	CountingDone	;*** TIMER FINISHED COUNTING ***
+	rjmp	MainRun		;else continue
+
+			
+
+;*****************************************************************
+;* 								 *
+;*                   PAUSE THE TIMER COUNTING  			 *
+;* 								 *
+;*    The PD5 (Start/Go button) pressed during the countdown     *
+;* 								 *
+;* 1. Disable Interrupts					 *
+;* 2. Display time						 *
+;* 3. Wait for Start (PD5) to be pressed again			 *
+;* 4. ### 27 January 2009 update ###                             *
+;*    To create a "pause" effect, we could show and hide the     *
+;*    digits, every 0.25 seconds (250ms) approximately           *
+;*    Because the segments are multiplexed, we must drive all    *
+;*    segments, not just call a 250ms delay because only the     *
+;*    last digit driven will be visible. This could be true      *
+;*    if we didn't have the demultiplexer for the digits and     *
+;*    1 port pin for every segment, so we could hold all to zero *
+;*    for 500ms and no digit would be on                         *
+;*    For that reason, we will do the following:                 *
+;*    a) Each display driving has approx 1ms delay to change the *
+;*       active display (through the macros).                    *
+;*       So each "display cycle" takes about 4ms                 *
+;*       We have to call the ShowTime and check the PD5 pin      *
+;*       approximately 30 times                                  *
+;*    b) To light off all digits and to be able to check PD5     *
+;*       we HAVE to drive them with something like the ShowTime  *
+;*       BUT the next 250ms we will call a "DisplayNothing"      *
+;*       so all digits will be light off. This will done by      *
+;*       creating a small subroutine called DisplayNothing       *
+;*       and there we will output the value of 1111111b to the   *
+;*       digits (so for negative logic, all will be off).        *
+;*       If we have just called a delay500ms routine then we     *
+;*       couldn't be able to check the PD5, unless this check    *
+;*       was within this delay subroutine.                       *
+;*    c) We have to use a register as a counter that is not      *
+;*       involved in the other subroutines (i.e. fine or medium) *
+;*       and also we don't want to destroy ForTimer or other     *
+;*       critical registers. So we will use the register         *
+;*       ForPause (R25). We could also use some other "low"      *
+;*       register, or the saveSREG because now interrupts are    *
+;*       disabled and there is nothing to save on saveSREG.      *
+;*       But because saveSREG is a "low" register (0-15) we have *
+;*       NOT to use cpi, but cp and to compare this low register *
+;*       i.e with genio (which would hold) the value             *
+;*     								 *
+;*****************************************************************
+PauseTimerNow:
+	cli			;Clear Interrupt Flag
+				;This is Critical, in order not to
+				;loose the point we are
+PauseTimerStart:
+	ldi	ForPause,$1F	;Load with startup value 31dec
+PauseLoop:
+	rcall	ShowTime	;Show Current Time
+	dec	ForPause	;Decrease 0.5sec counter
+	cpi	ForPause,$00	;Check if 0 reached
+	breq	PauseContNo     ;If =0, goto No display
+	rjmp	PauseLoop	;Otherwise repeat above commands
+
+PauseContNo:
+	ldi	ForPause,$1F	;Re-Load startup value 31dec
+PauseCont2:
+	rcall	DisplayNothing	;Display nothing !
+	dec	ForPause	;Decrease the 0.5sec counter
+	cpi	ForPause,$00	;Check if 0 reached
+	breq	PauseTimerStart ;If =0,repeat the whole procedure
+	sbis	PIND,PD5	;Skip Next If PD5=1 (unpressed)
+	rjmp	DebPauseGo	;otherwise Go to debounce/continue
+	rjmp	PauseCont2	;Otherwise repeat above commands
+
+
+;*** Wait for releasing of START/GO button ***
+DebPauseGo:			
+	sbic	PIND,PD5	;Skip Next If PD5=0
+	rjmp 	ReStartTimer	;Else Go to restart counting
+	rcall	ShowTime	;Show Time So Far
+	rjmp	DebPauseGo	;Loop until button released
+
+ReStartTimer:
+	sei			;Set Interrupt Flag (enable ints)
+	rjmp	MainRun		;Jump to normal counting flow
+
+
+
+
+;*****************************************************************
+;* 								 *
+;*              THE COUNTER FINISHED THE COUNTING             	 *
+;* 								 *
+;* 1. Disable Interrupts					 *
+;* 2. Display the message 'End'					 *
+;* 3. Play a 'finish tone' until Setup or Go pressed		 *
+;* 4. Check for Start/Go button to be pressed to restart the     *
+;*    countng, using the same values as the last counting	 *
+;* 5. Check for Setup button to be pressed to enter another      *
+;*    set of values for Minutes, Seconds to count		 *
+;* 								 *
+;*---------------------------------------------------------------*
+;* The 'finish tone' will be a sequence of : bee - baa           *
+;* each one lasting for about some milliseconds			 *
+;*								 *
+;* Because we have to show and the message 'End' which has 1ms   *
+;* delay between each digit (3ms in total) to be more accurate   *
+;* for the timings we will count this delay for the start value. *
+;*								 *
+;* Please Note ! Frequencies/pulses are for a speaker output     *
+;* If you use a buzzer you will probably have different results. *
+;*								 *
+;* The ForTimer register is not used anymore (we will disable    *
+;* all interrupts, so it can be used for the counting            *
+;*								 *
+;*								 *
+;*****************************************************************
+CountingDone:
+	cli			;Disable Interrupts (clear Flag)
+DoBee:
+	rcall	DisplayEnd	;Display 'End' message
+	ldi	ForTimer,$83	;Load register with value 131=$83
+DoBeeLoop:
+	cbi	PORTD,PD6	;Set PD6 = 0
+	rcall	Delay400us	;Delay 400μsec
+	sbi	PORTD,PD6	;Set PD6 = 1
+	rcall	Delay400us	;Delay 400μsec, just send a pulse!
+	dec	ForTimer	;Decrease ForTimer
+	cpi	ForTimer,$00	;Compare ForTimer with Zero
+	breq	DoBaa		;If =0 Do the Baa 
+	rjmp	DoBeeLoop	;Else repeat the bee loop
+
+DoBaa:	
+	rcall	DisplayEnd	;Display 'End' again
+	ldi	ForTimer,$76	;Load register with value 118=$76
+DoBaaLoop:
+	sbi	PORTD,PD6	;Set PD6 = 1
+	rcall	Delay600us	;Delay 625μsec
+	cbi	PORTD,PD6	;Set PD6 = 0
+	rcall	Delay600us	;Delay 625μsec
+	dec	ForTimer	;Decrease ForTimer
+	cpi	ForTimer,$00	;Compare ForTimer with Zero
+	breq	EndCheckGO	;Finished, check if GO pressed
+	rjmp	DoBaaLoop	;Else repeat with the tone
+
+;*** Check if Go/Start button pressed (if yes, start counting the same time)
+EndCheckGo:
+	sbic	PIND,PD5	;Skip Next if PD5 pressed
+	rjmp	EndCheckSetup	;Check if setup button pressed
+
+EndPD5Deb:
+	sbic	PIND,PD5	;Skip Next If PD5=0
+	rjmp 	EndRunAgain	;Else BEGIN COUNTING AGAIN !!!
+	rcall	DisplayEnd	;Show 'End' message until release
+	rjmp	EndPD5Deb	;Loop until button released
+
+;*** Check if Setup button pressed (if yes go to setup procedure)
+;*** NOT AVAILABLE if the PD2's function is replaced by PD5
+EndCheckSetup:
+	sbis	PIND,PD2	;Skin Next If PD2 pressed
+	rjmp	DoBee		;Repeat the whole loop again...
+
+EndPD2Deb:
+	sbic	PIND,PD2	;Skip Next If PD2=0
+	rjmp 	ToBeginSetup	;Goto ToBeginSetup Label
+	rcall	DisplayEnd	;Show 'End' message until release
+	rjmp	EndPD2Deb	;Loop until button released
+
+
+
+;*** End Run Again...Prepare to run for the same counting...
+;*** Copy the saved procedures and go to start runing
+EndRunAgain:
+	sbi	PORTD,PD6	;Turn Off The Buzzer/Speaker
+	mov	SecsLo,sSecsLo	;Copy saved to SecsLo
+	mov	SecsHi,sSecsHi	;Copy saved to SecsHi
+	mov	MinsLo,sMinsLo	;Copy saved to MinsLo
+	mov	MinsHi,sMinsHi	;Copy saved to MinsHi
+	ldi 	genio,$9E	;Setup Inital Value Of timer
+	out	TCNT0,genio	;not really needed
+	ldi	genio,$05	;Timer Prescaler = 5dec (00000101b)
+	out	TCCR0,genio	;CS02=1, CS01=0, CS00=1 (CK/1024)
+
+	sei			;ENABLE INTERRUPTS before we jump
+	
+	rjmp	MainRun		;Return to Main Running Procedure
+
+
+
+;*** To Begin Setup...Prepeare to Jump To Setup Routine
+;*** Please note, Interrupts are NOT enabled yet...
+;*** Will be enabled within the setup routine when Go pressed.
+ToBeginSetup:
+	sbi	PORTD,PD6	;Turn Off The Buzzer/Speaker
+	rjmp	BeginSetup
+;***********************************************************************
+;* File    : 4_Subs.Asm
+;* Purpose : Usefull Subroutines and Interrupt Service Routines (ISR)
+;* Author  : Nikos Bovos
+;* Contact : tano@hol.gr
+;* Created : 21 January 2009
+;***********************************************************************
+
+;**********************************************************************
+;* Subroutine : DisplayPush
+;* Purpose    : Display The Messege 'PUSH' on the segments
+;**********************************************************************
+DisplayPush:
+	Digit4			;Enable 4th digit (minutes tens)
+	ldi	saveEEP,$0C	;Load Equivalent of 'P'
+	out	portb,saveEEP	;Out the value to portb
+	rcall	Delay1ms	;Small delay approx 1ms (1kHz)
+
+	Digit3			;Enable 3th digit (minutes ones)
+	ldi	saveEEP,$41	;Load Equivalent of 'U'
+	out	portb,saveEEP	;Out the value to portb
+	rcall	Delay1ms	;Small delay approx 1ms (1kHz)
+
+	Digit2			;Enable 2nd digit (seconds tens)
+	ldi	saveEEP,$12	;Load Equivalent of 'S'
+	out	portb,saveEEP	;Out the value to portb
+	rcall	Delay1ms	;Small delay approx 1ms (1kHz)
+
+	Digit1			;Enable 1st digit (seconds ones)
+	ldi	saveEEP,$09	;Load Equivalent of 'H'
+	out	portb,saveEEP	;Out the value to portb
+	rcall	Delay1ms	;Small delay approx 1ms (1kHz)
+
+	ret			;RETURN (we came from rcall here)
+
+
+
+
+
+
+;**********************************************************************
+;* Subroutine : ShowTime
+;* Purpose    : Show on displays the current time
+;*            : There is no need for 'Rcall Delay1ms' here because this
+;*            : call exist inside the Macro 'ShowDigit'
+;**********************************************************************
+ShowTime:
+	Digit4			;Enable Digit 4 (Minutes Tens)
+	ShowDigit MinsHi	;Macro to show 7-seg equivalent
+
+	Digit3			;Enable Digit 3
+	ShowDigit MinsLo	;Macro to show 7-seg equivalent
+
+	Digit2			;Enable Digit 2
+	ShowDigit SecsHi	;Macro to show 7-seg equivalent
+
+	Digit1			;Enable Digit 1 
+	ShowDigit SecsLo	;Macro to show 7-seg equivalent
+
+	ret			;RETURN (ShowTime called with rcall)
+
+
+
+
+
+
+;**********************************************************************
+;* Subroutine : DisplayNothing
+;* Purpose    : Displays nothing on the displays (all segments off)
+;**********************************************************************
+DisplayNothing:
+	Digit4			;Drive Digit 4 (Minutes Tens)
+	ldi	genio,$7F	;Load Value 127 (1111111b)
+	out	PORTB,genio	;Output to PORTB
+	rcall	Delay1ms	;Delay 1ms
+	Digit3			;Drive Digit 3
+	ldi	genio,$7F	;Load Value 127 (1111111b)
+	out	PORTB,genio	;Output to PORTB
+	rcall	Delay1ms	;Delay 1ms
+	Digit2			;Drive Digit 3
+	ldi	genio,$7F	;Load Value 127 (1111111b)
+	out	PORTB,genio	;Output to PORTB
+	rcall	Delay1ms	;Delay 1ms
+	Digit1			;Drive Digit 3
+	ldi	genio,$7F	;Load Value 127 (1111111b)
+	out	PORTB,genio	;Output to PORTB
+	rcall	Delay1ms	;Delay 1ms
+
+	ret			;We came here through rcall
+
+
+
+
+
+
+;**********************************************************************
+;* Subroutine : DisplayEnd
+;* Purpose    : Display The Messege 'End' on the segments
+;*            : Uses the last 3 right digits 
+;**********************************************************************
+DisplayEnd:
+	Digit3			;Enable Digit3 (Minutes ones)
+	ldi	genio,$06	;Load Equivalent of 'E'
+	out	portb,genio	;Out the value to portb
+	rcall	Delay1ms	;Small delay approx 1ms (1kHz)
+
+	Digit2			;Enable Digit2 (Seconds tens)
+	ldi	genio,$2B	;Load Equivalent of 'n'
+	out	portb,genio	;Out the value to portb
+	rcall	Delay1ms	;Small delay approx 1ms (1kHz)
+
+	Digit1			;Enable Digit1 (Seconds ones)
+	ldi	genio,$21	;Load Equivalent of 'd'
+	out	portb,genio	;Out the value to portb
+	rcall	Delay1ms	;Small delay approx 1ms (1kHz)
+
+	ret			;RETURN (we came from rcall here)
+
+
+
+
+
+
+;*************************************************************************************
+;* Delay Routine By TDC_AVR 0.03 By Nikos Bovos
+;* XTAL/Res Frequency : 2 MHz
+;* AVR Clock Cycle    : 500 nsec
+;* Delay Produced     : 802 Clock Cycles
+;* Equivalent Time    : 401 usec
+;*************************************************************************************
+Delay400us:
+	ldi	medium,2	; Load Medium Counter ($02)
+lfine400us:
+	ldi	fine,132	; Load Fine Counter ($84)
+stdec400us:
+	dec	fine		; Decrease Fine Counter
+	brne	stdec400us	; If fine Not Zero (Z bit of SREG=0) Goto stdec
+	dec	medium		; fine = 0, Decrease Medium
+	brne	lfine400us     	; If Medium <>0, Reload Fine
+	ret			; Return From Subroutine
+
+
+
+
+
+
+;*************************************************************************************
+;* Delay Routine By TDC_AVR 0.03 By Nikos Bovos
+;* XTAL/Res Frequency : 2 MHz
+;* AVR Clock Cycle    : 500 nsec
+;* Delay Produced     : 1198 Clock Cycles
+;* Equivalent Time    : 599 usec
+;*************************************************************************************
+delay600us:
+	ldi	medium,2	; Load Medium Counter ($02)
+lfine600us:
+	ldi	fine,198	; Load Fine Counter ($CF)
+stdec600us:
+	dec	fine		; Decrease Fine Counter
+	brne	stdec600us	; If fine Not Zero Goto stdec
+	dec	medium		; fine = 0, Decrease Medium
+	brne	lfine600us	; If Medium <>0, Reload Fine
+	ret			; Return From Subroutine
+
+
+
+
+
+
+;*************************************************************************************
+;* Delay Routine By TDC_AVR 0.03 By Nikos Bovos
+;* XTAL/Res Frequency : 2 MHz
+;* AVR Clock Cycle    : 500 nsec
+;* Delay Produced     : 2002 Clock Cycles
+;* Equivalent Time    : 1,001 msec 
+;*************************************************************************************
+delay1ms:
+	ldi	medium,20	; Load Medium Counter ($03)
+lfine1ms:
+	ldi	fine,165	; Load Fine Counter ($DD)
+stdec1ms:
+	dec	fine        	; Decrease Fine Counter
+	brne	stdec1ms      	; If fine Not Zero Goto stdec
+	dec	medium      	; fine = 0, Decrease Medium
+	brne	lfine1ms       	; If Medium <>0, Reload Fine
+	ret                	; Return From Subroutine
+
+
+
+
+
+
+;**********************************************************************
+;* Subroutine : Timer0INT
+;* Purpose    : Timer0/Counter Interrupt Service Routine (ISR)
+;* Info       : This is the basic ISR of the program. Every time the
+;*            : Timer0 Overflows the MCU Jumps to address $006
+;*            : (the vector of the Timer0 Overflow) and finds the
+;*            : Relative Jump to this routine.
+;*            : NOTE ! The jobs we are going to perform:
+;*            : 1. Save the bits of the Status Register
+;*            : 2. Increase the ForTimer register
+;*            : 3. Reload Timer's startup value
+;*            : 4. Restore the bits of SREG
+;*            : 5. Return from interrupt 
+;*            : -------------------------------------------------------
+;*            : More detailed:
+;*            : The Timer0 is set-up to overflow every 50ms
+;*            : We increase the ForTimer (up to 20 so we reached 1 sec)
+;*            : The check is done within the main program, we could 
+;*            : place the check within this routine (because in the
+;*            : main program this check will occur a few times more
+;*            : than here, but it's ok as long as we don't loose
+;*            : any accurancy on the countings.
+;*            : Here the contents of the status register is saved
+;*            : (as there is no really need, because we are not changing
+;*            : any flag of the SREG here, but maybe in future firmwares
+;*            : and its a good practice to save and restore the SREG
+;*            : within an interrupt service routine).
+;**********************************************************************
+Timer0INT:
+	in	saveSREG,SREG	;Save Status Register to saveSREG reg.
+	inc	ForTimer	;Increase the 1 second counter register
+	ldi 	genio,$9E	;Load genio with $9E = 158dec
+	out	TCNT0,genio	;Re-Load Startup value of timer
+	out	SREG,saveSREG	;Restore Status Register
+	reti			;RETURN FROM INTERRUPT
+
+;*************************************************************************
+;* EEPROM Segment...Store the equivalent values for the 7-Segment Displays
+;* CAUTION !!! Due to Errata the values will be written starting from $001
+;* and not by the first ($000) EEPROM position
+;* For just reference i'll put the firmware revision (1) on $000
+;**********************************************************************
+
+	.eseg
+	.org 	$000
+EEpromTable:      
+	.db 	$01,$40,$F9,$24,$30,$19,$12,$02,$78,$00,$18,$01
+		
+;*     	              0   1   2   3   4   5   6   7   8   9
+;* Revision Num  --  and the same in the end to be even bytes number
+;* otherwise a 00 will be appended to be even number of bytes
+;**********************************************************************
+;
+; This file must be the final in the project, or else you will need
+; to enter a .cseg directive to be able to write more commands after
+; the eeprom table definition
+;
+; Here ends the firmware 1.00 as of 23 January 2009
+;**********************************************************************
+
