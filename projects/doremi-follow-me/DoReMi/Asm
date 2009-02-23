@@ -1,0 +1,681 @@
+;**********************************************************************
+;* Project           : Do-Re-Mi Follow Me
+;* Author            : Nikos Bovos (tano@hol.gr)
+;* Device To Use     : Atmel's AT90S2313 
+;* Firmware Revision : 1.00 , July 29 2002 
+;*                   : Prepare for the freaks! Febraury 2009
+;* Timing Of MCU     : Xtal 2.000 MHz (Clock: 22pf/XTAL/22pf)
+;**********************************************************************
+;*
+;* A small toy using Atmel's AT90S2313
+;* The basic idea is to follow MCU playing...
+;* The MCU plays 1 note (C,D,E,F) and waits for input
+;* If you succeed, ot plays a Welldone tone and then plays 2 notes etc
+;* If you make a mistake, it sounds a buzzzz and repeats the sequence
+;*
+;*---------------------------------------------------------------------
+;*
+;* Notes and frequencies involved in the project:
+;* Note   Freq         Period       T/2(on state)   T/2 (off state)
+;* C1  = 262 Hz -> Τ = 3,8167 ms -> ton = 1,90835 , toff = 1,90835
+;* D1  = 294 Hz -> T = 3,4013 ms -> ton = 1,70065 , toff = 1,70065
+;* E1  = 330 Hz -> T = 3,0303 ms -> ton = 1,51515 , toff = 1,51515
+;* F1  = 350 Hz -> T = 2,8571 ms -> ton = 1,42855 , toff = 1,42855
+;*
+;* Buzzzz = 80 Hz -> T = 12.5 ms -> ton = 6.25 ms , toff = 6.25 ms
+;*
+;* WellDone Tone= 786 Hz (C3), 990 Hz (E3), 1050 Hz (F3)
+;*---------------------------------------------------------------------
+;*
+;* MCU's Resources Usage:
+;*
+;* PORTB
+;*
+;* PB7 : Output to speaker [through BJT CC (or two for more power)]
+;* PB6 : --Free for now--
+;* PB5 : --Free for now--
+;* PB4 : --Free for now--
+;* PB3 : PussButton note C  
+;* PB2 : PussButton note D  
+;* PB1 : PussButton note E
+;* PB0 : PussButton note F
+;*
+;* PORTD
+;* PD6 : --Free For Now--
+;* PD5 : --Free For Now--
+;* PD4 : --Free For Now--
+;* PD3 : C's Led 
+;* PD2 : D's Led 
+;* PD1 : E's Led 
+;* PD0 : F's Led 
+;*
+;* 
+;* For the well done tone, play C E F
+;* C3 = 786  Hz -> T = 1,2723 ms -> ton = toff = 636 μs
+;* E3 = 990  Hz -> T = 1,0101 ms -> ton = toff = 505 μs
+;* F3 = 1050 Hz -> T =    952 μs -> ton = toff = 476 μs
+;*
+;* Delays are produced in a "typical" manner (delay routines)
+;* The parameters (Medium, Fine) and absolute error for each note is:
+;* (Medium and Fine are the registers of the delays subroutines)
+;*
+;* C1 : Medium=6, Fine=210, Delay (T/2)=1,901 ms, |Error|=0,39 %
+;* D1 : Medium=6, Fine=188, Delay (T/2)=1,703 ms, |Error|=0,14 % 
+;* E1 : Medium=6, Fine=167, Delay (T/2)=1,514 ms, |Error|=0,08 %
+;* F1 : Medium=6, Fine=157, Delay (T/2)=1,424 ms, |Error|=0,32 %
+;*
+;*-----------------------------------------------------------------------
+;*
+;* C3 : Medium=2, Fine=210, Delay (T/2)=635 μs, |Error|=0,16 %
+;* E3 : Medium=2, Fine=167, Delay (T/2)=506 μs, |Error|=0,20 %
+;* F3 : Medium=2, Fine=157, Delay (T/2)=476 μs, |Error|=0,00 %
+;*
+;************************************************************************
+
+.NOLIST
+.INCLUDE "2313def.inc"
+.LIST
+
+;
+;****************** Declaration of project's variables ******************
+;
+
+.def    BaseStep=r16            ; Basic Step For Easy/Medium/Hard play
+.def	large	=r17		; Large counter for the 250ms delay
+.def	medium	=r18		; Medium counter for delay routines
+.def	fine	=r19		; Fine counter for delay routines
+.def	genio	=r20		; general purpose i/o register
+.def	StartNo =r21		; Start Note to play/wait
+.def	StopNo  =r22		; Stop Note to play/wait
+.def	GlobNote=r23		; Global Note Counter (how many to play)
+.def	theNOTE	=r24		; Which Note To Play (C=1,D=2,E=3,F=4)
+.def	regLARGE=r25		; Large counter (for Copy of large)
+.def	regMEDIUM=r26		; Medium counter (for Copy of medium)
+.def	regFINE =r27		; Fine counter (for Copy of fine)
+
+;
+;*******************  Define Some Usefull Macros *************************
+;
+.MACRO LedsOFF			; All Leds OFF (Negative Logic/Source !)
+	sbi	PORTD,PD3	
+	sbi	PORTD,PD2
+	sbi	PORTD,PD1
+	sbi	PORTD,PD0
+.ENDMACRO
+
+
+.MACRO LedsON			; All Leds ON (Negative Logic/Source !)
+	cbi	PORTD,PD3	
+	cbi	PORTD,PD2
+	cbi	PORTD,PD1
+	cbi	PORTD,PD0
+.ENDMACRO
+
+
+.MACRO LightC			; Light C's Led 
+	cbi	PORTD,PD3
+	sbi	PORTD,PD2
+	sbi	PORTD,PD1
+	sbi	PORTD,PD0
+.ENDMACRO
+
+
+.MACRO LightD			; Light D's Led 
+	sbi	PORTD,PD3
+	cbi	PORTD,PD2
+	sbi	PORTD,PD1
+	sbi	PORTD,PD0
+.ENDMACRO
+
+
+.MACRO LightE			; Light E's Led 
+	sbi	PORTD,PD3
+	sbi	PORTD,PD2
+	cbi	PORTD,PD1
+	sbi	PORTD,PD0
+.ENDMACRO
+
+
+.MACRO LightF			; Light F's Led 
+	sbi	PORTD,PD3
+	sbi	PORTD,PD2
+	sbi	PORTD,PD1
+	cbi	PORTD,PD0
+.ENDMACRO
+
+
+
+;************************************************************************
+;*                                                                      *
+;*                        Program Initialization                        *
+;*                                                                      *
+;************************************************************************
+.cseg       			; Code Segment
+.org	$0000  			; Reset Vector
+
+	rjmp	Init		; Relative Jump of RESET ($00)
+	reti			; Relative Jump στην ISR του INT0
+	reti			; External Interrupt1 Vector Address
+	reti			; Input Capture1 Interrupt Vector Address
+	reti			; Output Compare1 Interrupt Vector Address
+	reti			; Overflow1 Interrupt Vector Address
+	reti			; Overflow0 Interrupt Vector Address
+	reti			; UART Receive Complete Interrupt Vector Address
+	reti			; UART Data Register Empty Interrupt Vector Address
+	reti			; UART Transmit Complete Interrupt Vector Address
+	reti			; Analog Comparator Interrupt Vector Address
+
+
+Init:	ldi	genio,low(RAMEND); genio <- last SRAM location
+      	out	SPL,genio	; Low Byte του Stack Pointer <- $DF
+
+;
+;------------------------ PORTB Initialization ----------------------
+;
+
+	ldi 	genio,$F0	; genio <- 11110000 (PB7,6,5,4=OUT PB3,2,1,0=IN)
+      	out 	DDRB,genio	; PORTB Initialize
+	ldi	genio,$F0	; Startup value 11110000
+	out	PORTB,genio	
+
+;
+;------------------------ PORTD Initialization ----------------------
+;
+	ldi 	genio,$7F	; genio <- 1111111 (PD6,5,4=OUT PB3,2,1,0=IN)
+      	out 	DDRD,genio	; PORTB Initialize
+	ldi	genio,$7F	; genio <- 1111111
+	out	PORTD,genio	
+
+;**********************************************************************
+;*
+;*         		Main Program Starts Here	
+;*
+;* Speaker is connected to PB0 through double BJT (Common Collector)
+;*
+;**********************************************************************
+;
+PreStart:
+	ldi	BaseStep,$23	; Startup value of step
+
+Start:	rcall	FrouFrouStart	; "Frills startup"
+	ldi	StartNo,$01	; Startup note
+	ldi	StopNo,$01	; End Note
+	ldi	GlobNote,$01	; Load value to global note too
+
+Main:	ldi	regLARGE,6
+	ldi	regMEDIUM,155
+	ldi	regFINE,250
+	rcall	LargeDelay	; Delay 350ms
+	rcall	LargeDelay	; Delay 350ms
+	rcall	LargeDelay	; Delay 350ms
+
+PlayGame:
+	out	eear,StartNo	; EPPROM Address to read
+	sbi	eecr,0		; Read from EEPROM (EECR bit0=1)
+        in      theNOTE,eedr    ; save value read
+	breq	PlayTheNote	; Play Note Readed
+
+ContGame1:
+	inc	StartNo		; Increase Note	
+	cp	StopNo,StartNo	; Compare with how many notes to play
+	brlo	GetNotes	; If StopNote<StartNote go and wait response
+	rjmp	PlayGame	; else there are more to play before wait
+
+;
+;------------------ Wait to play waht MCU played ---------------
+;                 In case of error, return to Main
+
+GetNotes:
+	mov	StartNo,GlobNote; Form Where we Start 
+WaitKey:
+	sbis	PINB,PB3	; Skip Next If Didn't press C's pussbutton
+	rcall	CheckC		; Check If we are waiting for a C
+	sbis	PINB,PB2	; If PB2=1 didn't pressed
+	rcall	CheckD		; Check if we are waiting for a D
+	sbis	PINB,PB1	; If PB1=1 didn't pressed
+	rcall	CheckE		; Check if we are waiting for a E
+	sbis	PINB,PB0	; If PB0=1 didn't pressed
+	rcall	CheckF		; Check if we are waiting for a F
+	cp	StopNo,StartNo	; Compare If the user found the sequence
+	brlo	HeDidIt		; Yes, Yes !!! - If Stop<Start found
+	rjmp	WaitKey		; Else there are more notes to enter
+
+HeDidIt:
+	rcall	WellDoneTone	; Well Done Tone
+	inc	GlobNote	; Increase Global Note. This is used to avoid begining
+				; Always from position 1 and play the same rythm
+				; You can insert a pseudo-random routine to
+				; deliver a different concept, but i think that this
+				; method seems ok...Or you can increase Start note too
+	cpi	GlobNote,$40	; Check if go to max=64 
+	breq	ReLoadMin	; If yes, reload minimum
+	rjmp	ContLoadOther	; Else continue
+ReLoadMin:
+	ldi	GlobNote,$01	; Minimum Value For How Many Notes=1
+ContLoadOther:
+	mov	StartNo,GlobNote; New Startpoint=GlobalNote 
+	mov	StopNo,GlobNote	; New Stop Point = 2 * Start -1
+	add	StopNo,StopNo	; StopNo = 2*StopNo
+	dec	StopNo		; StopNo = StopNo-1
+
+	rjmp	Main		; Continue Game with +1 notes this time
+	
+PlayTheNote:
+	rjmp	PlayNote
+
+;
+; -------------------- Check If It Is Note C ----------------------------
+;
+CheckC:
+	ldi	theNOTE,$01	
+	rcall	PlayNote	; Play the note 
+	sbis	PINB,PB3	; While key not debounced play sound
+	rjmp	CheckC		; Loop Until debounce key 
+	out	eear,StartNo	; EPPROM Address to read from
+	sbi	eecr,0		; We are going to read from EEPROM (EECR bit0=1)
+        in      genio,eedr      ; Save Value Read From E2PROM 
+        cpi     genio,$01       ; Did we expect a C ? 
+	breq	DoneC		; If so, continue with next note 
+	rjmp	WrongNote	; or else Buzzzz and restart
+
+DoneC:	inc	StartNo		; Increase start point
+	rjmp	WaitKey		; wait next notes
+
+
+;
+;--------------------- Check If It Is Note D ----------------------------
+;
+
+CheckD:
+	ldi	theNOTE,$02	; The sequence remains the same
+	rcall	PlayNote	
+	sbis	PINB,PB2	
+	rjmp	CheckD		
+	out	eear,StartNo	
+	sbi	eecr,0		
+        in      genio,eedr      
+        cpi     genio,$02       
+	breq	DoneD		
+	rjmp	WrongNote	
+
+DoneD:	inc	StartNo		
+	rjmp	WaitKey		
+
+
+;
+;--------------------- Check If It Is Note E ----------------------------
+;
+
+CheckE:
+	ldi	theNOTE,$03
+	rcall	PlayNote	
+	sbis	PINB,PB1	
+	rjmp	CheckE		
+	out	eear,StartNo	
+	sbi	eecr,0		
+        in      genio,eedr      
+        cpi     genio,$03       
+	breq	DoneE		
+	rjmp	WrongNote	
+
+DoneE:	inc	StartNo		
+	rjmp	WaitKey		
+
+
+
+;
+;--------------------- Check If It Is Note F ----------------------------
+;
+
+CheckF:
+	ldi	theNOTE,$04
+	rcall	PlayNote	
+	sbis	PINB,PB0	
+	rjmp	CheckF		
+	out	eear,StartNo	
+	sbi	eecr,0		
+        in      genio,eedr     
+        cpi     genio,$04       
+	breq	DoneF		
+	rjmp	WrongNote	
+
+DoneF:	inc	StartNo		
+	rjmp	WaitKey		
+
+
+
+;
+;------------------ Wrong Note Played...Back To Start -------------------
+;
+
+WrongNote:
+	rcall	PlayWrongTone	; Buzz for wrong note played
+	mov	StartNo,GlobNote; Repeat last sequence
+	rjmp	Main		; Back to main prog 
+
+
+;
+;---------------------- Wrong Tone Rythym (Buzzzz) ----------------------
+;
+PlayWrongTone:
+	ldi	genio,$40	
+	LedsON			
+	ldi	regMEDIUM,18
+	ldi	regFINE,239
+OutWr:	sbi	PORTB,7		
+	rcall	smalldelay	
+	cbi	PORTB,7		
+	rcall	smalldelay	
+	dec	genio		
+	breq	OutPlayWrong	
+	rjmp	OutWr		
+OutPlayWrong:
+	LedsOFF			; Leds off
+	ret			; Rreturn to where called
+
+
+;
+;---------------- Destinations from PlayGame (breq xxxxx) ---------------
+;
+
+PlayTheC:
+	ldi	theNOTE,$01
+	rcall	PlayNote	; Play C
+	rjmp	ContGame1	
+PlayTheD:
+	ldi	theNOTE,$02
+	rcall	PlayNote	; Παίζω D
+	rjmp	ContGame1	
+PlayTheE:
+	ldi	theNOTE,$03
+	rcall	PlayNote	; Παίζω E
+	rjmp	ContGame1	
+PlayTheF:
+	ldi	theNOTE,$04
+	rcall	PlayNote	; Παίζω F
+	rjmp	ContGame1	
+
+
+;**********************************************************************
+;*
+;* FrouFrouStart: "Frills Start" - Φρουφρουδιάρικη έναρξη παιχνιδιού
+;*
+;* 1. Play a small tune and go to main program
+;* 1. Παίζω ενα μικρο ρυθμο και πηγαινω στην εναρξη του παιχνιδιου
+;*
+;**********************************************************************
+
+FrouFrouStart:
+	ldi	theNOTE,$01	; 
+	rcall	PlayNote	; C
+	ldi	theNOTE,$02	; 
+	rcall	PlayNote	; D
+	ldi	theNOTE,$03	; 
+	rcall	PlayNote	; E
+	ldi	theNOTE,$02	; 
+	rcall	PlayNote	; D
+	ldi	theNOTE,$03	; 
+	rcall	PlayNote	; E
+	ldi	theNOTE,$02	; 
+	rcall	PlayNote	; D
+	ldi	theNOTE,$03	; 
+	rcall	PlayNote	; E
+	ldi	theNOTE,$02	; 
+	rcall	PlayNote	; D
+
+	ldi	regLARGE,2
+	ldi	regMEDIUM,255
+	ldi	regFINE,255
+
+	ldi	theNOTE,$01
+	rcall	PlayNote	
+	rcall	LargeDelay	
+	ldi	theNOTE,$02	
+	rcall	PlayNote	
+	rcall	LargeDelay	
+	ldi	theNOTE,$03	
+	rcall	PlayNote	
+	rcall	LargeDelay	
+	ldi	theNOTE,$04	
+	rcall	PlayNote	
+	rcall	LargeDelay	
+
+	LedsOFF			
+	ret			; Return to where called
+
+
+
+;**********************************************************************
+;*
+;* Well Done Tone: Play C3 E3 F3 Tone 
+;*
+;**********************************************************************
+
+WellDoneTone:
+	rcall	PlayC3		; C3
+	rcall	PlayE3		; E3
+	rcall	PlayF3		; F3
+	LedsOFF
+	ret
+
+
+;**********************************************************************
+;*
+;* PlayC3  -  Subroutine For Playing C3
+;*
+;* C3 = 786 Hz -> T = 1.272 ms -> T/2 = 636 μs
+;*
+;**********************************************************************
+PlayC3:	ldi	genio,$4F	; 100ms -> Count=79 ($4F)
+	LedsOFF			; leds off
+	ldi	regMEDIUM,2
+	ldi	regLARGE,210
+OutC3:	sbi	PORTB,7		; drive/open speaker (PB7)
+	rcall	smalldelay	; delay Τ/2 of C3
+	cbi	PORTB,7		; Close speaker
+	rcall	smalldelay	; delay Τ/2 για C3
+	dec	genio		; decrease counter
+	breq	OutPlayC3	; if =0 go out
+	rjmp	OutC3		; else continue...
+OutPlayC3: 
+	ret			; return to main program
+
+
+
+;**********************************************************************
+;*
+;* PlayE3  -  Subroutine For Playing E3
+;*
+;* E3 = 990 Hz -> T = 1.010 ms -> T/2 = 505 μs
+;*
+;**********************************************************************
+PlayE3:	ldi	genio,$4F	; 100ms -> Count=79 ($4F)
+	LedsOFF			
+	ldi	regMEDIUM,2
+	ldi	regLARGE,167
+OutE3:	sbi	PORTB,7		
+	rcall	smalldelay	
+	cbi	PORTB,7		
+	rcall	smalldelay	
+	dec	genio		
+	breq	OutPlayE3
+	rjmp	OutE3		
+OutPlayE3: 
+	ret			; return to where called
+
+
+
+;**********************************************************************
+;*
+;* PlayF3  -  Subroutine For Playing F3
+;*
+;* F3 = 1050 Hz -> T = 952 μs -> T/2 = 476 μs
+;*
+;**********************************************************************
+PlayF3:	ldi	genio,$4F	
+	LedsOFF			
+	ldi	regMEDIUM,2
+	ldi	regLARGE,157
+OutF3:	sbi	PORTB,7		
+	rcall	smalldelay	
+	cbi	PORTB,7		
+	rcall	smalldelay	
+	dec	genio		
+	breq	OutPlayF3	
+	rjmp	OutF3		
+OutPlayF3: 
+	ret			
+
+
+;**********************************************************************
+;*
+;* PlayNote  -  Subroutine to play note
+;*              theNOTE contains the note to be played:
+;*              C=1, D=2, E=3, F=4
+;*
+;*              You can "play" with BaseStep value which refers to
+;*              Easy/Medium/Hard play according to it's value
+;*              (from 0=Easy more slow, to the max shown down on genio)
+;*
+;**********************************************************************
+PlayNote:
+	cpi	theNOTE,$01	
+	breq	LoadC
+	rjmp	CheckNoteD	
+LoadC:	ldi	genio,6		
+	mov	regMEDIUM,genio
+	ldi	genio,210
+	mov	regFINE,genio
+	ldi	genio,$69	
+	sub	genio,BaseStep	
+	LightC			
+	rjmp	OutNote
+
+
+CheckNoteD:
+	cpi	theNOTE,$02	
+	breq	LoadD
+	rjmp	CheckNoteE  		
+LoadD:	ldi	genio,6		
+	mov	regMEDIUM,genio
+	ldi	genio,188
+	mov	regFINE,genio
+	ldi	genio,$76	
+	sub	genio,BaseStep	
+	LightD			
+	rjmp	OutNote
+
+
+CheckNoteE:
+	cpi	theNOTE,$03	
+	breq	LoadE
+	rjmp	CheckNoteF
+LoadE:	ldi	genio,6		
+	mov	regMEDIUM,genio
+	ldi	genio,167
+	mov	regFINE,genio
+	ldi	genio,$84	
+	sub	genio,BaseStep	
+	LightE			
+	rjmp	OutNote
+
+
+CheckNoteF:			
+	ldi	genio,6		
+	mov	regMEDIUM,genio
+	ldi	genio,157
+	mov	regFINE,genio
+	ldi	genio,$8C	
+	sub	genio,BaseStep	
+	LightF			
+	rjmp	OutNote
+
+OutNote:	
+	sbi	PORTB,7		
+	rcall	smallDelay	
+	cbi	PORTB,7		
+	rcall	smallDelay	
+	dec	genio		
+	breq	OutPlayNote	
+	rjmp	OutNote		
+
+OutPlayNote: 
+	LedsOFF			
+	ret			
+
+
+;
+;------------------ DELAY FOR PLAY NOTES SUBROUTINES ------------------
+;
+
+;**********************************************************************
+;* Delay Routine By TDC_AVR 0.02 (by Nikos Bovos / tano@hol.gr)
+;* Delay Produced     : xxxxxxx Clock Cycles
+;* Equivalent Time    : yyyyyyy msec
+;* XTAL/Res Frequency : 2 MHz
+;* AVR Clock Cycle    : 500 nsec
+;* 
+;* Modified to work as "General" Delay Subroutine with the parameters
+;* regLARGE, regMEDIUM, regFINE to hold desired values for delay
+;**********************************************************************
+LargeDelay:
+	mov	large,regLARGE	; Copy value for large
+LargeLoadMed:
+	mov	medium,regMEDIUM ; Copy value for medium Counter
+LargeLoadFine:
+	mov	fine,regFINE	; Copy value for Fine Counter
+LargeDecFine:
+        dec     fine            ; Decrease Fine Counter
+	brne	LargeDecFine	; If fine Not Zero Goto stdec
+	dec	medium		; fine = 0, Decrease Medium
+	brne	LargeLoadFine	; If Medium <>0, Reload Fine
+	dec	large       	; Decrease Large Counter
+	brne	LargeLoadMed	; If Large <>0, Reload Medium
+	ret			; Return From Subroutine
+
+;**********************************************************************
+;* Delay Routine By TDC_AVR 0.02 (by Nikos Bovos / tano@hol.gr)
+;* Delay Produced     : XXXXX Clock Cycles
+;* Equivalent Time    : yyyyy msec
+;* XTAL/Res Frequency : 2 MHz
+;* AVR Clock Cycle    : 500 nsec
+;*
+;* Modified to work as "General" Delay Subroutine with the parameters
+;* regMEDIUM, regFINE to hold desired values for delay
+;**********************************************************************
+smalldelay:
+	mov	medium,regMEDIUM ; Copy regMedium To Medium
+loadfine:
+	mov	fine,regFINE	; Copy regFINE To Fine
+startdec:
+	dec	fine		; Decrease Fine Counter
+	brne	startdec	; If fine Not Zero Goto stdecC
+	dec	medium		; fine = 0, Decrease Medium
+	brne	loadfine	; If Medium <>0, Reload Fine
+	ret			; Return From Subroutine
+
+
+;**********************************************************************
+;*
+;*                             EEPROM Contents
+;*---------------------------------------------------------------------
+;*
+;* Declare the notes:
+;* The notes are saved in the following manner:
+;*
+;*         C = $01        D = $02       E = $03       F = $04
+;*
+;**********************************************************************
+
+.eseg
+.org	$000			; Errata,$000 store anything (don't used)
+
+    .db $00,$01,$03,$04,$02,$03,$01,$04,$02,$04,$03,$02,$01,$03,$02,$04
+    .db $03,$02,$03,$04,$01,$02,$04,$01,$04,$02,$01,$03,$02,$03,$04,$02
+    .db $01,$02,$01,$04,$03,$01,$03,$04,$03,$01,$03,$02,$01,$04,$02,$01
+    .db $04,$01,$03,$01,$03,$04,$02,$03,$02,$01,$04,$01,$03,$02,$01,$03
+
+
+;* End Of Project's Code
+
+
