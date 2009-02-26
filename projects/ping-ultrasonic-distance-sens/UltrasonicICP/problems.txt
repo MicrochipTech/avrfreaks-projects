@@ -1,0 +1,20 @@
+Problem1: 
+variable "run" still has the value 2 after INT0 service routine finishes although the last line in this service routine is:
+run = 0;
+Reason:
+INT0 is enabled in getDist() very early, it must be enabled whenever getDist() is about to finih (last line)
+Solution:
+Put the line     GICR|=0x40;    at the final line of getDist() function.
+------------------------------------------------------------------
+Problem2:
+Lines:
+    TIMSK &= 0xDF; // Disable ICP 
+    DDRD |= 0x40; //Set PIND.6 as out 
+are executed in the ICP (at run = 1), but if ,for any reason, the sensor didn't sent the signal, these two lines will not be executed and function getDist() will be executed again after a constant period missing these lines which are necessary before execution of getDist() function:
+
+The first line: prevents the ICP from interrupting getDist() whenever getDist() sends a burst signal, because the burst signal is sent on the same pin of the ICP and is considered an interrupt.
+
+The second line:
+Ensures that PIND.6 is set as output, because getDist() sets it as input assuming that ICP procedure will set it again as input
+------------------------------------------------------------------
+
