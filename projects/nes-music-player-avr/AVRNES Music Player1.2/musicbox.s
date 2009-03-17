@@ -1,0 +1,3355 @@
+	.module musicbox.C
+	.area lit(rom, con, rel)
+_music_dataRect0::
+	.word 20
+	.word 15
+	.word 48
+	.word 52
+	.word 20
+	.word 11
+	.word 52
+	.word 55
+	.word 17
+	.word 15
+	.word 55
+	.word 59
+	.word 17
+	.word 11
+	.word 59
+	.word 62
+	.word 13
+	.word 15
+	.word 62
+	.word 66
+	.word 13
+	.word 11
+	.word 66
+	.word 69
+	.word 10
+	.word 15
+	.word 69
+	.word 73
+	.word 10
+	.word 11
+	.word 73
+	.word 76
+	.word 13
+	.word 15
+	.word 76
+	.word 80
+	.word 13
+	.word 11
+	.word 80
+	.word 84
+	.word 13
+	.word 7
+	.word 84
+	.word 95
+	.word 13
+	.word 3
+	.word 95
+	.word 97
+	.word 15
+	.word 10
+	.word 158
+	.word 162
+	.word 15
+	.word 6
+	.word 162
+	.word 168
+	.word 20
+	.word 10
+	.word 168
+	.word 175
+	.word 20
+	.word 6
+	.word 175
+	.word 181
+	.word 15
+	.word 10
+	.word 181
+	.word 188
+	.word 15
+	.word 6
+	.word 188
+	.word 194
+	.word 14
+	.word 10
+	.word 194
+	.word 207
+	.word 14
+	.word 6
+	.word 207
+	.word 214
+	.word 14
+	.word 2
+	.word 214
+	.word 217
+	.word 10
+	.word 10
+	.word 220
+	.word 233
+	.word 10
+	.word 6
+	.word 233
+	.word 240
+	.word 10
+	.word 2
+	.word 240
+	.word 243
+	.word 14
+	.word 10
+	.word 246
+	.word 257
+	.word 14
+	.word 6
+	.word 257
+	.word 262
+	.word 14
+	.word 2
+	.word 262
+	.word 264
+	.word 15
+	.word 10
+	.word 266
+	.word 275
+	.word 15
+	.word 6
+	.word 275
+	.word 280
+	.word 15
+	.word 2
+	.word 280
+	.word 282
+	.word 20
+	.word 10
+	.word 284
+	.word 289
+	.word 20
+	.word 6
+	.word 289
+	.word 293
+	.word 15
+	.word 10
+	.word 293
+	.word 298
+	.word 15
+	.word 6
+	.word 298
+	.word 302
+	.word 20
+	.word 10
+	.word 302
+	.word 307
+	.word 20
+	.word 6
+	.word 307
+	.word 311
+	.word 15
+	.word 10
+	.word 311
+	.word 316
+	.word 15
+	.word 6
+	.word 316
+	.word 320
+	.word 14
+	.word 10
+	.word 320
+	.word 325
+	.word 14
+	.word 6
+	.word 325
+	.word 329
+	.word 15
+	.word 10
+	.word 329
+	.word 334
+	.word 15
+	.word 6
+	.word 334
+	.word 338
+	.word 20
+	.word 10
+	.word 338
+	.word 343
+	.word 20
+	.word 6
+	.word 343
+	.word 347
+	.word 15
+	.word 10
+	.word 347
+	.word 352
+	.word 15
+	.word 6
+	.word 352
+	.word 356
+	.word 14
+	.word 10
+	.word 356
+	.word 365
+	.word 14
+	.word 6
+	.word 365
+	.word 370
+	.word 14
+	.word 2
+	.word 370
+	.word 372
+	.word 10
+	.word 10
+	.word 374
+	.word 383
+	.word 10
+	.word 6
+	.word 383
+	.word 388
+	.word 10
+	.word 2
+	.word 388
+	.word 390
+	.word 14
+	.word 10
+	.word 392
+	.word 401
+	.word 14
+	.word 6
+	.word 401
+	.word 406
+	.word 14
+	.word 2
+	.word 406
+	.word 408
+	.word 15
+	.word 10
+	.word 410
+	.word 419
+	.word 15
+	.word 6
+	.word 419
+	.word 424
+	.word 15
+	.word 2
+	.word 424
+	.word 426
+	.word 20
+	.word 10
+	.word 428
+	.word 433
+	.word 20
+	.word 6
+	.word 433
+	.word 437
+	.word 15
+	.word 10
+	.word 437
+	.word 442
+	.word 15
+	.word 6
+	.word 442
+	.word 446
+	.word 20
+	.word 10
+	.word 446
+	.word 451
+	.word 20
+	.word 6
+	.word 451
+	.word 455
+	.word 15
+	.word 10
+	.word 455
+	.word 460
+	.word 15
+	.word 6
+	.word 460
+	.word 464
+	.word 14
+	.word 10
+	.word 464
+	.word 469
+	.word 14
+	.word 6
+	.word 469
+	.word 473
+	.word 15
+	.word 10
+	.word 473
+	.word 478
+	.word 15
+	.word 6
+	.word 478
+	.word 484
+	.word 20
+	.word 10
+	.word 484
+	.word 491
+	.word 20
+	.word 6
+	.word 491
+	.word 497
+	.word 15
+	.word 10
+	.word 497
+	.word 504
+	.word 15
+	.word 6
+	.word 504
+	.word 510
+	.word 14
+	.word 10
+	.word 510
+	.word 523
+	.word 14
+	.word 6
+	.word 523
+	.word 530
+	.word 14
+	.word 2
+	.word 530
+	.word 533
+	.word 10
+	.word 10
+	.word 536
+	.word 549
+	.word 10
+	.word 6
+	.word 549
+	.word 556
+	.word 10
+	.word 2
+	.word 556
+	.word 559
+	.word 14
+	.word 10
+	.word 562
+	.word 573
+	.word 14
+	.word 6
+	.word 573
+	.word 578
+	.word 14
+	.word 2
+	.word 578
+	.word 580
+	.word 15
+	.word 10
+	.word 582
+	.word 591
+	.word 15
+	.word 6
+	.word 591
+	.word 596
+	.word 15
+	.word 2
+	.word 596
+	.word 598
+	.word 20
+	.word 10
+	.word 600
+	.word 605
+	.word 20
+	.word 6
+	.word 605
+	.word 609
+	.word 15
+	.word 10
+	.word 609
+	.word 614
+	.word 15
+	.word 6
+	.word 614
+	.word 618
+	.word 20
+	.word 10
+	.word 618
+	.word 623
+	.word 20
+	.word 6
+	.word 623
+	.word 627
+	.word 15
+	.word 10
+	.word 627
+	.word 632
+	.word 15
+	.word 6
+	.word 632
+	.word 636
+	.word 14
+	.word 10
+	.word 636
+	.word 641
+	.word 14
+	.word 6
+	.word 641
+	.word 645
+	.word 15
+	.word 10
+	.word 645
+	.word 650
+	.word 15
+	.word 6
+	.word 650
+	.word 654
+	.word 20
+	.word 10
+	.word 654
+	.word 659
+	.word 20
+	.word 6
+	.word 659
+	.word 663
+	.word 15
+	.word 10
+	.word 663
+	.word 668
+	.word 15
+	.word 6
+	.word 668
+	.word 672
+	.word 14
+	.word 10
+	.word 672
+	.word 681
+	.word 14
+	.word 6
+	.word 681
+	.word 686
+	.word 14
+	.word 2
+	.word 686
+	.word 688
+	.word 10
+	.word 10
+	.word 690
+	.word 699
+	.word 10
+	.word 6
+	.word 699
+	.word 704
+	.word 10
+	.word 2
+	.word 704
+	.word 706
+	.word 14
+	.word 10
+	.word 708
+	.word 717
+	.word 14
+	.word 6
+	.word 717
+	.word 722
+	.word 14
+	.word 2
+	.word 722
+	.word 724
+	.word 15
+	.word 10
+	.word 726
+	.word 735
+	.word 15
+	.word 6
+	.word 735
+	.word 740
+	.word 15
+	.word 2
+	.word 740
+	.word 742
+	.word 20
+	.word 10
+	.word 744
+	.word 749
+	.word 20
+	.word 6
+	.word 749
+	.word 753
+	.word 15
+	.word 10
+	.word 753
+	.word 758
+	.word 15
+	.word 6
+	.word 758
+	.word 762
+	.word 20
+	.word 10
+	.word 762
+	.word 767
+	.word 20
+	.word 6
+	.word 767
+	.word 771
+	.word 15
+	.word 10
+	.word 771
+	.word 776
+	.word 15
+	.word 6
+	.word 776
+	.word 780
+	.word 14
+	.word 10
+	.word 780
+	.word 785
+	.word 14
+	.word 6
+	.word 785
+	.word 789
+	.word 6
+	.word 15
+	.word 832
+	.word 836
+	.word 7
+	.word 11
+	.word 836
+	.word 841
+	.word 7
+	.word 7
+	.word 841
+	.word 842
+	.word 6
+	.word 15
+	.word 843
+	.word 848
+	.word 7
+	.word 11
+	.word 848
+	.word 852
+	.word 23
+	.word 15
+	.word 852
+	.word 856
+	.word 13
+	.word 15
+	.word 856
+	.word 858
+	.word 19
+	.word 15
+	.word 858
+	.word 859
+	.word 23
+	.word 15
+	.word 859
+	.word 860
+	.word 23
+	.word 15
+	.word 861
+	.word 864
+	.word 13
+	.word 15
+	.word 864
+	.word 865
+	.word 19
+	.word 15
+	.word 865
+	.word 867
+	.word 23
+	.word 15
+	.word 867
+	.word 869
+	.word 26
+	.word 15
+	.word 869
+	.word 872
+	.word 23
+	.word 15
+	.word 872
+	.word 875
+	.word 13
+	.word 15
+	.word 875
+	.word 877
+	.word 19
+	.word 15
+	.word 877
+	.word 878
+	.word 23
+	.word 15
+	.word 878
+	.word 880
+	.word 26
+	.word 15
+	.word 880
+	.word 884
+	.word 12
+	.word 15
+	.word 884
+	.word 885
+	.word 16
+	.word 15
+	.word 885
+	.word 886
+	.word 19
+	.word 15
+	.word 886
+	.word 888
+	.word 10
+	.word 15
+	.word 888
+	.word 889
+	.word 13
+	.word 15
+	.word 889
+	.word 892
+	.word 9
+	.word 15
+	.word 892
+	.word 893
+	.word 6
+	.word 15
+	.word 952
+	.word 956
+	.word 7
+	.word 11
+	.word 956
+	.word 959
+	.word 7
+	.word 7
+	.word 959
+	.word 962
+	.word 8
+	.word 5
+	.word 962
+	.word 966
+	.word 9
+	.word 3
+	.word 966
+	.word 969
+	.word 23
+	.word 15
+	.word 977
+	.word 979
+	.word 13
+	.word 15
+	.word 979
+	.word 980
+	.word 19
+	.word 15
+	.word 980
+	.word 982
+	.word 23
+	.word 15
+	.word 982
+	.word 983
+	.word 26
+	.word 15
+	.word 983
+	.word 985
+	.word 12
+	.word 15
+	.word 985
+	.word 986
+	.word 16
+	.word 15
+	.word 986
+	.word 987
+	.word 19
+	.word 15
+	.word 987
+	.word 989
+	.word 10
+	.word 15
+	.word 989
+	.word 991
+	.word 13
+	.word 15
+	.word 991
+	.word 993
+	.word 9
+	.word 15
+	.word 993
+	.word 994
+	.word 23
+	.word 15
+	.word 998
+	.word 1001
+	.word 13
+	.word 15
+	.word 1001
+	.word 1002
+	.word 19
+	.word 15
+	.word 1002
+	.word 1003
+	.word 23
+	.word 15
+	.word 1003
+	.word 1004
+	.word 26
+	.word 15
+	.word 1004
+	.word 1006
+	.word 12
+	.word 15
+	.word 1006
+	.word 1007
+	.word 16
+	.word 15
+	.word 1007
+	.word 1009
+	.word 19
+	.word 15
+	.word 1009
+	.word 1011
+	.word 10
+	.word 15
+	.word 1011
+	.word 1012
+	.word 13
+	.word 15
+	.word 1012
+	.word 1014
+	.word 9
+	.word 15
+	.word 1014
+	.word 1015
+	.word 6
+	.word 15
+	.word 1036
+	.word 1039
+	.word 7
+	.word 11
+	.word 1039
+	.word 1042
+	.word 7
+	.word 7
+	.word 1042
+	.word 1046
+	.word 8
+	.word 5
+	.word 1046
+	.word 1049
+	.word 9
+	.word 3
+	.word 1049
+	.word 1051
+	.word 23
+	.word 15
+	.word 1051
+	.word 1054
+	.word 13
+	.word 15
+	.word 1054
+	.word 1055
+	.word 19
+	.word 15
+	.word 1055
+	.word 1056
+	.word 23
+	.word 15
+	.word 1056
+	.word 1057
+	.word 26
+	.word 15
+	.word 1057
+	.word 1059
+	.word 12
+	.word 15
+	.word 1059
+	.word 1060
+	.word 16
+	.word 15
+	.word 1060
+	.word 1061
+	.word 19
+	.word 15
+	.word 1061
+	.word 1064
+	.word 10
+	.word 15
+	.word 1064
+	.word 1065
+	.word 13
+	.word 15
+	.word 1065
+	.word 1067
+	.word 9
+	.word 15
+	.word 1067
+	.word 1068
+	.word 6
+	.word 15
+	.word 1075
+	.word 1078
+	.word 7
+	.word 11
+	.word 1078
+	.word 1082
+	.word 7
+	.word 7
+	.word 1082
+	.word 1085
+	.word 8
+	.word 5
+	.word 1085
+	.word 1088
+	.word 9
+	.word 3
+	.word 1088
+	.word 1092
+	.word 6
+	.word 15
+	.word 1094
+	.word 1097
+	.word 23
+	.word 15
+	.word 1097
+	.word 1100
+	.word 13
+	.word 15
+	.word 1100
+	.word 1101
+	.word 19
+	.word 15
+	.word 1101
+	.word 1102
+	.word 23
+	.word 15
+	.word 1102
+	.word 1103
+	.word 26
+	.word 15
+	.word 1103
+	.word 1105
+	.word 12
+	.word 15
+	.word 1105
+	.word 1106
+	.word 16
+	.word 15
+	.word 1106
+	.word 1108
+	.word 19
+	.word 15
+	.word 1108
+	.word 1110
+	.word 10
+	.word 15
+	.word 1110
+	.word 1112
+	.word 13
+	.word 15
+	.word 1112
+	.word 1115
+	.word 9
+	.word 15
+	.word 1115
+	.word 1116
+	.word 6
+	.word 15
+	.word 1165
+	.word 1170
+	.word 7
+	.word 11
+	.word 1170
+	.word 1175
+	.word 7
+	.word 7
+	.word 1175
+	.word 1176
+	.word 23
+	.word 15
+	.word 1177
+	.word 1180
+	.word 13
+	.word 15
+	.word 1180
+	.word 1181
+	.word 19
+	.word 15
+	.word 1181
+	.word 1183
+	.word 23
+	.word 15
+	.word 1183
+	.word 1185
+	.word 26
+	.word 15
+	.word 1185
+	.word 1188
+	.word 12
+	.word 15
+	.word 1188
+	.word 1190
+	.word 16
+	.word 15
+	.word 1190
+	.word 1191
+	.word 19
+	.word 15
+	.word 1191
+	.word 1194
+	.word 10
+	.word 15
+	.word 1194
+	.word 1196
+	.word 13
+	.word 15
+	.word 1196
+	.word 1200
+	.word 9
+	.word 15
+	.word 1200
+	.word 1201
+	.word 23
+	.word 15
+	.word 1221
+	.word 1223
+	.word 13
+	.word 15
+	.word 1223
+	.word 1224
+	.word 19
+	.word 15
+	.word 1224
+	.word 1226
+	.word 23
+	.word 15
+	.word 1226
+	.word 1227
+	.word 26
+	.word 15
+	.word 1227
+	.word 1229
+	.word 12
+	.word 15
+	.word 1229
+	.word 1230
+	.word 16
+	.word 15
+	.word 1230
+	.word 1231
+	.word 19
+	.word 15
+	.word 1231
+	.word 1233
+	.word 10
+	.word 15
+	.word 1233
+	.word 1235
+	.word 13
+	.word 15
+	.word 1235
+	.word 1237
+	.word 9
+	.word 15
+	.word 1237
+	.word 1238
+	.word 23
+	.word 15
+	.word 1255
+	.word 1257
+	.word 13
+	.word 15
+	.word 1257
+	.word 1258
+	.word 19
+	.word 15
+	.word 1258
+	.word 1259
+	.word 23
+	.word 15
+	.word 1259
+	.word 1260
+	.word 26
+	.word 15
+	.word 1260
+	.word 1263
+	.word 12
+	.word 15
+	.word 1263
+	.word 1264
+	.word 16
+	.word 15
+	.word 1264
+	.word 1265
+	.word 19
+	.word 15
+	.word 1265
+	.word 1267
+	.word 10
+	.word 15
+	.word 1267
+	.word 1268
+	.word 13
+	.word 15
+	.word 1268
+	.word 1271
+	.word 9
+	.word 15
+	.word 1271
+	.word 1272
+	.word 6
+	.word 15
+	.word 1309
+	.word 1312
+	.word 7
+	.word 11
+	.word 1312
+	.word 1316
+	.word 7
+	.word 7
+	.word 1316
+	.word 1319
+	.word 8
+	.word 5
+	.word 1319
+	.word 1322
+	.word 9
+	.word 3
+	.word 1322
+	.word 1326
+	.word 55
+	.word 15
+	.word 1383
+	.word 1385
+	.word 14
+	.word 14
+	.word 1387
+	.word 1389
+	.word 20
+	.word 14
+	.word 1389
+	.word 1391
+	.word 29
+	.word 14
+	.word 1391
+	.word 1393
+	.word 40
+	.word 14
+	.word 1393
+	.word 1395
+	.word 55
+	.word 14
+	.word 1395
+	.word 1397
+	.word 55
+	.word 13
+	.word 1399
+	.word 1401
+	.word 14
+	.word 12
+	.word 1403
+	.word 1405
+	.word 20
+	.word 12
+	.word 1405
+	.word 1407
+	.word 29
+	.word 12
+	.word 1407
+	.word 1409
+	.word 40
+	.word 12
+	.word 1409
+	.word 1411
+	.word 55
+	.word 12
+	.word 1411
+	.word 1413
+	.word 55
+	.word 11
+	.word 1415
+	.word 1417
+	.word 14
+	.word 10
+	.word 1419
+	.word 1421
+	.word 20
+	.word 10
+	.word 1421
+	.word 1424
+	.word 29
+	.word 10
+	.word 1424
+	.word 1427
+	.word 40
+	.word 10
+	.word 1427
+	.word 1431
+	.word 55
+	.word 10
+	.word 1431
+	.word 1434
+	.word 55
+	.word 9
+	.word 1437
+	.word 1440
+	.word 14
+	.word 8
+	.word 1444
+	.word 1447
+	.word 20
+	.word 8
+	.word 1447
+	.word 1450
+	.word 29
+	.word 8
+	.word 1450
+	.word 1453
+	.word 40
+	.word 8
+	.word 1453
+	.word 1457
+	.word 55
+	.word 8
+	.word 1457
+	.word 1460
+	.word 55
+	.word 7
+	.word 1463
+	.word 1466
+	.word 14
+	.word 6
+	.word 1470
+	.word 1473
+	.word 20
+	.word 6
+	.word 1473
+	.word 1476
+	.word 29
+	.word 6
+	.word 1476
+	.word 1479
+	.word 40
+	.word 6
+	.word 1479
+	.word 1483
+	.word 55
+	.word 6
+	.word 1483
+	.word 1486
+	.word 55
+	.word 5
+	.word 1489
+	.word 1492
+	.word 14
+	.word 4
+	.word 1495
+	.word 1497
+	.word 20
+	.word 4
+	.word 1497
+	.word 1499
+	.word 29
+	.word 4
+	.word 1499
+	.word 1501
+	.word 40
+	.word 4
+	.word 1501
+	.word 1503
+	.word 55
+	.word 4
+	.word 1503
+	.word 1505
+	.word 55
+	.word 3
+	.word 1507
+	.word 1509
+	.word 14
+	.word 3
+	.word 1511
+	.word 1513
+	.word 20
+	.word 3
+	.word 1513
+	.word 1515
+	.word 29
+	.word 3
+	.word 1515
+	.word 1517
+	.word 40
+	.word 3
+	.word 1517
+	.word 1519
+	.word 55
+	.word 3
+	.word 1519
+	.word 1521
+	.word 55
+	.word 3
+	.word 1523
+	.word 1525
+	.word 15
+	.word 10
+	.word 1558
+	.word 1562
+	.word 15
+	.word 6
+	.word 1562
+	.word 1568
+	.word 20
+	.word 10
+	.word 1568
+	.word 1575
+	.word 20
+	.word 6
+	.word 1575
+	.word 1581
+	.word 15
+	.word 10
+	.word 1581
+	.word 0
+	.word 9999
+	.word 9999
+	.word 9999
+	.word 9999
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e music_dataRect0 _music_dataRect0 A[2392:1196]ki
+_music_dataRect1::
+	.word 136
+	.word 10
+	.word 48
+	.word 52
+	.word 136
+	.word 6
+	.word 52
+	.word 55
+	.word 102
+	.word 10
+	.word 55
+	.word 59
+	.word 102
+	.word 6
+	.word 59
+	.word 62
+	.word 81
+	.word 10
+	.word 62
+	.word 66
+	.word 81
+	.word 6
+	.word 66
+	.word 69
+	.word 68
+	.word 10
+	.word 69
+	.word 73
+	.word 68
+	.word 6
+	.word 73
+	.word 76
+	.word 81
+	.word 10
+	.word 76
+	.word 80
+	.word 81
+	.word 6
+	.word 80
+	.word 93
+	.word 81
+	.word 2
+	.word 93
+	.word 95
+	.word 41
+	.word 15
+	.word 158
+	.word 288
+	.word 41
+	.word 11
+	.word 299
+	.word 302
+	.word 41
+	.word 15
+	.word 311
+	.word 317
+	.word 41
+	.word 11
+	.word 317
+	.word 320
+	.word 46
+	.word 15
+	.word 329
+	.word 443
+	.word 46
+	.word 11
+	.word 443
+	.word 446
+	.word 46
+	.word 15
+	.word 455
+	.word 461
+	.word 46
+	.word 11
+	.word 461
+	.word 464
+	.word 51
+	.word 15
+	.word 473
+	.word 604
+	.word 51
+	.word 11
+	.word 615
+	.word 618
+	.word 51
+	.word 15
+	.word 627
+	.word 633
+	.word 51
+	.word 11
+	.word 633
+	.word 636
+	.word 46
+	.word 15
+	.word 645
+	.word 759
+	.word 46
+	.word 11
+	.word 759
+	.word 762
+	.word 48
+	.word 15
+	.word 789
+	.word 794
+	.word 48
+	.word 11
+	.word 794
+	.word 800
+	.word 54
+	.word 15
+	.word 800
+	.word 807
+	.word 54
+	.word 11
+	.word 807
+	.word 813
+	.word 48
+	.word 15
+	.word 813
+	.word 820
+	.word 48
+	.word 11
+	.word 820
+	.word 826
+	.word 43
+	.word 15
+	.word 826
+	.word 833
+	.word 43
+	.word 11
+	.word 833
+	.word 839
+	.word 43
+	.word 7
+	.word 839
+	.word 846
+	.word 43
+	.word 3
+	.word 846
+	.word 851
+	.word 41
+	.word 15
+	.word 852
+	.word 859
+	.word 41
+	.word 11
+	.word 859
+	.word 865
+	.word 41
+	.word 7
+	.word 865
+	.word 872
+	.word 41
+	.word 3
+	.word 872
+	.word 877
+	.word 43
+	.word 15
+	.word 878
+	.word 885
+	.word 43
+	.word 11
+	.word 885
+	.word 889
+	.word 43
+	.word 7
+	.word 889
+	.word 894
+	.word 43
+	.word 3
+	.word 894
+	.word 897
+	.word 48
+	.word 15
+	.word 898
+	.word 903
+	.word 48
+	.word 11
+	.word 903
+	.word 907
+	.word 48
+	.word 7
+	.word 907
+	.word 912
+	.word 48
+	.word 3
+	.word 912
+	.word 915
+	.word 54
+	.word 15
+	.word 916
+	.word 921
+	.word 54
+	.word 11
+	.word 921
+	.word 925
+	.word 48
+	.word 15
+	.word 925
+	.word 930
+	.word 48
+	.word 11
+	.word 930
+	.word 934
+	.word 54
+	.word 15
+	.word 934
+	.word 939
+	.word 54
+	.word 11
+	.word 939
+	.word 943
+	.word 48
+	.word 15
+	.word 943
+	.word 948
+	.word 48
+	.word 11
+	.word 948
+	.word 952
+	.word 61
+	.word 15
+	.word 952
+	.word 957
+	.word 61
+	.word 11
+	.word 957
+	.word 961
+	.word 48
+	.word 15
+	.word 961
+	.word 966
+	.word 48
+	.word 11
+	.word 966
+	.word 970
+	.word 54
+	.word 15
+	.word 970
+	.word 975
+	.word 54
+	.word 11
+	.word 975
+	.word 979
+	.word 48
+	.word 15
+	.word 979
+	.word 984
+	.word 48
+	.word 11
+	.word 984
+	.word 988
+	.word 43
+	.word 15
+	.word 988
+	.word 993
+	.word 43
+	.word 11
+	.word 993
+	.word 997
+	.word 43
+	.word 7
+	.word 997
+	.word 1002
+	.word 43
+	.word 3
+	.word 1002
+	.word 1005
+	.word 41
+	.word 15
+	.word 1006
+	.word 1011
+	.word 41
+	.word 11
+	.word 1011
+	.word 1015
+	.word 41
+	.word 7
+	.word 1015
+	.word 1020
+	.word 41
+	.word 3
+	.word 1020
+	.word 1023
+	.word 43
+	.word 15
+	.word 1024
+	.word 1029
+	.word 43
+	.word 11
+	.word 1029
+	.word 1033
+	.word 43
+	.word 7
+	.word 1033
+	.word 1038
+	.word 43
+	.word 3
+	.word 1038
+	.word 1041
+	.word 48
+	.word 15
+	.word 1042
+	.word 1047
+	.word 48
+	.word 11
+	.word 1047
+	.word 1051
+	.word 48
+	.word 7
+	.word 1051
+	.word 1056
+	.word 48
+	.word 3
+	.word 1056
+	.word 1059
+	.word 54
+	.word 15
+	.word 1060
+	.word 1065
+	.word 54
+	.word 11
+	.word 1065
+	.word 1069
+	.word 48
+	.word 15
+	.word 1069
+	.word 1074
+	.word 48
+	.word 11
+	.word 1074
+	.word 1078
+	.word 54
+	.word 15
+	.word 1078
+	.word 1083
+	.word 54
+	.word 11
+	.word 1083
+	.word 1087
+	.word 48
+	.word 15
+	.word 1087
+	.word 1092
+	.word 48
+	.word 11
+	.word 1092
+	.word 1096
+	.word 61
+	.word 15
+	.word 1096
+	.word 1101
+	.word 61
+	.word 11
+	.word 1101
+	.word 1105
+	.word 54
+	.word 15
+	.word 1105
+	.word 1110
+	.word 54
+	.word 11
+	.word 1110
+	.word 1116
+	.word 61
+	.word 15
+	.word 1116
+	.word 1123
+	.word 61
+	.word 11
+	.word 1123
+	.word 1129
+	.word 54
+	.word 15
+	.word 1129
+	.word 1136
+	.word 54
+	.word 11
+	.word 1136
+	.word 1142
+	.word 48
+	.word 15
+	.word 1142
+	.word 1149
+	.word 48
+	.word 11
+	.word 1149
+	.word 1155
+	.word 48
+	.word 7
+	.word 1155
+	.word 1162
+	.word 48
+	.word 3
+	.word 1162
+	.word 1167
+	.word 46
+	.word 15
+	.word 1168
+	.word 1175
+	.word 46
+	.word 11
+	.word 1175
+	.word 1181
+	.word 46
+	.word 7
+	.word 1181
+	.word 1188
+	.word 46
+	.word 3
+	.word 1188
+	.word 1193
+	.word 48
+	.word 15
+	.word 1194
+	.word 1201
+	.word 48
+	.word 11
+	.word 1201
+	.word 1205
+	.word 48
+	.word 7
+	.word 1205
+	.word 1210
+	.word 48
+	.word 3
+	.word 1210
+	.word 1213
+	.word 54
+	.word 15
+	.word 1214
+	.word 1219
+	.word 54
+	.word 11
+	.word 1219
+	.word 1223
+	.word 54
+	.word 7
+	.word 1223
+	.word 1228
+	.word 54
+	.word 3
+	.word 1228
+	.word 1231
+	.word 48
+	.word 15
+	.word 1232
+	.word 1237
+	.word 48
+	.word 11
+	.word 1237
+	.word 1241
+	.word 54
+	.word 15
+	.word 1241
+	.word 1246
+	.word 54
+	.word 11
+	.word 1246
+	.word 1250
+	.word 61
+	.word 15
+	.word 1250
+	.word 1334
+	.word 61
+	.word 11
+	.word 1334
+	.word 1338
+	.word 61
+	.word 7
+	.word 1338
+	.word 1343
+	.word 61
+	.word 3
+	.word 1343
+	.word 1346
+	.word 72
+	.word 15
+	.word 1349
+	.word 1354
+	.word 72
+	.word 11
+	.word 1354
+	.word 1358
+	.word 64
+	.word 15
+	.word 1358
+	.word 1363
+	.word 64
+	.word 11
+	.word 1363
+	.word 1367
+	.word 61
+	.word 15
+	.word 1367
+	.word 1372
+	.word 61
+	.word 11
+	.word 1372
+	.word 1376
+	.word 54
+	.word 15
+	.word 1376
+	.word 1381
+	.word 43
+	.word 15
+	.word 1383
+	.word 1385
+	.word 3
+	.word 14
+	.word 1387
+	.word 1389
+	.word 9
+	.word 14
+	.word 1389
+	.word 1391
+	.word 17
+	.word 14
+	.word 1391
+	.word 1393
+	.word 29
+	.word 14
+	.word 1393
+	.word 1395
+	.word 43
+	.word 14
+	.word 1395
+	.word 1397
+	.word 43
+	.word 13
+	.word 1399
+	.word 1401
+	.word 3
+	.word 12
+	.word 1403
+	.word 1405
+	.word 9
+	.word 12
+	.word 1405
+	.word 1407
+	.word 17
+	.word 12
+	.word 1407
+	.word 1409
+	.word 29
+	.word 12
+	.word 1409
+	.word 1411
+	.word 43
+	.word 12
+	.word 1411
+	.word 1413
+	.word 43
+	.word 11
+	.word 1415
+	.word 1417
+	.word 3
+	.word 10
+	.word 1419
+	.word 1421
+	.word 9
+	.word 10
+	.word 1421
+	.word 1424
+	.word 17
+	.word 10
+	.word 1424
+	.word 1427
+	.word 29
+	.word 10
+	.word 1427
+	.word 1431
+	.word 43
+	.word 10
+	.word 1431
+	.word 1434
+	.word 43
+	.word 9
+	.word 1437
+	.word 1440
+	.word 3
+	.word 8
+	.word 1444
+	.word 1447
+	.word 9
+	.word 8
+	.word 1447
+	.word 1450
+	.word 17
+	.word 8
+	.word 1450
+	.word 1453
+	.word 29
+	.word 8
+	.word 1453
+	.word 1457
+	.word 43
+	.word 8
+	.word 1457
+	.word 1460
+	.word 43
+	.word 7
+	.word 1463
+	.word 1466
+	.word 3
+	.word 6
+	.word 1470
+	.word 1473
+	.word 9
+	.word 6
+	.word 1473
+	.word 1476
+	.word 17
+	.word 6
+	.word 1476
+	.word 1479
+	.word 29
+	.word 6
+	.word 1479
+	.word 1483
+	.word 43
+	.word 6
+	.word 1483
+	.word 1486
+	.word 43
+	.word 5
+	.word 1489
+	.word 1492
+	.word 3
+	.word 4
+	.word 1495
+	.word 1497
+	.word 9
+	.word 4
+	.word 1497
+	.word 1499
+	.word 17
+	.word 4
+	.word 1499
+	.word 1501
+	.word 29
+	.word 4
+	.word 1501
+	.word 1503
+	.word 43
+	.word 4
+	.word 1503
+	.word 1505
+	.word 43
+	.word 3
+	.word 1507
+	.word 1509
+	.word 3
+	.word 3
+	.word 1511
+	.word 1513
+	.word 9
+	.word 3
+	.word 1513
+	.word 1515
+	.word 17
+	.word 3
+	.word 1515
+	.word 1517
+	.word 29
+	.word 3
+	.word 1517
+	.word 1519
+	.word 43
+	.word 3
+	.word 1519
+	.word 1521
+	.word 43
+	.word 3
+	.word 1523
+	.word 1525
+	.word 41
+	.word 15
+	.word 1558
+	.word 0
+	.dbsym e music_dataRect1 _music_dataRect1 A[1360:680]ki
+_music_dataTriangle::
+	.word 34
+	.word 48
+	.word 55
+	.word 26
+	.word 55
+	.word 62
+	.word 20
+	.word 62
+	.word 69
+	.word 17
+	.word 69
+	.word 76
+	.word 20
+	.word 76
+	.word 159
+	.word 15
+	.word 159
+	.word 170
+	.word 20
+	.word 170
+	.word 183
+	.word 15
+	.word 183
+	.word 196
+	.word 14
+	.word 196
+	.word 222
+	.word 10
+	.word 222
+	.word 248
+	.word 14
+	.word 248
+	.word 267
+	.word 15
+	.word 267
+	.word 285
+	.word 20
+	.word 285
+	.word 294
+	.word 15
+	.word 294
+	.word 303
+	.word 20
+	.word 303
+	.word 312
+	.word 15
+	.word 312
+	.word 321
+	.word 14
+	.word 321
+	.word 330
+	.word 15
+	.word 330
+	.word 339
+	.word 20
+	.word 339
+	.word 348
+	.word 15
+	.word 348
+	.word 357
+	.word 14
+	.word 357
+	.word 375
+	.word 10
+	.word 375
+	.word 393
+	.word 14
+	.word 393
+	.word 411
+	.word 15
+	.word 411
+	.word 429
+	.word 20
+	.word 429
+	.word 438
+	.word 15
+	.word 438
+	.word 447
+	.word 20
+	.word 447
+	.word 456
+	.word 15
+	.word 456
+	.word 465
+	.word 14
+	.word 465
+	.word 474
+	.word 15
+	.word 474
+	.word 486
+	.word 20
+	.word 486
+	.word 499
+	.word 15
+	.word 499
+	.word 512
+	.word 14
+	.word 512
+	.word 538
+	.word 10
+	.word 538
+	.word 564
+	.word 14
+	.word 564
+	.word 583
+	.word 15
+	.word 583
+	.word 601
+	.word 20
+	.word 601
+	.word 610
+	.word 15
+	.word 610
+	.word 619
+	.word 20
+	.word 619
+	.word 628
+	.word 15
+	.word 628
+	.word 637
+	.word 14
+	.word 637
+	.word 646
+	.word 15
+	.word 646
+	.word 655
+	.word 20
+	.word 655
+	.word 664
+	.word 15
+	.word 664
+	.word 673
+	.word 14
+	.word 673
+	.word 691
+	.word 10
+	.word 691
+	.word 709
+	.word 14
+	.word 709
+	.word 727
+	.word 15
+	.word 727
+	.word 745
+	.word 20
+	.word 745
+	.word 754
+	.word 15
+	.word 754
+	.word 763
+	.word 20
+	.word 763
+	.word 772
+	.word 15
+	.word 772
+	.word 781
+	.word 14
+	.word 781
+	.word 790
+	.word 41
+	.word 790
+	.word 815
+	.word 30
+	.word 815
+	.word 841
+	.word 41
+	.word 841
+	.word 867
+	.word 30
+	.word 867
+	.word 890
+	.word 41
+	.word 890
+	.word 908
+	.word 30
+	.word 908
+	.word 926
+	.word 41
+	.word 926
+	.word 944
+	.word 30
+	.word 944
+	.word 962
+	.word 41
+	.word 962
+	.word 980
+	.word 30
+	.word 980
+	.word 998
+	.word 41
+	.word 998
+	.word 1016
+	.word 30
+	.word 1016
+	.word 1034
+	.word 41
+	.word 1034
+	.word 1052
+	.word 30
+	.word 1052
+	.word 1070
+	.word 41
+	.word 1070
+	.word 1088
+	.word 30
+	.word 1088
+	.word 1106
+	.word 46
+	.word 1106
+	.word 1131
+	.word 34
+	.word 1131
+	.word 1157
+	.word 46
+	.word 1157
+	.word 1183
+	.word 34
+	.word 1183
+	.word 1206
+	.word 46
+	.word 1206
+	.word 1224
+	.word 34
+	.word 1224
+	.word 1242
+	.word 61
+	.word 1242
+	.word 1260
+	.word 46
+	.word 1260
+	.word 1278
+	.word 61
+	.word 1278
+	.word 1296
+	.word 46
+	.word 1296
+	.word 1314
+	.word 61
+	.word 1314
+	.word 1332
+	.word 46
+	.word 1332
+	.word 1350
+	.word 61
+	.word 1350
+	.word 1368
+	.word 46
+	.word 1368
+	.word 1381
+	.word 23
+	.word 1381
+	.word 1382
+	.word 46
+	.word 1382
+	.word 1383
+	.word 69
+	.word 1383
+	.word 1384
+	.word 92
+	.word 1384
+	.word 1385
+	.word 115
+	.word 1385
+	.word 1386
+	.word 137
+	.word 1386
+	.word 1387
+	.word 23
+	.word 1387
+	.word 1389
+	.word 46
+	.word 1389
+	.word 1390
+	.word 69
+	.word 1390
+	.word 1391
+	.word 92
+	.word 1391
+	.word 1392
+	.word 115
+	.word 1392
+	.word 1393
+	.word 137
+	.word 1393
+	.word 1394
+	.word 160
+	.word 1394
+	.word 1395
+	.word 17
+	.word 1395
+	.word 1396
+	.word 23
+	.word 1396
+	.word 1397
+	.word 29
+	.word 1397
+	.word 1398
+	.word 35
+	.word 1398
+	.word 1399
+	.word 40
+	.word 1399
+	.word 1400
+	.word 46
+	.word 1400
+	.word 1401
+	.word 52
+	.word 1401
+	.word 1402
+	.word 57
+	.word 1402
+	.word 1403
+	.word 63
+	.word 1403
+	.word 1404
+	.word 69
+	.word 1404
+	.word 1405
+	.word 75
+	.word 1405
+	.word 1406
+	.word 80
+	.word 1406
+	.word 1407
+	.word 86
+	.word 1407
+	.word 1408
+	.word 92
+	.word 1408
+	.word 1409
+	.word 126
+	.word 1409
+	.word 1411
+	.word 137
+	.word 1411
+	.word 1559
+	.word 15
+	.word 1559
+	.word 1570
+	.word 20
+	.word 1570
+	.word 1583
+	.word 15
+	.word 1583
+	.word 0
+	.dbsym e music_dataTriangle _music_dataTriangle A[690:345]ki
+_music_dataNoise::
+	.word 343
+	.word 1381
+	.word 1523
+	.word 343
+	.word 1530
+	.word 0
+	.dbsym e music_dataNoise _music_dataNoise A[12:6]ki
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+_i0::
+	.blkb 2
+	.area idata
+	.word 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e i0 _i0 i
+_swap0::
+	.blkb 1
+	.area idata
+	.byte 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e swap0 _swap0 c
+_i1::
+	.blkb 2
+	.area idata
+	.word 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e i1 _i1 i
+_swap1::
+	.blkb 1
+	.area idata
+	.byte 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e swap1 _swap1 c
+_i2::
+	.blkb 2
+	.area idata
+	.word 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e i2 _i2 i
+_volume2::
+	.blkb 1
+	.area idata
+	.byte 48
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e volume2 _volume2 c
+_swap2::
+	.blkb 1
+	.area idata
+	.byte 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e swap2 _swap2 c
+_i3::
+	.blkb 2
+	.area idata
+	.word 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e i3 _i3 i
+_volume3::
+	.blkb 1
+	.area idata
+	.byte 32
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e volume3 _volume3 c
+_swap3::
+	.blkb 1
+	.area idata
+	.byte 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e swap3 _swap3 c
+_T::
+	.blkb 2
+	.area idata
+	.word 0
+	.area data(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbsym e T _T i
+	.area text(rom, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbfunc e init_devices _init_devices fV
+	.even
+_init_devices::
+	.dbline -1
+	.dbline 59
+; //NES音乐播放器   AVRNES Music Player1.2
+; 
+; //          BY张皓
+; //http://www.lotusinvention.cn/ART/nes/NESMusic.htm
+; //  ICC-AVR Target : ATMEGA16  Crystal: 8M,
+; #include <iom16v.h>
+; #include <macros.h>
+; 
+; #define uchar unsigned char
+; #define schar signed char
+; #define uint unsigned int  
+; #define sint signed int  
+; #define SET_BIT(io ,bit) (   io |=  (1<<bit) )   
+; #define CLR_BIT(io ,bit) (   io &= ~(1<<bit) )   
+; #define GET_BIT(pin,bit) ( pin &    (1<<bit) ) 
+; 
+; const uint music_dataRect0[]={20,15,48,52, 20,11,52,55, 17,15,55,59, 17,11,59,62, 13,15,62,66, 13,11,66,69, 10,15,69,73, 10,11,73,76, 13,15,76,80, 13,11,80,84, 13,7,84,95, 13,3,95,97, 15,10,158,162, 15,6,162,168, 20,10,168,175, 20,6,175,181, 15,10,181,188, 15,6,188,194, 14,10,194,207, 14,6,207,214, 14,2,214,217, 10,10,220,233, 10,6,233,240, 10,2,240,243, 14,10,246,257, 14,6,257,262, 14,2,262,264, 15,10,266,275, 15,6,275,280, 15,2,280,282, 20,10,284,289, 20,6,289,293, 15,10,293,298, 15,6,298,302, 20,10,302,307, 20,6,307,311, 15,10,311,316, 15,6,316,320, 14,10,320,325, 14,6,325,329, 15,10,329,334, 15,6,334,338, 20,10,338,343, 20,6,343,347, 15,10,347,352, 15,6,352,356, 14,10,356,365, 14,6,365,370, 14,2,370,372, 10,10,374,383, 10,6,383,388, 10,2,388,390, 14,10,392,401, 14,6,401,406, 14,2,406,408, 15,10,410,419, 15,6,419,424, 15,2,424,426, 20,10,428,433, 20,6,433,437, 15,10,437,442, 15,6,442,446, 20,10,446,451, 20,6,451,455, 15,10,455,460, 15,6,460,464, 14,10,464,469, 14,6,469,473, 15,10,473,478, 15,6,478,484, 20,10,484,491, 20,6,491,497, 15,10,497,504, 15,6,504,510, 14,10,510,523, 14,6,523,530, 14,2,530,533, 10,10,536,549, 10,6,549,556, 10,2,556,559, 14,10,562,573, 14,6,573,578, 14,2,578,580, 15,10,582,591, 15,6,591,596, 15,2,596,598, 20,10,600,605, 20,6,605,609, 15,10,609,614, 15,6,614,618, 20,10,618,623, 20,6,623,627, 15,10,627,632, 15,6,632,636, 14,10,636,641, 14,6,641,645, 15,10,645,650, 15,6,650,654, 20,10,654,659, 20,6,659,663, 15,10,663,668, 15,6,668,672, 14,10,672,681, 14,6,681,686, 14,2,686,688, 10,10,690,699, 10,6,699,704, 10,2,704,706, 14,10,708,717, 14,6,717,722, 14,2,722,724, 15,10,726,735, 15,6,735,740, 15,2,740,742, 20,10,744,749, 20,6,749,753, 15,10,753,758, 15,6,758,762, 20,10,762,767, 20,6,767,771, 15,10,771,776, 15,6,776,780, 14,10,780,785, 14,6,785,789, 6,15,832,836, 7,11,836,841, 7,7,841,842, 6,15,843,848, 7,11,848,852, 23,15,852,856, 13,15,856,858, 19,15,858,859, 23,15,859,860, 23,15,861,864, 13,15,864,865, 19,15,865,867, 23,15,867,869, 26,15,869,872, 23,15,872,875, 13,15,875,877, 19,15,877,878
+; , 23,15,878,880, 26,15,880,884, 12,15,884,885, 16,15,885,886, 19,15,886,888, 10,15,888,889, 13,15,889,892, 9,15,892,893, 6,15,952,956, 7,11,956,959, 7,7,959,962, 8,5,962,966, 9,3,966,969, 23,15,977,979, 13,15,979,980, 19,15,980,982, 23,15,982,983, 26,15,983,985, 12,15,985,986, 16,15,986,987, 19,15,987,989, 10,15,989,991, 13,15,991,993, 9,15,993,994, 23,15,998,1001, 13,15,1001,1002, 19,15,1002,1003, 23,15,1003,1004, 26,15,1004,1006, 12,15,1006,1007, 16,15,1007,1009, 19,15,1009,1011, 10,15,1011,1012, 13,15,1012,1014, 9,15,1014,1015, 6,15,1036,1039, 7,11,1039,1042, 7,7,1042,1046, 8,5,1046,1049, 9,3,1049,1051, 23,15,1051,1054, 13,15,1054,1055, 19,15,1055,1056, 23,15,1056,1057, 26,15,1057,1059, 12,15,1059,1060, 16,15,1060,1061, 19,15,1061,1064, 10,15,1064,1065, 13,15,1065,1067, 9,15,1067,1068, 6,15,1075,1078, 7,11,1078,1082, 7,7,1082,1085, 8,5,1085,1088, 9,3,1088,1092, 6,15,1094,1097, 23,15,1097,1100, 13,15,1100,1101, 19,15,1101,1102, 23,15,1102,1103, 26,15,1103,1105, 12,15,1105,1106, 16,15,1106,1108, 19,15,1108,1110, 10,15,1110,1112, 13,15,1112,1115, 9,15,1115,1116, 6,15,1165,1170, 7,11,1170,1175, 7,7,1175,1176, 23,15,1177,1180, 13,15,1180,1181, 19,15,1181,1183, 23,15,1183,1185, 26,15,1185,1188, 12,15,1188,1190, 16,15,1190,1191, 19,15,1191,1194, 10,15,1194,1196, 13,15,1196,1200, 9,15,1200,1201, 23,15,1221,1223, 13,15,1223,1224, 19,15,1224,1226, 23,15,1226,1227, 26,15,1227,1229, 12,15,1229,1230, 16,15,1230,1231, 19,15,1231,1233, 10,15,1233,1235, 13,15,1235,1237, 9,15,1237,1238, 23,15,1255,1257, 13,15,1257,1258, 19,15,1258,1259, 23,15,1259,1260, 26,15,1260,1263, 12,15,1263,1264, 16,15,1264,1265, 19,15,1265,1267, 10,15,1267,1268, 13,15,1268,1271, 9,15,1271,1272, 6,15,1309,1312, 7,11,1312,1316, 7,7,1316,1319, 8,5,1319,1322, 9,3,1322,1326, 55,15,1383,1385, 14,14,1387,1389, 20,14,1389,1391, 29,14,1391,1393, 40,14,1393,1395, 55,14,1395,1397, 55,13,1399,1401, 14,12,1403,1405, 20,12,1405,1407, 29,12,1407,1409, 40,12,1409,1411, 55,12,1411,1413, 55,11,1415,1417, 14,10,1419,1421, 20,10,1421,1424, 29,10,1424,1427, 40,10,1427,143
+; 1, 55,10,1431,1434, 55,9,1437,1440, 14,8,1444,1447, 20,8,1447,1450, 29,8,1450,1453, 40,8,1453,1457, 55,8,1457,1460, 55,7,1463,1466, 14,6,1470,1473, 20,6,1473,1476, 29,6,1476,1479, 40,6,1479,1483, 55,6,1483,1486, 55,5,1489,1492, 14,4,1495,1497, 20,4,1497,1499, 29,4,1499,1501, 40,4,1501,1503, 55,4,1503,1505, 55,3,1507,1509, 14,3,1511,1513, 20,3,1513,1515, 29,3,1515,1517, 40,3,1517,1519, 55,3,1519,1521, 55,3,1523,1525, 15,10,1558,1562, 15,6,1562,1568, 20,10,1568,1575, 20,6,1575,1581, 15,10,1581,0, 9999,9999,9999,9999};
+; const uint music_dataRect1[]={136,10,48,52, 136,6,52,55, 102,10,55,59, 102,6,59,62, 81,10,62,66, 81,6,66,69, 68,10,69,73, 68,6,73,76, 81,10,76,80, 81,6,80,93, 81,2,93,95, 41,15,158,288, 41,11,299,302, 41,15,311,317, 41,11,317,320, 46,15,329,443, 46,11,443,446, 46,15,455,461, 46,11,461,464, 51,15,473,604, 51,11,615,618, 51,15,627,633, 51,11,633,636, 46,15,645,759, 46,11,759,762, 48,15,789,794, 48,11,794,800, 54,15,800,807, 54,11,807,813, 48,15,813,820, 48,11,820,826, 43,15,826,833, 43,11,833,839, 43,7,839,846, 43,3,846,851, 41,15,852,859, 41,11,859,865, 41,7,865,872, 41,3,872,877, 43,15,878,885, 43,11,885,889, 43,7,889,894, 43,3,894,897, 48,15,898,903, 48,11,903,907, 48,7,907,912, 48,3,912,915, 54,15,916,921, 54,11,921,925, 48,15,925,930, 48,11,930,934, 54,15,934,939, 54,11,939,943, 48,15,943,948, 48,11,948,952, 61,15,952,957, 61,11,957,961, 48,15,961,966, 48,11,966,970, 54,15,970,975, 54,11,975,979, 48,15,979,984, 48,11,984,988, 43,15,988,993, 43,11,993,997, 43,7,997,1002, 43,3,1002,1005, 41,15,1006,1011, 41,11,1011,1015, 41,7,1015,1020, 41,3,1020,1023, 43,15,1024,1029, 43,11,1029,1033, 43,7,1033,1038, 43,3,1038,1041, 48,15,1042,1047, 48,11,1047,1051, 48,7,1051,1056, 48,3,1056,1059, 54,15,1060,1065, 54,11,1065,1069, 48,15,1069,1074, 48,11,1074,1078, 54,15,1078,1083, 54,11,1083,1087, 48,15,1087,1092, 48,11,1092,1096, 61,15,1096,1101, 61,11,1101,1105, 54,15,1105,1110, 54,11,1110,1116, 61,15,1116,1123, 61,11,1123,1129, 54,15,1129,1136, 54,11,1136,1142, 48,15,1142,1149, 48,11,1149,1155, 48,7,1155,1162, 48,3,1162,1167, 46,15,1168,1175, 46,11,1175,1181, 46,7,1181,1188, 46,3,1188,1193, 48,15,1194,1201, 48,11,1201,1205, 48,7,1205,1210, 48,3,1210,1213, 54,15,1214,1219, 54,11,1219,1223, 54,7,1223,1228, 54,3,1228,1231, 48,15,1232,1237, 48,11,1237,1241, 54,15,1241,1246, 54,11,1246,1250, 61,15,1250,1334, 61,11,1334,1338, 61,7,1338,1343, 61,3,1343,1346, 72,15,1349,1354, 72,11,1354,1358, 64,15,1358,1363, 64,11,1363,1367, 61,15,1367,1372, 61,11,1372,1376, 54,15,1376,1381, 43,15,1383,1385, 3,14,1387,1389, 9,14,1389,1391, 17,14,1
+; 391,1393, 29,14,1393,1395, 43,14,1395,1397, 43,13,1399,1401, 3,12,1403,1405, 9,12,1405,1407, 17,12,1407,1409, 29,12,1409,1411, 43,12,1411,1413, 43,11,1415,1417, 3,10,1419,1421, 9,10,1421,1424, 17,10,1424,1427, 29,10,1427,1431, 43,10,1431,1434, 43,9,1437,1440, 3,8,1444,1447, 9,8,1447,1450, 17,8,1450,1453, 29,8,1453,1457, 43,8,1457,1460, 43,7,1463,1466, 3,6,1470,1473, 9,6,1473,1476, 17,6,1476,1479, 29,6,1479,1483, 43,6,1483,1486, 43,5,1489,1492, 3,4,1495,1497, 9,4,1497,1499, 17,4,1499,1501, 29,4,1501,1503, 43,4,1503,1505, 43,3,1507,1509, 3,3,1511,1513, 9,3,1513,1515, 17,3,1515,1517, 29,3,1517,1519, 43,3,1519,1521, 43,3,1523,1525, 41,15,1558,0};
+; const uint music_dataTriangle[]={34,48,55, 26,55,62, 20,62,69, 17,69,76, 20,76,159, 15,159,170, 20,170,183, 15,183,196, 14,196,222, 10,222,248, 14,248,267, 15,267,285, 20,285,294, 15,294,303, 20,303,312, 15,312,321, 14,321,330, 15,330,339, 20,339,348, 15,348,357, 14,357,375, 10,375,393, 14,393,411, 15,411,429, 20,429,438, 15,438,447, 20,447,456, 15,456,465, 14,465,474, 15,474,486, 20,486,499, 15,499,512, 14,512,538, 10,538,564, 14,564,583, 15,583,601, 20,601,610, 15,610,619, 20,619,628, 15,628,637, 14,637,646, 15,646,655, 20,655,664, 15,664,673, 14,673,691, 10,691,709, 14,709,727, 15,727,745, 20,745,754, 15,754,763, 20,763,772, 15,772,781, 14,781,790, 41,790,815, 30,815,841, 41,841,867, 30,867,890, 41,890,908, 30,908,926, 41,926,944, 30,944,962, 41,962,980, 30,980,998, 41,998,1016, 30,1016,1034, 41,1034,1052, 30,1052,1070, 41,1070,1088, 30,1088,1106, 46,1106,1131, 34,1131,1157, 46,1157,1183, 34,1183,1206, 46,1206,1224, 34,1224,1242, 61,1242,1260, 46,1260,1278, 61,1278,1296, 46,1296,1314, 61,1314,1332, 46,1332,1350, 61,1350,1368, 46,1368,1381, 23,1381,1382, 46,1382,1383, 69,1383,1384, 92,1384,1385, 115,1385,1386, 137,1386,1387, 23,1387,1389, 46,1389,1390, 69,1390,1391, 92,1391,1392, 115,1392,1393, 137,1393,1394, 160,1394,1395, 17,1395,1396, 23,1396,1397, 29,1397,1398, 35,1398,1399, 40,1399,1400, 46,1400,1401, 52,1401,1402, 57,1402,1403, 63,1403,1404, 69,1404,1405, 75,1405,1406, 80,1406,1407, 86,1407,1408, 92,1408,1409, 126,1409,1411, 137,1411,1559, 15,1559,1570, 20,1570,1583, 15,1583,0};
+; const uint music_dataNoise[]={343,1381,1523, 343,1530,0};
+; 
+; 
+; 
+; 
+; 
+; //方波0//////////////////
+; uint i0=0;// 数组位置
+; uint Tone0 ;//半音长(相当于频率)
+; uint fcounter0;//音长计数
+; uchar volume0;//音量 
+; uchar swap0=0;//切换开关
+; 
+; //方波1//////////////////
+; uint i1=0;// 数组位置
+; uint Tone1 ;//半音长(相当于频率)
+; uint fcounter1;//音长计数
+; uchar volume1;//音量 
+; uchar swap1=0;//切换开关
+; 
+; //三角波//////////////////
+; uint i2=0; 
+; uint Tone2 ; 
+; uint fcounter2; 
+; uchar volume2=6*8;//三角波音量固定为6 
+; uchar swap2=0; 
+; 
+; //杂波//////////////////
+; uint i3=0; 
+; uint Tone3 ; 
+; uint fcounter3; 
+; uchar volume3=4*8;//杂波音量固定 
+; uchar swap3=0; 
+; 
+; uint sum_volume;//总音量 
+; uint T=0;//时间计数
+; 
+	.dbline 61
+; 
+; void init_devices(void)
+	ldi R24,128
+	out 0x11,R24
+	.dbline 62
+; {
+	out 0x12,R24
+	.dbline 65
+;     
+;     DDRD=0b10000000;  
+;     PORTD=0b10000000; 
+	ldi R24,1
+	out 0x25,R24
+	.dbline 66
+;     
+	in R24,0x25
+	ori R24,64
+	out 0x25,R24
+	.dbline 67
+;     //#####定时器2/PD7(OC2)pwm控制音量,周期为32us(31.2KHz)######
+	in R24,0x25
+	ori R24,8
+	out 0x25,R24
+	.dbline 68
+;     TCCR2=0X01;//内部CK/1脉冲
+	in R24,0x25
+	ori R24,32
+	out 0x25,R24
+	.dbline 69
+;     SET_BIT(TCCR2,WGM20);    //快速PWM方式
+	ldi R24,255
+	out 0x23,R24
+	.dbline 73
+;     SET_BIT(TCCR2,WGM21);
+;     SET_BIT(TCCR2,COM21); //减1匹配置位
+;     OCR2=255;
+;     //####################
+	in R24,0x2e
+	ori R24,2
+	out 0x2e,R24
+	.dbline 74
+;     
+	in R24,0x2e
+	ori R24,8
+	out 0x2e,R24
+	.dbline 75
+;     //#####定时器1,周期为0.025ms对音频采样######
+	ldi R24,25
+	ldi R25,0
+	out 0x2b,R25
+	out 0x2a,R24
+	.dbline 76
+;     SET_BIT(TCCR1B,CS11);//8分频	
+	clr R2
+	clr R3
+	out 0x2d,R3
+	out 0x2c,R2
+	.dbline 77
+;     SET_BIT(TCCR1B,WGM12);//CTC方式,匹配清零后自动计数
+	in R24,0x39
+	ori R24,16
+	out 0x39,R24
+	.dbline 81
+;     OCR1A=25;
+;     TCNT1=0;
+;     SET_BIT(TIMSK,OCIE1A);
+;     //####################
+	in R24,0x33
+	ori R24,1
+	out 0x33,R24
+	.dbline 82
+;     
+	in R24,0x33
+	ori R24,4
+	out 0x33,R24
+	.dbline 83
+;     //#####定时器0,周期为1/60s(16.67ms),对时间进行计数######
+	in R24,0x33
+	ori R24,8
+	out 0x33,R24
+	.dbline 84
+;     SET_BIT(TCCR0,CS00);//1024分频
+	ldi R24,133
+	out 0x3c,R24
+	.dbline 85
+;     SET_BIT(TCCR0,CS02);
+	out 0x32,R2
+	.dbline 86
+;     SET_BIT(TCCR0,WGM01);//CTC方式,匹配清零后自动计数
+	in R24,0x39
+	ori R24,2
+	out 0x39,R24
+	.dbline 91
+;     OCR0=133;//定时时间
+;     TCNT0=0;
+;     SET_BIT(TIMSK,OCIE0);
+;     //####################
+;     
+	bset 7
+	.dbline -2
+L1:
+	.dbline 0 ; func end
+	ret
+	.dbend
+	.dbfunc e main _main fV
+	.even
+_main::
+	.dbline -1
+	.dbline 96
+;     
+;     
+;     SET_BIT(SREG,7);  //全局中断
+; }
+; 
+	.dbline 97
+; 
+	xcall _init_devices
+L3:
+	.dbline 99
+	.dbline 100
+L4:
+	.dbline 98
+	xjmp L3
+X0:
+	.dbline -2
+L2:
+	.dbline 0 ; func end
+	ret
+	.dbend
+	.dbfunc e delay_1ms _delay_1ms fV
+;              i -> R16,R17
+	.even
+_delay_1ms::
+	.dbline -1
+	.dbline 104
+; void main(void)  
+; {
+;     init_devices();
+;     while(1)
+;     {
+;     }
+; }
+	.dbline 106
+	clr R16
+	clr R17
+	xjmp L10
+L7:
+	.dbline 106
+L8:
+	.dbline 106
+	subi R16,255  ; offset = 1
+	sbci R17,255
+L10:
+	.dbline 106
+; 
+; void delay_1ms(void)//微秒级延时,单位1微秒
+	cpi R16,118
+	ldi R30,4
+	cpc R17,R30
+	brlo L7
+	.dbline -2
+L6:
+	.dbline 0 ; func end
+	ret
+	.dbsym r i 16 i
+	.dbend
+	.dbfunc e delay_ms _delay_ms fV
+;              i -> R20,R21
+;            num -> R22,R23
+	.even
+_delay_ms::
+	xcall push_gset2
+	movw R22,R16
+	.dbline -1
+	.dbline 111
+; {
+;     uint i;
+;     for(i=0;i<(unsigned int)(8*143-2);i++);
+; }
+; 
+	.dbline 113
+	clr R20
+	clr R21
+	xjmp L15
+L12:
+	.dbline 113
+	xcall _delay_1ms
+L13:
+	.dbline 113
+	subi R20,255  ; offset = 1
+	sbci R21,255
+L15:
+	.dbline 113
+; 
+; void delay_ms(uint num)//毫秒级精确延时,单位1毫秒(8M)
+	cp R20,R22
+	cpc R21,R23
+	brlo L12
+	.dbline -2
+L11:
+	xcall pop_gset2
+	.dbline 0 ; func end
+	ret
+	.dbsym r i 20 i
+	.dbsym r num 22 i
+	.dbend
+	.area vector(rom, abs)
+	.org 76
+	jmp _T0_counter
+	.area text(rom, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbfunc e T0_counter _T0_counter fV
+	.even
+_T0_counter::
+	xcall push_lset
+	.dbline -1
+	.dbline 120
+; {
+;     uint i;
+;     for(i=0;i<num;i++) delay_1ms();
+; }
+; 
+; 
+; //#####定时器0,周期为1/60s(16.67ms),对时间T进行计数
+	.dbline 121
+; #pragma  interrupt_handler T0_counter:20
+	lds R24,_T
+	lds R25,_T+1
+	adiw R24,1
+	sts _T+1,R25
+	sts _T,R24
+	.dbline 123
+; void T0_counter(void)  
+; {
+	lds R18,_i0
+	lds R19,_i0+1
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect0
+	ldi R25,>_music_dataRect0
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	cpi R30,15
+	ldi R30,39
+	cpc R31,R30
+	brne L17
+	.dbline 124
+;     T++;
+	.dbline 125
+;     
+	ldi R16,1000
+	ldi R17,3
+	xcall _delay_ms
+	.dbline 126
+;     if(music_dataRect0[i0]==9999)//到尾部了，从头开始
+	clr R2
+	clr R3
+	sts _i0+1,R3
+	sts _i0,R2
+	.dbline 126
+	sts _i1+1,R3
+	sts _i1,R2
+	.dbline 126
+	sts _i2+1,R3
+	sts _i2,R2
+	.dbline 126
+	sts _i3+1,R3
+	sts _i3,R2
+	.dbline 127
+;     {
+	sts _volume0,R2
+	.dbline 127
+	sts _volume1,R2
+	.dbline 127
+	sts _volume2,R2
+	.dbline 127
+	sts _volume3,R2
+	.dbline 128
+;         delay_ms(1000);
+	sts _T+1,R3
+	sts _T,R2
+	.dbline 129
+;         i0=0;i1=0;i2=0;i3=0;
+L17:
+	.dbline 132
+; 		volume0=0;volume1=0;volume2=0;volume3=0;
+;         T=0;
+;     }
+	lds R18,_i0
+	lds R19,_i0+1
+	subi R18,1
+	sbci R19,0
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect0
+	ldi R25,>_music_dataRect0
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brlo L19
+	.dbline 132
+	clr R2
+	sts _volume0,R2
+L19:
+	.dbline 133
+;     
+	lds R18,_i0
+	lds R19,_i0+1
+	subi R18,254  ; offset = 2
+	sbci R19,255
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect0
+	ldi R25,>_music_dataRect0
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brsh X1
+	xjmp L21
+X1:
+	.dbline 134
+;     //方波0//////////////////
+	.dbline 135
+; 	if(T>=music_dataRect0[i0-1])volume0=0;//是否结束了
+	lds R18,_i0
+	lds R19,_i0+1
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect0
+	ldi R25,>_music_dataRect0
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	sts _Tone0+1,R31
+	sts _Tone0,R30
+	.dbline 136
+;     if(T>=music_dataRect0[i0+2])
+	lds R18,_i0
+	lds R19,_i0+1
+	subi R18,255  ; offset = 1
+	sbci R19,255
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect0
+	ldi R25,>_music_dataRect0
+	add R30,R24
+	adc R31,R25
+	lpm R18,Z+
+	lpm R19,Z
+	ldi R16,8
+	ldi R17,0
+	xcall empy16s
+	sts _volume0,R16
+	.dbline 137
+;     {
+	clr R2
+	clr R3
+	sts _fcounter0+1,R3
+	sts _fcounter0,R2
+	.dbline 138
+;         Tone0=music_dataRect0[i0];
+	lds R24,_i0
+	lds R25,_i0+1
+	adiw R24,4
+	sts _i0+1,R25
+	sts _i0,R24
+	.dbline 139
+;         volume0=music_dataRect0[i0+1]*8;
+L21:
+	.dbline 142
+;         fcounter0=0;
+;         i0+=4;
+;     }    
+	lds R18,_i1
+	lds R19,_i1+1
+	subi R18,1
+	sbci R19,0
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect1
+	ldi R25,>_music_dataRect1
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brlo L23
+	.dbline 142
+	clr R2
+	sts _volume1,R2
+L23:
+	.dbline 143
+;     
+	lds R18,_i1
+	lds R19,_i1+1
+	subi R18,254  ; offset = 2
+	sbci R19,255
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect1
+	ldi R25,>_music_dataRect1
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brsh X2
+	xjmp L25
+X2:
+	.dbline 144
+;     //方波1//////////////////
+	.dbline 145
+; 	if(T>=music_dataRect1[i1-1])volume1=0;//是否|结束时间|了
+	lds R18,_i1
+	lds R19,_i1+1
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect1
+	ldi R25,>_music_dataRect1
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	sts _Tone1+1,R31
+	sts _Tone1,R30
+	.dbline 146
+;     if(T>=music_dataRect1[i1+2])
+	lds R18,_i1
+	lds R19,_i1+1
+	subi R18,255  ; offset = 1
+	sbci R19,255
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataRect1
+	ldi R25,>_music_dataRect1
+	add R30,R24
+	adc R31,R25
+	lpm R18,Z+
+	lpm R19,Z
+	ldi R16,8
+	ldi R17,0
+	xcall empy16s
+	sts _volume1,R16
+	.dbline 147
+;     {
+	clr R2
+	clr R3
+	sts _fcounter1+1,R3
+	sts _fcounter1,R2
+	.dbline 148
+;         Tone1=music_dataRect1[i1];
+	lds R24,_i1
+	lds R25,_i1+1
+	adiw R24,4
+	sts _i1+1,R25
+	sts _i1,R24
+	.dbline 149
+;         volume1=music_dataRect1[i1+1]*8;
+L25:
+	.dbline 152
+;         fcounter1=0;
+;         i1+=4;
+;     }   
+	lds R18,_i2
+	lds R19,_i2+1
+	subi R18,1
+	sbci R19,0
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataTriangle
+	ldi R25,>_music_dataTriangle
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brlo L27
+	.dbline 152
+	clr R2
+	sts _volume2,R2
+L27:
+	.dbline 153
+;     
+	lds R18,_i2
+	lds R19,_i2+1
+	subi R18,255  ; offset = 1
+	sbci R19,255
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataTriangle
+	ldi R25,>_music_dataTriangle
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brlo L29
+	.dbline 154
+;     //三角波//////////////////
+	.dbline 155
+; 	if(T>=music_dataTriangle[i2-1])volume2=0;//是否|结束时间|了
+	lds R18,_i2
+	lds R19,_i2+1
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataTriangle
+	ldi R25,>_music_dataTriangle
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	sts _Tone2+1,R31
+	sts _Tone2,R30
+	.dbline 156
+;     if(T>=music_dataTriangle[i2+1])
+	ldi R24,48
+	sts _volume2,R24
+	.dbline 157
+;     {
+	clr R2
+	clr R3
+	sts _fcounter2+1,R3
+	sts _fcounter2,R2
+	.dbline 158
+;         Tone2=music_dataTriangle[i2];
+	lds R24,_i2
+	lds R25,_i2+1
+	adiw R24,3
+	sts _i2+1,R25
+	sts _i2,R24
+	.dbline 159
+; 		volume2=6*8;
+L29:
+	.dbline 162
+;         fcounter2=0;
+;         i2+=3;
+;     }  
+	lds R18,_i3
+	lds R19,_i3+1
+	subi R18,1
+	sbci R19,0
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataNoise
+	ldi R25,>_music_dataNoise
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brlo L31
+	.dbline 162
+	clr R2
+	sts _volume3,R2
+L31:
+	.dbline 163
+	lds R18,_i3
+	lds R19,_i3+1
+	subi R18,255  ; offset = 1
+	sbci R19,255
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataNoise
+	ldi R25,>_music_dataNoise
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	lds R2,_T
+	lds R3,_T+1
+	cp R2,R30
+	cpc R3,R31
+	brlo L33
+	.dbline 164
+	.dbline 165
+	lds R18,_i3
+	lds R19,_i3+1
+	ldi R16,2
+	ldi R17,0
+	xcall empy16s
+	movw R30,R16
+	ldi R24,<_music_dataNoise
+	ldi R25,>_music_dataNoise
+	add R30,R24
+	adc R31,R25
+	lpm R0,Z+
+	lpm R1,Z
+	movw R30,R0
+	sts _Tone3+1,R31
+	sts _Tone3,R30
+	.dbline 166
+	ldi R24,48
+	sts _volume3,R24
+	.dbline 167
+	clr R2
+	clr R3
+	sts _fcounter3+1,R3
+	sts _fcounter3,R2
+	.dbline 168
+	lds R24,_i3
+	lds R25,_i3+1
+	adiw R24,3
+	sts _i3+1,R25
+	sts _i3,R24
+	.dbline 169
+L33:
+	.dbline -2
+L16:
+	xcall pop_lset
+	.dbline 0 ; func end
+	reti
+	.dbend
+	.area vector(rom, abs)
+	.org 24
+	jmp _T1_counter
+	.area text(rom, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+	.dbfunc e T1_counter _T1_counter fV
+	.even
+_T1_counter::
+	st -y,R2
+	st -y,R3
+	st -y,R4
+	st -y,R5
+	st -y,R24
+	st -y,R25
+	in R2,0x3f
+	st -y,R2
+	.dbline -1
+	.dbline 177
+;     
+;     //杂波
+; 	if(T>=music_dataNoise[i3-1])volume3=0;//是否|结束时间|了
+;     if(T>=music_dataNoise[i3+1])
+;     {
+;         Tone3=music_dataNoise[i3];
+; 		volume3=6*8;
+;         fcounter3=0;
+;         i3+=3;
+;     }  	  
+;     
+; }
+; 
+; 
+; //#####定时器1,周期为0.025ms对音频采样
+	.dbline 180
+; #pragma  interrupt_handler T1_counter:7
+; void T1_counter(void)  
+; {
+	lds R24,_fcounter0
+	lds R25,_fcounter0+1
+	adiw R24,1
+	sts _fcounter0+1,R25
+	sts _fcounter0,R24
+	.dbline 181
+;     
+	lds R2,_Tone0
+	lds R3,_Tone0+1
+	cp R24,R2
+	cpc R25,R3
+	brne L36
+	.dbline 182
+;     //方波0//////////////////
+	.dbline 183
+;     fcounter0++;//音长计数
+	lds R2,_swap0
+	com R2
+	sts _swap0,R2
+	.dbline 184
+;     if(fcounter0==Tone0)
+	clr R2
+	clr R3
+	sts _fcounter0+1,R3
+	sts _fcounter0,R2
+	.dbline 185
+;     {
+L36:
+	.dbline 188
+;         swap0=(~swap0);
+;         fcounter0=0;
+;     }
+	lds R24,_fcounter1
+	lds R25,_fcounter1+1
+	adiw R24,1
+	sts _fcounter1+1,R25
+	sts _fcounter1,R24
+	.dbline 189
+;     
+	lds R2,_Tone1
+	lds R3,_Tone1+1
+	cp R24,R2
+	cpc R25,R3
+	brne L38
+	.dbline 190
+;     //方波1//////////////////
+	.dbline 191
+;     fcounter1++;//音长计数
+	lds R2,_swap1
+	com R2
+	sts _swap1,R2
+	.dbline 192
+;     if(fcounter1==Tone1)
+	clr R2
+	clr R3
+	sts _fcounter1+1,R3
+	sts _fcounter1,R2
+	.dbline 193
+;     {
+L38:
+	.dbline 196
+;         swap1=(~swap1);
+;         fcounter1=0;
+;     }
+	lds R24,_fcounter2
+	lds R25,_fcounter2+1
+	adiw R24,1
+	sts _fcounter2+1,R25
+	sts _fcounter2,R24
+	.dbline 197
+;     
+	lds R2,_Tone2
+	lds R3,_Tone2+1
+	cp R24,R2
+	cpc R25,R3
+	brne L40
+	.dbline 198
+;     //三角波//////////////////
+	.dbline 199
+;     fcounter2++;//音长计数
+	lds R2,_swap2
+	com R2
+	sts _swap2,R2
+	.dbline 200
+;     if(fcounter2==Tone2)
+	clr R2
+	clr R3
+	sts _fcounter2+1,R3
+	sts _fcounter2,R2
+	.dbline 201
+;     {
+L40:
+	.dbline 204
+;         swap2=(~swap2);
+;         fcounter2=0;
+;     }
+	lds R24,_fcounter3
+	lds R25,_fcounter3+1
+	adiw R24,1
+	sts _fcounter3+1,R25
+	sts _fcounter3,R24
+	.dbline 205
+;     
+	lds R2,_Tone3
+	lds R3,_Tone3+1
+	cp R24,R2
+	cpc R25,R3
+	brne L42
+	.dbline 206
+;     //杂波
+	.dbline 207
+;     fcounter3++;//音长计数
+	lds R2,_swap3
+	com R2
+	sts _swap3,R2
+	.dbline 208
+;     if(fcounter3==Tone3)
+	clr R2
+	clr R3
+	sts _fcounter3+1,R3
+	sts _fcounter3,R2
+	.dbline 209
+;     {
+L42:
+	.dbline 211
+;         swap3=(~swap3);
+;         fcounter3=0;
+	clr R2
+	clr R3
+	sts _sum_volume+1,R3
+	sts _sum_volume,R2
+	.dbline 212
+;     }
+	lds R2,_swap0
+	tst R2
+	breq L44
+	.dbline 212
+	lds R2,_volume0
+	clr R3
+	sts _sum_volume+1,R3
+	sts _sum_volume,R2
+L44:
+	.dbline 213
+;     
+	lds R2,_swap1
+	tst R2
+	breq L46
+	.dbline 213
+	lds R2,_volume1
+	clr R3
+	lds R4,_sum_volume
+	lds R5,_sum_volume+1
+	add R4,R2
+	adc R5,R3
+	sts _sum_volume+1,R5
+	sts _sum_volume,R4
+L46:
+	.dbline 214
+;     sum_volume=0;
+	lds R2,_swap2
+	tst R2
+	breq L48
+	.dbline 214
+	lds R2,_volume2
+	clr R3
+	lds R4,_sum_volume
+	lds R5,_sum_volume+1
+	add R4,R2
+	adc R5,R3
+	sts _sum_volume+1,R5
+	sts _sum_volume,R4
+L48:
+	.dbline 215
+;     if(swap0) sum_volume=volume0;//音量相加
+	lds R2,_swap3
+	tst R2
+	breq L50
+	.dbline 215
+	lds R2,_volume3
+	clr R3
+	lds R4,_sum_volume
+	lds R5,_sum_volume+1
+	add R4,R2
+	adc R5,R3
+	sts _sum_volume+1,R5
+	sts _sum_volume,R4
+L50:
+	.dbline 216
+;     if(swap1) sum_volume+=volume1;//音量相加
+	ldi R24,255
+	ldi R25,0
+	lds R2,_sum_volume
+	lds R3,_sum_volume+1
+	cp R24,R2
+	cpc R25,R3
+	brsh L52
+	.dbline 216
+	sts _sum_volume+1,R25
+	sts _sum_volume,R24
+L52:
+	.dbline 218
+;     if(swap2) sum_volume+=volume2;//音量相加	
+;     if(swap3) sum_volume+=volume3;//音量相加		
+	lds R2,_sum_volume
+	lds R3,_sum_volume+1
+	out 0x23,R2
+	.dbline -2
+L35:
+	ld R2,y+
+	out 0x3f,R2
+	ld R25,y+
+	ld R24,y+
+	ld R5,y+
+	ld R4,y+
+	ld R3,y+
+	ld R2,y+
+	.dbline 0 ; func end
+	reti
+	.dbend
+	.area bss(ram, con, rel)
+	.dbfile F:\机器人3\led点阵传感器\AVRNES~1.0\musicbox.C
+_sum_volume::
+	.blkb 2
+	.dbsym e sum_volume _sum_volume i
+_fcounter3::
+	.blkb 2
+	.dbsym e fcounter3 _fcounter3 i
+_Tone3::
+	.blkb 2
+	.dbsym e Tone3 _Tone3 i
+_fcounter2::
+	.blkb 2
+	.dbsym e fcounter2 _fcounter2 i
+_Tone2::
+	.blkb 2
+	.dbsym e Tone2 _Tone2 i
+_volume1::
+	.blkb 1
+	.dbsym e volume1 _volume1 c
+_fcounter1::
+	.blkb 2
+	.dbsym e fcounter1 _fcounter1 i
+_Tone1::
+	.blkb 2
+	.dbsym e Tone1 _Tone1 i
+_volume0::
+	.blkb 1
+	.dbsym e volume0 _volume0 c
+_fcounter0::
+	.blkb 2
+	.dbsym e fcounter0 _fcounter0 i
+_Tone0::
+	.blkb 2
+	.dbsym e Tone0 _Tone0 i

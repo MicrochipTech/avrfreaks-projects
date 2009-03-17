@@ -1,0 +1,131 @@
+
+//智能绘图小车
+//          BY张皓
+//http://www.lotusinvention.cn/ART/AVRCar/AVRAICar.htm
+//  ICC-AVR Target : M16  Crystal: 8M,
+#include <iom16v.h>
+#include <macros.h>
+#include <eeprom.h>
+#define uchar unsigned char
+#define schar signed char
+#define uint unsigned int  
+#define sint signed int  
+#define SET_BIT(io ,bit) (   io |=   (1<<bit) ) //置位example: SET_BIT(PORTA,0);SET_BIT(DDRA,0);  
+#define CLR_BIT(io ,bit) (   io &= ~(1<<bit) ) //清位example: CLR_BIT(PORTA,0);CLR_BIT(DDRA,0);  
+#define GET_BIT(pin,bit) ( pin &    (1<<bit) ) //取得位example: GET_BIT(PINA,0);
+const uint music_data[]=
+{
+    19,9,8,13,19,49,18,10,7,27,85,22,18,4,6,2,6,1,3,2,5,6,4,0
+};
+
+const uchar Sin_Table[256]={ 128, 131, 134, 137, 140, 144, 147, 150, 153, 156, 159, 162, 165, 168, 171, 174, 177, 179, 182, 185, 188, 191, 193, 196, 199, 201, 204, 206, 209, 211, 213, 216, 218, 220, 222, 224, 226, 228, 230, 232, 234, 235, 237, 239, 240, 241, 243, 244, 245, 246, 248, 249, 250, 250, 251, 252, 253, 253, 254, 254, 254, 255, 255, 255, 255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251, 250, 250, 249, 248, 246, 245, 244, 243, 241, 240, 239, 237, 235, 234, 232, 230, 228, 226, 224, 222, 220, 218, 216, 213, 211, 209, 206, 204, 201, 199, 196, 193, 191, 188, 185, 182, 179, 177, 174, 171, 168, 165, 162, 159, 156, 153, 150, 147, 144, 140, 137, 134, 131, 128, 125, 122, 119, 116, 112, 109, 106, 103, 100, 97, 94, 91, 88, 85, 82, 79, 77, 74, 71, 68, 65, 63, 60, 57, 55, 52, 50, 47, 45, 43, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22, 21, 19, 17, 16, 15, 13, 12, 11, 10, 8, 7, 6, 6, 5, 4, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5, 6, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17, 19, 21, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 43, 45, 47, 50, 52, 55, 57, 60, 63, 65, 68, 71, 74, 77, 79, 82, 85, 88, 91, 94, 97, 100, 103, 106, 109, 112, 116, 119, 122, 125 };           
+
+uint t=0;
+uint ip=0;
+uchar swap=0;
+int PWM_Brightness=255; 
+int Brightness=25500;
+
+void uartinit(void)
+{
+    UBRR=8;//57600
+    UCSRB=0x18;//RXD.TXD使能；
+    SET_BIT(UCSRB,RXCIE);
+}
+
+
+void init_devices(void)
+{
+    uartinit();
+    DDRD=0b10000000;  
+    PORTD=0b10000000; 
+	
+	
+    //#####定时器0,衰减######
+    SET_BIT(TCCR0,CS01);//8分频
+    SET_BIT(TCCR0,WGM01);//CTC方式,匹配清零后自动计数
+    OCR0=100;//定时时间 0.1ms
+    TCNT0=0;
+    SET_BIT(TIMSK,OCIE0);
+    //####################
+	
+	
+    //#####定时器1,定时时间100hz(10ms)音调控制######
+    SET_BIT(TCCR1B,WGM12);//CTC方式,匹配清零后自动计数
+    SET_BIT(TCCR1B,CS10);//1024分频	
+    SET_BIT(TCCR1B,CS12);
+    OCR1A=0;
+    TCNT1=0;
+    SET_BIT(TIMSK,OCIE1A);
+    //####################
+	
+	
+    //#####定时器2/PD7(OC2)pwm音量控制######
+    TCCR2=0X01;//内部CK/64脉冲
+    SET_BIT(TCCR2,WGM20);    //快速PWM方式
+    SET_BIT(TCCR2,WGM21);
+    SET_BIT(TCCR2,COM21); //减1匹配置位
+    OCR2=PWM_Brightness;
+    //####################
+	
+	
+    SET_BIT(SREG,7);  //全局中断
+
+}
+
+
+void main(void)  
+{
+    uint i; 
+    long xytmp;
+    init_devices();
+    while(1)
+    {
+    }
+}
+
+
+#pragma  interrupt_handler UARTRX:12
+void  UARTRX(void)  
+{
+}
+
+
+#pragma  interrupt_handler T0_counter:20
+void T0_counter(void)  
+{
+
+t++;
+if (t=512)t=0;
+    Brightness-=10;
+	
+ PWM_Brightness=(Brightness/100)+Sin_Table[t/2]/5-51;//加入回音
+	if(PWM_Brightness<0) PWM_Brightness=0;
+	if(PWM_Brightness>255) PWM_Brightness=255;
+		
+    if (Brightness<100)
+    {
+        Brightness=25500;
+        if (music_data[ip]==0)ip=0;
+        OCR1A=music_data[ip]; 
+        TCNT1=0;
+        UDR=ip;
+        ip++;
+    }
+}
+
+
+//#####定时器1比较匹配中断
+#pragma  interrupt_handler T1_counter:7
+void T1_counter(void)  
+{
+    swap=(~swap);
+    if(swap==0)
+    {
+        OCR2=PWM_Brightness;
+    }
+    else
+    OCR2=0;
+}
+
+
