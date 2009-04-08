@@ -1,0 +1,99 @@
+// The data pin should be written to zero , i.e. PORTD.1=0 in this instance, with a 4k7 pullup on the data line. 
+// Then just use DDRD.1 to toggle data bit.
+// must include codevision <delay.h> for this to work.
+// Note the timing is only ok for 1MHz CPU clk.
+// suggest #define WriteE2 0xcc // 1wirecommandmnemonics such as this (obviously 0xcc is just a thumbsucked example, no flames please)
+
+unsigned char MyOneWireInit(void)
+{
+  unsigned char localdummy=0;
+  DDRD.1=1; 
+  delay_us(500);
+  DDRD.1=0; 
+  delay_us(70);
+  localdummy=localdummy<<1|!PIND.1; // just shift each extra sensor to obtain a byte-value for sensor presence
+  delay_us(400);
+  return localdummy;
+}
+
+void MyWriteBitD11(void)
+{ 
+  DDRD.1=1;
+  #asm
+    nop
+    nop
+    nop
+  #endasm
+  //#asm ("nop,nop,nop") #endasm; // this used to work in codevision V1.xx, now replaced with above
+  DDRD.1=0;
+  delay_us(90); 
+}
+
+void MyWriteBitD10(void)
+{
+  DDRD.1=1;
+  delay_us(115);
+  DDRD.1=0;
+}
+
+unsigned char MyReadBitD1(void)
+{ 
+  unsigned char datachar;
+  DDRD.1=1;
+  #asm 
+    nop
+    nop 
+  #endasm // this 
+  //#asm ("nop,nop") #endasm; // this used to work in codevision V1.xx, now replaced with above
+  DDRD.1=0;
+  #asm 
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+  #endasm
+  datachar=PIND.1;
+  delay_us(45); 
+  return datachar;
+}
+
+void MyOneWireWriteD1(unsigned char data)
+{
+  unsigned char localdummy;
+  for (localdummy=8;localdummy>0;localdummy--)
+  {
+    if (data&1)
+    {
+      MyWriteBitD11();
+    } else
+    {
+      MyWriteBitD10();
+    }
+    data=data>>1;
+  }
+}
+
+unsigned char MyOneWireReadD1(void)
+{
+  unsigned char localdummy, datachar=0;
+  bit ReadBit;
+  for (localdummy=0;localdummy<8;localdummy++)
+  {     
+    datachar=datachar>>1;
+    if(MyReadBitD1()) ReadBit=1; else ReadBit=0;
+    if (ReadBit) datachar=datachar|0x80;
+  } 
+  return datachar;
+}
+
+// now simply do the normal 1wire stuff and call MyOneWireWriteD1(yourdatahere) or yourdata=MyOneWireReadD1(void)
+
+// if anyone alters this for different frequencies, let me know.
