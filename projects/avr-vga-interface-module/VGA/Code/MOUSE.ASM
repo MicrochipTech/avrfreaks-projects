@@ -1,0 +1,190 @@
+SHOW_MOUSE:
+	;this function shows the mouse cursor on the screen
+
+		SEI			;ENABLE (GLOBAL INTERRUPTS)
+		LDI R17,0b10000000      
+		OUT MCUCR,R17		;ENABLE EXTERNAL SRAM
+
+	LDS YL,MOUSE_YL
+	LDS YH,MOUSE_YH
+
+	;copy the last image into the RAM
+	LDI ZL,0x80
+	LDI ZH,0x00
+	LDI R18,16
+
+	VERT_LOOP:
+	LDI R17,8
+	LDS XL,MOUSE_XL
+	LDS XH,MOUSE_XH
+	PUSH XH
+	PUSH YL
+	PUSH YH
+	CLC
+	ROL YL
+	ROL YH
+	CLC
+	ROL YL
+	ROL YH	
+	OUT PORTB,YH
+	OR XH,YL	
+	OUT PORTC,XH
+	SBR XH,0b10000000
+
+	HORIZ_LOOP:
+	LD R16,X+
+	ST Z+,R16
+	DEC R17
+	BRNE HORIZ_LOOP
+
+	POP YH
+	POP YL
+	POP XH	
+	ADIW YL,1
+	DEC R18
+	BRNE VERT_LOOP
+
+;			------------------------------
+	LDS YL,MOUSE_YL
+	LDS YH,MOUSE_YH
+	;copy the mouse image into the VRAM
+	LDI ZL,0x80
+	LDI ZH,0x0F
+	LDI R18,16
+
+	VERT_LOOP1:
+	LDI R17,8
+	LDS XL,MOUSE_XL
+	LDS XH,MOUSE_XH
+	PUSH XH
+	PUSH YL
+	PUSH YH
+	CLC
+	ROL YL
+	ROL YH
+	CLC
+	ROL YL
+	ROL YH	
+	OUT PORTB,YH
+	OR XH,YL	
+	OUT PORTC,XH
+	SBR XH,0b10000000
+
+	HORIZ_LOOP1:
+	LPM R16,Z+
+	CPI R16,0
+	BREQ NO_DRAW
+	ST X,R16
+	NO_DRAW:
+	ADIW XL,1
+	DEC R17
+	BRNE HORIZ_LOOP1
+
+	POP YH
+	POP YL
+	POP XH	
+	ADIW YL,1
+	DEC R18
+	BRNE VERT_LOOP1
+	
+		CLI
+		LDI R17,0b00000000
+		OUT MCUCR,R17		;DISABLE EXTERNAL SRAM	
+
+	RET
+	
+	
+;---------------------------------------------------------------------------
+HIDE_MOUSE:
+	;this function hides the mouse cursor from the screen
+
+		SEI			;ENABLE (GLOBAL INTERRUPTS)
+		LDI R17,0b10000000      
+		OUT MCUCR,R17		;ENABLE EXTERNAL SRAM
+
+	LDS YL,MOUSE_YL
+	LDS YH,MOUSE_YH
+
+	;copy the last image into the VRAM
+	LDI ZL,0x80
+	LDI ZH,0x00
+	LDI R18,16
+
+	VERT_LOOP2:
+	LDI R17,8
+	LDS XL,MOUSE_XL
+	LDS XH,MOUSE_XH
+	PUSH XH
+	PUSH YL
+	PUSH YH
+	CLC
+	ROL YL
+	ROL YH
+	CLC
+	ROL YL
+	ROL YH	
+	OUT PORTB,YH
+	OR XH,YL	
+	OUT PORTC,XH
+	SBR XH,0b10000000	
+
+	HORIZ_LOOP2:
+	LD R16,Z+
+	ST X+,R16
+	DEC R17
+	BRNE HORIZ_LOOP2
+
+	POP YH
+	POP YL
+	POP XH
+	ADIW YL,1
+	DEC R18
+	BRNE VERT_LOOP2
+	
+		CLI
+		LDI R17,0b00000000
+		OUT MCUCR,R17		;DISABLE EXTERNAL SRAM	
+	RET
+	
+;---------------------------------------------------------------------------
+UPDATE_MOUSE:
+	;this function updates the position of the mouse cursor 
+	;into the new position ([R21:R20],[R23:R22])
+	RCALL HIDE_MOUSE
+	MOV XL,R20
+	MOV XH,R21
+	MOV YL,R22
+	MOV YH,R23
+	STS MOUSE_XL,XL
+	STS MOUSE_XH,XH
+	STS MOUSE_YL,YL
+	STS MOUSE_YH,YH
+	RCALL SHOW_MOUSE
+	RET
+
+;---------------------------------------------------------------------------
+ADJUST_MOUSE:
+	
+	LDS XL,MOUSE_XL
+	LDS XH,MOUSE_XH
+	LDI YL,0x78
+	LDI YH,0x02
+	CP XL,YL
+	CPC XH,YH
+	BRLO X_MOUSE_OK
+	STS MOUSE_XL,YL
+	STS MOUSE_XH,YH
+
+	X_MOUSE_OK:
+	LDS YL,MOUSE_YL
+	LDS YH,MOUSE_YH
+	LDI XL,0xDF
+	LDI XH,0x01
+	CP YL,XL
+	CPC YH,XH
+	BRLO Y_MOUSE_OK
+	STS MOUSE_YL,XL
+	STS MOUSE_YH,XH
+	
+	Y_MOUSE_OK:
+	RET

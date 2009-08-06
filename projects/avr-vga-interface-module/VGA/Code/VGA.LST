@@ -1,0 +1,4194 @@
+
+AVRASM ver. 1.30  VGA.ASM Wed Aug 08 16:13:02 2007
+
+
+         ;************************************************************************
+         ;****    this code is used in the VGA monitor controller project     ****
+         ;************************************************************************
+         
+          .include "def.asm"
+          .EQU PORTA=0x1B
+          .EQU DDRA=0X1A
+          .EQU PINA=0x19
+         
+          .EQU PORTB=0x18
+          .EQU DDRB=0X17
+          .EQU PINB=0x16
+         
+          .EQU PORTC=0x15
+          .EQU DDRC=0X14
+          .EQU PINC=0x13
+         
+          .EQU PORTD=0x12
+          .EQU DDRD=0x11
+          .EQU PIND=0x10
+         
+          .EQU SFIOR=0x30
+          .EQU MCUCR=0x35
+          .EQU GIMSK=0x3B
+          .EQU GIFR=0x3A
+          .EQU EMCUCR=0X36
+         
+          .EQU SPL=0x3D
+          .EQU SPH=0x3E
+         
+          .EQU INDEX=0x0060
+          .EQU SEGMENT=0x0061
+          .EQU BLOCK=0x0062
+         
+          .EQU CHAR_MODE=0x0063
+          .EQU FORECOLOR=0x0064
+          .EQU BACKCOLOR=0x0065
+          .EQU XPOSL=0x0066
+          .EQU XPOSH=0x0067
+          .EQU YPOSL=0x0068
+          .EQU YPOSH=0x0069
+         
+          .EQU MOUSE_XL=0x0070
+          .EQU MOUSE_XH=0x0071
+          .EQU MOUSE_YL=0x0072
+          .EQU MOUSE_YH=0x0073
+          .EQU MOUSE_STATUS=0x0074
+         
+          .EQU TXT_XL_1=0x0075
+          .EQU TXT_XH_1=0x0076
+          .EQU TXT_YL_1=0x0077
+          .EQU TXT_YH_1=0x0078
+          .EQU TXT_XL_2=0x0079
+          .EQU TXT_XH_2=0x007A
+          .EQU TXT_YL_2=0x007B
+          .EQU TXT_YH_2=0x007C
+         
+         ;addresses from 0x0080 to 0x00ff is used for mouse functions
+         ;addresses from 0x0100 to 0x01ff is used for command buffering
+         
+          .DEF XL=R26
+          .DEF XH=R27		
+          .DEF YL=R28
+          .DEF YH=R29
+          .DEF ZL=R30
+          .DEF ZH=R31		
+         
+         
+          .org 0000
+000000 c01f      	RJMP START
+000001 c52f      	RJMP INT0_ISR
+         
+         
+         ;===========================================================================
+         ;*                          Initializations				   *
+         ;===========================================================================
+         
+          .ORG 0x0020
+          START:
+          .include "ini.asm"
+         		;hardware initializations
+000020 e002      LDI R16,0x02
+000021 bf0e      OUT SPH,R16		;SET THE STACK POINTER AT (025F)
+000022 e50f      LDI R16,0x5F
+000023 bf0d      OUT SPL,R16
+         
+000024 e000      LDI R16,0b00000000
+000025 bb0a      OUT DDRA,R16		;SET PORTA AS INPUT
+         
+000026 e000      LDI R16,0b00000000
+000027 bb07      OUT DDRB,R16		;SET PORTB AS INPUT
+         
+000028 e800      LDI R16,0b10000000      
+000029 bb04      OUT DDRC,R16		;SET PORTC AS INPUT EXCEPT PC7 
+         	
+00002a ed01      LDI R16,0b11010001
+00002b bb01      OUT DDRD,R16		;SET PORTD direction
+         
+00002c e401      LDI R16,0b01000001
+00002d bb02      OUT PORTD,R16		;SET WR\=HIGH , RD\=LOW	    
+         
+00002e 9894      CBI PORTD,4		
+00002f 9a94      SBI PORTD,4 		;clear pulse to the busy FF   
+         
+000030 e008      LDI R16,0b00001000      ;
+000031 bf00      OUT SFIOR,R16		;RELEASE PC7
+         
+000032 94f8      CLI
+         
+000033 e000      LDI R16,0b00000000      ;DISABLE EXTERNAL SRAM   
+000034 bf05      OUT MCUCR,R16		;& set INT0 as a low level activated interrupt
+         
+000035 e400      LDI R16,0b01000000      
+000036 bf0b      OUT GIMSK,R16		;ENABLE INT0 MASK
+         
+         		;software initializations
+         
+000037 e000      LDI R16,0b00000000     
+000038 9300 0063 STS CHAR_MODE,R16	; SET CHAR MODE
+         
+00003a e000      LDI R16,0x00    
+00003b 9300 0065 STS BACKCOLOR,R16	; SET BACKCOLOR=BLACK
+         
+00003d ef0f      LDI R16,0xff
+00003e 9300 0064 STS FORECOLOR,R16	; SET FORECOLOR=white
+         
+000040 2400      CLR R0
+000041 9200 0066 STS XPOSL,R0
+000043 9200 0067 STS XPOSH,R0
+000045 9200 0068 STS YPOSL,R0
+000047 9200 0069 STS YPOSH,R0
+         
+000049 e4a0      LDI XL,0x40
+00004a e0b1      LDI XH,0x01
+00004b e4c0      LDI YL,0x40
+00004c e0d0      LDI YH,0x00
+00004d 93a0 0070 STS MOUSE_XL,XL
+00004f 93b0 0071 STS MOUSE_XH,XH
+000051 93c0 0072 STS MOUSE_YL,YL
+000053 93d0 0073 STS MOUSE_YH,YH
+000055 e000      LDI R16,0
+000056 9300 0074 STS MOUSE_STATUS,R16
+         
+000058 2700      CLR R16
+000059 9300 0075 STS TXT_XL_1,R16
+00005b 9300 0076 STS TXT_XH_1,R16
+00005d 9300 0077 STS TXT_YL_1,R16
+00005f 9300 0078 STS TXT_YH_1,R16
+000061 e800      LDI R16,LOW(640)
+000062 e012      LDI R17,HIGH(640)
+000063 ee20      LDI R18,LOW(480)
+000064 e031      LDI R19,HIGH(480)
+000065 9300 0079 STS TXT_XL_2,R16
+000067 9310 007a STS TXT_XH_2,R17
+000069 9320 007b STS TXT_YL_2,R18
+00006b 9330 007c STS TXT_YH_2,R19
+         
+         ;	clear screen
+00006d 9a90      SBI PORTD,0		;Disable command register output
+00006e e007      LDI R16,0b00000111
+00006f bb07      OUT DDRB,R16		;SET PORTB[2,1,0] AS OUTPUT
+000070 d128      RCALL CLS         
+         ;==========================================================================
+         ;*                         Code starts here                               *
+         ;==========================================================================
+          .include "com.asm"
+000071 c002      RJMP FIRST_START
+         
+          COMMAND_MODE:
+000072 9894      CBI PORTD,4		
+000073 9a94      SBI PORTD,4 		;clear pulse to the busy FF
+         
+          FIRST_START:
+000074 e000      LDI R16,0b00000000
+000075 bb07      OUT DDRB,R16		;SET PORTB AS INPUT
+000076 9890      CBI PORTD,0		;enable command register output
+         
+          WAIT_COMMAND:
+000077 9b83      SBIS PIND,3		;wait until a byte is received
+000078 cffe      RJMP WAIT_COMMAND
+000079 9981      SBIC PIND,1		;check if the incoming byte is command
+00007a cff7      RJMP COMMAND_MODE
+         
+00007b e0a0      LDI XL,0x00
+00007c e0b1      LDI XH,0x01
+00007d b306      IN R16,PINB		;load command into R16
+00007e 730f      ANDI R16,0b00111111
+00007f 930d      ST X+,R16
+000080 2f30      MOV R19,R16
+000081 7f30      ANDI R19,0xf0
+000082 9532      SWAP R19		;R19 contain group number
+         
+         ;load data counter in R20
+000083 e4e0      LDI ZL,0x40
+000084 e0ff      LDI ZH,0x0f
+000085 0fe0      ADD ZL,R16
+000086 9144      LPM R20,Z	; data counter in R20
+000087 3040      CPI R20,0
+000088 f059      BREQ EXECUTION_MODE
+         
+          WAIT_DATA1:
+000089 9894      CBI PORTD,4		
+00008a 9a94      SBI PORTD,4 		;clear pulse to the busy FF
+00008b 0000      NOP
+         
+          WAIT_DATA:
+00008c 9b83      SBIS PIND,3		;wait until a byte is received
+00008d cffe      RJMP WAIT_DATA
+00008e 9b81      SBIS PIND,1		;check if the incoming byte is data
+00008f cfe7      RJMP WAIT_COMMAND
+         
+000090 b306      IN R16,PINB	
+000091 930d      ST X+,R16
+         
+000092 954a      DEC R20
+000093 f7a9      BRNE WAIT_DATA1         ;--------------------------------------------------------------------------
+          .include "exe.asm"
+          EXECUTION_MODE:
+         
+000094 9a90      SBI PORTD,0		;Disable command register output
+000095 e007      LDI R16,0b00000111
+000096 bb07      OUT DDRB,R16		;SET PORTB[2,1,0] AS OUTPUT
+         
+         ;execution starts here
+000097 e0e0      LDI ZL,0x00
+000098 e0f1      LDI ZH,0x01
+         
+000099 9141      LD R20,Z+	;load command into R20
+         
+00009a 3030      CPI R19,0
+00009b f049      BREQ GROUP_0
+00009c 3031      CPI R19,1
+00009d f089      BREQ GROUP_1
+00009e 3032      CPI R19,2
+00009f f019      BREQ GROUP_2X
+0000a0 3033      CPI R19,3
+0000a1 f011      BREQ GROUP_3X
+0000a2 cfcf      RJMP COMMAND_MODE	;if the group number is invalid then go out
+         
+          GROUP_2X:
+0000a3 c06d      RJMP GROUP_2
+          GROUP_3X:
+0000a4 c098      RJMP GROUP_3
+         
+         
+         ;***********************************************************************
+          .include "group0.asm"
+          GROUP_0:
+0000a5 3040      CPI R20,0x00
+0000a6 f019      BREQ DO_CLS
+0000a7 3041      CPI R20,0x01
+0000a8 f019      BREQ DO_FS
+0000a9 cfc8      RJMP COMMAND_MODE
+         
+          DO_CLS:
+0000aa d0ee      RCALL CLS
+0000ab cfc6      RJMP COMMAND_MODE
+         
+          DO_FS:
+0000ac 9101      LD R16,Z+	;load fill color
+0000ad d0ee      RCALL FILL_SCREEN
+0000ae cfc3      RJMP COMMAND_MODE          .include "group1.asm"
+          GROUP_1:
+0000af 3140      CPI R20,0x10
+0000b0 f059      BREQ DO_PPX
+0000b1 3141      CPI R20,0x11
+0000b2 f051      BREQ DO_LINEX
+0000b3 3142      CPI R20,0x12
+0000b4 f049      BREQ DO_RECTX
+0000b5 3143      CPI R20,0x13
+0000b6 f041      BREQ DO_FRECTX
+0000b7 3144      CPI R20,0x14
+0000b8 f039      BREQ DO_segmentX
+0000b9 3146      CPI R20,0x16
+0000ba f031      BREQ DO_COPYX
+0000bb cfb6      RJMP COMMAND_MODE
+         
+0000bc c005      DO_PPX:		RJMP DO_PP
+0000bd c03c      DO_LINEX:	RJMP DO_LINE
+0000be c00a      DO_RECTX:	RJMP DO_RECT
+0000bf c014      DO_FRECTX:	RJMP DO_FRECT
+0000c0 c01f      DO_segmentX:	RJMP DO_segment
+0000c1 c043      DO_COPYX:	RJMP DO_COPY
+         
+         ;----------------------------------
+         
+          DO_PP:
+0000c2 91a1      LD XL,Z+	;load XL
+0000c3 91b1      LD XH,Z+	;load XH
+0000c4 91c1      LD YL,Z+	;load YL
+0000c5 91d1      LD YH,Z+	;load YH
+0000c6 9101      LD R16,Z+	;load COLOR
+0000c7 d09d      RCALL PUT_PIXEL
+0000c8 cfa9      RJMP COMMAND_MODE
+         
+         ;----------------------------------
+         
+          DO_RECT:
+0000c9 91a1      LD XL,Z+	;load XL
+0000ca 91b1      LD XH,Z+	;load XH
+0000cb 91c1      LD YL,Z+	;load YL
+0000cc 91d1      LD YH,Z+	;load YH
+0000cd 9131      LD R19,Z+	;load LENGTH_L
+0000ce 9141      LD R20,Z+	;load LENGTH_H
+0000cf 9111      LD R17,Z+	;load HEIGHT_L
+0000d0 9121      LD R18,Z+	;load HEIGHT_H
+0000d1 9101      LD R16,Z+	;load COLOR
+0000d2 d192      RCALL RECT
+0000d3 cf9e      RJMP COMMAND_MODE
+         
+         ;----------------------------------
+         
+          DO_FRECT:
+0000d4 91a1      LD XL,Z+	;load XL
+0000d5 91b1      LD XH,Z+	;load XH
+0000d6 91c1      LD YL,Z+	;load YL
+0000d7 91d1      LD YH,Z+	;load YH
+0000d8 9131      LD R19,Z+	;load LENGTH_L
+0000d9 9141      LD R20,Z+	;load LENGTH_H
+0000da 9111      LD R17,Z+	;load HEIGHT_L
+0000db 9121      LD R18,Z+	;load HEIGHT_H
+0000dc 9151      LD R21,Z+	;load EDGE COLOR
+0000dd 9101      LD R16,Z+	;load FILL COLOR
+0000de d1a5      RCALL FILL_RECT
+0000df cf92      RJMP COMMAND_MODE
+         
+         ;----------------------------------
+         
+          DO_segment:
+0000e0 91a1      LD XL,Z+	;load XL
+0000e1 91b1      LD XH,Z+	;load XH
+0000e2 91c1      LD YL,Z+	;load YL
+0000e3 91d1      LD YH,Z+	;load YH
+0000e4 9111      LD R17,Z+	;load Counter
+         
+0000e5 9488      	CLC
+0000e6 1fcc      	ROL YL
+0000e7 1fdd      	ROL YH
+0000e8 9488      	CLC
+0000e9 1fcc      	ROL YL
+0000ea 1fdd      	ROL YH	
+0000eb bbd8      	OUT PORTB,YH
+0000ec 2bbc      	OR XH,YL	
+0000ed bbb5      	OUT PORTC,XH
+0000ee 68b0      	SBR XH,0b10000000
+         
+0000ef 9478      		SEI			;ENABLE (GLOBAL INTERRUPTS)
+0000f0 e800      		LDI R16,0b10000000      
+0000f1 bf05      		OUT MCUCR,R16		;ENABLE EXTERNAL SRAM
+          segment_pixel:
+0000f2 9101      LD R16,Z+
+0000f3 930d      ST X+,R16
+0000f4 951a      DEC R17
+0000f5 f7e1      BRNE segment_pixel
+0000f6 94f8      		CLI
+0000f7 e000      		LDI R16,0b00000000
+0000f8 bf05      		OUT MCUCR,R16		;DISABLE EXTERNAL SRAM	
+         
+0000f9 cf78      RJMP COMMAND_MODE
+         
+         ;-----------------------------------
+         
+          DO_LINE:
+0000fa 91a1      LD XL,Z+	;load XL
+0000fb 91b1      LD XH,Z+	;load XH
+0000fc 91c1      LD YL,Z+	;load YL
+0000fd 91d1      LD YH,Z+	;load YH
+0000fe 9111      LD R17,Z+	;load LENGTH_L
+0000ff 9121      LD R18,Z+	;load LENGTH_H
+000100 9131      LD R19,Z+	;load HEIGHT_L
+000101 9141      LD R20,Z+	;load HEIGHT_H
+000102 9101      LD R16,Z+	;load LINE COLOR
+000103 d0c0      RCALL LINE
+000104 cf6d      RJMP COMMAND_MODE
+         
+         ;-----------------------------------
+         
+          DO_COPY:
+000105 91a1      LD XL,Z+	;load XL
+000106 91b1      LD XH,Z+	;load XH
+000107 91c1      LD YL,Z+	;load YL
+000108 91d1      LD YH,Z+	;load YH
+000109 9101      LD R16,Z+	;load LENGTH
+00010a 9111      LD R17,Z+	;load HEIGHT
+00010b 9121      LD R18,Z+	;load NEW XL
+00010c 9131      LD R19,Z+	;load NEW XH
+00010d 9141      LD R20,Z+	;load NEW YL
+00010e 9151      LD R21,Z+	;load NEW YH
+00010f d1a4      RCALL COPY_BLOCK
+000110 cf61      RJMP COMMAND_MODE
+         
+         ;-----------------------------------
+          .include "group2.asm"
+          GROUP_2:
+000111 3240      CPI R20,0x20
+000112 f059      BREQ DO_PC
+000113 3241      CPI R20,0x21
+000114 f061      BREQ DO_CP
+000115 3242      CPI R20,0x22
+000116 f081      BREQ DO_CM
+000117 3243      CPI R20,0x23
+000118 f091      BREQ DO_FORE
+000119 3244      CPI R20,0x24
+00011a f0a1      BREQ DO_BACK
+00011b 3245      CPI R20,0x25
+00011c f0b1      BREQ DO_TEXT_AREA
+00011d cf54      RJMP COMMAND_MODE
+         
+          DO_PC:
+00011e 9101      LD R16,Z+	;load character code
+00011f d29c      RCALL PUT_CHAR
+000120 cf51      RJMP COMMAND_MODE
+         
+          DO_CP:
+000121 91a1      LD XL,Z+	;load XL
+000122 91b1      LD XH,Z+	;load XH
+000123 91c1      LD YL,Z+	;load YL
+000124 91d1      LD YH,Z+	;load YH
+000125 d36c      RCALL CURSOR_POSITION
+000126 cf4b      RJMP COMMAND_MODE
+         
+          DO_CM:
+000127 9101      LD R16,Z+	;load CODE
+000128 9300 0063 STS CHAR_MODE,R16
+00012a cf47      RJMP COMMAND_MODE
+         
+          DO_FORE:
+00012b 9101      LD R16,Z+	;load COLOR
+00012c 9300 0064 STS FORECOLOR,R16
+00012e cf43      RJMP COMMAND_MODE
+         
+          DO_BACK:
+00012f 9101      LD R16,Z+	;load COLOR
+000130 9300 0065 STS BACKCOLOR,R16
+000132 cf3f      RJMP COMMAND_MODE
+         
+          DO_TEXT_AREA:
+000133 91a1      LD XL,Z+	;load XL
+000134 91b1      LD XH,Z+	;load XH
+000135 91c1      LD YL,Z+	;load YL
+000136 91d1      LD YH,Z+	;load YH
+000137 9101      LD R16,Z+	;load LENGTH_L
+000138 9111      LD R17,Z+	;load LENGTH_H
+000139 9121      LD R18,Z+	;load HEIGHT_L
+00013a 9131      LD R19,Z+	;load HEIGHT_H
+00013b d341      RCALL TEXT_AREA
+00013c cf35      RJMP COMMAND_MODE          .include "group3.asm"
+          GROUP_3:
+00013d 3340      CPI R20,0x30
+00013e f029      BREQ DO_MC
+00013f 3341      CPI R20,0x31
+000140 f0d1      BREQ DO_SM
+000141 3342      CPI R20,0x32
+000142 f0e9      BREQ DO_HM
+000143 cf2e      RJMP COMMAND_MODE
+         
+          DO_MC:
+000144 9100 0074 LDS R16,MOUSE_STATUS
+000146 3000      CPI R16,0
+000147 f469      BRNE DO_UM
+000148 91a1      LD XL,Z+	;load XL
+000149 91b1      LD XH,Z+	;load XH
+00014a 91c1      LD YL,Z+	;load YL
+00014b 91d1      LD YH,Z+	;load YH
+00014c 93a0 0070 STS MOUSE_XL,XL
+00014e 93b0 0071 STS MOUSE_XH,XH
+000150 93c0 0072 STS MOUSE_YL,YL
+000152 93d0 0073 STS MOUSE_YH,YH
+000154 cf1d      RJMP COMMAND_MODE
+          DO_UM:
+000155 9141      LD R20,Z+	;load XL
+000156 9151      LD R21,Z+	;load XH
+000157 9161      LD R22,Z+	;load YL
+000158 9171      LD R23,Z+	;load YH
+000159 d238      RCALL UPDATE_MOUSE
+00015a cf17      RJMP COMMAND_MODE
+         
+          DO_SM:
+00015b d1bc      RCALL SHOW_MOUSE
+00015c e001      LDI R16,1
+00015d 9300 0074 STS MOUSE_STATUS,R16
+00015f cf12      RJMP COMMAND_MODE
+         
+          DO_HM:
+000160 d207      RCALL HIDE_MOUSE
+000161 e000      LDI R16,0
+000162 9300 0074 STS MOUSE_STATUS,R16
+000164 cf0d      RJMP COMMAND_MODE         ;************************************************************************         ;==========================================================================
+         ;*                               Functions                                *
+         ;==========================================================================
+          .include "proc1.asm"
+         ;----------------------------------------------------------------------------
+         ;* this file contains the assemply code for the graphics drawing procedures *
+         ;----------------------------------------------------------------------------
+         
+          PUT_PIXEL:
+         	;this function puts the color R16 in the pixel (XH:XL , YH:YL)
+000165 93bf      	PUSH XH
+000166 93cf      	PUSH YL
+000167 93df      	PUSH YH
+000168 931f      	PUSH R17
+         
+000169 9488      	CLC
+00016a 1fcc      	ROL YL
+00016b 1fdd      	ROL YH
+00016c 9488      	CLC
+00016d 1fcc      	ROL YL
+00016e 1fdd      	ROL YH	
+00016f bbd8      	OUT PORTB,YH
+000170 2bbc      	OR XH,YL	
+000171 bbb5      	OUT PORTC,XH
+000172 68b0      	SBR XH,0b10000000
+         
+          	WAITX:
+000173 9b82      	SBIS PIND,2
+000174 cffe      	RJMP WAITX
+000175 e810      	LDI R17,0b10000000      
+000176 bf15      	OUT MCUCR,R17		;ENABLE EXTERNAL SRAM	
+000177 930c      	ST X,R16
+000178 e010      	LDI R17,0b00000000
+000179 bf15      	OUT MCUCR,R17		;DISABLE EXTERNAL SRAM		
+         
+00017a 911f      	POP R17
+00017b 91df      	POP YH
+00017c 91cf      	POP YL
+00017d 91bf      	POP XH	
+00017e 9508      	RET
+         
+         ;--------------------------------------------------------------------------
+         
+          GET_PIXEL:
+         	;this function gets the color R16 in the pixel (XH:XL , YH:YL)
+00017f 93bf      	PUSH XH
+000180 93cf      	PUSH YL
+000181 93df      	PUSH YH
+000182 931f      	PUSH R17
+         
+000183 9488      	CLC
+000184 1fcc      	ROL YL
+000185 1fdd      	ROL YH
+000186 9488      	CLC
+000187 1fcc      	ROL YL
+000188 1fdd      	ROL YH	
+000189 bbd8      	OUT PORTB,YH
+00018a 2bbc      	OR XH,YL	
+00018b bbb5      	OUT PORTC,XH
+00018c 68b0      	SBR XH,0b10000000
+         
+          	WAITY:
+00018d 9b82      	SBIS PIND,2
+00018e cffe      	RJMP WAITY
+00018f e810      	LDI R17,0b10000000      
+000190 bf15      	OUT MCUCR,R17		;ENABLE EXTERNAL SRAM	
+000191 910c      	LD R16,X
+000192 e010      	LDI R17,0b00000000
+000193 bf15      	OUT MCUCR,R17		;DISABLE EXTERNAL SRAM		
+         
+000194 911f      	POP R17
+000195 91df      	POP YH
+000196 91cf      	POP YL
+000197 91bf      	POP XH	
+000198 9508      	RET
+         ;--------------------------------------------------------------------------
+          CLS:
+         	;this function clears the screen
+000199 2700      	CLR R16
+00019a d001      	RCALL FILL_SCREEN
+00019b 9508      	RET
+         ;--------------------------------------------------------------------------
+          FILL_SCREEN:
+         	;this function fills the screen with the color R16
+         
+00019c 9478      		SEI			;ENABLE (GLOBAL INTERRUPTS)
+00019d e810      		LDI R17,0b10000000      
+00019e bf15      		OUT MCUCR,R17		;ENABLE EXTERNAL SRAM
+         
+00019f 27ee      	CLR R30
+0001a0 27ff      	CLR R31
+         
+0001a1 2711      	CLR R17
+          	FS_LOOP:
+         
+0001a2 bb18      	OUT PORTB,R17
+         
+0001a3 e020      	LDI R18,0b00000000
+0001a4 bb25      	OUT PORTC,R18
+         
+0001a5 68f0      	SBR R31,0b10000000
+          	FS_LOOP1:
+0001a6 9301      	ST Z+,R16
+0001a7 9301      	ST Z+,R16
+0001a8 9301      	ST Z+,R16
+0001a9 9301      	ST Z+,R16
+0001aa 9301      	ST Z+,R16
+0001ab 9301      	ST Z+,R16
+0001ac 9301      	ST Z+,R16
+0001ad 8300      	ST Z,R16
+0001ae 9631      	ADIW ZL,1
+0001af f7b0      	BRCC FS_LOOP1
+         
+0001b0 e820      	LDI R18,0b10000000
+0001b1 bb25      	OUT PORTC,R18
+         
+0001b2 68f0      	SBR R31,0b10000000
+          	FS_LOOP2:
+0001b3 9301      	ST Z+,R16
+0001b4 9301      	ST Z+,R16
+0001b5 9301      	ST Z+,R16
+0001b6 9301      	ST Z+,R16
+0001b7 9301      	ST Z+,R16
+0001b8 9301      	ST Z+,R16
+0001b9 9301      	ST Z+,R16
+0001ba 8300      	ST Z,R16
+0001bb 9631      	ADIW ZL,1
+0001bc f7b0      	BRCC FS_LOOP2
+         
+0001bd 9513      	INC R17
+0001be 3018      	CPI R17,8
+0001bf f711      	BRNE FS_LOOP
+         
+0001c0 94f8      		CLI
+0001c1 e010      		LDI R17,0b00000000
+0001c2 bf15      		OUT MCUCR,R17		;DISABLE EXTERNAL SRAM	
+         
+0001c3 9508      	RET
+         ;---------------------------------------------------------------------------
+          LINE:
+         	;this function draws a line staring from ((XH:XL),(YH:YL))
+         	;to ((R18:R17),(R20:R19)), with color R16
+         
+0001c4 17a1      	CP XL,R17
+0001c5 07b2      	CPC XH,R18
+0001c6 f409      	BRNE NOT_VERTICAL
+0001c7 c05d      	RJMP DRAW_VERTICAL_LINE
+          	NOT_VERTICAL:
+0001c8 17c3      	CP YL,R19
+0001c9 07d4      	CPC YH,R20
+0001ca f409      	BRNE NOT_HORIZONTAL 
+0001cb c064      	RJMP DRAW_HORIZONTAL_LINE
+          	NOT_HORIZONTAL:
+         
+0001cc 1b1a      	SUB R17,XL
+0001cd 0b2b      	SBC R18,XH	;DX=(R18:R17)
+0001ce 1b3c      	SUB R19,YL
+0001cf 0b4d      	SBC R20,YH	;DY=(R20:R19)
+         	
+0001d0 e061      	LDI R22,0x01
+0001d1 e070      	LDI R23,0x00
+0001d2 ff27      	SBRS R18,7	;take the absolute value for DX 
+0001d3 c006      	RJMP DX_POS
+          	DX_NEG:
+0001d4 9510      	COM R17
+0001d5 9520      	COM R18
+0001d6 0f16      	ADD R17,R22	;(R18:R17) = |DX|, R23:R22 = SGN(DX)
+0001d7 1f27      	ADC R18,R23
+0001d8 ef6f      	LDI R22,0xFF
+0001d9 ef7f      	LDI R23,0xFF
+          	DX_POS:
+         
+0001da e081      	LDI R24,0x01
+0001db e090      	LDI R25,0x00
+0001dc ff47      	SBRS R20,7	;take the absolute value for DY 
+0001dd c006      	RJMP DY_POS
+          	DY_NEG:
+0001de 9530      	COM R19
+0001df 9540      	COM R20
+0001e0 0f38      	ADD R19,R24	;(R20:R19) = |DY|, R25:R24 = SGN(DY)
+0001e1 1f49      	ADC R20,R25
+0001e2 ef8f      	LDI R24,0xFF
+0001e3 ef9f      	LDI R25,0xFF
+          	DY_POS:
+         
+0001e4 1713      	CP R17,R19
+0001e5 0724      	CPC R18,R20
+0001e6 f008      	BRLO DX_LOWER
+          	DY_LOWER:
+0001e7 c001      	RJMP CASE_H
+          	DX_LOWER:
+0001e8 c01e      	RJMP CASE_V
+         
+          	CASE_H:		;|DY| < |DX|
+0001e9 2fe1      	MOV R30,R17
+0001ea 2ff2      	MOV R31,R18
+0001eb 2466      	CLR R6
+0001ec 2477      	CLR R7
+0001ed 2e83      	MOV R8,R19
+0001ee 2e94      	MOV R9,R20
+0001ef 24aa      	CLR R10
+0001f0 24bb      	CLR R11		;CALCULATE SLOPE
+0001f1 2ec1      	MOV R12,R17
+0001f2 2ed2      	MOV R13,R18
+0001f3 d2f6      	RCALL DIVIDE
+0001f4 2466      	CLR R6
+0001f5 2477      	CLR R7
+          	CASE_H_LOOP:
+0001f6 df6e      	RCALL PUT_PIXEL
+0001f7 0fa6      	ADD XL,R22
+0001f8 1fb7      	ADC XH,R23
+0001f9 ff97      	SBRS R25,7
+0001fa c005      	RJMP SGN_DY_POS
+          	SGN_DY_NEG:
+0001fb 1862      	SUB R6,R2
+0001fc 0873      	SBC R7,R3
+0001fd 09c4      	SBC YL,R4
+0001fe 09d5      	SBC YH,R5	
+0001ff c004      	RJMP CONT_CASE_H
+          	SGN_DY_POS:
+000200 0c62      	ADD R6,R2
+000201 1c73      	ADC R7,R3
+000202 1dc4      	ADC YL,R4
+000203 1dd5      	ADC YH,R5			
+          	CONT_CASE_H:
+000204 9731      	SBIW R30,1
+000205 f781      	BRNE CASE_H_LOOP	
+000206 9508      	RET
+         
+          	CASE_V:		;|DY| > |DX|
+000207 2fe3      	MOV R30,R19
+000208 2ff4      	MOV R31,R20
+000209 2466      	CLR R6
+00020a 2477      	CLR R7
+00020b 2e81      	MOV R8,R17
+00020c 2e92      	MOV R9,R18
+00020d 24aa      	CLR R10
+00020e 24bb      	CLR R11		;CALCULATE SLOPE
+00020f 2ec3      	MOV R12,R19
+000210 2ed4      	MOV R13,R20
+000211 d2d8      	RCALL DIVIDE
+000212 2466      	CLR R6
+000213 2477      	CLR R7
+          	CASE_V_LOOP:
+000214 df50      	RCALL PUT_PIXEL
+000215 0fc8      	ADD YL,R24
+000216 1fd9      	ADC YH,R25
+000217 ff77      	SBRS R23,7
+000218 c005      	RJMP SGN_DX_POS
+          	SGN_DX_NEG:
+000219 1862      	SUB R6,R2
+00021a 0873      	SBC R7,R3
+00021b 09a4      	SBC XL,R4
+00021c 09b5      	SBC XH,R5	
+00021d c004      	RJMP CONT_CASE_V
+          	SGN_DX_POS:
+00021e 0c62      	ADD R6,R2
+00021f 1c73      	ADC R7,R3
+000220 1da4      	ADC XL,R4
+000221 1db5      	ADC XH,R5			
+          	CONT_CASE_V:
+000222 9731      	SBIW R30,1
+000223 f781      	BRNE CASE_V_LOOP	
+000224 9508      	RET
+         ;		---------------------------------------------------
+          DRAW_VERTICAL_LINE:
+000225 17c3      	CP YL,R19
+000226 07d4      	CPC YH,R20
+000227 f039      	BREQ END_V_LINE
+000228 f008      	BRLO Y_V_OK
+000229 d00e      	RCALL SWAP_POINTS
+          	Y_V_OK:
+00022a 1b3c      	SUB R19,YL
+00022b 0b4d      	SBC R20,YH
+00022c 2f13      	MOV R17,R19
+00022d 2f24      	MOV R18,R20
+00022e d028      	RCALL VLINE
+          	END_V_LINE:
+00022f 9508      	RET
+         ;		---------------------------------------------------
+          DRAW_HORIZONTAL_LINE:
+000230 17a1      	CP XL,R17
+000231 07b2      	CPC XH,R18
+000232 f008      	BRLO X_H_OK
+000233 d004      	RCALL SWAP_POINTS
+          	X_H_OK:
+000234 1b1a      	SUB R17,XL
+000235 0b2b      	SBC R18,XH
+000236 d012      	RCALL HLINE
+000237 9508      	RET
+         ;		---------------------------------------------------
+         
+          SWAP_POINTS:
+000238 93bf      	PUSH XH
+000239 93af      	PUSH XL
+00023a 93df      	PUSH YH
+00023b 93cf      	PUSH YL
+00023c 932f      	PUSH R18
+00023d 931f      	PUSH R17
+00023e 934f      	PUSH R20
+00023f 933f      	PUSH R19
+000240 91cf      	POP YL
+000241 91df      	POP YH
+000242 91af      	POP XL
+000243 91bf      	POP XH
+000244 913f      	POP R19
+000245 914f      	POP R20
+000246 911f      	POP R17
+000247 912f      	POP R18
+000248 9508      	RET
+         ;---------------------------------------------------------------------------
+         
+          HLINE:
+         	;this function draws a horizontal line starting at ([XH:XL],[YH:YL]) 
+         	;of color R16 and length [R18:R17]
+000249 93af      	PUSH XL
+00024a 93bf      	PUSH XH
+00024b 931f      	PUSH R17
+00024c 932f      	PUSH R18
+          	HLINE_LOOP:
+00024d df17      	RCALL PUT_PIXEL
+00024e 9611      	ADIW XL,1
+00024f 5011      	SUBI R17,1
+000250 4020      	SBCI R18,0
+000251 f7d9      	BRNE HLINE_LOOP
+000252 912f      	POP R18
+000253 911f      	POP R17
+000254 91bf      	POP XH
+000255 91af      	POP XL
+000256 9508      	RET
+         ;---------------------------------------------------------------------------
+          VLINE:
+         	;this function draws a vertical line starting at ([XH:XL],[YH:YL]) 
+         	;of color R16 and length [R18:R17]
+000257 93cf      	PUSH YL
+000258 93df      	PUSH YH
+000259 931f      	PUSH R17
+00025a 932f      	PUSH R18
+          	VLINE_LOOP:
+00025b df09      	RCALL PUT_PIXEL
+00025c 9621      	ADIW YL,1
+00025d 5011      	SUBI R17,1
+00025e 4020      	SBCI R18,0
+00025f f7d9      	BRNE VLINE_LOOP
+000260 912f      	POP R18
+000261 911f      	POP R17
+000262 91df      	POP YH
+000263 91cf      	POP YL
+000264 9508      	RET
+         
+         ;---------------------------------------------------------------------------
+          RECT:
+         	;this function draws a rectangle starting at ([XH:XL],[YH:YL])
+         	;of color R16 and height [R18:R17] and length [R20:R19]
+         
+000265 920f      	PUSH R0
+000266 921f      	PUSH R1
+000267 93cf      	PUSH YL
+000268 93df      	PUSH YH
+000269 2e01      	MOV R0,R17
+00026a 2e12      	MOV R1,R18
+00026b 2f13      	MOV R17,R19
+00026c 2f24      	MOV R18,R20
+00026d dfdb      	RCALL HLINE
+00026e 0dc0      	ADD YL,R0
+00026f 1dd1      	ADC YH,R1
+000270 50c1      	SUBI YL,1
+000271 40d0      	SBCI YH,0
+000272 dfd6      	RCALL HLINE
+000273 2d10      	MOV R17,R0
+000274 2d21      	MOV R18,R1
+000275 91df      	POP YH
+000276 91cf      	POP YL
+000277 901f      	POP R1
+000278 900f      	POP R0
+         
+000279 93af      	PUSH XL
+00027a 93bf      	PUSH XH
+00027b dfdb      	RCALL VLINE
+00027c 0fa3      	ADD XL,R19
+00027d 1fb4      	ADC XH,R20
+00027e 50a1      	SUBI XL,1
+00027f 40b0      	SBCI XH,0
+000280 dfd6      	RCALL VLINE
+000281 91bf      	POP XH
+000282 91af      	POP XL
+000283 9508      	RET
+         ;---------------------------------------------------------------------------
+          FILL_RECT:
+         	;this function draws a filled rectangle starting at ([XH:XL],[YH:YL])
+         	;of edge color R21, fill color R16, height [R18:R17] and length [R20:R19]
+         
+000284 9478      		SEI			;ENABLE (GLOBAL INTERRUPTS)
+000285 e8f0      		LDI R31,0b10000000      
+000286 bff5      		OUT MCUCR,R31		;ENABLE EXTERNAL SRAM
+         
+000287 93af      	PUSH XL
+000288 93bf      	PUSH XH
+000289 93cf      	PUSH YL
+00028a 93df      	PUSH YH
+00028b 931f      	PUSH R17
+00028c 932f      	PUSH R18
+         
+          	NEXT_LINE:
+         
+00028d 2fe3      	MOV ZL,R19
+00028e 2ff4      	MOV ZH,R20
+         
+00028f 93af      	PUSH XL
+000290 93bf      	PUSH XH
+000291 93cf      	PUSH YL
+000292 93df      	PUSH YH
+000293 9488      	CLC
+000294 1fcc      	ROL YL
+000295 1fdd      	ROL YH
+000296 9488      	CLC
+000297 1fcc      	ROL YL
+000298 1fdd      	ROL YH
+000299 bbd8      	OUT PORTB,YH
+00029a 2bbc      	OR XH,YL	
+00029b bbb5      	OUT PORTC,XH
+00029c 68b0      	SBR XH,0b10000000
+          	DRAW_HLINE:	
+00029d 930d      	ST X+,R16
+00029e 9731      	SBIW ZL,1
+00029f f7e9      	BRNE DRAW_HLINE		
+0002a0 91df      	POP YH
+0002a1 91cf      	POP YL
+0002a2 91bf      	POP XH
+0002a3 91af      	POP XL
+         
+0002a4 9621      	ADIW YL,1
+0002a5 5011      	SUBI R17,1
+0002a6 4020      	SBCI R18,0
+0002a7 f729      	BRNE NEXT_LINE
+         
+0002a8 912f      	POP R18
+0002a9 911f      	POP R17
+0002aa 91df      	POP YH
+0002ab 91cf      	POP YL
+0002ac 91bf      	POP XH
+0002ad 91af      	POP XL
+0002ae 2f05       	MOV R16,R21
+         
+0002af 94f8      		CLI
+0002b0 e0f0      		LDI R31,0b00000000
+0002b1 bff5      		OUT MCUCR,R31		;DISABLE EXTERNAL SRAM	
+         
+0002b2 dfb2      	RCALL RECT
+0002b3 9508      	RET
+         
+         ;---------------------------------------------------------------------------
+          .include "copy2.asm"
+          COPY_BLOCK:
+         	;this function copy the block starting at ([XH:XL],[YH:YL]) 
+         	;and with length [R16] and height [R17] to new position ([R19:R18],[R21:R20])
+         	
+         	;test motion direction
+0002b4 9478      		SEI			;ENABLE (GLOBAL INTERRUPTS)
+0002b5 e860      		LDI R22,0b10000000      
+0002b6 bf65      		OUT MCUCR,R22		;ENABLE EXTERNAL SRAM
+0002b7 172a      	CP R18,XL
+0002b8 073b      	CPC R19,XH
+0002b9 f419      	BRNE X_NOT_EQ
+          	X_EQ:
+0002ba 174c      	CP R20,YL
+0002bb 075d      	CPC R21,YH
+0002bc f021      	BREQ END_COPY
+          	X_NOT_EQ:
+0002bd 174c      	CP R20,YL
+0002be 075d      	CPC R21,YH
+0002bf f028      	BRLO COPY_UPPER
+0002c0 c00e      	RJMP COPY_BOTTOM
+         
+          	END_COPY:
+0002c1 94f8      		CLI
+0002c2 e060      		LDI R22,0b00000000
+0002c3 bf65      		OUT MCUCR,R22		;DISABLE EXTERNAL SRAM	
+0002c4 9508      	RET
+         
+         ;----------------------------------------------------
+         
+          	COPY_UPPER:
+0002c5 e081      	LDI R24,1
+0002c6 e090      	LDI R25,0
+          	COPY_UPPERX:
+0002c7 d016      	RCALL READ_LINE
+0002c8 d030      	RCALL WRITE_LINE
+0002c9 9621      	ADIW YL,1
+0002ca 0f48      	ADD R20,R24
+0002cb 1f59      	ADC R21,R25
+0002cc 951a      	DEC R17
+0002cd f7c9      	BRNE COPY_UPPERX
+0002ce cff2      	RJMP END_COPY
+         
+          	COPY_BOTTOM:
+0002cf 2f81      	MOV R24,R17
+0002d0 e090      	LDI R25,0
+0002d1 9701      	SBIW R24,1
+0002d2 0fc8      	ADD YL,R24
+0002d3 1fd9      	ADC YH,R25
+0002d4 0f48      	ADD R20,R24
+0002d5 1f59      	ADC R21,R25
+          	COPY_BOTTOMX:
+0002d6 d007      	RCALL READ_LINE
+0002d7 d021      	RCALL WRITE_LINE
+0002d8 9721      	SBIW YL,1
+0002d9 5041      	SUBI R20,1
+0002da 4050      	SBCI R21,0
+0002db 951a      	DEC R17
+0002dc f7c9      	BRNE COPY_BOTTOMX
+0002dd cfe3      	RJMP END_COPY
+         
+         
+         
+         
+         ;**************************************************************************
+          READ_LINE:
+         	; this function reads the line starting from [X,Y] with length R16
+         	; and writes it to Z buffer
+         
+0002de e0e0      	LDI ZL,0x00
+0002df e0f1      	LDI ZH,0x01
+0002e0 93af      	PUSH XL
+0002e1 93bf      	PUSH XH
+0002e2 93cf      	PUSH YL
+0002e3 93df      	PUSH YH
+0002e4 930f      	PUSH R16
+0002e5 9488      	CLC
+0002e6 1fcc      	ROL YL
+0002e7 1fdd      	ROL YH
+0002e8 9488      	CLC
+0002e9 1fcc      	ROL YL
+0002ea 1fdd      	ROL YH	
+0002eb bbd8      	OUT PORTB,YH
+0002ec 2bbc      	OR XH,YL	
+0002ed bbb5      	OUT PORTC,XH
+0002ee 68b0      	SBR XH,0b10000000	
+          	READ_LINE_LOOP:
+0002ef 916d      	LD R22,X+
+0002f0 9361      	ST Z+,R22
+0002f1 950a      	DEC R16
+0002f2 f7e1      	BRNE READ_LINE_LOOP
+0002f3 910f      	POP R16
+0002f4 91df      	POP YH
+0002f5 91cf      	POP YL
+0002f6 91bf      	POP XH	
+0002f7 91af      	POP XL	
+0002f8 9508      	RET
+         
+         ;**************************************************************************
+          WRITE_LINE:
+         	; this function writes a line from the Z buufer with length R16
+         	; and writes it to [(R19:R18),(R21:R20)] 
+         
+0002f9 e0e0      	LDI ZL,0x00
+0002fa e0f1      	LDI ZH,0x01
+0002fb 93af      	PUSH XL
+0002fc 93bf      	PUSH XH
+0002fd 93cf      	PUSH YL
+0002fe 93df      	PUSH YH
+0002ff 930f      	PUSH R16
+000300 2fa2      	MOV XL,R18
+000301 2fb3      	MOV XH,R19
+000302 2fc4      	MOV YL,R20
+000303 2fd5      	MOV YH,R21
+000304 9488      	CLC
+000305 1fcc      	ROL YL
+000306 1fdd      	ROL YH
+000307 9488      	CLC
+000308 1fcc      	ROL YL
+000309 1fdd      	ROL YH	
+00030a bbd8      	OUT PORTB,YH
+00030b 2bbc      	OR XH,YL	
+00030c bbb5      	OUT PORTC,XH
+00030d 68b0      	SBR XH,0b10000000	
+          	WRITE_LINE_LOOP:
+00030e 9161      	LD R22,Z+
+00030f 936d      	ST X+,R22
+000310 950a      	DEC R16
+000311 f7e1      	BRNE WRITE_LINE_LOOP
+000312 910f      	POP R16
+000313 91df      	POP YH
+000314 91cf      	POP YL
+000315 91bf      	POP XH	
+000316 91af      	POP XL	
+000317 9508      	RET
+         
+         
+         ;**************************************************************************
+         ;---------------------------------------------------------------------------
+          .include "mouse.asm"
+          SHOW_MOUSE:
+         	;this function shows the mouse cursor on the screen
+         
+000318 9478      		SEI			;ENABLE (GLOBAL INTERRUPTS)
+000319 e810      		LDI R17,0b10000000      
+00031a bf15      		OUT MCUCR,R17		;ENABLE EXTERNAL SRAM
+         
+00031b 91c0 0072 	LDS YL,MOUSE_YL
+00031d 91d0 0073 	LDS YH,MOUSE_YH
+         
+         	;copy the last image into the RAM
+00031f e8e0      	LDI ZL,0x80
+000320 e0f0      	LDI ZH,0x00
+000321 e120      	LDI R18,16
+         
+          	VERT_LOOP:
+000322 e018      	LDI R17,8
+000323 91a0 0070 	LDS XL,MOUSE_XL
+000325 91b0 0071 	LDS XH,MOUSE_XH
+000327 93bf      	PUSH XH
+000328 93cf      	PUSH YL
+000329 93df      	PUSH YH
+00032a 9488      	CLC
+00032b 1fcc      	ROL YL
+00032c 1fdd      	ROL YH
+00032d 9488      	CLC
+00032e 1fcc      	ROL YL
+00032f 1fdd      	ROL YH	
+000330 bbd8      	OUT PORTB,YH
+000331 2bbc      	OR XH,YL	
+000332 bbb5      	OUT PORTC,XH
+000333 68b0      	SBR XH,0b10000000
+         
+          	HORIZ_LOOP:
+000334 910d      	LD R16,X+
+000335 9301      	ST Z+,R16
+000336 951a      	DEC R17
+000337 f7e1      	BRNE HORIZ_LOOP
+         
+000338 91df      	POP YH
+000339 91cf      	POP YL
+00033a 91bf      	POP XH	
+00033b 9621      	ADIW YL,1
+00033c 952a      	DEC R18
+00033d f721      	BRNE VERT_LOOP
+         
+         ;			------------------------------
+00033e 91c0 0072 	LDS YL,MOUSE_YL
+000340 91d0 0073 	LDS YH,MOUSE_YH
+         	;copy the mouse image into the VRAM
+000342 e8e0      	LDI ZL,0x80
+000343 e0ff      	LDI ZH,0x0F
+000344 e120      	LDI R18,16
+         
+          	VERT_LOOP1:
+000345 e018      	LDI R17,8
+000346 91a0 0070 	LDS XL,MOUSE_XL
+000348 91b0 0071 	LDS XH,MOUSE_XH
+00034a 93bf      	PUSH XH
+00034b 93cf      	PUSH YL
+00034c 93df      	PUSH YH
+00034d 9488      	CLC
+00034e 1fcc      	ROL YL
+00034f 1fdd      	ROL YH
+000350 9488      	CLC
+000351 1fcc      	ROL YL
+000352 1fdd      	ROL YH	
+000353 bbd8      	OUT PORTB,YH
+000354 2bbc      	OR XH,YL	
+000355 bbb5      	OUT PORTC,XH
+000356 68b0      	SBR XH,0b10000000
+         
+          	HORIZ_LOOP1:
+000357 9105      	LPM R16,Z+
+000358 3000      	CPI R16,0
+000359 f009      	BREQ NO_DRAW
+00035a 930c      	ST X,R16
+          	NO_DRAW:
+00035b 9611      	ADIW XL,1
+00035c 951a      	DEC R17
+00035d f7c9      	BRNE HORIZ_LOOP1
+         
+00035e 91df      	POP YH
+00035f 91cf      	POP YL
+000360 91bf      	POP XH	
+000361 9621      	ADIW YL,1
+000362 952a      	DEC R18
+000363 f709      	BRNE VERT_LOOP1
+         	
+000364 94f8      		CLI
+000365 e010      		LDI R17,0b00000000
+000366 bf15      		OUT MCUCR,R17		;DISABLE EXTERNAL SRAM	
+         
+000367 9508      	RET
+         	
+         	
+         ;---------------------------------------------------------------------------
+          HIDE_MOUSE:
+         	;this function hides the mouse cursor from the screen
+         
+000368 9478      		SEI			;ENABLE (GLOBAL INTERRUPTS)
+000369 e810      		LDI R17,0b10000000      
+00036a bf15      		OUT MCUCR,R17		;ENABLE EXTERNAL SRAM
+         
+00036b 91c0 0072 	LDS YL,MOUSE_YL
+00036d 91d0 0073 	LDS YH,MOUSE_YH
+         
+         	;copy the last image into the VRAM
+00036f e8e0      	LDI ZL,0x80
+000370 e0f0      	LDI ZH,0x00
+000371 e120      	LDI R18,16
+         
+          	VERT_LOOP2:
+000372 e018      	LDI R17,8
+000373 91a0 0070 	LDS XL,MOUSE_XL
+000375 91b0 0071 	LDS XH,MOUSE_XH
+000377 93bf      	PUSH XH
+000378 93cf      	PUSH YL
+000379 93df      	PUSH YH
+00037a 9488      	CLC
+00037b 1fcc      	ROL YL
+00037c 1fdd      	ROL YH
+00037d 9488      	CLC
+00037e 1fcc      	ROL YL
+00037f 1fdd      	ROL YH	
+000380 bbd8      	OUT PORTB,YH
+000381 2bbc      	OR XH,YL	
+000382 bbb5      	OUT PORTC,XH
+000383 68b0      	SBR XH,0b10000000	
+         
+          	HORIZ_LOOP2:
+000384 9101      	LD R16,Z+
+000385 930d      	ST X+,R16
+000386 951a      	DEC R17
+000387 f7e1      	BRNE HORIZ_LOOP2
+         
+000388 91df      	POP YH
+000389 91cf      	POP YL
+00038a 91bf      	POP XH
+00038b 9621      	ADIW YL,1
+00038c 952a      	DEC R18
+00038d f721      	BRNE VERT_LOOP2
+         	
+00038e 94f8      		CLI
+00038f e010      		LDI R17,0b00000000
+000390 bf15      		OUT MCUCR,R17		;DISABLE EXTERNAL SRAM	
+000391 9508      	RET
+         	
+         ;---------------------------------------------------------------------------
+          UPDATE_MOUSE:
+         	;this function updates the position of the mouse cursor 
+         	;into the new position ([R21:R20],[R23:R22])
+000392 dfd5      	RCALL HIDE_MOUSE
+000393 2fa4      	MOV XL,R20
+000394 2fb5      	MOV XH,R21
+000395 2fc6      	MOV YL,R22
+000396 2fd7      	MOV YH,R23
+000397 93a0 0070 	STS MOUSE_XL,XL
+000399 93b0 0071 	STS MOUSE_XH,XH
+00039b 93c0 0072 	STS MOUSE_YL,YL
+00039d 93d0 0073 	STS MOUSE_YH,YH
+00039f df78      	RCALL SHOW_MOUSE
+0003a0 9508      	RET
+         
+         ;---------------------------------------------------------------------------
+          ADJUST_MOUSE:
+         	
+0003a1 91a0 0070 	LDS XL,MOUSE_XL
+0003a3 91b0 0071 	LDS XH,MOUSE_XH
+0003a5 e7c8      	LDI YL,0x78
+0003a6 e0d2      	LDI YH,0x02
+0003a7 17ac      	CP XL,YL
+0003a8 07bd      	CPC XH,YH
+0003a9 f020      	BRLO X_MOUSE_OK
+0003aa 93c0 0070 	STS MOUSE_XL,YL
+0003ac 93d0 0071 	STS MOUSE_XH,YH
+         
+          	X_MOUSE_OK:
+0003ae 91c0 0072 	LDS YL,MOUSE_YL
+0003b0 91d0 0073 	LDS YH,MOUSE_YH
+0003b2 edaf      	LDI XL,0xDF
+0003b3 e0b1      	LDI XH,0x01
+0003b4 17ca      	CP YL,XL
+0003b5 07db      	CPC YH,XH
+0003b6 f020      	BRLO Y_MOUSE_OK
+0003b7 93a0 0072 	STS MOUSE_YL,XL
+0003b9 93b0 0073 	STS MOUSE_YH,XH
+         	
+          	Y_MOUSE_OK:
+0003bb 9508      	RET
+         ;---------------------------------------------------------------------------
+          .include "chr.asm"
+         
+          PUT_CHAR:
+         	; This Function Puts a character [R16] at position (XPOS,YPOS)
+         	; Relative to the text area
+         
+0003bc 770f      	ANDI R16,0b01111111
+         
+0003bd 9110 0063 	LDS R17,CHAR_MODE
+0003bf 7013      	ANDI R17,0x03
+0003c0 3010      	CPI R17,0
+0003c1 f029      	BREQ FONT1
+0003c2 3011      	CPI R17,1
+0003c3 f069      	BREQ FONT2
+0003c4 3012      	CPI R17,2
+0003c5 f0a9      	BREQ FONT3
+0003c6 c01e      	RJMP FONT4
+         
+          	FONT1:
+         	;print the character bitmap into the VRAM
+0003c7 e018      	LDI R17,8
+0003c8 9f01      	MUL R16,R17		;R1:R0 = R16 * R17
+0003c9 e11c      	LDI R17,0x1C		;select the small character bitmap 
+0003ca 0e11      	ADD R1,R17
+0003cb 2de0      	MOV R30,R0
+0003cc 2df1      	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+0003cd e018      	LDI R17,8
+0003ce e026      	LDI R18,6
+0003cf d01f      	RCALL DRAW_CHAR1
+0003d0 9508      	RET
+         	
+          	FONT2:
+         	;print the character bitmap into the VRAM
+0003d1 e018      	LDI R17,8
+0003d2 9f01      	MUL R16,R17		;R1:R0 = R16 * R17
+0003d3 e118      	LDI R17,0x18		;select the MEDIUM character bitmap
+0003d4 0e11      	ADD R1,R17
+0003d5 2de0      	MOV R30,R0
+0003d6 2df1      	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+0003d7 e018      	LDI R17,8
+0003d8 e028      	LDI R18,8
+0003d9 d015      	RCALL DRAW_CHAR1
+0003da 9508      	RET
+          
+          	FONT3:
+         	;print the character bitmap into the VRAM
+0003db e110      	LDI R17,16
+0003dc 9f01      	MUL R16,R17		;R1:R0 = R16 * R17
+0003dd e110      	LDI R17,0x10		;select the large character bitmap  
+0003de 0e11      	ADD R1,R17
+0003df 2de0      	MOV R30,R0
+0003e0 2df1      	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+0003e1 e110      	LDI R17,16
+0003e2 e028      	LDI R18,8
+0003e3 d036      	RCALL DRAW_CHAR2
+0003e4 9508      	RET
+         
+          	FONT4:
+         	;print the character bitmap into the VRAM
+0003e5 e110      	LDI R17,16
+0003e6 9f01      	MUL R16,R17		;R1:R0 = R16 * R17
+0003e7 e110      	LDI R17,0x10		;select the large character bitmap  
+0003e8 0e11      	ADD R1,R17
+0003e9 2de0      	MOV R30,R0
+0003ea 2df1      	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+0003eb e210      	LDI R17,32
+0003ec e120      	LDI R18,16
+0003ed d055      	RCALL DRAW_CHAR3
+0003ee 9508      	RET
+         	
+         ;---------------------------------------------------------------
+         
+          	DRAW_CHAR1:
+         	;this function draws a character with dimensions R17(H) x R18(L)
+         	;with bitmap data starting at Z pointer	
+         
+0003ef d0ae      	RCALL PROCESS_CURSOR	
+0003f0 d0e4      	RCALL ABSOLUTE_CURSOR
+0003f1 2f31      	MOV R19,R17
+0003f2 2f42      	MOV R20,R18
+0003f3 2f5c      	MOV R21,YL
+0003f4 2f6d      	MOV R22,YH	;backup values	
+         
+          	LOOP_H:			
+0003f5 2fc5      	MOV YL,R21
+0003f6 2fd6      	MOV YH,R22
+0003f7 9005      	LPM R0,Z+
+          	LOOP_V:
+0003f8 9407      	ROR R0	 
+0003f9 f040      	BRCS BIT_1
+          	BIT_0:
+0003fa 9100 0063 	LDS R16,CHAR_MODE
+0003fc fd02      	SBRC R16,2
+0003fd c007      	RJMP CONT_CHAR
+0003fe 9100 0065 	LDS R16,BACKCOLOR
+000400 dd64      	RCALL PUT_PIXEL
+000401 c003      	RJMP CONT_CHAR
+          	BIT_1:
+000402 9100 0064 	LDS R16,FORECOLOR
+000404 dd60      	RCALL PUT_PIXEL
+          	CONT_CHAR:
+000405 9621      	ADIW YL,1
+000406 951a      	DEC R17
+000407 f781      	BRNE LOOP_V
+000408 2f13      	MOV R17,R19
+000409 9611      	ADIW XL,1
+00040a 952a      	DEC R18
+00040b f749      	BRNE LOOP_H	
+00040c 2f24      	MOV R18,R20
+         
+         	;change the values of xpos and ypos
+00040d 2733      	CLR R19
+00040e 91a0 0066 	LDS XL,XPOSL
+000410 91b0 0067 	LDS XH,XPOSH
+000412 0fa2      	ADD XL,R18	;R18=number of horiz. pixels
+000413 1fb3      	ADC XH,R19	;R19=0   	
+000414 93a0 0066 	STS XPOSL,XL
+000416 93b0 0067 	STS XPOSH,XH
+         
+000418 d085      	RCALL PROCESS_CURSOR
+000419 9508      	RET
+         
+         
+         ;			--------------------------------------------	
+         
+          	DRAW_CHAR2:
+         	
+00041a d083      	RCALL PROCESS_CURSOR
+00041b d0b9      	RCALL ABSOLUTE_CURSOR
+00041c 2f5c      	MOV R21,YL
+00041d 2f6d      	MOV R22,YH	;backup values	
+         	
+          	LOOP_H16:			
+00041e 2fc5      	MOV YL,R21
+00041f 2fd6      	MOV YH,R22
+         	
+000420 9005      	LPM R0,Z+
+000421 9015      	LPM R1,Z+
+          	LOOP_V16:
+000422 9417      	ROR R1
+000423 9407      	ROR R0
+000424 f040      	BRCS BIT_1_16
+          	BIT_0_16:
+000425 9100 0063 	LDS R16,CHAR_MODE
+000427 fd02      	SBRC R16,2
+000428 c007      	RJMP CONT_CHAR16
+000429 9100 0065 	LDS R16,BACKCOLOR
+00042b dd39      	RCALL PUT_PIXEL
+00042c c003      	RJMP CONT_CHAR16
+          	BIT_1_16:
+00042d 9100 0064 	LDS R16,FORECOLOR
+00042f dd35      	RCALL PUT_PIXEL
+          	CONT_CHAR16:
+000430 9621      	ADIW YL,1
+000431 951a      	DEC R17
+000432 f779      	BRNE LOOP_V16
+000433 e110      	LDI R17,16
+         
+000434 9611      	ADIW XL,1
+000435 952a      	DEC R18
+000436 f739      	BRNE LOOP_H16
+000437 e028      	LDI R18,8
+         
+         	;change the values of xpos and ypos
+000438 91a0 0066 	LDS XL,XPOSL
+00043a 91b0 0067 	LDS XH,XPOSH
+00043c 9618      	ADIW XL,8
+00043d 93a0 0066 	STS XPOSL,XL
+00043f 93b0 0067 	STS XPOSH,XH
+         
+000441 d05c      	RCALL PROCESS_CURSOR
+000442 9508      	RET
+         ;			--------------------------------------------	
+         
+          	DRAW_CHAR3:
+         
+000443 d05a      	RCALL PROCESS_CURSOR	
+000444 d090      	RCALL ABSOLUTE_CURSOR
+000445 e110      	LDI R17,16
+000446 e028      	LDI R18,8
+         
+000447 2f5c      	MOV R21,YL
+000448 2f6d      	MOV R22,YH	;backup values	
+         	
+          	LOOP_H16_2:			
+000449 2fc5      	MOV YL,R21
+00044a 2fd6      	MOV YH,R22
+00044b e110      	LDI R17,16
+         
+00044c 9005      	LPM R0,Z+
+00044d 9015      	LPM R1,Z+
+          	LOOP_V16_2:
+00044e 9417      	ROR R1
+00044f 9407      	ROR R0
+000450 f080      	BRCS BIT_1_16_2
+          	BIT_0_16_2:
+000451 9100 0063 	LDS R16,CHAR_MODE
+000453 ff02      	SBRS R16,2
+000454 c002      	RJMP LARGE_FONT_OPQ
+000455 9621      	ADIW YL,1
+000456 c013      	RJMP CONT_CHAR16_2
+          	LARGE_FONT_OPQ:
+000457 9100 0065 	LDS R16,BACKCOLOR
+000459 dd0b      		RCALL PUT_PIXEL
+00045a 9611      		ADIW XL,1
+00045b dd09      		RCALL PUT_PIXEL
+00045c 9621      		ADIW YL,1
+00045d dd07      		RCALL PUT_PIXEL
+00045e 9711      		SBIW XL,1
+00045f dd05      		RCALL PUT_PIXEL
+000460 c009      	RJMP CONT_CHAR16_2
+          	BIT_1_16_2:
+000461 9100 0064 	LDS R16,FORECOLOR
+000463 dd01      		RCALL PUT_PIXEL
+000464 9611      		ADIW XL,1
+000465 dcff      		RCALL PUT_PIXEL
+000466 9621      		ADIW YL,1
+000467 dcfd      		RCALL PUT_PIXEL
+000468 9711      		SBIW XL,1
+000469 dcfb      		RCALL PUT_PIXEL
+          	CONT_CHAR16_2:
+00046a 9621      	ADIW YL,1
+00046b 951a      	DEC R17
+00046c f709      	BRNE LOOP_V16_2
+         
+00046d 9612      	ADIW XL,2
+00046e 952a      	DEC R18
+00046f f6c9      	BRNE LOOP_H16_2
+         
+         	;change the values of xpos and ypos
+000470 91a0 0066 	LDS XL,XPOSL
+000472 91b0 0067 	LDS XH,XPOSH
+000474 9650      	ADIW XL,16
+000475 93a0 0066 	STS XPOSL,XL
+000477 93b0 0067 	STS XPOSH,XH
+         
+000479 e210      	LDI R17,32
+00047a e120      	LDI R18,16
+00047b d022      	RCALL PROCESS_CURSOR
+00047c 9508      	RET	
+         ;---------------------------------------------------------------
+         
+          TEXT_AREA:
+         	;this function sets the text area dimensions
+         	;text area starts at (X,Y) with length(R17:R16) and height(R19:R18)
+         
+00047d 93a0 0075 	STS TXT_XL_1,XL
+00047f 93b0 0076 	STS TXT_XH_1,XH
+000481 93c0 0077 	STS TXT_YL_1,YL
+000483 93d0 0078 	STS TXT_YH_1,YH
+         
+000485 0fa0      	ADD XL,R16
+000486 1fb1      	ADC XH,R17
+000487 0fc2      	ADD YL,R18
+000488 1fd3      	ADC YH,R19
+         
+000489 93a0 0079 	STS TXT_XL_2,XL
+00048b 93b0 007a 	STS TXT_XH_2,XH
+00048d 93c0 007b 	STS TXT_YL_2,YL
+00048f 93d0 007c 	STS TXT_YH_2,YH
+         	 
+000491 9508      RET
+         
+         ;---------------------------------------------------------------
+         
+          CURSOR_POSITION:
+000492 2711      CLR R17
+000493 2722      CLR R18
+000494 93a0 0066 STS XPOSL,XL
+000496 93b0 0067 STS XPOSH,XH
+000498 93c0 0068 STS YPOSL,YL
+00049a 93d0 0069 STS YPOSH,YH
+00049c d001      RCALL PROCESS_CURSOR
+00049d 9508      RET
+         
+         ;---------------------------------------------------------------
+         
+          PROCESS_CURSOR:
+         ;process cursor position here 
+         ;the maximum txt width is R18 
+         ;and maximium height is R17
+         
+00049e 91a0 0066 LDS XL,XPOSL
+0004a0 91b0 0067 LDS XH,XPOSH
+0004a2 91c0 0068 LDS YL,YPOSL
+0004a4 91d0 0069 LDS YH,YPOSH
+         
+0004a6 9000 0075 LDS R0,TXT_XL_1
+0004a8 9010 0076 LDS R1,TXT_XH_1
+0004aa 9020 0077 LDS R2,TXT_YL_1
+0004ac 9030 0078 LDS R3,TXT_YH_1
+0004ae 9040 0079 LDS R4,TXT_XL_2
+0004b0 9050 007a LDS R5,TXT_XH_2
+0004b2 9060 007b LDS R6,TXT_YL_2
+0004b4 9070 007c LDS R7,TXT_YH_2
+         
+0004b6 2744      CLR R20
+0004b7 2755      CLR R21
+0004b8 1a42      SUB R4,R18
+0004b9 0a54      SBC R5,R20
+0004ba 1a61      SUB R6,R17
+0004bb 0a75      SBC R7,R21
+         
+0004bc 0e0a      ADD R0,XL
+0004bd 1e1b      ADC R1,XH
+0004be 1440      CP R4,R0
+0004bf 0451      CPC R5,R1
+0004c0 f420      BRSH X_CURSOR_OK
+0004c1 27aa      CLR XL
+0004c2 27bb      CLR XH
+0004c3 0fc1      ADD YL,R17
+0004c4 1fdb      ADC YH,XH
+          X_CURSOR_OK:
+         
+0004c5 0e2c      ADD R2,YL
+0004c6 1e3d      ADC R3,YH
+0004c7 1462      CP R6,R2
+0004c8 0473      CPC R7,R3
+0004c9 f410      BRSH Y_CURSOR_OK
+0004ca 27cc      CLR YL
+0004cb 27dd      CLR YH
+          Y_CURSOR_OK:
+         
+0004cc 93a0 0066 STS XPOSL,XL
+0004ce 93b0 0067 STS XPOSH,XH
+0004d0 93c0 0068 STS YPOSL,YL
+0004d2 93d0 0069 STS YPOSH,YH
+0004d4 9508      RET
+         
+         ;---------------------------------------------------------------
+         
+          ABSOLUTE_CURSOR:
+         ;this function calaculates the absolute cursor position to X and Y
+0004d5 9000 0075 LDS R0,TXT_XL_1
+0004d7 9010 0076 LDS R1,TXT_XH_1	;load text area start
+0004d9 9020 0077 LDS R2,TXT_YL_1
+0004db 9030 0078 LDS R3,TXT_YH_1	
+0004dd 91a0 0066 LDS XL,XPOSL
+0004df 91b0 0067 LDS XH,XPOSH	;load relative cursor position
+0004e1 91c0 0068 LDS YL,YPOSL
+0004e3 91d0 0069 LDS YH,YPOSH
+0004e5 0da0      ADD XL,R0
+0004e6 1db1      ADC XH,R1	;calculate the absolute cursor position
+0004e7 0dc2      ADD YL,R2
+0004e8 1dd3      ADC YH,R3
+0004e9 9508      RET
+         
+         ;---------------------------------------------------------------
+         
+         ;---------------------------------------------------------------------------
+          .include "math.asm"
+          DIVIDE:
+         
+         	; this function makes the following operation
+         	; (R5:R4:R3:R2) = (R9:R8:R7:R6) / (R13:R12)
+         
+0004ea e250      LDI R21,32
+         
+          div8:
+0004eb 2422      CLR R2	 	; 
+0004ec 2433      CLR R3	 	; clear result 
+0004ed 2444      CLR R4
+0004ee 2455      CLR R5
+         
+0004ef 24aa      CLR R10
+0004f0 24bb      CLR R11
+          div8a:
+0004f1 9488      CLC 		; clear carry-bit
+0004f2 1c66      ROL R6 	
+0004f3 1c77      ROL R7	 	 
+0004f4 1c88      ROL R8
+0004f5 1c99      ROL R9
+0004f6 1caa      ROL R10
+0004f7 1cbb      ROL R11
+         
+0004f8 14ac      CP R10,R12
+0004f9 04bd      CPC R11,R13	
+0004fa f020      brcs div8c 	; jump over subtraction, if smaller
+          div8b:
+0004fb 18ac      sub R10,R12
+0004fc 08bd      SBC R11,R13	
+0004fd 9408      SEC 		; set carry-bit, result is a 1
+0004fe c001      rjmp div8d 	; jump to shift of the result bit
+          div8c:
+0004ff 9488      CLC 		; clear carry-bit, resulting bit is a 0
+          div8d:
+000500 1c22      ROL R2	 	; rotate carry-bit into result registers
+000501 1c33      ROL R3
+000502 1c44      ROL R4
+000503 1c55      ROL R5
+000504 955a      DEC R21
+000505 f759      BRNE div8a
+         
+         
+000506 9508      RET
+         ;---------------------------------------------------------------------------
+         ;---------------------------------------------------------------------------
+          .include "proc2.asm"
+          DELAY_SMALL:
+000507 930f      	PUSH R16 
+000508 e000      	LDI R16,0x00
+          	DEL10:
+000509 0000      	NOP
+00050a 0000      	NOP
+00050b 0000      	NOP
+00050c 0000      	NOP
+00050d 0000      	NOP
+00050e 0000      	NOP
+00050f 0000      	NOP
+000510 0000      	NOP
+000511 0000      	NOP
+000512 0000      	NOP
+000513 0000      	NOP
+000514 0000      	NOP
+000515 0000      	NOP
+000516 0000      	NOP
+000517 0000      	NOP
+000518 950a      	DEC R16
+000519 f779      	BRNE DEL10
+00051a 910f      	POP  R16
+00051b 9508      	RET
+         
+          DELAY:
+00051c 930f      	PUSH R16
+00051d 931f      	PUSH R17
+00051e e010      	LDI R17,0
+          	DEL2:
+00051f e000      	LDI R16,0
+          	DEL1:
+000520 0000      	NOP
+000521 0000      	NOP
+000522 0000      	NOP
+000523 0000      	NOP
+000524 0000      	NOP
+000525 0000      	NOP
+000526 0000      	NOP
+000527 0000      	NOP
+000528 0000      	NOP
+000529 0000      	NOP
+00052a 950a      	DEC R16
+00052b f7a1      	BRNE DEL1
+00052c 951a      	DEC R17
+00052d f789      	BRNE DEL2
+00052e 911f      	POP R17
+00052f 910f      	POP R16
+000530 9508      	RET         ;---------------------------------------------------------------------------
+         
+         
+         
+         
+         ;===========================================================================
+         ;*			INTURRUPT SERVICE ROUTINE			   *
+         ;===========================================================================
+          INT0_ISR:
+000531 931f      	PUSH R17	
+000532 e010      	LDI R17,0
+000533 bf15      	OUT MCUCR,R17		;DISABLE EXTERNAL SRAM
+          	WAIT:
+000534 9b82      	SBIS PIND,2
+000535 cffe      	RJMP WAIT	
+000536 e810      	LDI R17,0b10000000      
+000537 bf15      	OUT MCUCR,R17		;ENABLE EXTERNAL SRAM
+000538 911f      	POP R17
+000539 9518      	RETI
+         
+         ;===========================================================================
+         ;*				    DATA				   *
+         ;===========================================================================
+          .include "dat.asm"
+         ;data count for commands
+         
+          .org 0x07A0
+         ;	zero group
+          .DB 0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+0007a0 0100
+0007a1 0000
+0007a2 0000
+0007a3 0000
+0007a4 0000
+0007a5 0000
+0007a6 0000
+0007a7 0000
+         ;	one group
+          .org 0x07A8
+          .DB 5,9,9,10,5,255,10,0,0,0,0,0,0,0,0,0
+0007a8 0905
+0007a9 0a09
+0007aa ff05
+0007ab 000a
+0007ac 0000
+0007ad 0000
+0007ae 0000
+0007af 0000
+         ;	two group
+          .org 0x07B0
+          .DB 1,4,1,1,1,8,0,0,0,0,0,0,0,0,0,0
+0007b0 0401
+0007b1 0101
+0007b2 0801
+0007b3 0000
+0007b4 0000
+0007b5 0000
+0007b6 0000
+0007b7 0000
+         ;	three group
+          .org 0x07B8
+          .DB 4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+0007b8 0004
+0007b9 0000
+0007ba 0000
+0007bb 0000
+0007bc 0000
+0007bd 0000
+0007be 0000
+0007bf 0000
+         
+         ;--------------------------------------
+         
+          .org 0x07C0
+          .DB 0x55,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+0007c0 0055
+0007c1 0000
+0007c2 0000
+0007c3 0000
+          .DB 0x55,0x55,0x00,0x00,0x00,0x00,0x00,0x00
+0007c4 5555
+0007c5 0000
+0007c6 0000
+0007c7 0000
+          .DB 0x55,0xFF,0x55,0x00,0x00,0x00,0x00,0x00
+0007c8 ff55
+0007c9 0055
+0007ca 0000
+0007cb 0000
+          .DB 0x55,0xFF,0xFF,0x55,0x00,0x00,0x00,0x00
+0007cc ff55
+0007cd 55ff
+0007ce 0000
+0007cf 0000
+          .DB 0x55,0xFF,0xFF,0xFF,0x55,0x00,0x00,0x00
+0007d0 ff55
+0007d1 ffff
+0007d2 0055
+0007d3 0000
+          .DB 0x55,0xFF,0xFF,0xFF,0xFF,0x55,0x00,0x00
+0007d4 ff55
+0007d5 ffff
+0007d6 55ff
+0007d7 0000
+          .DB 0x55,0xFF,0xFF,0xFF,0xFF,0xFF,0x55,0x00
+0007d8 ff55
+0007d9 ffff
+0007da ffff
+0007db 0055
+          .DB 0x55,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x55
+0007dc ff55
+0007dd ffff
+0007de ffff
+0007df 55ff
+          .DB 0x55,0xFF,0xFF,0xFF,0xFF,0x55,0x55,0x55
+0007e0 ff55
+0007e1 ffff
+0007e2 55ff
+0007e3 5555
+          .DB 0x55,0xFF,0xFF,0x55,0xFF,0x55,0x00,0x00
+0007e4 ff55
+0007e5 55ff
+0007e6 55ff
+0007e7 0000
+          .DB 0x55,0xFF,0x55,0x55,0xFF,0xFF,0x55,0x00
+0007e8 ff55
+0007e9 5555
+0007ea ffff
+0007eb 0055
+          .DB 0x55,0x55,0x00,0x00,0x55,0xFF,0x55,0x00
+0007ec 5555
+0007ed 0000
+0007ee ff55
+0007ef 0055
+          .DB 0x55,0x00,0x00,0x00,0x55,0xFF,0xFF,0x55
+0007f0 0055
+0007f1 0000
+0007f2 ff55
+0007f3 55ff
+          .DB 0x00,0x00,0x00,0x00,0x00,0x55,0xFF,0x55
+0007f4 0000
+0007f5 0000
+0007f6 5500
+0007f7 55ff
+          .DB 0x00,0x00,0x00,0x00,0x00,0x55,0x55,0x55
+0007f8 0000
+0007f9 0000
+0007fa 5500
+0007fb 5555
+          .DB 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+0007fc 0000
+0007fd 0000
+0007fe 0000
+0007ff 0000
+         
+          .org 0x0800
+          .include "font3.asm"
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000800 0000
+000801 0000
+000802 0000
+000803 0000
+000804 0000
+000805 0000
+000806 0000
+000807 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000808 0000
+000809 0000
+00080a 0000
+00080b 0000
+00080c 0000
+00080d 0000
+00080e 0000
+00080f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000810 0000
+000811 0000
+000812 0000
+000813 0000
+000814 0000
+000815 0000
+000816 0000
+000817 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000818 0000
+000819 0000
+00081a 0000
+00081b 0000
+00081c 0000
+00081d 0000
+00081e 0000
+00081f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000820 0000
+000821 0000
+000822 0000
+000823 0000
+000824 0000
+000825 0000
+000826 0000
+000827 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000828 0000
+000829 0000
+00082a 0000
+00082b 0000
+00082c 0000
+00082d 0000
+00082e 0000
+00082f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000830 0000
+000831 0000
+000832 0000
+000833 0000
+000834 0000
+000835 0000
+000836 0000
+000837 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000838 0000
+000839 0000
+00083a 0000
+00083b 0000
+00083c 0000
+00083d 0000
+00083e 0000
+00083f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000840 0000
+000841 0000
+000842 0000
+000843 0000
+000844 0000
+000845 0000
+000846 0000
+000847 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000848 0000
+000849 0000
+00084a 0000
+00084b 0000
+00084c 0000
+00084d 0000
+00084e 0000
+00084f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000850 0000
+000851 0000
+000852 0000
+000853 0000
+000854 0000
+000855 0000
+000856 0000
+000857 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000858 0000
+000859 0000
+00085a 0000
+00085b 0000
+00085c 0000
+00085d 0000
+00085e 0000
+00085f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000860 0000
+000861 0000
+000862 0000
+000863 0000
+000864 0000
+000865 0000
+000866 0000
+000867 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000868 0000
+000869 0000
+00086a 0000
+00086b 0000
+00086c 0000
+00086d 0000
+00086e 0000
+00086f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000870 0000
+000871 0000
+000872 0000
+000873 0000
+000874 0000
+000875 0000
+000876 0000
+000877 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000878 0000
+000879 0000
+00087a 0000
+00087b 0000
+00087c 0000
+00087d 0000
+00087e 0000
+00087f 0000
+          .DB  254, 15, 252, 7, 248, 3, 240, 1, 224, 0, 64, 0, 64, 0, 0, 0
+000880 0ffe
+000881 07fc
+000882 03f8
+000883 01f0
+000884 00e0
+000885 0040
+000886 0040
+000887 0000
+          .DB  64, 0, 64, 0, 224, 0, 240, 1, 248, 3, 252, 7, 254, 15, 0, 0
+000888 0040
+000889 0040
+00088a 00e0
+00088b 01f0
+00088c 03f8
+00088d 07fc
+00088e 0ffe
+00088f 0000
+          .DB  0, 0, 16, 1, 24, 3, 252, 7, 252, 7, 24, 3, 16, 1, 0, 0
+000890 0000
+000891 0110
+000892 0318
+000893 07fc
+000894 07fc
+000895 0318
+000896 0110
+000897 0000
+          .DB  0, 0, 252, 13, 252, 13, 0, 0, 0, 0, 252, 13, 252, 13, 0, 0
+000898 0000
+000899 0dfc
+00089a 0dfc
+00089b 0000
+00089c 0000
+00089d 0dfc
+00089e 0dfc
+00089f 0000
+          .DB  56, 0, 124, 0, 68, 0, 252, 15, 252, 15, 4, 0, 252, 15, 252, 15
+0008a0 0038
+0008a1 007c
+0008a2 0044
+0008a3 0ffc
+0008a4 0ffc
+0008a5 0004
+0008a6 0ffc
+0008a7 0ffc
+          .DB  196, 8, 238, 25, 58, 19, 18, 18, 50, 23, 230, 29, 196, 8, 0, 0
+0008a8 08c4
+0008a9 19ee
+0008aa 133a
+0008ab 1212
+0008ac 1732
+0008ad 1de6
+0008ae 08c4
+0008af 0000
+          .DB  0, 15, 0, 15, 0, 15, 0, 15, 0, 15, 0, 15, 0, 15, 0, 0
+0008b0 0f00
+0008b1 0f00
+0008b2 0f00
+0008b3 0f00
+0008b4 0f00
+0008b5 0f00
+0008b6 0f00
+0008b7 0000
+          .DB  0, 0, 16, 9, 24, 11, 252, 15, 252, 15, 24, 11, 16, 9, 0, 0
+0008b8 0000
+0008b9 0910
+0008ba 0b18
+0008bb 0ffc
+0008bc 0ffc
+0008bd 0b18
+0008be 0910
+0008bf 0000
+          .DB  0, 0, 16, 0, 24, 0, 252, 15, 252, 15, 24, 0, 16, 0, 0, 0
+0008c0 0000
+0008c1 0010
+0008c2 0018
+0008c3 0ffc
+0008c4 0ffc
+0008c5 0018
+0008c6 0010
+0008c7 0000
+          .DB  0, 0, 0, 2, 0, 6, 252, 15, 252, 15, 0, 6, 0, 2, 0, 0
+0008c8 0000
+0008c9 0200
+0008ca 0600
+0008cb 0ffc
+0008cc 0ffc
+0008cd 0600
+0008ce 0200
+0008cf 0000
+          .DB  128, 0, 128, 0, 128, 0, 160, 2, 224, 3, 192, 1, 128, 0, 0, 0
+0008d0 0080
+0008d1 0080
+0008d2 0080
+0008d3 02a0
+0008d4 03e0
+0008d5 01c0
+0008d6 0080
+0008d7 0000
+          .DB  128, 0, 192, 1, 224, 3, 160, 2, 128, 0, 128, 0, 128, 0, 0, 0
+0008d8 0080
+0008d9 01c0
+0008da 03e0
+0008db 02a0
+0008dc 0080
+0008dd 0080
+0008de 0080
+0008df 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+0008e0 0000
+0008e1 0000
+0008e2 0000
+0008e3 0000
+0008e4 0000
+0008e5 0000
+0008e6 0000
+0008e7 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+0008e8 0000
+0008e9 0000
+0008ea 0000
+0008eb 0000
+0008ec 0000
+0008ed 0000
+0008ee 0000
+0008ef 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+0008f0 0000
+0008f1 0000
+0008f2 0000
+0008f3 0000
+0008f4 0000
+0008f5 0000
+0008f6 0000
+0008f7 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+0008f8 0000
+0008f9 0000
+0008fa 0000
+0008fb 0000
+0008fc 0000
+0008fd 0000
+0008fe 0000
+0008ff 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000900 0000
+000901 0000
+000902 0000
+000903 0000
+000904 0000
+000905 0000
+000906 0000
+000907 0000
+          .DB  0, 0, 0, 0, 56, 0, 252, 13, 252, 13, 56, 0, 0, 0, 0, 0
+000908 0000
+000909 0000
+00090a 0038
+00090b 0dfc
+00090c 0dfc
+00090d 0038
+00090e 0000
+00090f 0000
+          .DB  0, 0, 14, 0, 30, 0, 0, 0, 0, 0, 30, 0, 14, 0, 0, 0
+000910 0000
+000911 000e
+000912 001e
+000913 0000
+000914 0000
+000915 001e
+000916 000e
+000917 0000
+          .DB  32, 2, 248, 15, 248, 15, 32, 2, 248, 15, 248, 15, 32, 2, 0, 0
+000918 0220
+000919 0ff8
+00091a 0ff8
+00091b 0220
+00091c 0ff8
+00091d 0ff8
+00091e 0220
+00091f 0000
+          .DB  56, 6, 124, 12, 68, 8, 71, 56, 71, 56, 204, 15, 152, 7, 0, 0
+000920 0638
+000921 0c7c
+000922 0844
+000923 3847
+000924 3847
+000925 0fcc
+000926 0798
+000927 0000
+          .DB  48, 12, 48, 6, 0, 3, 128, 1, 192, 0, 96, 12, 48, 12, 0, 0
+000928 0c30
+000929 0630
+00092a 0300
+00092b 0180
+00092c 00c0
+00092d 0c60
+00092e 0c30
+00092f 0000
+          .DB  128, 7, 216, 15, 124, 8, 228, 8, 188, 7, 216, 15, 64, 8, 0, 0
+000930 0780
+000931 0fd8
+000932 087c
+000933 08e4
+000934 07bc
+000935 0fd8
+000936 0840
+000937 0000
+          .DB  0, 0, 16, 0, 30, 0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000938 0000
+000939 0010
+00093a 001e
+00093b 000e
+00093c 0000
+00093d 0000
+00093e 0000
+00093f 0000
+          .DB  0, 0, 0, 0, 240, 3, 248, 7, 12, 12, 4, 8, 0, 0, 0, 0
+000940 0000
+000941 0000
+000942 03f0
+000943 07f8
+000944 0c0c
+000945 0804
+000946 0000
+000947 0000
+          .DB  0, 0, 0, 0, 4, 8, 12, 12, 248, 7, 240, 3, 0, 0, 0, 0
+000948 0000
+000949 0000
+00094a 0804
+00094b 0c0c
+00094c 07f8
+00094d 03f0
+00094e 0000
+00094f 0000
+          .DB  128, 0, 160, 2, 224, 3, 192, 1, 192, 1, 224, 3, 160, 2, 128, 0
+000950 0080
+000951 02a0
+000952 03e0
+000953 01c0
+000954 01c0
+000955 03e0
+000956 02a0
+000957 0080
+          .DB  0, 0, 128, 0, 128, 0, 224, 3, 224, 3, 128, 0, 128, 0, 0, 0
+000958 0000
+000959 0080
+00095a 0080
+00095b 03e0
+00095c 03e0
+00095d 0080
+00095e 0080
+00095f 0000
+          .DB  0, 0, 0, 0, 0, 16, 0, 30, 0, 14, 0, 0, 0, 0, 0, 0
+000960 0000
+000961 0000
+000962 1000
+000963 1e00
+000964 0e00
+000965 0000
+000966 0000
+000967 0000
+          .DB  128, 0, 128, 0, 128, 0, 128, 0, 128, 0, 128, 0, 128, 0, 0, 0
+000968 0080
+000969 0080
+00096a 0080
+00096b 0080
+00096c 0080
+00096d 0080
+00096e 0080
+00096f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 0
+000970 0000
+000971 0000
+000972 0000
+000973 0c00
+000974 0c00
+000975 0000
+000976 0000
+000977 0000
+          .DB  0, 12, 0, 6, 0, 3, 128, 1, 192, 0, 96, 0, 48, 0, 0, 0
+000978 0c00
+000979 0600
+00097a 0300
+00097b 0180
+00097c 00c0
+00097d 0060
+00097e 0030
+00097f 0000
+          .DB  240, 3, 248, 7, 12, 12, 196, 8, 12, 12, 248, 7, 240, 3, 0, 0
+000980 03f0
+000981 07f8
+000982 0c0c
+000983 08c4
+000984 0c0c
+000985 07f8
+000986 03f0
+000987 0000
+          .DB  0, 0, 16, 8, 24, 8, 252, 15, 252, 15, 0, 8, 0, 8, 0, 0
+000988 0000
+000989 0810
+00098a 0818
+00098b 0ffc
+00098c 0ffc
+00098d 0800
+00098e 0800
+00098f 0000
+          .DB  8, 14, 12, 15, 132, 9, 196, 8, 100, 8, 60, 12, 24, 12, 0, 0
+000990 0e08
+000991 0f0c
+000992 0984
+000993 08c4
+000994 0864
+000995 0c3c
+000996 0c18
+000997 0000
+          .DB  8, 4, 12, 12, 68, 8, 68, 8, 68, 8, 252, 15, 184, 7, 0, 0
+000998 0408
+000999 0c0c
+00099a 0844
+00099b 0844
+00099c 0844
+00099d 0ffc
+00099e 07b8
+00099f 0000
+          .DB  192, 0, 224, 0, 176, 0, 152, 8, 252, 15, 252, 15, 128, 8, 0, 0
+0009a0 00c0
+0009a1 00e0
+0009a2 00b0
+0009a3 0898
+0009a4 0ffc
+0009a5 0ffc
+0009a6 0880
+0009a7 0000
+          .DB  124, 4, 124, 12, 68, 8, 68, 8, 68, 8, 196, 15, 132, 7, 0, 0
+0009a8 047c
+0009a9 0c7c
+0009aa 0844
+0009ab 0844
+0009ac 0844
+0009ad 0fc4
+0009ae 0784
+0009af 0000
+          .DB  240, 7, 248, 15, 76, 8, 68, 8, 68, 8, 192, 15, 128, 7, 0, 0
+0009b0 07f0
+0009b1 0ff8
+0009b2 084c
+0009b3 0844
+0009b4 0844
+0009b5 0fc0
+0009b6 0780
+0009b7 0000
+          .DB  12, 0, 12, 0, 4, 15, 132, 15, 196, 0, 124, 0, 60, 0, 0, 0
+0009b8 000c
+0009b9 000c
+0009ba 0f04
+0009bb 0f84
+0009bc 00c4
+0009bd 007c
+0009be 003c
+0009bf 0000
+          .DB  184, 7, 252, 15, 68, 8, 68, 8, 68, 8, 252, 15, 184, 7, 0, 0
+0009c0 07b8
+0009c1 0ffc
+0009c2 0844
+0009c3 0844
+0009c4 0844
+0009c5 0ffc
+0009c6 07b8
+0009c7 0000
+          .DB  56, 0, 124, 8, 68, 8, 68, 8, 68, 12, 252, 7, 248, 3, 0, 0
+0009c8 0038
+0009c9 087c
+0009ca 0844
+0009cb 0844
+0009cc 0c44
+0009cd 07fc
+0009ce 03f8
+0009cf 0000
+          .DB  0, 0, 0, 0, 0, 0, 48, 6, 48, 6, 0, 0, 0, 0, 0, 0
+0009d0 0000
+0009d1 0000
+0009d2 0000
+0009d3 0630
+0009d4 0630
+0009d5 0000
+0009d6 0000
+0009d7 0000
+          .DB  0, 0, 0, 0, 0, 8, 48, 14, 48, 6, 0, 0, 0, 0, 0, 0
+0009d8 0000
+0009d9 0000
+0009da 0800
+0009db 0e30
+0009dc 0630
+0009dd 0000
+0009de 0000
+0009df 0000
+          .DB  0, 0, 128, 0, 192, 1, 96, 3, 48, 6, 24, 12, 8, 8, 0, 0
+0009e0 0000
+0009e1 0080
+0009e2 01c0
+0009e3 0360
+0009e4 0630
+0009e5 0c18
+0009e6 0808
+0009e7 0000
+          .DB  0, 0, 32, 1, 32, 1, 32, 1, 32, 1, 32, 1, 32, 1, 0, 0
+0009e8 0000
+0009e9 0120
+0009ea 0120
+0009eb 0120
+0009ec 0120
+0009ed 0120
+0009ee 0120
+0009ef 0000
+          .DB  0, 0, 8, 8, 24, 12, 48, 6, 96, 3, 192, 1, 128, 0, 0, 0
+0009f0 0000
+0009f1 0808
+0009f2 0c18
+0009f3 0630
+0009f4 0360
+0009f5 01c0
+0009f6 0080
+0009f7 0000
+          .DB  24, 0, 28, 0, 4, 0, 196, 13, 228, 13, 60, 0, 24, 0, 0, 0
+0009f8 0018
+0009f9 001c
+0009fa 0004
+0009fb 0dc4
+0009fc 0de4
+0009fd 003c
+0009fe 0018
+0009ff 0000
+          .DB  240, 7, 248, 15, 8, 8, 200, 11, 200, 11, 248, 11, 240, 1, 0, 0
+000a00 07f0
+000a01 0ff8
+000a02 0808
+000a03 0bc8
+000a04 0bc8
+000a05 0bf8
+000a06 01f0
+000a07 0000
+          .DB  224, 15, 240, 15, 152, 0, 140, 0, 152, 0, 240, 15, 224, 15, 0, 0
+000a08 0fe0
+000a09 0ff0
+000a0a 0098
+000a0b 008c
+000a0c 0098
+000a0d 0ff0
+000a0e 0fe0
+000a0f 0000
+          .DB  4, 8, 252, 15, 252, 15, 68, 8, 68, 8, 252, 15, 184, 7, 0, 0
+000a10 0804
+000a11 0ffc
+000a12 0ffc
+000a13 0844
+000a14 0844
+000a15 0ffc
+000a16 07b8
+000a17 0000
+          .DB  240, 3, 248, 7, 12, 12, 4, 8, 4, 8, 12, 12, 24, 6, 0, 0
+000a18 03f0
+000a19 07f8
+000a1a 0c0c
+000a1b 0804
+000a1c 0804
+000a1d 0c0c
+000a1e 0618
+000a1f 0000
+          .DB  4, 8, 252, 15, 252, 15, 4, 8, 12, 12, 248, 7, 240, 3, 0, 0
+000a20 0804
+000a21 0ffc
+000a22 0ffc
+000a23 0804
+000a24 0c0c
+000a25 07f8
+000a26 03f0
+000a27 0000
+          .DB  4, 8, 252, 15, 252, 15, 68, 8, 228, 8, 12, 12, 28, 14, 0, 0
+000a28 0804
+000a29 0ffc
+000a2a 0ffc
+000a2b 0844
+000a2c 08e4
+000a2d 0c0c
+000a2e 0e1c
+000a2f 0000
+          .DB  4, 8, 252, 15, 252, 15, 68, 8, 228, 0, 12, 0, 28, 0, 0, 0
+000a30 0804
+000a31 0ffc
+000a32 0ffc
+000a33 0844
+000a34 00e4
+000a35 000c
+000a36 001c
+000a37 0000
+          .DB  240, 3, 248, 7, 12, 12, 132, 8, 132, 8, 140, 7, 152, 15, 0, 0
+000a38 03f0
+000a39 07f8
+000a3a 0c0c
+000a3b 0884
+000a3c 0884
+000a3d 078c
+000a3e 0f98
+000a3f 0000
+          .DB  252, 15, 252, 15, 64, 0, 64, 0, 64, 0, 252, 15, 252, 15, 0, 0
+000a40 0ffc
+000a41 0ffc
+000a42 0040
+000a43 0040
+000a44 0040
+000a45 0ffc
+000a46 0ffc
+000a47 0000
+          .DB  0, 0, 0, 0, 4, 8, 252, 15, 252, 15, 4, 8, 0, 0, 0, 0
+000a48 0000
+000a49 0000
+000a4a 0804
+000a4b 0ffc
+000a4c 0ffc
+000a4d 0804
+000a4e 0000
+000a4f 0000
+          .DB  0, 7, 0, 15, 0, 8, 4, 8, 252, 15, 252, 7, 4, 0, 0, 0
+000a50 0700
+000a51 0f00
+000a52 0800
+000a53 0804
+000a54 0ffc
+000a55 07fc
+000a56 0004
+000a57 0000
+          .DB  4, 8, 252, 15, 252, 15, 192, 0, 224, 1, 60, 15, 28, 14, 0, 0
+000a58 0804
+000a59 0ffc
+000a5a 0ffc
+000a5b 00c0
+000a5c 01e0
+000a5d 0f3c
+000a5e 0e1c
+000a5f 0000
+          .DB  4, 8, 252, 15, 252, 15, 4, 8, 0, 8, 0, 12, 0, 14, 0, 0
+000a60 0804
+000a61 0ffc
+000a62 0ffc
+000a63 0804
+000a64 0800
+000a65 0c00
+000a66 0e00
+000a67 0000
+          .DB  252, 15, 252, 15, 56, 0, 112, 0, 56, 0, 252, 15, 252, 15, 0, 0
+000a68 0ffc
+000a69 0ffc
+000a6a 0038
+000a6b 0070
+000a6c 0038
+000a6d 0ffc
+000a6e 0ffc
+000a6f 0000
+          .DB  252, 15, 252, 15, 56, 0, 112, 0, 224, 0, 252, 15, 252, 15, 0, 0
+000a70 0ffc
+000a71 0ffc
+000a72 0038
+000a73 0070
+000a74 00e0
+000a75 0ffc
+000a76 0ffc
+000a77 0000
+          .DB  248, 7, 252, 15, 4, 8, 4, 8, 4, 8, 252, 15, 248, 7, 0, 0
+000a78 07f8
+000a79 0ffc
+000a7a 0804
+000a7b 0804
+000a7c 0804
+000a7d 0ffc
+000a7e 07f8
+000a7f 0000
+          .DB  4, 8, 252, 15, 252, 15, 68, 8, 68, 0, 124, 0, 56, 0, 0, 0
+000a80 0804
+000a81 0ffc
+000a82 0ffc
+000a83 0844
+000a84 0044
+000a85 007c
+000a86 0038
+000a87 0000
+          .DB  248, 7, 252, 15, 4, 8, 4, 14, 4, 60, 252, 63, 248, 39, 0, 0
+000a88 07f8
+000a89 0ffc
+000a8a 0804
+000a8b 0e04
+000a8c 3c04
+000a8d 3ffc
+000a8e 27f8
+000a8f 0000
+          .DB  4, 8, 252, 15, 252, 15, 68, 0, 196, 0, 252, 15, 56, 15, 0, 0
+000a90 0804
+000a91 0ffc
+000a92 0ffc
+000a93 0044
+000a94 00c4
+000a95 0ffc
+000a96 0f38
+000a97 0000
+          .DB  24, 6, 60, 14, 100, 8, 68, 8, 196, 8, 156, 15, 24, 7, 0, 0
+000a98 0618
+000a99 0e3c
+000a9a 0864
+000a9b 0844
+000a9c 08c4
+000a9d 0f9c
+000a9e 0718
+000a9f 0000
+          .DB  0, 0, 28, 0, 12, 8, 252, 15, 252, 15, 12, 8, 28, 0, 0, 0
+000aa0 0000
+000aa1 001c
+000aa2 080c
+000aa3 0ffc
+000aa4 0ffc
+000aa5 080c
+000aa6 001c
+000aa7 0000
+          .DB  252, 7, 252, 15, 0, 8, 0, 8, 0, 8, 252, 15, 252, 7, 0, 0
+000aa8 07fc
+000aa9 0ffc
+000aaa 0800
+000aab 0800
+000aac 0800
+000aad 0ffc
+000aae 07fc
+000aaf 0000
+          .DB  252, 1, 252, 3, 0, 6, 0, 12, 0, 6, 252, 3, 252, 1, 0, 0
+000ab0 01fc
+000ab1 03fc
+000ab2 0600
+000ab3 0c00
+000ab4 0600
+000ab5 03fc
+000ab6 01fc
+000ab7 0000
+          .DB  252, 7, 252, 15, 0, 14, 192, 3, 0, 14, 252, 15, 252, 7, 0, 0
+000ab8 07fc
+000ab9 0ffc
+000aba 0e00
+000abb 03c0
+000abc 0e00
+000abd 0ffc
+000abe 07fc
+000abf 0000
+          .DB  12, 12, 60, 15, 240, 3, 224, 1, 240, 3, 60, 15, 12, 12, 0, 0
+000ac0 0c0c
+000ac1 0f3c
+000ac2 03f0
+000ac3 01e0
+000ac4 03f0
+000ac5 0f3c
+000ac6 0c0c
+000ac7 0000
+          .DB  0, 0, 60, 0, 124, 8, 192, 15, 192, 15, 124, 8, 60, 0, 0, 0
+000ac8 0000
+000ac9 003c
+000aca 087c
+000acb 0fc0
+000acc 0fc0
+000acd 087c
+000ace 003c
+000acf 0000
+          .DB  28, 14, 12, 15, 132, 9, 196, 8, 100, 8, 60, 12, 28, 14, 0, 0
+000ad0 0e1c
+000ad1 0f0c
+000ad2 0984
+000ad3 08c4
+000ad4 0864
+000ad5 0c3c
+000ad6 0e1c
+000ad7 0000
+          .DB  0, 0, 0, 0, 252, 15, 252, 15, 4, 8, 4, 8, 0, 0, 0, 0
+000ad8 0000
+000ad9 0000
+000ada 0ffc
+000adb 0ffc
+000adc 0804
+000add 0804
+000ade 0000
+000adf 0000
+          .DB  56, 0, 112, 0, 224, 0, 192, 1, 128, 3, 0, 7, 0, 14, 0, 0
+000ae0 0038
+000ae1 0070
+000ae2 00e0
+000ae3 01c0
+000ae4 0380
+000ae5 0700
+000ae6 0e00
+000ae7 0000
+          .DB  0, 0, 0, 0, 4, 8, 4, 8, 252, 15, 252, 15, 0, 0, 0, 0
+000ae8 0000
+000ae9 0000
+000aea 0804
+000aeb 0804
+000aec 0ffc
+000aed 0ffc
+000aee 0000
+000aef 0000
+          .DB  8, 0, 12, 0, 6, 0, 3, 0, 6, 0, 12, 0, 8, 0, 0, 0
+000af0 0008
+000af1 000c
+000af2 0006
+000af3 0003
+000af4 0006
+000af5 000c
+000af6 0008
+000af7 0000
+          .DB  0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32
+000af8 2000
+000af9 2000
+000afa 2000
+000afb 2000
+000afc 2000
+000afd 2000
+000afe 2000
+000aff 2000
+          .DB  0, 0, 0, 0, 2, 0, 6, 0, 12, 0, 8, 0, 0, 0, 0, 0
+000b00 0000
+000b01 0000
+000b02 0002
+000b03 0006
+000b04 000c
+000b05 0008
+000b06 0000
+000b07 0000
+          .DB  0, 7, 160, 15, 160, 8, 160, 8, 224, 7, 192, 15, 0, 8, 0, 0
+000b08 0700
+000b09 0fa0
+000b0a 08a0
+000b0b 08a0
+000b0c 07e0
+000b0d 0fc0
+000b0e 0800
+000b0f 0000
+          .DB  4, 0, 252, 15, 252, 15, 32, 8, 96, 8, 192, 15, 128, 7, 0, 0
+000b10 0004
+000b11 0ffc
+000b12 0ffc
+000b13 0820
+000b14 0860
+000b15 0fc0
+000b16 0780
+000b17 0000
+          .DB  192, 7, 224, 15, 32, 8, 32, 8, 32, 8, 96, 12, 64, 4, 0, 0
+000b18 07c0
+000b19 0fe0
+000b1a 0820
+000b1b 0820
+000b1c 0820
+000b1d 0c60
+000b1e 0440
+000b1f 0000
+          .DB  128, 7, 192, 15, 96, 8, 36, 8, 252, 7, 252, 15, 0, 8, 0, 0
+000b20 0780
+000b21 0fc0
+000b22 0860
+000b23 0824
+000b24 07fc
+000b25 0ffc
+000b26 0800
+000b27 0000
+          .DB  192, 7, 224, 15, 160, 8, 160, 8, 160, 8, 224, 12, 192, 4, 0, 0
+000b28 07c0
+000b29 0fe0
+000b2a 08a0
+000b2b 08a0
+000b2c 08a0
+000b2d 0ce0
+000b2e 04c0
+000b2f 0000
+          .DB  0, 0, 64, 8, 248, 15, 252, 15, 68, 8, 12, 0, 24, 0, 0, 0
+000b30 0000
+000b31 0840
+000b32 0ff8
+000b33 0ffc
+000b34 0844
+000b35 000c
+000b36 0018
+000b37 0000
+          .DB  192, 39, 224, 111, 32, 72, 32, 72, 192, 127, 224, 63, 32, 0, 0, 0
+000b38 27c0
+000b39 6fe0
+000b3a 4820
+000b3b 4820
+000b3c 7fc0
+000b3d 3fe0
+000b3e 0020
+000b3f 0000
+          .DB  4, 8, 252, 15, 252, 15, 64, 0, 32, 0, 224, 15, 192, 15, 0, 0
+000b40 0804
+000b41 0ffc
+000b42 0ffc
+000b43 0040
+000b44 0020
+000b45 0fe0
+000b46 0fc0
+000b47 0000
+          .DB  0, 0, 0, 0, 32, 8, 236, 15, 236, 15, 0, 8, 0, 0, 0, 0
+000b48 0000
+000b49 0000
+000b4a 0820
+000b4b 0fec
+000b4c 0fec
+000b4d 0800
+000b4e 0000
+000b4f 0000
+          .DB  0, 0, 0, 48, 0, 112, 0, 64, 32, 64, 236, 127, 236, 63, 0, 0
+000b50 0000
+000b51 3000
+000b52 7000
+000b53 4000
+000b54 4020
+000b55 7fec
+000b56 3fec
+000b57 0000
+          .DB  4, 8, 252, 15, 252, 15, 128, 1, 192, 3, 96, 14, 32, 12, 0, 0
+000b58 0804
+000b59 0ffc
+000b5a 0ffc
+000b5b 0180
+000b5c 03c0
+000b5d 0e60
+000b5e 0c20
+000b5f 0000
+          .DB  0, 0, 0, 0, 4, 8, 252, 15, 252, 15, 0, 8, 0, 0, 0, 0
+000b60 0000
+000b61 0000
+000b62 0804
+000b63 0ffc
+000b64 0ffc
+000b65 0800
+000b66 0000
+000b67 0000
+          .DB  224, 15, 224, 15, 96, 0, 192, 7, 96, 0, 224, 15, 192, 15, 0, 0
+000b68 0fe0
+000b69 0fe0
+000b6a 0060
+000b6b 07c0
+000b6c 0060
+000b6d 0fe0
+000b6e 0fc0
+000b6f 0000
+          .DB  32, 0, 224, 15, 192, 15, 32, 0, 32, 0, 224, 15, 192, 15, 0, 0
+000b70 0020
+000b71 0fe0
+000b72 0fc0
+000b73 0020
+000b74 0020
+000b75 0fe0
+000b76 0fc0
+000b77 0000
+          .DB  192, 7, 224, 15, 32, 8, 32, 8, 32, 8, 224, 15, 192, 7, 0, 0
+000b78 07c0
+000b79 0fe0
+000b7a 0820
+000b7b 0820
+000b7c 0820
+000b7d 0fe0
+000b7e 07c0
+000b7f 0000
+          .DB  32, 64, 224, 127, 192, 127, 32, 72, 32, 8, 224, 15, 192, 7, 0, 0
+000b80 4020
+000b81 7fe0
+000b82 7fc0
+000b83 4820
+000b84 0820
+000b85 0fe0
+000b86 07c0
+000b87 0000
+          .DB  192, 7, 224, 15, 32, 8, 32, 72, 192, 127, 224, 127, 32, 64, 0, 0
+000b88 07c0
+000b89 0fe0
+000b8a 0820
+000b8b 4820
+000b8c 7fc0
+000b8d 7fe0
+000b8e 4020
+000b8f 0000
+          .DB  32, 8, 224, 15, 192, 15, 96, 8, 32, 0, 224, 0, 192, 0, 0, 0
+000b90 0820
+000b91 0fe0
+000b92 0fc0
+000b93 0860
+000b94 0020
+000b95 00e0
+000b96 00c0
+000b97 0000
+          .DB  64, 4, 224, 12, 160, 9, 32, 9, 32, 11, 96, 14, 64, 4, 0, 0
+000b98 0440
+000b99 0ce0
+000b9a 09a0
+000b9b 0920
+000b9c 0b20
+000b9d 0e60
+000b9e 0440
+000b9f 0000
+          .DB  32, 0, 32, 0, 248, 7, 252, 15, 32, 8, 32, 12, 0, 4, 0, 0
+000ba0 0020
+000ba1 0020
+000ba2 07f8
+000ba3 0ffc
+000ba4 0820
+000ba5 0c20
+000ba6 0400
+000ba7 0000
+          .DB  224, 7, 224, 15, 0, 8, 0, 8, 224, 7, 224, 15, 0, 8, 0, 0
+000ba8 07e0
+000ba9 0fe0
+000baa 0800
+000bab 0800
+000bac 07e0
+000bad 0fe0
+000bae 0800
+000baf 0000
+          .DB  224, 3, 224, 7, 0, 12, 0, 8, 0, 12, 224, 7, 224, 3, 0, 0
+000bb0 03e0
+000bb1 07e0
+000bb2 0c00
+000bb3 0800
+000bb4 0c00
+000bb5 07e0
+000bb6 03e0
+000bb7 0000
+          .DB  224, 7, 224, 15, 0, 12, 128, 7, 0, 12, 224, 15, 224, 7, 0, 0
+000bb8 07e0
+000bb9 0fe0
+000bba 0c00
+000bbb 0780
+000bbc 0c00
+000bbd 0fe0
+000bbe 07e0
+000bbf 0000
+          .DB  32, 8, 96, 12, 192, 7, 128, 3, 192, 7, 96, 12, 32, 8, 0, 0
+000bc0 0820
+000bc1 0c60
+000bc2 07c0
+000bc3 0380
+000bc4 07c0
+000bc5 0c60
+000bc6 0820
+000bc7 0000
+          .DB  224, 71, 224, 79, 0, 72, 0, 72, 0, 104, 224, 63, 224, 31, 0, 0
+000bc8 47e0
+000bc9 4fe0
+000bca 4800
+000bcb 4800
+000bcc 6800
+000bcd 3fe0
+000bce 1fe0
+000bcf 0000
+          .DB  96, 12, 96, 14, 32, 11, 160, 9, 224, 8, 96, 12, 32, 12, 0, 0
+000bd0 0c60
+000bd1 0e60
+000bd2 0b20
+000bd3 09a0
+000bd4 08e0
+000bd5 0c60
+000bd6 0c20
+000bd7 0000
+          .DB  0, 0, 64, 0, 64, 0, 248, 7, 188, 15, 4, 8, 4, 8, 0, 0
+000bd8 0000
+000bd9 0040
+000bda 0040
+000bdb 07f8
+000bdc 0fbc
+000bdd 0804
+000bde 0804
+000bdf 0000
+          .DB  0, 0, 0, 0, 0, 0, 252, 15, 252, 15, 0, 0, 0, 0, 0, 0
+000be0 0000
+000be1 0000
+000be2 0000
+000be3 0ffc
+000be4 0ffc
+000be5 0000
+000be6 0000
+000be7 0000
+          .DB  0, 0, 4, 8, 4, 8, 188, 15, 248, 7, 64, 0, 64, 0, 0, 0
+000be8 0000
+000be9 0804
+000bea 0804
+000beb 0fbc
+000bec 07f8
+000bed 0040
+000bee 0040
+000bef 0000
+          .DB  4, 0, 6, 0, 2, 0, 6, 0, 4, 0, 6, 0, 2, 0, 0, 0
+000bf0 0004
+000bf1 0006
+000bf2 0002
+000bf3 0006
+000bf4 0004
+000bf5 0006
+000bf6 0002
+000bf7 0000
+          .DB  128, 7, 192, 7, 96, 4, 48, 4, 96, 4, 192, 7, 128, 7, 0, 0
+000bf8 0780
+000bf9 07c0
+000bfa 0460
+000bfb 0430
+000bfc 0460
+000bfd 07c0
+000bfe 0780
+000bff 0000
+         
+          .org 0x0C00
+          .include "font1.asm"
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 126, 129, 149, 177, 177, 149, 129, 126
+000c00 0000
+000c01 0000
+000c02 0000
+000c03 0000
+000c04 817e
+000c05 b195
+000c06 95b1
+000c07 7e81
+          .DB  126, 255, 235, 207, 207, 235, 255, 126, 14, 31, 63, 126, 63, 31, 14, 0
+000c08 ff7e
+000c09 cfeb
+000c0a ebcf
+000c0b 7eff
+000c0c 1f0e
+000c0d 7e3f
+000c0e 1f3f
+000c0f 000e
+          .DB  8, 28, 62, 127, 62, 28, 8, 0, 56, 154, 159, 255, 159, 154, 56, 0
+000c10 1c08
+000c11 7f3e
+000c12 1c3e
+000c13 0008
+000c14 9a38
+000c15 ff9f
+000c16 9a9f
+000c17 0038
+          .DB  16, 184, 252, 254, 252, 184, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000c18 b810
+000c19 fefc
+000c1a b8fc
+000c1b 0010
+000c1c 0000
+000c1d 0000
+000c1e 0000
+000c1f 0000
+          .DB  255, 255, 231, 195, 195, 231, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0
+000c20 ffff
+000c21 c3e7
+000c22 e7c3
+000c23 ffff
+000c24 0000
+000c25 0000
+000c26 0000
+000c27 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000c28 0000
+000c29 0000
+000c2a 0000
+000c2b 0000
+000c2c 0000
+000c2d 0000
+000c2e 0000
+000c2f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000c30 0000
+000c31 0000
+000c32 0000
+000c33 0000
+000c34 0000
+000c35 0000
+000c36 0000
+000c37 0000
+          .DB  192, 255, 127, 5, 5, 101, 127, 63, 153, 90, 60, 231, 231, 60, 90, 153
+000c38 ffc0
+000c39 057f
+000c3a 6505
+000c3b 3f7f
+000c3c 5a99
+000c3d e73c
+000c3e 3ce7
+000c3f 995a
+          .DB  127, 62, 62, 28, 28, 8, 8, 0, 8, 8, 28, 28, 62, 62, 127, 0
+000c40 3e7f
+000c41 1c3e
+000c42 081c
+000c43 0008
+000c44 0808
+000c45 1c1c
+000c46 3e3e
+000c47 007f
+          .DB  0, 36, 102, 255, 255, 102, 36, 0, 0, 95, 95, 0, 0, 95, 95, 0
+000c48 2400
+000c49 ff66
+000c4a 66ff
+000c4b 0024
+000c4c 5f00
+000c4d 005f
+000c4e 5f00
+000c4f 005f
+          .DB  6, 15, 9, 127, 127, 1, 127, 127, 192, 154, 191, 165, 189, 217, 67, 2
+000c50 0f06
+000c51 7f09
+000c52 017f
+000c53 7f7f
+000c54 9ac0
+000c55 a5bf
+000c56 d9bd
+000c57 0243
+          .DB  0, 112, 112, 112, 112, 112, 112, 0, 128, 148, 182, 255, 255, 182, 148, 128
+000c58 7000
+000c59 7070
+000c5a 7070
+000c5b 0070
+000c5c 9480
+000c5d ffb6
+000c5e b6ff
+000c5f 8094
+          .DB  0, 4, 6, 127, 127, 6, 4, 0, 0, 16, 48, 127, 127, 48, 16, 0
+000c60 0400
+000c61 7f06
+000c62 067f
+000c63 0004
+000c64 1000
+000c65 7f30
+000c66 307f
+000c67 0010
+          .DB  8, 8, 8, 42, 62, 28, 8, 0, 8, 28, 62, 42, 8, 8, 8, 0
+000c68 0808
+000c69 2a08
+000c6a 1c3e
+000c6b 0008
+000c6c 1c08
+000c6d 2a3e
+000c6e 0808
+000c6f 0008
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000c70 0000
+000c71 0000
+000c72 0000
+000c73 0000
+000c74 0000
+000c75 0000
+000c76 0000
+000c77 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000c78 0000
+000c79 0000
+000c7a 0000
+000c7b 0000
+000c7c 0000
+000c7d 0000
+000c7e 0000
+000c7f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 95, 95, 6, 0, 0
+000c80 0000
+000c81 0000
+000c82 0000
+000c83 0000
+000c84 0000
+000c85 5f06
+000c86 065f
+000c87 0000
+          .DB  0, 7, 7, 0, 7, 7, 0, 0, 20, 127, 127, 20, 127, 127, 20, 0
+000c88 0700
+000c89 0007
+000c8a 0707
+000c8b 0000
+000c8c 7f14
+000c8d 147f
+000c8e 7f7f
+000c8f 0014
+          .DB  36, 46, 42, 107, 107, 58, 18, 0, 70, 102, 48, 24, 12, 102, 98, 0
+000c90 2e24
+000c91 6b2a
+000c92 3a6b
+000c93 0012
+000c94 6646
+000c95 1830
+000c96 660c
+000c97 0062
+          .DB  48, 122, 79, 93, 55, 122, 72, 0, 0, 4, 7, 3, 0, 0, 0, 0
+000c98 7a30
+000c99 5d4f
+000c9a 7a37
+000c9b 0048
+000c9c 0400
+000c9d 0307
+000c9e 0000
+000c9f 0000
+          .DB  0, 28, 62, 99, 65, 0, 0, 0, 0, 65, 99, 62, 28, 0, 0, 0
+000ca0 1c00
+000ca1 633e
+000ca2 0041
+000ca3 0000
+000ca4 4100
+000ca5 3e63
+000ca6 001c
+000ca7 0000
+          .DB  8, 42, 62, 28, 28, 62, 42, 8, 0, 8, 8, 62, 62, 8, 8, 0
+000ca8 2a08
+000ca9 1c3e
+000caa 3e1c
+000cab 082a
+000cac 0800
+000cad 3e08
+000cae 083e
+000caf 0008
+          .DB  0, 0, 128, 224, 96, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 0
+000cb0 0000
+000cb1 e080
+000cb2 0060
+000cb3 0000
+000cb4 0800
+000cb5 0808
+000cb6 0808
+000cb7 0008
+          .DB  0, 0, 0, 96, 96, 0, 0, 0, 96, 48, 24, 12, 6, 3, 1, 0
+000cb8 0000
+000cb9 6000
+000cba 0060
+000cbb 0000
+000cbc 3060
+000cbd 0c18
+000cbe 0306
+000cbf 0001
+          .DB  62, 127, 89, 77, 71, 127, 62, 0, 64, 66, 127, 127, 64, 64, 0, 0
+000cc0 7f3e
+000cc1 4d59
+000cc2 7f47
+000cc3 003e
+000cc4 4240
+000cc5 7f7f
+000cc6 4040
+000cc7 0000
+          .DB  98, 115, 89, 73, 111, 102, 0, 0, 34, 99, 73, 73, 127, 54, 0, 0
+000cc8 7362
+000cc9 4959
+000cca 666f
+000ccb 0000
+000ccc 6322
+000ccd 4949
+000cce 367f
+000ccf 0000
+          .DB  24, 28, 22, 83, 127, 127, 80, 0, 39, 103, 69, 69, 125, 57, 0, 0
+000cd0 1c18
+000cd1 5316
+000cd2 7f7f
+000cd3 0050
+000cd4 6727
+000cd5 4545
+000cd6 397d
+000cd7 0000
+          .DB  60, 126, 75, 73, 121, 48, 0, 0, 3, 3, 113, 121, 15, 7, 0, 0
+000cd8 7e3c
+000cd9 494b
+000cda 3079
+000cdb 0000
+000cdc 0303
+000cdd 7971
+000cde 070f
+000cdf 0000
+          .DB  54, 127, 73, 73, 127, 54, 0, 0, 6, 79, 73, 105, 63, 30, 0, 0
+000ce0 7f36
+000ce1 4949
+000ce2 367f
+000ce3 0000
+000ce4 4f06
+000ce5 6949
+000ce6 1e3f
+000ce7 0000
+          .DB  0, 0, 0, 102, 102, 0, 0, 0, 0, 0, 128, 230, 102, 0, 0, 0
+000ce8 0000
+000ce9 6600
+000cea 0066
+000ceb 0000
+000cec 0000
+000ced e680
+000cee 0066
+000cef 0000
+          .DB  8, 28, 54, 99, 65, 0, 0, 0, 0, 20, 20, 20, 20, 20, 20, 0
+000cf0 1c08
+000cf1 6336
+000cf2 0041
+000cf3 0000
+000cf4 1400
+000cf5 1414
+000cf6 1414
+000cf7 0014
+          .DB  0, 65, 99, 54, 28, 8, 0, 0, 0, 2, 3, 89, 93, 7, 2, 0
+000cf8 4100
+000cf9 3663
+000cfa 081c
+000cfb 0000
+000cfc 0200
+000cfd 5903
+000cfe 075d
+000cff 0002
+          .DB  62, 127, 65, 93, 93, 95, 14, 0, 124, 126, 19, 19, 126, 124, 0, 0
+000d00 7f3e
+000d01 5d41
+000d02 5f5d
+000d03 000e
+000d04 7e7c
+000d05 1313
+000d06 7c7e
+000d07 0000
+          .DB  65, 127, 127, 73, 73, 127, 54, 0, 28, 62, 99, 65, 65, 99, 34, 0
+000d08 7f41
+000d09 497f
+000d0a 7f49
+000d0b 0036
+000d0c 3e1c
+000d0d 4163
+000d0e 6341
+000d0f 0022
+          .DB  65, 127, 127, 65, 99, 62, 28, 0, 65, 127, 127, 73, 93, 65, 99, 0
+000d10 7f41
+000d11 417f
+000d12 3e63
+000d13 001c
+000d14 7f41
+000d15 497f
+000d16 415d
+000d17 0063
+          .DB  65, 127, 127, 73, 29, 1, 3, 0, 28, 62, 99, 65, 81, 51, 114, 0
+000d18 7f41
+000d19 497f
+000d1a 011d
+000d1b 0003
+000d1c 3e1c
+000d1d 4163
+000d1e 3351
+000d1f 0072
+          .DB  127, 127, 8, 8, 127, 127, 0, 0, 0, 65, 127, 127, 65, 0, 0, 0
+000d20 7f7f
+000d21 0808
+000d22 7f7f
+000d23 0000
+000d24 4100
+000d25 7f7f
+000d26 0041
+000d27 0000
+          .DB  48, 112, 64, 65, 127, 63, 1, 0, 65, 127, 127, 8, 28, 119, 99, 0
+000d28 7030
+000d29 4140
+000d2a 3f7f
+000d2b 0001
+000d2c 7f41
+000d2d 087f
+000d2e 771c
+000d2f 0063
+          .DB  65, 127, 127, 65, 64, 96, 112, 0, 127, 127, 14, 28, 14, 127, 127, 0
+000d30 7f41
+000d31 417f
+000d32 6040
+000d33 0070
+000d34 7f7f
+000d35 1c0e
+000d36 7f0e
+000d37 007f
+          .DB  127, 127, 6, 12, 24, 127, 127, 0, 28, 62, 99, 65, 99, 62, 28, 0
+000d38 7f7f
+000d39 0c06
+000d3a 7f18
+000d3b 007f
+000d3c 3e1c
+000d3d 4163
+000d3e 3e63
+000d3f 001c
+          .DB  65, 127, 127, 73, 9, 15, 6, 0, 30, 63, 33, 49, 97, 127, 94, 0
+000d40 7f41
+000d41 497f
+000d42 0f09
+000d43 0006
+000d44 3f1e
+000d45 3121
+000d46 7f61
+000d47 005e
+          .DB  65, 127, 127, 9, 25, 127, 102, 0, 38, 111, 77, 73, 89, 115, 50, 0
+000d48 7f41
+000d49 097f
+000d4a 7f19
+000d4b 0066
+000d4c 6f26
+000d4d 494d
+000d4e 7359
+000d4f 0032
+          .DB  3, 65, 127, 127, 65, 3, 0, 0, 127, 127, 64, 64, 127, 127, 0, 0
+000d50 4103
+000d51 7f7f
+000d52 0341
+000d53 0000
+000d54 7f7f
+000d55 4040
+000d56 7f7f
+000d57 0000
+          .DB  31, 63, 96, 96, 63, 31, 0, 0, 63, 127, 96, 48, 96, 127, 63, 0
+000d58 3f1f
+000d59 6060
+000d5a 1f3f
+000d5b 0000
+000d5c 7f3f
+000d5d 3060
+000d5e 7f60
+000d5f 003f
+          .DB  99, 119, 28, 8, 28, 119, 99, 0, 7, 79, 120, 120, 79, 7, 0, 0
+000d60 7763
+000d61 081c
+000d62 771c
+000d63 0063
+000d64 4f07
+000d65 7878
+000d66 074f
+000d67 0000
+          .DB  71, 99, 113, 89, 77, 103, 115, 0, 0, 127, 127, 65, 65, 0, 0, 0
+000d68 6347
+000d69 5971
+000d6a 674d
+000d6b 0073
+000d6c 7f00
+000d6d 417f
+000d6e 0041
+000d6f 0000
+          .DB  1, 3, 6, 12, 24, 48, 96, 0, 0, 65, 65, 127, 127, 0, 0, 0
+000d70 0301
+000d71 0c06
+000d72 3018
+000d73 0060
+000d74 4100
+000d75 7f41
+000d76 007f
+000d77 0000
+          .DB  8, 12, 6, 3, 6, 12, 8, 0, 128, 128, 128, 128, 128, 128, 128, 128
+000d78 0c08
+000d79 0306
+000d7a 0c06
+000d7b 0008
+000d7c 8080
+000d7d 8080
+000d7e 8080
+000d7f 8080
+          .DB  0, 0, 3, 7, 4, 0, 0, 0, 32, 116, 84, 84, 60, 120, 64, 0
+000d80 0000
+000d81 0703
+000d82 0004
+000d83 0000
+000d84 7420
+000d85 5454
+000d86 783c
+000d87 0040
+          .DB  65, 127, 63, 72, 72, 120, 48, 0, 56, 124, 68, 68, 108, 40, 0, 0
+000d88 7f41
+000d89 483f
+000d8a 7848
+000d8b 0030
+000d8c 7c38
+000d8d 4444
+000d8e 286c
+000d8f 0000
+          .DB  48, 120, 72, 73, 63, 127, 64, 0, 56, 124, 84, 84, 92, 24, 0, 0
+000d90 7830
+000d91 4948
+000d92 7f3f
+000d93 0040
+000d94 7c38
+000d95 5454
+000d96 185c
+000d97 0000
+          .DB  72, 126, 127, 73, 3, 6, 0, 0, 152, 188, 164, 164, 248, 124, 4, 0
+000d98 7e48
+000d99 497f
+000d9a 0603
+000d9b 0000
+000d9c bc98
+000d9d a4a4
+000d9e 7cf8
+000d9f 0004
+          .DB  65, 127, 127, 8, 4, 124, 120, 0, 0, 68, 125, 125, 64, 0, 0, 0
+000da0 7f41
+000da1 087f
+000da2 7c04
+000da3 0078
+000da4 4400
+000da5 7d7d
+000da6 0040
+000da7 0000
+          .DB  96, 224, 128, 132, 253, 125, 0, 0, 65, 127, 127, 16, 56, 108, 68, 0
+000da8 e060
+000da9 8480
+000daa 7dfd
+000dab 0000
+000dac 7f41
+000dad 107f
+000dae 6c38
+000daf 0044
+          .DB  0, 65, 127, 127, 64, 0, 0, 0, 124, 124, 24, 120, 28, 124, 120, 0
+000db0 4100
+000db1 7f7f
+000db2 0040
+000db3 0000
+000db4 7c7c
+000db5 7818
+000db6 7c1c
+000db7 0078
+          .DB  124, 120, 4, 4, 124, 120, 0, 0, 56, 124, 68, 68, 124, 56, 0, 0
+000db8 787c
+000db9 0404
+000dba 787c
+000dbb 0000
+000dbc 7c38
+000dbd 4444
+000dbe 387c
+000dbf 0000
+          .DB  132, 252, 248, 164, 36, 60, 24, 0, 24, 60, 36, 164, 248, 252, 132, 0
+000dc0 fc84
+000dc1 a4f8
+000dc2 3c24
+000dc3 0018
+000dc4 3c18
+000dc5 a424
+000dc6 fcf8
+000dc7 0084
+          .DB  68, 124, 120, 76, 4, 12, 24, 0, 72, 92, 84, 116, 100, 36, 0, 0
+000dc8 7c44
+000dc9 4c78
+000dca 0c04
+000dcb 0018
+000dcc 5c48
+000dcd 7454
+000dce 2464
+000dcf 0000
+          .DB  4, 4, 62, 127, 68, 36, 0, 0, 60, 124, 64, 64, 60, 124, 64, 0
+000dd0 0404
+000dd1 7f3e
+000dd2 2444
+000dd3 0000
+000dd4 7c3c
+000dd5 4040
+000dd6 7c3c
+000dd7 0040
+          .DB  28, 60, 96, 96, 60, 28, 0, 0, 60, 124, 96, 48, 96, 124, 60, 0
+000dd8 3c1c
+000dd9 6060
+000dda 1c3c
+000ddb 0000
+000ddc 7c3c
+000ddd 3060
+000dde 7c60
+000ddf 003c
+          .DB  68, 108, 56, 16, 56, 108, 68, 0, 156, 188, 160, 160, 252, 124, 0, 0
+000de0 6c44
+000de1 1038
+000de2 6c38
+000de3 0044
+000de4 bc9c
+000de5 a0a0
+000de6 7cfc
+000de7 0000
+          .DB  76, 100, 116, 92, 76, 100, 0, 0, 8, 8, 62, 119, 65, 65, 0, 0
+000de8 644c
+000de9 5c74
+000dea 644c
+000deb 0000
+000dec 0808
+000ded 773e
+000dee 4141
+000def 0000
+          .DB  0, 0, 0, 119, 119, 0, 0, 0, 65, 65, 119, 62, 8, 8, 0, 0
+000df0 0000
+000df1 7700
+000df2 0077
+000df3 0000
+000df4 4141
+000df5 3e77
+000df6 0808
+000df7 0000
+          .DB  2, 3, 1, 3, 2, 3, 1, 0, 112, 120, 76, 70, 76, 120, 112, 0
+000df8 0302
+000df9 0301
+000dfa 0302
+000dfb 0001
+000dfc 7870
+000dfd 464c
+000dfe 784c
+000dff 0070
+         
+          .org 0x0E00
+          .include "font2.asm"
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e00 0000
+000e01 0000
+000e02 0000
+000e03 0000
+000e04 0000
+000e05 0000
+000e06 0000
+000e07 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e08 0000
+000e09 0000
+000e0a 0000
+000e0b 0000
+000e0c 0000
+000e0d 0000
+000e0e 0000
+000e0f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e10 0000
+000e11 0000
+000e12 0000
+000e13 0000
+000e14 0000
+000e15 0000
+000e16 0000
+000e17 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e18 0000
+000e19 0000
+000e1a 0000
+000e1b 0000
+000e1c 0000
+000e1d 0000
+000e1e 0000
+000e1f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e20 0000
+000e21 0000
+000e22 0000
+000e23 0000
+000e24 0000
+000e25 0000
+000e26 0000
+000e27 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e28 0000
+000e29 0000
+000e2a 0000
+000e2b 0000
+000e2c 0000
+000e2d 0000
+000e2e 0000
+000e2f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e30 0000
+000e31 0000
+000e32 0000
+000e33 0000
+000e34 0000
+000e35 0000
+000e36 0000
+000e37 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e38 0000
+000e39 0000
+000e3a 0000
+000e3b 0000
+000e3c 0000
+000e3d 0000
+000e3e 0000
+000e3f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e40 0000
+000e41 0000
+000e42 0000
+000e43 0000
+000e44 0000
+000e45 0000
+000e46 0000
+000e47 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e48 0000
+000e49 0000
+000e4a 0000
+000e4b 0000
+000e4c 0000
+000e4d 0000
+000e4e 0000
+000e4f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e50 0000
+000e51 0000
+000e52 0000
+000e53 0000
+000e54 0000
+000e55 0000
+000e56 0000
+000e57 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e58 0000
+000e59 0000
+000e5a 0000
+000e5b 0000
+000e5c 0000
+000e5d 0000
+000e5e 0000
+000e5f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e60 0000
+000e61 0000
+000e62 0000
+000e63 0000
+000e64 0000
+000e65 0000
+000e66 0000
+000e67 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e68 0000
+000e69 0000
+000e6a 0000
+000e6b 0000
+000e6c 0000
+000e6d 0000
+000e6e 0000
+000e6f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e70 0000
+000e71 0000
+000e72 0000
+000e73 0000
+000e74 0000
+000e75 0000
+000e76 0000
+000e77 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+000e78 0000
+000e79 0000
+000e7a 0000
+000e7b 0000
+000e7c 0000
+000e7d 0000
+000e7e 0000
+000e7f 0000
+          .DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 79, 0, 0, 0, 0, 0
+000e80 0000
+000e81 0000
+000e82 0000
+000e83 0000
+000e84 0000
+000e85 004f
+000e86 0000
+000e87 0000
+          .DB  0, 7, 0, 7, 0, 0, 0, 0, 20, 127, 20, 127, 20, 0, 0, 0
+000e88 0700
+000e89 0700
+000e8a 0000
+000e8b 0000
+000e8c 7f14
+000e8d 7f14
+000e8e 0014
+000e8f 0000
+          .DB  36, 42, 127, 42, 18, 0, 0, 0, 35, 19, 8, 100, 98, 0, 0, 0
+000e90 2a24
+000e91 2a7f
+000e92 0012
+000e93 0000
+000e94 1323
+000e95 6408
+000e96 0062
+000e97 0000
+          .DB  54, 73, 86, 32, 88, 0, 0, 0, 0, 5, 3, 0, 0, 0, 0, 0
+000e98 4936
+000e99 2056
+000e9a 0058
+000e9b 0000
+000e9c 0500
+000e9d 0003
+000e9e 0000
+000e9f 0000
+          .DB  0, 28, 34, 65, 0, 0, 0, 0, 0, 65, 34, 28, 0, 0, 0, 0
+000ea0 1c00
+000ea1 4122
+000ea2 0000
+000ea3 0000
+000ea4 4100
+000ea5 1c22
+000ea6 0000
+000ea7 0000
+          .DB  34, 20, 127, 20, 34, 0, 0, 0, 8, 8, 62, 8, 8, 0, 0, 0
+000ea8 1422
+000ea9 147f
+000eaa 0022
+000eab 0000
+000eac 0808
+000ead 083e
+000eae 0008
+000eaf 0000
+          .DB  0, 80, 48, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 0, 0, 0
+000eb0 5000
+000eb1 0030
+000eb2 0000
+000eb3 0000
+000eb4 0808
+000eb5 0808
+000eb6 0008
+000eb7 0000
+          .DB  0, 96, 96, 0, 0, 0, 0, 0, 32, 16, 8, 4, 2, 0, 0, 0
+000eb8 6000
+000eb9 0060
+000eba 0000
+000ebb 0000
+000ebc 1020
+000ebd 0408
+000ebe 0002
+000ebf 0000
+          .DB  62, 81, 73, 69, 62, 0, 0, 0, 0, 66, 127, 64, 0, 0, 0, 0
+000ec0 513e
+000ec1 4549
+000ec2 003e
+000ec3 0000
+000ec4 4200
+000ec5 407f
+000ec6 0000
+000ec7 0000
+          .DB  66, 97, 81, 73, 70, 0, 0, 0, 33, 65, 69, 75, 49, 0, 0, 0
+000ec8 6142
+000ec9 4951
+000eca 0046
+000ecb 0000
+000ecc 4121
+000ecd 4b45
+000ece 0031
+000ecf 0000
+          .DB  24, 20, 18, 127, 16, 0, 0, 0, 39, 69, 69, 69, 57, 0, 0, 0
+000ed0 1418
+000ed1 7f12
+000ed2 0010
+000ed3 0000
+000ed4 4527
+000ed5 4545
+000ed6 0039
+000ed7 0000
+          .DB  60, 74, 73, 73, 48, 0, 0, 0, 1, 1, 113, 13, 3, 0, 0, 0
+000ed8 4a3c
+000ed9 4949
+000eda 0030
+000edb 0000
+000edc 0101
+000edd 0d71
+000ede 0003
+000edf 0000
+          .DB  54, 73, 73, 73, 54, 0, 0, 0, 6, 73, 73, 41, 30, 0, 0, 0
+000ee0 4936
+000ee1 4949
+000ee2 0036
+000ee3 0000
+000ee4 4906
+000ee5 2949
+000ee6 001e
+000ee7 0000
+          .DB  0, 54, 54, 0, 0, 0, 0, 0, 0, 86, 54, 0, 0, 0, 0, 0
+000ee8 3600
+000ee9 0036
+000eea 0000
+000eeb 0000
+000eec 5600
+000eed 0036
+000eee 0000
+000eef 0000
+          .DB  8, 20, 34, 65, 0, 0, 0, 0, 20, 20, 20, 20, 20, 0, 0, 0
+000ef0 1408
+000ef1 4122
+000ef2 0000
+000ef3 0000
+000ef4 1414
+000ef5 1414
+000ef6 0014
+000ef7 0000
+          .DB  65, 34, 20, 8, 0, 0, 0, 0, 2, 1, 81, 9, 6, 0, 0, 0
+000ef8 2241
+000ef9 0814
+000efa 0000
+000efb 0000
+000efc 0102
+000efd 0951
+000efe 0006
+000eff 0000
+          .DB  62, 65, 93, 85, 30, 0, 0, 0, 124, 18, 17, 18, 124, 0, 0, 0
+000f00 413e
+000f01 555d
+000f02 001e
+000f03 0000
+000f04 127c
+000f05 1211
+000f06 007c
+000f07 0000
+          .DB  127, 73, 73, 73, 54, 0, 0, 0, 62, 65, 65, 65, 34, 0, 0, 0
+000f08 497f
+000f09 4949
+000f0a 0036
+000f0b 0000
+000f0c 413e
+000f0d 4141
+000f0e 0022
+000f0f 0000
+          .DB  127, 65, 65, 34, 28, 0, 0, 0, 127, 73, 73, 73, 65, 0, 0, 0
+000f10 417f
+000f11 2241
+000f12 001c
+000f13 0000
+000f14 497f
+000f15 4949
+000f16 0041
+000f17 0000
+          .DB  127, 9, 9, 9, 1, 0, 0, 0, 62, 65, 73, 73, 122, 0, 0, 0
+000f18 097f
+000f19 0909
+000f1a 0001
+000f1b 0000
+000f1c 413e
+000f1d 4949
+000f1e 007a
+000f1f 0000
+          .DB  127, 8, 8, 8, 127, 0, 0, 0, 0, 65, 127, 65, 0, 0, 0, 0
+000f20 087f
+000f21 0808
+000f22 007f
+000f23 0000
+000f24 4100
+000f25 417f
+000f26 0000
+000f27 0000
+          .DB  32, 65, 65, 63, 1, 0, 0, 0, 127, 8, 20, 34, 65, 0, 0, 0
+000f28 4120
+000f29 3f41
+000f2a 0001
+000f2b 0000
+000f2c 087f
+000f2d 2214
+000f2e 0041
+000f2f 0000
+          .DB  127, 64, 64, 64, 64, 0, 0, 0, 127, 2, 12, 2, 127, 0, 0, 0
+000f30 407f
+000f31 4040
+000f32 0040
+000f33 0000
+000f34 027f
+000f35 020c
+000f36 007f
+000f37 0000
+          .DB  127, 4, 8, 16, 127, 0, 0, 0, 62, 65, 65, 65, 62, 0, 0, 0
+000f38 047f
+000f39 1008
+000f3a 007f
+000f3b 0000
+000f3c 413e
+000f3d 4141
+000f3e 003e
+000f3f 0000
+          .DB  127, 9, 9, 9, 6, 0, 0, 0, 62, 65, 81, 33, 94, 0, 0, 0
+000f40 097f
+000f41 0909
+000f42 0006
+000f43 0000
+000f44 413e
+000f45 2151
+000f46 005e
+000f47 0000
+          .DB  127, 9, 25, 41, 70, 0, 0, 0, 70, 73, 73, 73, 49, 0, 0, 0
+000f48 097f
+000f49 2919
+000f4a 0046
+000f4b 0000
+000f4c 4946
+000f4d 4949
+000f4e 0031
+000f4f 0000
+          .DB  1, 1, 127, 1, 1, 0, 0, 0, 63, 64, 64, 64, 63, 0, 0, 0
+000f50 0101
+000f51 017f
+000f52 0001
+000f53 0000
+000f54 403f
+000f55 4040
+000f56 003f
+000f57 0000
+          .DB  31, 32, 64, 32, 31, 0, 0, 0, 63, 64, 56, 64, 63, 0, 0, 0
+000f58 201f
+000f59 2040
+000f5a 001f
+000f5b 0000
+000f5c 403f
+000f5d 4038
+000f5e 003f
+000f5f 0000
+          .DB  99, 20, 8, 20, 99, 0, 0, 0, 3, 4, 120, 4, 3, 0, 0, 0
+000f60 1463
+000f61 1408
+000f62 0063
+000f63 0000
+000f64 0403
+000f65 0478
+000f66 0003
+000f67 0000
+          .DB  97, 81, 73, 69, 67, 0, 0, 0, 0, 127, 65, 65, 0, 0, 0, 0
+000f68 5161
+000f69 4549
+000f6a 0043
+000f6b 0000
+000f6c 7f00
+000f6d 4141
+000f6e 0000
+000f6f 0000
+          .DB  2, 4, 8, 16, 32, 0, 0, 0, 0, 65, 65, 127, 0, 0, 0, 0
+000f70 0402
+000f71 1008
+000f72 0020
+000f73 0000
+000f74 4100
+000f75 7f41
+000f76 0000
+000f77 0000
+          .DB  4, 2, 1, 2, 4, 0, 0, 0, 64, 64, 64, 64, 64, 0, 0, 0
+000f78 0204
+000f79 0201
+000f7a 0004
+000f7b 0000
+000f7c 4040
+000f7d 4040
+000f7e 0040
+000f7f 0000
+          .DB  0, 0, 3, 5, 0, 0, 0, 0, 32, 84, 84, 84, 120, 0, 0, 0
+000f80 0000
+000f81 0503
+000f82 0000
+000f83 0000
+000f84 5420
+000f85 5454
+000f86 0078
+000f87 0000
+          .DB  127, 68, 68, 68, 56, 0, 0, 0, 56, 68, 68, 68, 68, 0, 0, 0
+000f88 447f
+000f89 4444
+000f8a 0038
+000f8b 0000
+000f8c 4438
+000f8d 4444
+000f8e 0044
+000f8f 0000
+          .DB  56, 68, 68, 68, 127, 0, 0, 0, 56, 84, 84, 84, 24, 0, 0, 0
+000f90 4438
+000f91 4444
+000f92 007f
+000f93 0000
+000f94 5438
+000f95 5454
+000f96 0018
+000f97 0000
+          .DB  4, 4, 126, 5, 5, 0, 0, 0, 8, 84, 84, 84, 60, 0, 0, 0
+000f98 0404
+000f99 057e
+000f9a 0005
+000f9b 0000
+000f9c 5408
+000f9d 5454
+000f9e 003c
+000f9f 0000
+          .DB  127, 8, 4, 4, 120, 0, 0, 0, 0, 68, 125, 64, 0, 0, 0, 0
+000fa0 087f
+000fa1 0404
+000fa2 0078
+000fa3 0000
+000fa4 4400
+000fa5 407d
+000fa6 0000
+000fa7 0000
+          .DB  32, 64, 68, 61, 0, 0, 0, 0, 0, 127, 16, 40, 68, 0, 0, 0
+000fa8 4020
+000fa9 3d44
+000faa 0000
+000fab 0000
+000fac 7f00
+000fad 2810
+000fae 0044
+000faf 0000
+          .DB  0, 65, 127, 64, 0, 0, 0, 0, 124, 4, 120, 4, 120, 0, 0, 0
+000fb0 4100
+000fb1 407f
+000fb2 0000
+000fb3 0000
+000fb4 047c
+000fb5 0478
+000fb6 0078
+000fb7 0000
+          .DB  124, 8, 4, 4, 120, 0, 0, 0, 56, 68, 68, 68, 56, 0, 0, 0
+000fb8 087c
+000fb9 0404
+000fba 0078
+000fbb 0000
+000fbc 4438
+000fbd 4444
+000fbe 0038
+000fbf 0000
+          .DB  124, 20, 20, 20, 8, 0, 0, 0, 8, 20, 20, 20, 124, 0, 0, 0
+000fc0 147c
+000fc1 1414
+000fc2 0008
+000fc3 0000
+000fc4 1408
+000fc5 1414
+000fc6 007c
+000fc7 0000
+          .DB  0, 124, 8, 4, 4, 0, 0, 0, 72, 84, 84, 84, 32, 0, 0, 0
+000fc8 7c00
+000fc9 0408
+000fca 0004
+000fcb 0000
+000fcc 5448
+000fcd 5454
+000fce 0020
+000fcf 0000
+          .DB  4, 4, 63, 68, 68, 0, 0, 0, 60, 64, 64, 32, 124, 0, 0, 0
+000fd0 0404
+000fd1 443f
+000fd2 0044
+000fd3 0000
+000fd4 403c
+000fd5 2040
+000fd6 007c
+000fd7 0000
+          .DB  28, 32, 64, 32, 28, 0, 0, 0, 60, 64, 48, 64, 60, 0, 0, 0
+000fd8 201c
+000fd9 2040
+000fda 001c
+000fdb 0000
+000fdc 403c
+000fdd 4030
+000fde 003c
+000fdf 0000
+          .DB  68, 40, 16, 40, 68, 0, 0, 0, 12, 80, 80, 80, 60, 0, 0, 0
+000fe0 2844
+000fe1 2810
+000fe2 0044
+000fe3 0000
+000fe4 500c
+000fe5 5050
+000fe6 003c
+000fe7 0000
+          .DB  68, 100, 84, 76, 68, 0, 0, 0, 0, 8, 54, 65, 65, 0, 0, 0
+000fe8 6444
+000fe9 4c54
+000fea 0044
+000feb 0000
+000fec 0800
+000fed 4136
+000fee 0041
+000fef 0000
+          .DB  0, 0, 127, 0, 0, 0, 0, 0, 65, 65, 54, 8, 0, 0, 0, 0
+000ff0 0000
+000ff1 007f
+000ff2 0000
+000ff3 0000
+000ff4 4141
+000ff5 0836
+000ff6 0000
+000ff7 0000
+          .DB  2, 1, 2, 4, 2, 0, 0, 0, 96, 88, 70, 88, 96, 0, 0, 0
+000ff8 0102
+000ff9 0402
+000ffa 0002
+000ffb 0000
+000ffc 5860
+000ffd 5846
+000ffe 0060
+000fff 0000
+         
+          .org 0x0fff
+          .db 0xff000fff 00ff
+         ;/////////////////////////////////////\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+         ;**********************		END OF PROGRAM         *********************
+         ;\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\//////////////////////////////////////
+
+Assembly complete with no errors.

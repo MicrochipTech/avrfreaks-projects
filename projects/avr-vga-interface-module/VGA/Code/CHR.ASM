@@ -1,0 +1,348 @@
+
+PUT_CHAR:
+	; This Function Puts a character [R16] at position (XPOS,YPOS)
+	; Relative to the text area
+
+	ANDI R16,0b01111111
+
+	LDS R17,CHAR_MODE
+	ANDI R17,0x03
+	CPI R17,0
+	BREQ FONT1
+	CPI R17,1
+	BREQ FONT2
+	CPI R17,2
+	BREQ FONT3
+	RJMP FONT4
+
+	FONT1:
+	;print the character bitmap into the VRAM
+	LDI R17,8
+	MUL R16,R17		;R1:R0 = R16 * R17
+	LDI R17,0x1C		;select the small character bitmap 
+	ADD R1,R17
+	MOV R30,R0
+	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+	LDI R17,8
+	LDI R18,6
+	RCALL DRAW_CHAR1
+	RET
+	
+	FONT2:
+	;print the character bitmap into the VRAM
+	LDI R17,8
+	MUL R16,R17		;R1:R0 = R16 * R17
+	LDI R17,0x18		;select the MEDIUM character bitmap
+	ADD R1,R17
+	MOV R30,R0
+	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+	LDI R17,8
+	LDI R18,8
+	RCALL DRAW_CHAR1
+	RET
+ 
+	FONT3:
+	;print the character bitmap into the VRAM
+	LDI R17,16
+	MUL R16,R17		;R1:R0 = R16 * R17
+	LDI R17,0x10		;select the large character bitmap  
+	ADD R1,R17
+	MOV R30,R0
+	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+	LDI R17,16
+	LDI R18,8
+	RCALL DRAW_CHAR2
+	RET
+
+	FONT4:
+	;print the character bitmap into the VRAM
+	LDI R17,16
+	MUL R16,R17		;R1:R0 = R16 * R17
+	LDI R17,0x10		;select the large character bitmap  
+	ADD R1,R17
+	MOV R30,R0
+	MOV R31,R1		;Z POINTER = FIRST BITMAP LOCATION IN ROM
+	LDI R17,32
+	LDI R18,16
+	RCALL DRAW_CHAR3
+	RET
+	
+;---------------------------------------------------------------
+
+	DRAW_CHAR1:
+	;this function draws a character with dimensions R17(H) x R18(L)
+	;with bitmap data starting at Z pointer	
+
+	RCALL PROCESS_CURSOR	
+	RCALL ABSOLUTE_CURSOR
+	MOV R19,R17
+	MOV R20,R18
+	MOV R21,YL
+	MOV R22,YH	;backup values	
+
+	LOOP_H:			
+	MOV YL,R21
+	MOV YH,R22
+	LPM R0,Z+
+	LOOP_V:
+	ROR R0	 
+	BRCS BIT_1
+	BIT_0:
+	LDS R16,CHAR_MODE
+	SBRC R16,2
+	RJMP CONT_CHAR
+	LDS R16,BACKCOLOR
+	RCALL PUT_PIXEL
+	RJMP CONT_CHAR
+	BIT_1:
+	LDS R16,FORECOLOR
+	RCALL PUT_PIXEL
+	CONT_CHAR:
+	ADIW YL,1
+	DEC R17
+	BRNE LOOP_V
+	MOV R17,R19
+	ADIW XL,1
+	DEC R18
+	BRNE LOOP_H	
+	MOV R18,R20
+
+	;change the values of xpos and ypos
+	CLR R19
+	LDS XL,XPOSL
+	LDS XH,XPOSH
+	ADD XL,R18	;R18=number of horiz. pixels
+	ADC XH,R19	;R19=0   	
+	STS XPOSL,XL
+	STS XPOSH,XH
+
+	RCALL PROCESS_CURSOR
+	RET
+
+
+;			--------------------------------------------	
+
+	DRAW_CHAR2:
+	
+	RCALL PROCESS_CURSOR
+	RCALL ABSOLUTE_CURSOR
+	MOV R21,YL
+	MOV R22,YH	;backup values	
+	
+	LOOP_H16:			
+	MOV YL,R21
+	MOV YH,R22
+	
+	LPM R0,Z+
+	LPM R1,Z+
+	LOOP_V16:
+	ROR R1
+	ROR R0
+	BRCS BIT_1_16
+	BIT_0_16:
+	LDS R16,CHAR_MODE
+	SBRC R16,2
+	RJMP CONT_CHAR16
+	LDS R16,BACKCOLOR
+	RCALL PUT_PIXEL
+	RJMP CONT_CHAR16
+	BIT_1_16:
+	LDS R16,FORECOLOR
+	RCALL PUT_PIXEL
+	CONT_CHAR16:
+	ADIW YL,1
+	DEC R17
+	BRNE LOOP_V16
+	LDI R17,16
+
+	ADIW XL,1
+	DEC R18
+	BRNE LOOP_H16
+	LDI R18,8
+
+	;change the values of xpos and ypos
+	LDS XL,XPOSL
+	LDS XH,XPOSH
+	ADIW XL,8
+	STS XPOSL,XL
+	STS XPOSH,XH
+
+	RCALL PROCESS_CURSOR
+	RET
+;			--------------------------------------------	
+
+	DRAW_CHAR3:
+
+	RCALL PROCESS_CURSOR	
+	RCALL ABSOLUTE_CURSOR
+	LDI R17,16
+	LDI R18,8
+
+	MOV R21,YL
+	MOV R22,YH	;backup values	
+	
+	LOOP_H16_2:			
+	MOV YL,R21
+	MOV YH,R22
+	LDI R17,16
+
+	LPM R0,Z+
+	LPM R1,Z+
+	LOOP_V16_2:
+	ROR R1
+	ROR R0
+	BRCS BIT_1_16_2
+	BIT_0_16_2:
+	LDS R16,CHAR_MODE
+	SBRS R16,2
+	RJMP LARGE_FONT_OPQ
+	ADIW YL,1
+	RJMP CONT_CHAR16_2
+	LARGE_FONT_OPQ:
+	LDS R16,BACKCOLOR
+		RCALL PUT_PIXEL
+		ADIW XL,1
+		RCALL PUT_PIXEL
+		ADIW YL,1
+		RCALL PUT_PIXEL
+		SBIW XL,1
+		RCALL PUT_PIXEL
+	RJMP CONT_CHAR16_2
+	BIT_1_16_2:
+	LDS R16,FORECOLOR
+		RCALL PUT_PIXEL
+		ADIW XL,1
+		RCALL PUT_PIXEL
+		ADIW YL,1
+		RCALL PUT_PIXEL
+		SBIW XL,1
+		RCALL PUT_PIXEL
+	CONT_CHAR16_2:
+	ADIW YL,1
+	DEC R17
+	BRNE LOOP_V16_2
+
+	ADIW XL,2
+	DEC R18
+	BRNE LOOP_H16_2
+
+	;change the values of xpos and ypos
+	LDS XL,XPOSL
+	LDS XH,XPOSH
+	ADIW XL,16
+	STS XPOSL,XL
+	STS XPOSH,XH
+
+	LDI R17,32
+	LDI R18,16
+	RCALL PROCESS_CURSOR
+	RET	
+;---------------------------------------------------------------
+
+TEXT_AREA:
+	;this function sets the text area dimensions
+	;text area starts at (X,Y) with length(R17:R16) and height(R19:R18)
+
+	STS TXT_XL_1,XL
+	STS TXT_XH_1,XH
+	STS TXT_YL_1,YL
+	STS TXT_YH_1,YH
+
+	ADD XL,R16
+	ADC XH,R17
+	ADD YL,R18
+	ADC YH,R19
+
+	STS TXT_XL_2,XL
+	STS TXT_XH_2,XH
+	STS TXT_YL_2,YL
+	STS TXT_YH_2,YH
+	 
+RET
+
+;---------------------------------------------------------------
+
+CURSOR_POSITION:
+CLR R17
+CLR R18
+STS XPOSL,XL
+STS XPOSH,XH
+STS YPOSL,YL
+STS YPOSH,YH
+RCALL PROCESS_CURSOR
+RET
+
+;---------------------------------------------------------------
+
+PROCESS_CURSOR:
+;process cursor position here 
+;the maximum txt width is R18 
+;and maximium height is R17
+
+LDS XL,XPOSL
+LDS XH,XPOSH
+LDS YL,YPOSL
+LDS YH,YPOSH
+
+LDS R0,TXT_XL_1
+LDS R1,TXT_XH_1
+LDS R2,TXT_YL_1
+LDS R3,TXT_YH_1
+LDS R4,TXT_XL_2
+LDS R5,TXT_XH_2
+LDS R6,TXT_YL_2
+LDS R7,TXT_YH_2
+
+CLR R20
+CLR R21
+SUB R4,R18
+SBC R5,R20
+SUB R6,R17
+SBC R7,R21
+
+ADD R0,XL
+ADC R1,XH
+CP R4,R0
+CPC R5,R1
+BRSH X_CURSOR_OK
+CLR XL
+CLR XH
+ADD YL,R17
+ADC YH,XH
+X_CURSOR_OK:
+
+ADD R2,YL
+ADC R3,YH
+CP R6,R2
+CPC R7,R3
+BRSH Y_CURSOR_OK
+CLR YL
+CLR YH
+Y_CURSOR_OK:
+
+STS XPOSL,XL
+STS XPOSH,XH
+STS YPOSL,YL
+STS YPOSH,YH
+RET
+
+;---------------------------------------------------------------
+
+ABSOLUTE_CURSOR:
+;this function calaculates the absolute cursor position to X and Y
+LDS R0,TXT_XL_1
+LDS R1,TXT_XH_1	;load text area start
+LDS R2,TXT_YL_1
+LDS R3,TXT_YH_1	
+LDS XL,XPOSL
+LDS XH,XPOSH	;load relative cursor position
+LDS YL,YPOSL
+LDS YH,YPOSH
+ADD XL,R0
+ADC XH,R1	;calculate the absolute cursor position
+ADD YL,R2
+ADC YH,R3
+RET
+
+;---------------------------------------------------------------
+
