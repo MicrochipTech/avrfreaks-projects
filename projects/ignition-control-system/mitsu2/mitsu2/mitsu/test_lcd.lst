@@ -1,0 +1,811 @@
+   1               		.file	"test_lcd.c"
+   2               		.arch atmega8
+   3               	__SREG__ = 0x3f
+   4               	__SP_H__ = 0x3e
+   5               	__SP_L__ = 0x3d
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.global __do_copy_data
+   9               		.global __do_clear_bss
+  12               		.text
+  13               	.Ltext0:
+  65               	.global	channel
+  66               		.data
+  69               	channel:
+  70 0000 0400      		.word	4
+  72               		.text
+  74               	.global	__vector_2
+  76               	__vector_2:
+  77               		.stabd	46,0,0
+   1:test_lcd.c    **** /*************************************************************************
+   2:test_lcd.c    **** Title:    testing output to a HD44780 based LCD display.
+   3:test_lcd.c    **** Author:   Peter Fleury  <pfleury@gmx.ch>  http://jump.to/fleury
+   4:test_lcd.c    **** File:     $Id: test_lcd.c,v 1.6 2004/12/10 13:53:59 peter Exp $
+   5:test_lcd.c    **** Software: AVR-GCC 3.3
+   6:test_lcd.c    **** Hardware: HD44780 compatible LCD text display
+   7:test_lcd.c    ****           ATS90S8515/ATmega if memory-mapped LCD interface is used
+   8:test_lcd.c    ****           any AVR with 7 free I/O pins if 4-bit IO port mode is used
+   9:test_lcd.c    **** **************************************************************************/
+  10:test_lcd.c    **** #include <stdint.h>
+  11:test_lcd.c    **** #include <stdlib.h>
+  12:test_lcd.c    **** #include <avr/io.h>
+  13:test_lcd.c    **** #include <avr/pgmspace.h>
+  14:test_lcd.c    **** #include "lcd.h"
+  15:test_lcd.c    **** #include <avr/eeprom.h>
+  16:test_lcd.c    **** #include <inttypes.h>
+  17:test_lcd.c    **** #include <avr/interrupt.h>
+  18:test_lcd.c    **** #include <avr/signal.h>
+  19:test_lcd.c    **** 
+  20:test_lcd.c    **** /*
+  21:test_lcd.c    **** ** constant definitions
+  22:test_lcd.c    **** */
+  23:test_lcd.c    **** static const PROGMEM unsigned char copyRightChar[] =
+  24:test_lcd.c    **** {
+  25:test_lcd.c    **** 	0x07, 0x08, 0x13, 0x14, 0x14, 0x13, 0x08, 0x07,
+  26:test_lcd.c    **** 	0x00, 0x10, 0x08, 0x08, 0x08, 0x08, 0x10, 0x00
+  27:test_lcd.c    **** };
+  28:test_lcd.c    **** 
+  29:test_lcd.c    **** #if defined(__AVR_ATmega8__)
+  30:test_lcd.c    **** #  define OC1 PB1
+  31:test_lcd.c    **** #  define DDROC DDRB
+  32:test_lcd.c    **** #  define OCR OCR1A
+  33:test_lcd.c    **** #  define PWM10 WGM10
+  34:test_lcd.c    **** #  define PWM11 WGM11
+  35:test_lcd.c    **** #else
+  36:test_lcd.c    **** #  error "Don't know what kind of MCU you are compiling for"
+  37:test_lcd.c    **** #endif
+  38:test_lcd.c    **** 
+  39:test_lcd.c    **** #if defined(COM11)
+  40:test_lcd.c    **** #  define XCOM11 COM11
+  41:test_lcd.c    **** #elif defined(COM1A1)
+  42:test_lcd.c    **** #  define XCOM11 COM1A1
+  43:test_lcd.c    **** #else
+  44:test_lcd.c    **** #  error "need either COM1A1 or COM11"
+  45:test_lcd.c    **** #endif
+  46:test_lcd.c    **** 
+  47:test_lcd.c    **** enum { UP, DOWN };
+  48:test_lcd.c    **** 
+  49:test_lcd.c    **** volatile uint16_t pwm; /* Note [1] */
+  50:test_lcd.c    **** volatile uint8_t direction;
+  51:test_lcd.c    **** volatile char buffer[10];
+  52:test_lcd.c    **** volatile int unsigned num;
+  53:test_lcd.c    **** volatile int unsigned freq;
+  54:test_lcd.c    **** volatile int unsigned num1;
+  55:test_lcd.c    **** volatile int unsigned asd;
+  56:test_lcd.c    **** volatile int unsigned asd1;
+  57:test_lcd.c    **** volatile static int analog_result;
+  58:test_lcd.c    **** volatile static unsigned char analog_busy;
+  59:test_lcd.c    **** const int channel = 4;
+  60:test_lcd.c    **** volatile div_t dfg;
+  61:test_lcd.c    **** 
+  62:test_lcd.c    **** SIGNAL (SIG_INTERRUPT1)
+  63:test_lcd.c    **** {
+  79               	.LM0:
+  80               	/* prologue: frame size=0 */
+  81 0000 1F92      		push __zero_reg__
+  82 0002 0F92      		push __tmp_reg__
+  83 0004 0FB6      		in __tmp_reg__,__SREG__
+  84 0006 0F92      		push __tmp_reg__
+  85 0008 1124      		clr __zero_reg__
+  86 000a 8F93      		push r24
+  87 000c 9F93      		push r25
+  88               	/* prologue end (size=7) */
+  64:test_lcd.c    ****  num1=num;
+  90               	.LM1:
+  91 000e 8091 0000 		lds r24,num
+  92 0012 9091 0000 		lds r25,(num)+1
+  93 0016 9093 0000 		sts (num1)+1,r25
+  94 001a 8093 0000 		sts num1,r24
+  65:test_lcd.c    ****  num=0;
+  96               	.LM2:
+  97 001e 1092 0000 		sts (num)+1,__zero_reg__
+  98 0022 1092 0000 		sts num,__zero_reg__
+  66:test_lcd.c    ****  PORTB|= _BV(PB1);
+ 100               	.LM3:
+ 101 0026 C19A      		sbi 56-0x20,1
+ 102               	/* epilogue: frame size=0 */
+ 103 0028 9F91      		pop r25
+ 104 002a 8F91      		pop r24
+ 105 002c 0F90      		pop __tmp_reg__
+ 106 002e 0FBE      		out __SREG__,__tmp_reg__
+ 107 0030 0F90      		pop __tmp_reg__
+ 108 0032 1F90      		pop __zero_reg__
+ 109 0034 1895      		reti
+ 110               	/* epilogue end (size=7) */
+ 111               	/* function __vector_2 size 27 (13) */
+ 113               	.Lscope0:
+ 115               		.stabd	78,0,0
+ 117               	.global	__vector_14
+ 119               	__vector_14:
+ 120               		.stabd	46,0,0
+  67:test_lcd.c    **** }
+  68:test_lcd.c    **** 
+  69:test_lcd.c    **** INTERRUPT (SIG_ADC) {
+ 122               	.LM4:
+ 123               	/* prologue: frame size=0 */
+ 124 0036 7894      		sei
+ 125 0038 1F92      		push __zero_reg__
+ 126 003a 0F92      		push __tmp_reg__
+ 127 003c 0FB6      		in __tmp_reg__,__SREG__
+ 128 003e 0F92      		push __tmp_reg__
+ 129 0040 1124      		clr __zero_reg__
+ 130 0042 2F93      		push r18
+ 131 0044 3F93      		push r19
+ 132 0046 8F93      		push r24
+ 133 0048 9F93      		push r25
+ 134               	/* prologue end (size=10) */
+  70:test_lcd.c    ****         unsigned char adlow,adhigh;
+  71:test_lcd.c    ****         adlow=ADCL; //Do not combine the two lines into one C statement
+ 136               	.LM5:
+ 137 004a 24B1      		in r18,36-0x20
+  72:test_lcd.c    ****         adhigh=ADCH;
+ 139               	.LM6:
+ 140 004c 85B1      		in r24,37-0x20
+  73:test_lcd.c    ****         analog_result=(adhigh<<8)|(adlow & 0xFF);
+ 142               	.LM7:
+ 143 004e 9927      		clr r25
+ 144 0050 982F      		mov r25,r24
+ 145 0052 8827      		clr r24
+ 146 0054 3327      		clr r19
+ 147 0056 822B      		or r24,r18
+ 148 0058 932B      		or r25,r19
+ 149 005a 9093 0000 		sts (analog_result)+1,r25
+ 150 005e 8093 0000 		sts analog_result,r24
+  74:test_lcd.c    ****         analog_busy=0;
+ 152               	.LM8:
+ 153 0062 1092 0000 		sts analog_busy,__zero_reg__
+ 154               	/* epilogue: frame size=0 */
+ 155 0066 9F91      		pop r25
+ 156 0068 8F91      		pop r24
+ 157 006a 3F91      		pop r19
+ 158 006c 2F91      		pop r18
+ 159 006e 0F90      		pop __tmp_reg__
+ 160 0070 0FBE      		out __SREG__,__tmp_reg__
+ 161 0072 0F90      		pop __tmp_reg__
+ 162 0074 1F90      		pop __zero_reg__
+ 163 0076 1895      		reti
+ 164               	/* epilogue end (size=9) */
+ 165               	/* function __vector_14 size 33 (14) */
+ 171               	.Lscope1:
+ 173               		.stabd	78,0,0
+ 174               		.data
+ 175               	.LC0:
+ 176 0002 487A 00   		.string	"Hz"
+ 177               	.LC1:
+ 178 0005 2C00      		.string	","
+ 179               	.LC2:
+ 180 0007 2E00      		.string	"."
+ 181               	.LC3:
+ 182 0009 3000      		.string	"0"
+ 183               	.LC4:
+ 184 000b 5620 2020 		.string	"V     \n"
+ 184      2020 0A00 
+ 185               	.LC5:
+ 186 0013 2020 2020 		.string	"    "
+ 186      00
+ 187               		.text
+ 189               	.global	__vector_4
+ 191               	__vector_4:
+ 192               		.stabd	46,0,0
+  75:test_lcd.c    **** }
+  76:test_lcd.c    **** 
+  77:test_lcd.c    **** SIGNAL (SIG_OVERFLOW2) /* Note [2] */
+  78:test_lcd.c    **** {
+ 194               	.LM9:
+ 195               	/* prologue: frame size=0 */
+ 196 0078 1F92      		push __zero_reg__
+ 197 007a 0F92      		push __tmp_reg__
+ 198 007c 0FB6      		in __tmp_reg__,__SREG__
+ 199 007e 0F92      		push __tmp_reg__
+ 200 0080 1124      		clr __zero_reg__
+ 201 0082 2F93      		push r18
+ 202 0084 3F93      		push r19
+ 203 0086 4F93      		push r20
+ 204 0088 5F93      		push r21
+ 205 008a 6F93      		push r22
+ 206 008c 7F93      		push r23
+ 207 008e 8F93      		push r24
+ 208 0090 9F93      		push r25
+ 209 0092 AF93      		push r26
+ 210 0094 BF93      		push r27
+ 211 0096 EF93      		push r30
+ 212 0098 FF93      		push r31
+ 213               	/* prologue end (size=17) */
+  79:test_lcd.c    **** TCNT2=255-196;  //okolo 20Hz - 19.92Hz
+ 215               	.LM10:
+ 216 009a 8BE3      		ldi r24,lo8(59)
+ 217 009c 84BD      		out 68-0x20,r24
+  80:test_lcd.c    **** PORTB&= ~_BV(PB1);
+ 219               	.LM11:
+ 220 009e C198      		cbi 56-0x20,1
+  81:test_lcd.c    **** if ( ++asd == 10 )
+ 222               	.LM12:
+ 223 00a0 8091 0000 		lds r24,asd
+ 224 00a4 9091 0000 		lds r25,(asd)+1
+ 225 00a8 0196      		adiw r24,1
+ 226 00aa 9093 0000 		sts (asd)+1,r25
+ 227 00ae 8093 0000 		sts asd,r24
+ 228 00b2 8091 0000 		lds r24,asd
+ 229 00b6 9091 0000 		lds r25,(asd)+1
+ 230 00ba 0A97      		sbiw r24,10
+ 231 00bc 09F0      		breq .+2
+ 232 00be AAC0      		rjmp .L6
+  82:test_lcd.c    ****  {
+  83:test_lcd.c    **** 	
+  84:test_lcd.c    **** 	lcd_gotoxy(0,0);
+ 234               	.LM13:
+ 235 00c0 60E0      		ldi r22,lo8(0)
+ 236 00c2 80E0      		ldi r24,lo8(0)
+ 237 00c4 00D0      		rcall lcd_gotoxy
+  85:test_lcd.c    ****         itoa( num, buffer, 10);
+ 239               	.LM14:
+ 240 00c6 8091 0000 		lds r24,num
+ 241 00ca 9091 0000 		lds r25,(num)+1
+ 242 00ce 4AE0      		ldi r20,lo8(10)
+ 243 00d0 50E0      		ldi r21,hi8(10)
+ 244 00d2 60E0      		ldi r22,lo8(buffer)
+ 245 00d4 70E0      		ldi r23,hi8(buffer)
+ 246 00d6 00D0      		rcall itoa
+  86:test_lcd.c    **** 	lcd_puts(buffer);
+ 248               	.LM15:
+ 249 00d8 80E0      		ldi r24,lo8(buffer)
+ 250 00da 90E0      		ldi r25,hi8(buffer)
+ 251 00dc 00D0      		rcall lcd_puts
+  87:test_lcd.c    **** 	lcd_puts("Hz");
+ 253               	.LM16:
+ 254 00de 80E0      		ldi r24,lo8(.LC0)
+ 255 00e0 90E0      		ldi r25,hi8(.LC0)
+ 256 00e2 00D0      		rcall lcd_puts
+  88:test_lcd.c    **** 	lcd_puts(",");
+ 258               	.LM17:
+ 259 00e4 80E0      		ldi r24,lo8(.LC1)
+ 260 00e6 90E0      		ldi r25,hi8(.LC1)
+ 261 00e8 00D0      		rcall lcd_puts
+  89:test_lcd.c    **** 	dfg = div(analog_result,400);
+ 263               	.LM18:
+ 264 00ea 8091 0000 		lds r24,analog_result
+ 265 00ee 9091 0000 		lds r25,(analog_result)+1
+ 266 00f2 60E9      		ldi r22,lo8(400)
+ 267 00f4 71E0      		ldi r23,hi8(400)
+ 268 00f6 00D0      		rcall __divmodhi4
+ 269 00f8 6093 0000 		sts dfg,r22
+ 270 00fc 7093 0000 		sts (dfg)+1,r23
+ 271 0100 8093 0000 		sts (dfg)+2,r24
+ 272 0104 9093 0000 		sts (dfg)+3,r25
+  90:test_lcd.c    **** 	itoa( dfg.quot, buffer, 10);
+ 274               	.LM19:
+ 275 0108 8091 0000 		lds r24,dfg
+ 276 010c 9091 0000 		lds r25,(dfg)+1
+ 277 0110 4AE0      		ldi r20,lo8(10)
+ 278 0112 50E0      		ldi r21,hi8(10)
+ 279 0114 60E0      		ldi r22,lo8(buffer)
+ 280 0116 70E0      		ldi r23,hi8(buffer)
+ 281 0118 00D0      		rcall itoa
+  91:test_lcd.c    **** 	lcd_puts(buffer);
+ 283               	.LM20:
+ 284 011a 80E0      		ldi r24,lo8(buffer)
+ 285 011c 90E0      		ldi r25,hi8(buffer)
+ 286 011e 00D0      		rcall lcd_puts
+  92:test_lcd.c    **** 	lcd_puts(".");
+ 288               	.LM21:
+ 289 0120 80E0      		ldi r24,lo8(.LC2)
+ 290 0122 90E0      		ldi r25,hi8(.LC2)
+ 291 0124 00D0      		rcall lcd_puts
+  93:test_lcd.c    **** 	if (dfg.rem / 0.4 < 100) {lcd_puts("0");};
+ 293               	.LM22:
+ 294 0126 6091 0000 		lds r22,dfg+2
+ 295 012a 7091 0000 		lds r23,(dfg+2)+1
+ 296 012e 8827      		clr r24
+ 297 0130 77FD      		sbrc r23,7
+ 298 0132 8095      		com r24
+ 299 0134 982F      		mov r25,r24
+ 300 0136 00D0      		rcall __floatsisf
+ 301 0138 2DEC      		ldi r18,lo8(0x3ecccccd)
+ 302 013a 3CEC      		ldi r19,hi8(0x3ecccccd)
+ 303 013c 4CEC      		ldi r20,hlo8(0x3ecccccd)
+ 304 013e 5EE3      		ldi r21,hhi8(0x3ecccccd)
+ 305 0140 00D0      		rcall __divsf3
+ 306 0142 20E0      		ldi r18,lo8(0x42c80000)
+ 307 0144 30E0      		ldi r19,hi8(0x42c80000)
+ 308 0146 48EC      		ldi r20,hlo8(0x42c80000)
+ 309 0148 52E4      		ldi r21,hhi8(0x42c80000)
+ 310 014a 00D0      		rcall __ltsf2
+ 311 014c 8823      		tst r24
+ 312 014e 1CF4      		brge .L8
+ 313 0150 80E0      		ldi r24,lo8(.LC3)
+ 314 0152 90E0      		ldi r25,hi8(.LC3)
+ 315 0154 00D0      		rcall lcd_puts
+ 316               	.L8:
+  94:test_lcd.c    **** 	if (dfg.rem / 0.4 < 10)  {lcd_puts("0");};
+ 318               	.LM23:
+ 319 0156 6091 0000 		lds r22,dfg+2
+ 320 015a 7091 0000 		lds r23,(dfg+2)+1
+ 321 015e 8827      		clr r24
+ 322 0160 77FD      		sbrc r23,7
+ 323 0162 8095      		com r24
+ 324 0164 982F      		mov r25,r24
+ 325 0166 00D0      		rcall __floatsisf
+ 326 0168 2DEC      		ldi r18,lo8(0x3ecccccd)
+ 327 016a 3CEC      		ldi r19,hi8(0x3ecccccd)
+ 328 016c 4CEC      		ldi r20,hlo8(0x3ecccccd)
+ 329 016e 5EE3      		ldi r21,hhi8(0x3ecccccd)
+ 330 0170 00D0      		rcall __divsf3
+ 331 0172 20E0      		ldi r18,lo8(0x41200000)
+ 332 0174 30E0      		ldi r19,hi8(0x41200000)
+ 333 0176 40E2      		ldi r20,hlo8(0x41200000)
+ 334 0178 51E4      		ldi r21,hhi8(0x41200000)
+ 335 017a 00D0      		rcall __ltsf2
+ 336 017c 8823      		tst r24
+ 337 017e 1CF4      		brge .L11
+ 338 0180 80E0      		ldi r24,lo8(.LC3)
+ 339 0182 90E0      		ldi r25,hi8(.LC3)
+ 340 0184 00D0      		rcall lcd_puts
+ 341               	.L11:
+  95:test_lcd.c    **** 	itoa( dfg.rem / 0.4, buffer, 10);
+ 343               	.LM24:
+ 344 0186 6091 0000 		lds r22,dfg+2
+ 345 018a 7091 0000 		lds r23,(dfg+2)+1
+ 346 018e 8827      		clr r24
+ 347 0190 77FD      		sbrc r23,7
+ 348 0192 8095      		com r24
+ 349 0194 982F      		mov r25,r24
+ 350 0196 00D0      		rcall __floatsisf
+ 351 0198 2DEC      		ldi r18,lo8(0x3ecccccd)
+ 352 019a 3CEC      		ldi r19,hi8(0x3ecccccd)
+ 353 019c 4CEC      		ldi r20,hlo8(0x3ecccccd)
+ 354 019e 5EE3      		ldi r21,hhi8(0x3ecccccd)
+ 355 01a0 00D0      		rcall __divsf3
+ 356 01a2 00D0      		rcall __fixsfsi
+ 357 01a4 DC01      		movw r26,r24
+ 358 01a6 CB01      		movw r24,r22
+ 359 01a8 4AE0      		ldi r20,lo8(10)
+ 360 01aa 50E0      		ldi r21,hi8(10)
+ 361 01ac 60E0      		ldi r22,lo8(buffer)
+ 362 01ae 70E0      		ldi r23,hi8(buffer)
+ 363 01b0 00D0      		rcall itoa
+  96:test_lcd.c    **** 	lcd_puts(buffer);
+ 365               	.LM25:
+ 366 01b2 80E0      		ldi r24,lo8(buffer)
+ 367 01b4 90E0      		ldi r25,hi8(buffer)
+ 368 01b6 00D0      		rcall lcd_puts
+  97:test_lcd.c    **** 	lcd_puts("V     \n");
+ 370               	.LM26:
+ 371 01b8 80E0      		ldi r24,lo8(.LC4)
+ 372 01ba 90E0      		ldi r25,hi8(.LC4)
+ 373 01bc 00D0      		rcall lcd_puts
+  98:test_lcd.c    **** 	itoa( num1, buffer, 10);
+ 375               	.LM27:
+ 376 01be 8091 0000 		lds r24,num1
+ 377 01c2 9091 0000 		lds r25,(num1)+1
+ 378 01c6 4AE0      		ldi r20,lo8(10)
+ 379 01c8 50E0      		ldi r21,hi8(10)
+ 380 01ca 60E0      		ldi r22,lo8(buffer)
+ 381 01cc 70E0      		ldi r23,hi8(buffer)
+ 382 01ce 00D0      		rcall itoa
+  99:test_lcd.c    ****         lcd_puts(buffer);
+ 384               	.LM28:
+ 385 01d0 80E0      		ldi r24,lo8(buffer)
+ 386 01d2 90E0      		ldi r25,hi8(buffer)
+ 387 01d4 00D0      		rcall lcd_puts
+ 100:test_lcd.c    **** 	itoa( ++asd1, buffer, 10);
+ 389               	.LM29:
+ 390 01d6 8091 0000 		lds r24,asd1
+ 391 01da 9091 0000 		lds r25,(asd1)+1
+ 392 01de 0196      		adiw r24,1
+ 393 01e0 9093 0000 		sts (asd1)+1,r25
+ 394 01e4 8093 0000 		sts asd1,r24
+ 395 01e8 8091 0000 		lds r24,asd1
+ 396 01ec 9091 0000 		lds r25,(asd1)+1
+ 397 01f0 4AE0      		ldi r20,lo8(10)
+ 398 01f2 50E0      		ldi r21,hi8(10)
+ 399 01f4 60E0      		ldi r22,lo8(buffer)
+ 400 01f6 70E0      		ldi r23,hi8(buffer)
+ 401 01f8 00D0      		rcall itoa
+ 101:test_lcd.c    **** 	lcd_puts(",");
+ 403               	.LM30:
+ 404 01fa 80E0      		ldi r24,lo8(.LC1)
+ 405 01fc 90E0      		ldi r25,hi8(.LC1)
+ 406 01fe 00D0      		rcall lcd_puts
+ 102:test_lcd.c    **** 	lcd_puts(buffer);
+ 408               	.LM31:
+ 409 0200 80E0      		ldi r24,lo8(buffer)
+ 410 0202 90E0      		ldi r25,hi8(buffer)
+ 411 0204 00D0      		rcall lcd_puts
+ 103:test_lcd.c    **** 	lcd_puts("    ");
+ 413               	.LM32:
+ 414 0206 80E0      		ldi r24,lo8(.LC5)
+ 415 0208 90E0      		ldi r25,hi8(.LC5)
+ 416 020a 00D0      		rcall lcd_puts
+ 104:test_lcd.c    ****  	asd=0;
+ 418               	.LM33:
+ 419 020c 1092 0000 		sts (asd)+1,__zero_reg__
+ 420 0210 1092 0000 		sts asd,__zero_reg__
+ 421               	.L6:
+ 105:test_lcd.c    ****  }
+ 106:test_lcd.c    ****  num=0;
+ 423               	.LM34:
+ 424 0214 1092 0000 		sts (num)+1,__zero_reg__
+ 425 0218 1092 0000 		sts num,__zero_reg__
+ 426               	/* epilogue: frame size=0 */
+ 427 021c FF91      		pop r31
+ 428 021e EF91      		pop r30
+ 429 0220 BF91      		pop r27
+ 430 0222 AF91      		pop r26
+ 431 0224 9F91      		pop r25
+ 432 0226 8F91      		pop r24
+ 433 0228 7F91      		pop r23
+ 434 022a 6F91      		pop r22
+ 435 022c 5F91      		pop r21
+ 436 022e 4F91      		pop r20
+ 437 0230 3F91      		pop r19
+ 438 0232 2F91      		pop r18
+ 439 0234 0F90      		pop __tmp_reg__
+ 440 0236 0FBE      		out __SREG__,__tmp_reg__
+ 441 0238 0F90      		pop __tmp_reg__
+ 442 023a 1F90      		pop __zero_reg__
+ 443 023c 1895      		reti
+ 444               	/* epilogue end (size=17) */
+ 445               	/* function __vector_4 size 230 (196) */
+ 447               	.Lscope2:
+ 449               		.stabd	78,0,0
+ 451               	.global	__vector_8
+ 453               	__vector_8:
+ 454               		.stabd	46,0,0
+ 107:test_lcd.c    **** }
+ 108:test_lcd.c    **** 
+ 109:test_lcd.c    **** SIGNAL (SIG_OVERFLOW1) /* Note [2] */
+ 110:test_lcd.c    **** {
+ 456               	.LM35:
+ 457               	/* prologue: frame size=0 */
+ 458 023e 1F92      		push __zero_reg__
+ 459 0240 0F92      		push __tmp_reg__
+ 460 0242 0FB6      		in __tmp_reg__,__SREG__
+ 461 0244 0F92      		push __tmp_reg__
+ 462 0246 1124      		clr __zero_reg__
+ 463 0248 8F93      		push r24
+ 464 024a 9F93      		push r25
+ 465               	/* prologue end (size=7) */
+ 111:test_lcd.c    **** TCNT1=65535-20;
+ 467               	.LM36:
+ 468 024c 8BEE      		ldi r24,lo8(-21)
+ 469 024e 9FEF      		ldi r25,hi8(-21)
+ 470 0250 9DBD      		out (76)+1-0x20,r25
+ 471 0252 8CBD      		out 76-0x20,r24
+ 112:test_lcd.c    ****     num++;
+ 473               	.LM37:
+ 474 0254 8091 0000 		lds r24,num
+ 475 0258 9091 0000 		lds r25,(num)+1
+ 476 025c 0196      		adiw r24,1
+ 477 025e 9093 0000 		sts (num)+1,r25
+ 478 0262 8093 0000 		sts num,r24
+ 479               	/* epilogue: frame size=0 */
+ 480 0266 9F91      		pop r25
+ 481 0268 8F91      		pop r24
+ 482 026a 0F90      		pop __tmp_reg__
+ 483 026c 0FBE      		out __SREG__,__tmp_reg__
+ 484 026e 0F90      		pop __tmp_reg__
+ 485 0270 1F90      		pop __zero_reg__
+ 486 0272 1895      		reti
+ 487               	/* epilogue end (size=7) */
+ 488               	/* function __vector_8 size 27 (13) */
+ 490               	.Lscope3:
+ 492               		.stabd	78,0,0
+ 494               	.global	ioinit
+ 496               	ioinit:
+ 497               		.stabd	46,0,0
+ 113:test_lcd.c    **** /*    switch (direction) 
+ 114:test_lcd.c    ****     {
+ 115:test_lcd.c    ****         case UP:
+ 116:test_lcd.c    ****             if (++pwm == 900)
+ 117:test_lcd.c    ****                 direction = DOWN;
+ 118:test_lcd.c    ****             break;
+ 119:test_lcd.c    ****         case DOWN:
+ 120:test_lcd.c    ****             if (--pwm == 50)
+ 121:test_lcd.c    ****                 direction = UP;
+ 122:test_lcd.c    ****             break;
+ 123:test_lcd.c    ****     }
+ 124:test_lcd.c    ****     OCR = pwm; */
+ 125:test_lcd.c    **** }
+ 126:test_lcd.c    **** 
+ 127:test_lcd.c    **** void
+ 128:test_lcd.c    **** ioinit (void) /* Note [5] */
+ 129:test_lcd.c    **** {
+ 499               	.LM38:
+ 500               	/* prologue: frame size=0 */
+ 501               	/* prologue end (size=0) */
+ 130:test_lcd.c    ****     cli();
+ 503               	.LM39:
+ 504               	/* #APP */
+ 505 0274 F894      		cli
+ 131:test_lcd.c    ****     /* tmr1 is 10-bit PWM */
+ 132:test_lcd.c    **** //    TCCR1A = _BV (PWM10) | _BV (PWM11) | _BV (XCOM11);
+ 133:test_lcd.c    **** //     TCCR1A = _BV (XCOM11);
+ 134:test_lcd.c    ****     /* tmr1 running on full MCU clock */
+ 135:test_lcd.c    ****     TCCR1B = _BV (CS10); // 4MHz/256 = 15625Hz
+ 507               	.LM40:
+ 508               	/* #NOAPP */
+ 509 0276 81E0      		ldi r24,lo8(1)
+ 510 0278 8EBD      		out 78-0x20,r24
+ 136:test_lcd.c    ****     TCCR2 = _BV (CS21)|_BV (CS20)|_BV (CS22);
+ 512               	.LM41:
+ 513 027a 87E0      		ldi r24,lo8(7)
+ 514 027c 85BD      		out 69-0x20,r24
+ 515               	.LBB2:
+ 516               	.LBB3:
+ 518               	.Ltext1:
+   1:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****    All rights reserved.
+   3:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+   4:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****    Redistribution and use in source and binary forms, with or without
+   5:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****    modification, are permitted provided that the following conditions are met:
+   6:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+   7:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****    * Redistributions of source code must retain the above copyright
+   8:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****      notice, this list of conditions and the following disclaimer.
+   9:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  10:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****    * Redistributions in binary form must reproduce the above copyright
+  11:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****      notice, this list of conditions and the following disclaimer in
+  12:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****      the documentation and/or other materials provided with the
+  13:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****      distribution.
+  14:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  15:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****    * Neither the name of the copyright holders nor the names of
+  16:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****      contributors may be used to endorse or promote products derived
+  17:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****      from this software without specific prior written permission.
+  18:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  19:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  20:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  21:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  22:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  23:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  24:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  25:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  26:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  27:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  28:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  29:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  30:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  31:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /* $Id: interrupt.h,v 1.12.2.1 2005/06/25 22:50:40 aesok Exp $ */
+  32:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  33:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #ifndef _AVR_INTERRUPT_H_
+  34:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #define _AVR_INTERRUPT_H_
+  35:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  36:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #include <avr/io.h>
+  37:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  38:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /** \name Global manipulation of the interrupt flag
+  39:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  40:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     The global interrupt flag is maintained in the I bit of the status
+  41:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     register (SREG). */
+  42:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  43:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /*@{*/
+  44:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  45:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /** \def sei()
+  46:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \ingroup avr_interrupts
+  47:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  48:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \code#include <avr/interrupt.h>\endcode
+  49:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  50:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     Enables interrupts by clearing the global interrupt mask. This function
+  51:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     actually compiles into a single line of assembly, so there is no function
+  52:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     call overhead. */
+  53:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  54:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #define sei()  __asm__ __volatile__ ("sei" ::)
+  55:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  56:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /** \def cli()
+  57:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \ingroup avr_interrupts
+  58:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  59:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \code#include <avr/interrupt.h>\endcode
+  60:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  61:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     Disables all interrupts by clearing the global interrupt mask. This function
+  62:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     actually compiles into a single line of assembly, so there is no function
+  63:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     call overhead. */
+  64:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  65:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #define cli()  __asm__ __volatile__ ("cli" ::)
+  66:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  67:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /*@}*/
+  68:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  69:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #ifdef __cplusplus
+  70:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** extern "C" {
+  71:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #endif
+  72:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  73:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /** \name Allowing specific system-wide interrupts
+  74:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  75:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     In addition to globally enabling interrupts, each device's particular
+  76:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     interrupt needs to be enabled separately if interrupts for this device are
+  77:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     desired.  While some devices maintain their interrupt enable bit inside
+  78:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     the device's register set, external and timer interrupts have system-wide
+  79:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     configuration registers. 
+  80:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  81:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     Example:
+  82:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  83:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \code
+  84:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     // Enable timer 1 overflow interrupts.
+  85:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     timer_enable_int(_BV(TOIE1));
+  86:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  87:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     // Do some work...
+  88:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  89:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     // Disable all timer interrupts.
+  90:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     timer_enable_int(0);
+  91:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \endcode
+  92:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  93:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \note Be careful when you use these functions. If you already have a
+  94:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     different interrupt enabled, you could inadvertantly disable it by
+  95:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     enabling another intterupt. */
+  96:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  97:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /*@{*/
+  98:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+  99:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /** \ingroup avr_interrupts
+ 100:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \def enable_external_int(mask)
+ 101:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \code#include <avr/interrupt.h>\endcode
+ 102:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 103:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     This macro gives access to the \c GIMSK register (or \c EIMSK register
+ 104:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     if using an AVR Mega device or \c GICR register for others). Although this
+ 105:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     macro is essentially the same as assigning to the register, it does
+ 106:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     adapt slightly to the type of device being used. This macro is 
+ 107:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     unavailable if none of the registers listed above are defined. */
+ 108:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 109:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /* Define common register definition if available. */
+ 110:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #if defined(EIMSK)
+ 111:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #  define __EICR  EIMSK
+ 112:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #elif defined(GIMSK)
+ 113:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #  define __EICR  GIMSK
+ 114:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #elif defined(GICR)
+ 115:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #  define __EICR  GICR
+ 116:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #endif
+ 117:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 118:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /* If common register defined, define macro. */
+ 119:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #if defined(__EICR) || defined(DOXYGEN)
+ 120:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #define enable_external_int(mask)               (__EICR = mask)
+ 121:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #endif
+ 122:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 123:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 124:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 125:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** /** \ingroup avr_interrupts
+ 126:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 127:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     \code#include <avr/interrupt.h>\endcode
+ 128:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 129:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 	This function modifies the \c timsk register.
+ 130:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 	The value you pass via \c ints is device specific. */
+ 131:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** 
+ 132:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** static __inline__ void timer_enable_int (unsigned char ints)
+ 133:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** {
+ 134:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h **** #ifdef TIMSK
+ 135:/usr/home/root/atmel/GCC/lib/gcc/avr/4.0.1/../../../../avr/include/avr/interrupt.h ****     TIMSK = ints;
+ 520               	.LM42:
+ 521 027e 84E4      		ldi r24,lo8(68)
+ 522 0280 89BF      		out 89-0x20,r24
+ 523               	.LBE3:
+ 524               	.LBE2:
+ 526               	.Ltext2:
+ 137:test_lcd.c    ****     /* set PWM value to 0 */
+ 138:test_lcd.c    **** //     OCR = 511;
+ 139:test_lcd.c    ****     /* enable OC1 and PB2 as output */
+ 140:test_lcd.c    **** //     DDROC = _BV (OC1);
+ 141:test_lcd.c    ****     timer_enable_int ( _BV (TOIE1) | _BV (TOIE2) );
+ 142:test_lcd.c    ****     /* enable interrupts */
+ 143:test_lcd.c    **** //    MCUCR = _BV (ISC11) | _BV (ISC10);
+ 144:test_lcd.c    ****     MCUCR = _BV (ISC11);
+ 528               	.LM43:
+ 529 0282 88E0      		ldi r24,lo8(8)
+ 530 0284 85BF      		out 85-0x20,r24
+ 145:test_lcd.c    ****     GICR = _BV(INT1);
+ 532               	.LM44:
+ 533 0286 80E8      		ldi r24,lo8(-128)
+ 534 0288 8BBF      		out 91-0x20,r24
+ 146:test_lcd.c    ****     ADMUX  = (1<<REFS1)|(1<<REFS0)|(channel );
+ 536               	.LM45:
+ 537 028a 84EC      		ldi r24,lo8(-60)
+ 538 028c 87B9      		out 39-0x20,r24
+ 147:test_lcd.c    ****     ADCSRA = (1<<ADEN)|(1<<ADIE)|(1<<ADIF)|(1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)|(1<<ADFR)|(1<<ADSC);
+ 540               	.LM46:
+ 541 028e 8FEF      		ldi r24,lo8(-1)
+ 542 0290 86B9      		out 38-0x20,r24
+ 148:test_lcd.c    ****     sei ();
+ 544               	.LM47:
+ 545               	/* #APP */
+ 546 0292 7894      		sei
+ 547               	/* #NOAPP */
+ 548               	/* epilogue: frame size=0 */
+ 549 0294 0895      		ret
+ 550               	/* epilogue end (size=1) */
+ 551               	/* function ioinit size 19 (18) */
+ 553               	.Lscope4:
+ 555               		.stabd	78,0,0
+ 557               	.global	main
+ 559               	main:
+ 560               		.stabd	46,0,0
+ 149:test_lcd.c    **** }
+ 150:test_lcd.c    **** 
+ 151:test_lcd.c    **** int main(void)
+ 152:test_lcd.c    **** {
+ 562               	.LM48:
+ 563               	/* prologue: frame size=0 */
+ 564 0296 C0E0      		ldi r28,lo8(__stack - 0)
+ 565 0298 D0E0      		ldi r29,hi8(__stack - 0)
+ 566 029a DEBF      		out __SP_H__,r29
+ 567 029c CDBF      		out __SP_L__,r28
+ 568               	/* prologue end (size=4) */
+ 153:test_lcd.c    ****     DDRD &=~ (1 << PD3); /* Pin PD2 input*/
+ 570               	.LM49:
+ 571 029e 8B98      		cbi 49-0x20,3
+ 154:test_lcd.c    ****     PORTD |= (1 << PD3); /* Pin PD2 pull-up enabled*/
+ 573               	.LM50:
+ 574 02a0 939A      		sbi 50-0x20,3
+ 155:test_lcd.c    ****     /*eeprom_write_byte (uint8_t *addr, uint8_t value)*/
+ 156:test_lcd.c    ****     /* initialize display, cursor off */
+ 157:test_lcd.c    ****     lcd_init(LCD_DISP_ON);
+ 576               	.LM51:
+ 577 02a2 8CE0      		ldi r24,lo8(12)
+ 578 02a4 00D0      		rcall lcd_init
+ 158:test_lcd.c    ****     ioinit ();
+ 580               	.LM52:
+ 581 02a6 E6DF      		rcall ioinit
+ 159:test_lcd.c    ****     DDRB|= _BV(PB1);
+ 583               	.LM53:
+ 584 02a8 B99A      		sbi 55-0x20,1
+ 160:test_lcd.c    ****     /*    eeprom_busy_wait ();
+ 161:test_lcd.c    ****     num = eeprom_read_byte (sdf); */
+ 162:test_lcd.c    ****     lcd_clrscr();   /* clear display home cursor */ 
+ 586               	.LM54:
+ 587 02aa 00D0      		rcall lcd_clrscr
+ 163:test_lcd.c    ****     DDRB|= _BV(PB1);
+ 589               	.LM55:
+ 590 02ac B99A      		sbi 55-0x20,1
+ 591               	.L20:
+ 592 02ae FFCF      		rjmp .L20
+ 593               	/* epilogue: frame size=0 */
+ 594               	/* epilogue: noreturn */
+ 595               	/* epilogue end (size=0) */
+ 596               	/* function main size 13 (9) */
+ 598               	.Lscope5:
+ 600               		.stabd	78,0,0
+ 601               		.comm dfg,4,1
+ 602               		.comm asd1,2,1
+ 603               		.comm asd,2,1
+ 604               		.comm num1,2,1
+ 605               		.comm freq,2,1
+ 606               		.comm num,2,1
+ 607               		.comm buffer,10,1
+ 608               		.comm direction,1,1
+ 609               		.comm pwm,2,1
+ 610               		.lcomm analog_busy,1
+ 611               		.lcomm analog_result,2
+ 613               	.Letext0:
+ 614               	/* File "test_lcd.c": code  349 = 0x015d ( 263), prologues  45, epilogues  41 */
+DEFINED SYMBOLS
+                            *ABS*:00000000 test_lcd.c
+     /tmp/cctumK5T.s:3      *ABS*:0000003f __SREG__
+     /tmp/cctumK5T.s:4      *ABS*:0000003e __SP_H__
+     /tmp/cctumK5T.s:5      *ABS*:0000003d __SP_L__
+     /tmp/cctumK5T.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/cctumK5T.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/cctumK5T.s:69     .data:00000000 channel
+     /tmp/cctumK5T.s:76     .text:00000000 __vector_2
+                            *COM*:00000002 num
+                            *COM*:00000002 num1
+     /tmp/cctumK5T.s:119    .text:00000036 __vector_14
+     /tmp/cctumK5T.s:610    .bss:00000001 analog_result
+                             .bss:00000000 analog_busy
+     /tmp/cctumK5T.s:191    .text:00000078 __vector_4
+                            *COM*:00000002 asd
+                            *COM*:0000000a buffer
+                            *COM*:00000004 dfg
+                            *COM*:00000002 asd1
+     /tmp/cctumK5T.s:453    .text:0000023e __vector_8
+     /tmp/cctumK5T.s:496    .text:00000274 ioinit
+     /tmp/cctumK5T.s:559    .text:00000296 main
+                            *COM*:00000002 freq
+                            *COM*:00000001 direction
+                            *COM*:00000002 pwm
+
+UNDEFINED SYMBOLS
+__do_copy_data
+__do_clear_bss
+lcd_gotoxy
+itoa
+lcd_puts
+__divmodhi4
+__floatsisf
+__divsf3
+__ltsf2
+__fixsfsi
+__stack
+lcd_init
+lcd_clrscr
