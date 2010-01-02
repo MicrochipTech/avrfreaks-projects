@@ -1,0 +1,105 @@
+/* This program is based on AVR application Note AVR055
+ * I have implemented Simple search. I also read AVR freaks
+ * design note :DN018
+ * Both Atmel and AVR Freaks code was based on IAR compiler
+ * My code is based on avrlib and gcc.
+ * If you are using another compiler please look at the final
+ * asm code and verify number of clocks required for the counter loop
+ * that number is used in FixedCounter calculation
+ * -Adarsha Vishweshwara
+ * 1/1/2010
+ */
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+
+#include "main.h"
+#include "Calibrate.h"
+
+/*****************************************************************************
+*
+*   Function name : Oscillator_calibration
+*
+*   Returns :       None
+*
+*   Parameters :    None
+*
+*   Purpose :       Calibrate the internal OSCCAL byte, using the external
+*                   32,768 kHz crystal as reference
+*					Based on AVR055 application note
+*
+*****************************************************************************/
+void Oscillator_calibration(void)
+{
+
+	unsigned int count=0;
+	unsigned char cycles = 0x80;
+
+	//Disable interrupts
+	cli();
+
+	//Get the FixedCounter, based on selected AVR, and its frequency
+	const unsigned int FixedCounter=GetFixedCounter();
+
+	CLKPR = (1<<CLKPCE);        // set Clock Prescaler Change Enable
+	// set prescaler = 8, Inter RC 8Mhz / 8 = 1Mhz
+	CLKPR = (1<<CLKPS1) | (1<<CLKPS0);
+
+
+	//setup timers to run asynchronously
+	TIMSK2 = 0;             //disable OCIE2A and TOIE2
+	ASSR |= (1<<AS2);		//select asynchronous operation of timer2 (32,768kHz)
+	TCCR2A = (1<<CS20);     // start timer2 with no prescaling
+	Delay(1000);    		// wait for external crystal to stabilise
+
+	do{
+		TCNT2 = 0x00;                                                 // Reset async timer/counter
+		while (ASSR & ((1<<OCR2UB)|(1<<TCN2UB)|(1<<TCR2UB))); 		// Wait until async timer is updated  (Async Status reg. busy flags).
+
+		/*increament the counter till we get x number of external xtal ticks
+		 * gcc converts count++ to 2 SBCI, takes 2 clocks
+		 * TCNT2 is in extended IO for Mega, to access it we need LDS taking 2 clocks
+		 * comparison and branch is CPI and BRCS, takes(1+2) 3 cycles
+		 * so in each external tick (one loop) we will take 7 internal clock ticks
+		 * since we calculated FixedCounter with 7, if the internal frequency is correct
+		 * counter will match FixedCounter
+		 */
+		do{
+		  count++;
+		} while (TCNT2 < EXTERNAL_TICKS);
+
+		// compare with predefined FixedCounter
+		if (count > FixedCounter)
+			OSCCAL--;		// If count is more decrease speed
+		else if (count < FixedCounter)
+			OSCCAL++;		// If count is less: - increase speed
+		else if (count == FixedCounter)
+		  cycles=1;			// Calibration done, exit loop
+	} while(--cycles);    	// Calibrate using 128(0x80) calibration cycles
+
+	  //Enable interrupts
+	  sei();
+}
+
+
+/*****************************************************************************
+*
+*   Function name : Delay
+*
+*   Returns :       None
+*
+*   Parameters :    unsigned int millisec
+*
+*   Purpose :       Delay-loop, using Timer0
+*
+*****************************************************************************/
+void Delay(unsigned int millisec)
+{
+	//clear Timer0
+	TCNT0 = 0;
+	//Set Prescale of 8 for 8uS resolution on 1MHz
+	TCCR0A|=(1<<CS00);
+	while (millisec--) {
+			while(TCNT0<=125);
+		}
+}
