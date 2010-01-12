@@ -1,0 +1,33 @@
+file name: example_5.txt – generating a 1 KHz interrupt stream
+
+
+Here we look at a timer initialization that results in an ongoing stream of interrupts.  We are using an Atmel AVR ATmega16 MCU running at 8 MHz.  It has 3 timers available, and we will use one of the 8 bit timers, timer 0.
+
+The timer contains a counter and a match value register.  It counts once for every so many master clock cycles.  The number of clock cycles between counts is controlled by the prescaler, a value we as programmers choose.
+
+When the timer reaches the match value, an interrupt is generated.  The timer's counter is reset to zero, and the process repeats.  The interrupts will be generated at a frequency which depends on the master clock frequency, the prescaler value, and the match value.  We will use a combination that results in approximately 1 millisecond interrupts.
+
+
+    // =====================================================
+    // timer_init() – general timer initialization
+    //
+    // call this once near the beginning of the program
+    //
+    // this functions starts a sequence of 1 ms interrupts (approx)
+    // using timer0.  Prescaler = 64, CTC mode, 8 MHz clock.
+
+    void timer_init(void) {
+
+        CLI();                // turn interrupts off
+        TCCR0 = 0x00;         // stop the timer
+        TCNT0 = 0x00;         // zero the counter
+        OCR0  = 0x7D;         // set compare value (0.992KHz)
+        TCCR0 = 0x0B;         // CTC mode, prescale = 64
+        TIMSK |= 1 << OCIE0;  // enable timer 0 compare interrupts
+        SEI();                // let the games begin
+    }
+
+
+The timer match sets a bit in a timer register, the match compare flag.  That flag may be used to generate a compare match interrupt by setting a bit in the TIMSK register.  Additionally, global interrupts must be enabled before any interrupt of any kind is recognized.
+
+The CTC mode restarts the count at 0 when a match occurs.  The prescaler and CTC mode are selected by bits in the same timer register, TCCR0.  Setting TCCR0 to zero stops the timer.

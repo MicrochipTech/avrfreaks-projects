@@ -1,0 +1,282 @@
+file name: example_7.txt – multiple virtual timers
+
+
+In this example we simulate 8 virtual timers using a single hardware timer.  We can start, stop, and check the timers at will, although in this example we will not have any individual timer interrupt or callback capability.  We must poll a particular timer to see if it has elapsed.  For many applications this is quite sufficient, but for others we would like to be notified immediately when the time interval ends.  Example 8 addresses those kinds of needs.
+
+We will run a continuous stream of timer interrupts about every 1 millisecond (a frequency of about 1 KHz).  This is just an arbitrary number and decision, although it suffices for a lot of human scale timing needs.  A RISC processor running at 8 MHz will execute close to 8,000 instructions between interrupts, so the interrupt overhead is a small percentage of the total workload.
+
+We will have 4 components:
+  Two global variables
+  A timer initialization routine
+  A function to start a timer (initiate a timing sequence)
+  An interrupt handler for the timer interrupts
+
+We test bits in one of the global variables to poll the timers.  Each timer has a particular bit that corresponds to it.  If the bit is zero, the timer is running or off, and if the bit is one, the timer's interval has expired.  When we start a timer its bit is set to zero, and when it runs out, its bit is set to one.
+
+1) The global variables
+
+The global variable containing the bit flags is an unsigned char, since we are creating 8 timers.  You can certainly have more timers, in which case you would need a wider variable such as an unsigned int.
+
+The other global variable is an array of 8 unsigned ints.  These are the remaining timer tic counts for each of the virtual timers.  If the count for a particular timer is zero, it is stopped, and otherwise it is running.  At the point where a timer’s tic count transitions from 1 to 0, the timer runs out and stops.
+
+The bit flag variable, which we will call tflags, must be declared volatile because it will be modified in the interrupt handler.  The volatile qualifier tells the compiler that it needs to fetch the current value of the variable for every use. Otherwise, to be efficient, the compiler might fetch the value once and hold it in a register for multiple uses, which would be fine if the value couldn’t change out of the blue (like seemingly happens in the interrupt handler).  In general, shared variables that are modified in an interrupt handler need to be declared volatile.
+
+The tic count array, which we will call cc[], does not need to be volatile because it will not be read outside the interrupt handler.  It may be declared volatile, if you wish, but it is not necessary.
+
+Here are the declarations:
+
+    volatile unsigned char tflags;          // 8 bit flags for timers
+    unsigned int cc[8];                     // 8 tic counters for timers
+
+
+2) The timer initialization routine
+
+Timer initialization varies wildly by MCU.  This code is for an Atmel AVR ATmega16 MCU and uses timer 0 (there are 3).  The processor is running at 8 MHz.  We can only approximate 1 KHz because it is an 8 bit timer and the 8 MHz doesn’t divide down to 1000 nicely, but it is close enough.
+
+The timer has several operating modes, and many bells and whistles.  We are using a mode (CTC) where the timer counts from a starting value up to a compare value, both of which we provide.  When the values match, an interrupt is generated and the timer resets its counter to zero.  We control the timer’s count rate by scaling down the processor’s clock, in this case by dividing it by 64.  Once this sequence starts, we do not have to do anything else – we get an interrupt about every millisecond until we do something to stop it all.
+
+    // =========================================================
+    // ex7_init() – initialization for example 7
+    //
+    // call this once near the beginning of the program
+    //
+    // this functions start a sequence of 1 ms interrupts (approx)
+    // using timer0.  it also sets all the tflags bit flags to 1,
+    // indicating that all the timers are stopped, and sets their
+    // remaining tic counts in cc[] to zero.
+
+    void ex7_init(void) {
+      char i;               // loop counter
+
+      CLI();                // turn interrupts off
+      tflags = 0x00;        // all 8 virtual timers are off
+      for (i = 0; i < 8; i++) {
+        cc[i] = 0;          // no remaining time
+      }
+
+      TCCR0 = 0x00;         // stop the timer
+      TCNT0 = 0x00;         // initialize counter value
+      OCR0  = 0x7D;         // set compare value (0.992KHz)
+      TCCR0 = 0x0B;         // CTC mode, prescale = 64
+      TIMSK |= 1 << OCIE0;  // enable timer 0 compare interrupts
+      SEI();                // global interrupts on
+    }
+
+3) The function to start a timer
+
+To start a timer we need to put the tic count passed by the caller into the cc[] array.  Additionally we need to clear the timer’s bit flag.  If we are stopping a timer (count == 0), we need to put 0 in the cc[] array and set the timer's bit flag, simulating a timer runout.
+
+We have to turn off interrupts while we manipulate the tflags and cc[] variables to insure that the interrupt handler doesn’t simultaneously access them, possibly causing erroneous results.  Delaying interrupts for a few instructions causes no harm in all but the most demanding applications.
+
+    // =========================================================
+    // start_timer(timer, count) – start a virtual timer
+    //
+    //  timer – the timer number we want to use (0 – 7)
+    //  count – number of tics to run it
+    //          if count == 0, stop the timer and set its flag
+
+    unsigned char start_timer(unsigned char who, unsigned int count) {
+      unsigned char mask;
+
+      who &= 0x07;                 // keep arg in the 0-7 range
+      mask = 1 << who;             // bit mask for our timer
+      CLI();                       // don’t interrupt the following
+      cc[who] = count;             // save the counter value
+      if (count) {                 // was it zero (stop)?
+        tflags &= ~mask;           // no - clear our bit flag
+      } else {
+        tflags |= mask;            // yes – set our bit flag
+      }
+      SEI();                       // restore interrupts
+      return mask;                 // give caller the mask to use
+    }
+
+4) The interrupt handler
+
+The format and syntax of interrupt handlers vary wildly by compiler brand.  Because they exist outside the C standard, compiler writers are free to do anything they wish.  This code is written in ImageCraft ICCAVR C.
+
+On each interrupt we will look at each virtual timer and, if it is running, decrement its tic count.  When the count goes from 1 to 0, we set its bit flag to signal that the timer has stopped.
+
+    // =========================================================
+    // our_ISR() – timer 0 compare match interrupt handler
+    //
+    // this is called on every timer 0 compare match interrupt,
+    // approximately every 1 ms in this example
+
+    #pragma interrupt_handler our_ISR:iv_TIM0_COMP
+    void our_ISR(void) {
+      unsigned int use;              // scratch variables
+      char i;
+
+      for (i = 0; i < 8; i++) {    // look at the 8 counters
+        use = cc[i];               // current value
+        if (use) {                 // if nonzero, it’s running
+          cc[i] = --use;           // decrement the counter
+          if (!use) {              // did it just go to zero?
+            tflags |= 1 << i;      // yes – set its bit flag
+          }
+        }
+      }
+    }
+
+For 8 timers this isn't too bad, but if it were more we might want to consider better coding practices since we scan the array on every interrupt.  One scheme would be to have a second set of bit flags saying whether each timer is actually running or not, then the handler could easily check in one if statement to see if there were any timers running.  Another scheme would be to keep a list of running timers, and only look at those actually active on any interrupt.  More overhead for the start/stop code, but less overhead in the interrupt handler.
+
+
+Now for some examples of how we might use these virtual timers.
+
+--------------------------------------------------------------
+example: flash an LED
+--------------------------------------------------------------
+
+Here we will turn on an LED one second from now, and then turn it off a half second later.  We will use virtual timer #3 to turn it on, and timer #6 to turn it off.  The details of getting the I/O ports set up and actually manipulating the LED are left as an exercise for the student.
+
+    void main(void) {
+      unsigned char mask3, mask6;     // single bit masks
+
+      ex7_init();                     // initialize the virtual timers
+      <set up output ports, etc.>
+
+      mask3 = start_timer(3, 1000);   // turn on LED in 1 second
+      mask6 = start_timer(6, 0);      // dummy call to get mask value
+      while (1) {                     // infinite loop
+
+        <do anything you want here>
+
+        if (tflags & mask3) {         // time to turn LED on?
+          start_timer(6, 500);        // turn off in 0.5 second
+          CLI();                      // disable interrupts
+          tflags ^= mask3;            // clear our flag bit
+          SEI();                      // enable interrupts
+          <turn LED on>
+        }
+        if (tflags & mask6) {         // time to turn LED off?
+          CLI();                      // disable interrupts
+          tflags ^= mask6;            // clear our flag bit
+          SEI();                      // enable interrupts
+          <turn LED off>
+        }
+      }
+    }
+
+Notice that again we have to disable interrupts while we manipulate tflags.  That is because we don’t know if the compiler can clear that bit in a single instruction, or whether it will take several.  Say it takes 3: fetch tflags, clear bit, store tflags.  Then say we have executed 2 of those instructions, and we get an interrupt which changes the value of tflags.  When we come back to our code and execute our third instruction, we store an old value of tflags on top of the value the interrupt handler just updated.  Not a good thing.
+
+This is called atomicity – we have certain operations we need to get completely done without being interrupted.  They may be one instruction, or several, but if there’s a chance of it taking several and a chance of an interrupt handler spoiling our day, we have to take steps to exclude the possibility.
+
+We may want to create a “clear_flag” function which does all this:
+
+    // ===================================================
+    // clear_flag(who) – clear the bitflag for a timer
+    //
+    // who – timer number (0 – 7)
+
+    void clear_flag(char who) {
+      who &= 0x07;                 // keep arg legal
+      CLI();                       // interrupts off
+      tflags &= ~(1 << who);       // mask of 7 ones and 1 zero
+      SEI();                       // interrupts on
+    }
+
+
+--------------------------------------------------------------
+example: flash an LED starting now, specify the number of times
+--------------------------------------------------------------
+
+This is based on the previous example, and flashes an LED for 5 seconds in one second cycles.
+
+    void main(void) {
+      unsigned char mask3 = 1 << 3;    // bit mask, timer 3
+      unsigned char mask6 = 1 << 6;    // bit mask, timer 6
+      int times;                       // number of times to flash
+
+      ex7_init();                      // initialize the virtual timers
+      <set up output ports, etc.>
+
+      while (1) {                      // infinite loop
+
+        <do anything you want here>
+
+        if (<make decision to flash>) {
+          times = 5;                   // number of cycles we’ll flash
+          start_timer(6, 500);         // turn off in one half second
+          <turn LED on>                // turn it on now
+        }
+
+        <do anything you want here>
+
+        if (tflags & mask3) {          // time to turn LED on?
+          start_timer(6, 500);         // turn off in 0.5 second
+          clear_flag(3);               // clear our bit flag
+          <turn LED on>
+        }
+        if (tflags & mask6) {          // time to turn LED off?
+          clear_flag(6);               // clear our bit flag
+          <turn LED off>
+          if (--times) {               // do another cycle?
+            start_timer(3, 500);       // yes - turn it on in 1/2 second
+          }
+        }
+      }
+    }
+
+
+
+--------------------------------------------------------------
+example: run 3 servos back and forth, 3 seconds per direction,
+         1 second out of phase. use 9 steps in each direction.
+--------------------------------------------------------------
+
+Here we will step 3 servos simultaneously.  We will update the servos’ PWM values (their angle of rotation) every three tenths of second, a total of 9 steps in each direction.  The servos will be 3 steps out of phase from each other.
+
+We will have an array of 9 values which correspond to the PWM values we have to load to whatever mechanism we are using to control the servos.  The first value (subscript of 0) corresponds to a full swing in one direction, and the last value (subscript of 8) corresponds to a full swing in the other.  Every third of a second we will send the next value in its sequence to each servo, and each servo’s sequence will change directions when it hits either end of the array.  The three servos will be offset by 3 steps from each other.
+
+The PWM values are just arbitrarily made up.  What they would actually be depends on your hardware and method of controlling the servos.  The where[] array will keep track of where each servo currently is in its sequence of 0 (full left) to 8 (full right), and the dir[] array will keep track of whether each servo is going forward (1) or backward (-1) in its sequence.
+
+    // global variables
+    int ss[9] = {0, 10, ..., 70, 80};    // the PWM values
+    int where[3] = {0, 3, 6};            // where each is in its sequence
+    int dir[3] = {1, 1, 1};              // direction each is going
+
+    void main(void) {
+      unsigned char mask5 = 1 << 5;      // bit mask, timer 5
+      int i, j, k;                       // scratch variables
+
+      ex7_init();                        // initialize the virtual timers
+      <set up servos, ports, etc.>
+
+      update_servos();                   // send out initial positions
+      start_timer(5, 333);               // timer runs out in 1/3 second
+      while (1) {                        // infinite loop
+
+        <do anything you want here>
+
+        if (tflags & mask5) {            // time to update?
+          start_timer(5, 333);           // set it for next time
+          for (i = 0; i < 3; i++) {      // update each servo’s position
+            j = where[i] + dir[i];       // new position
+            if (j > 7) {                 // did we get to end?
+              dir[i] = -1;               // yes – change directions
+            } else if (j < 1) {          // did we get to beginning?
+              dir[i] = 1;                // yes – change directions
+            }
+            where[i] = j;                // new subscript for ss[]
+          }
+          update_servos();               // send them the new PWM values
+        }
+      }
+    }
+
+    void update_servos(void) {
+      int pwm;                           // the PWM value
+      int i;                             // the servo number (0 – 2)
+      int j;                             // scratch
+
+      for (i = 0; i < 3; i++) {          // do 3 servos
+        j = where[i];                    // where this one is in cc[]
+        pwm = cc[j];                     // the PWM for that angle
+        <output pwm to servo i>
+      }
+    }
+
+This time we don’t have to clear the flag when timer 5 runs out, because we are starting it again (which clears the flag) before we get around to checking it on the next pass of the loop.
+
+Whether you clear a flag or not is up to you.  If you don’t clear it, it will appear that the timer has run out every time you check (after it actually does run out, that is).  If this is a problem, you have to clear it when you take care of the initial run out.

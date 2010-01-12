@@ -1,0 +1,328 @@
+file name: example_8.txt – event management
+
+
+Here we implement the multiple timer "events" in code that is a little more complex than what we've seen before.  First, we'll set up a global definition to determine how many events we can handle.  Your memory size will be the limiting factor here.  If it's over 255, then the variable nevents (and possibly others) needs to be an int, not a char.
+
+    #define MAXEVENTS 8          // maximum number of events
+
+We will use a structure to keep the information about each pending event, so its definition is also global:
+
+    struct ss_events {
+      unsigned int id;          // event ID
+      unsigned int tcnt;        // tic counts until event
+      void (*event)(void);      // pointer to function to handle event
+    };
+
+Then we will need some global variables:
+
+    unsigned int nextid;        // the next ID to be assigned
+    unsigned char nevents;      // number of active events (0 to MAXEVENTS)
+    volatile struct ss_events evlist[MAXEVENTS];   // the event list
+
+And our function prototypes:
+
+    unsigned int add_event(void (*)(void), unsigned int);  // schedule
+    void sort_elist(void);             // sort the events
+    void do_events(void);              // call any ready events
+    void cancel_event(unsigned int);   // cancel one or all events
+    void remove_event(void);           // remove event from list
+    void ev_update(void);              // do timer count updates
+
+
+You call the event initialization routine (ex8_init()) once to start the timer and interrupt sequence.  Again we are using an interrupt of 1 KHz, giving us 1 millisecond interrupts.  This may be changed in the initialization code.
+
+See example 7 for a detailed explanation of the initialization code.
+
+    // =====================================================
+    // ex8_init() – initialization for example 8
+    //
+    // call this once near the beginning of the program
+    //
+    // this functions start a sequence of 1 ms interrupts (approx)
+    // using timer0.  it also clears all events and starts the
+    // id sequence.
+
+    void ex8_init(void) {
+
+        CLI();                // turn interrupts off
+        nevents = 0;          // no active events
+        nextid = 1;           // next event id we will assign
+
+        TCCR0 = 0x00;         // stop the timer
+        TCNT0 = 0x00;         // initialize counter value
+        OCR0  = 0x7D;         // set compare value (0.992KHz)
+        TCCR0 = 0x0B;         // CTC mode, prescale = 64
+        TIMSK |= 1 << OCIE0;  // enable timer 0 compare interrupts
+        SEI();                .. let the games begin
+    }
+
+To schedule an event, call add_event() with the name of the event’s function and the number of milliseconds (for this example – actually timer interrupts, or tic counts) that need to pass before the function is called.  The function will return a sequential id number from 1 to 65,535 which may be used to cancel the event.
+
+We do not check for duplicate id numbers, although the likelihood of reusing one while the original is still active is quite small, to say the least.
+
+    // =====================================================
+    // add_event(function, count) - schedule an event
+    //
+    // function – name of function to call (void, no args)
+    // count – number of timer tics to wait
+    //
+    // returns: event id, used to cancel event
+    //          zero if count == 0 (error)
+
+    unsigned int add_event(void (*fname)(), unsigned int tcnt) {
+      unsigned int rtn = 0;              // return value
+
+      if ((nevents <= (MAXEVENTS - 1)) && tcnt) {
+        rtn = nextid;                    // the id we will assign
+        CLI();                           // keep the interrupt handler quiet
+        evlist[nevents].id = nextid++;   // our id, bump to next one
+        evlist[nevents].event = fname;   // address of function for event
+        evlist[nevents++].tcnt = tcnt;   // nonzero tic count
+        sort_elist();                    // keep them in ascending order
+        SEI();                           // release the interrupt handler
+        if (!nextid) nextid++;           // id = 0 not allowed
+      }
+      return rtn;                        // return the id we used, or 0
+    }
+
+The sort function is not called by the user.  It sorts the event list into ascending order by remaining time.  We don’t have to worry about interrupts because the caller has turned them off.
+
+    // =====================================================
+    // sort_elist() - sort event list ascending by time
+
+    void sort_elist(void) {
+      if (nevents > 1) {            // zero or one events are already sorted
+        char i, swap;
+        struct s_events hold;       // temporary swap variable
+    
+        swap = 1;                   // force first pass
+        while (swap) {              // repeat while something out of order
+          swap = 0;                 // assume no swapping will be done
+          for (i = 1; i < nevents; i++) {  // check from second to last
+            if (evlist[i - 1].tcnt > evlist[i].tcnt) {
+              swap = 1;                  // remember we made an exchange
+              hold = evlist[i];          // exchange order of events
+              evlist[i] = evlist[i - 1];
+              evlist[i - 1] = hold;
+            }
+          }
+        }
+      }
+    }
+
+This function, do_events(), must be called by the user on a regular basis.  It checks to see if an event is due, and, if so, calls it.  This is done as a separate function because we do not want to call the event functions from inside the interrupt service routine at the time they are recognized as being due.
+
+    // =====================================================
+    // do_events() - see if an event is ready and execute it if so
+
+    void check_events(void) {
+      if (nevents) {                // one or more active events?
+        if (!evlist[0].tcnt) {      // if count == 0, it’s event time
+          void (*efun)(void);       // declare a pointer to a function
+
+          efun = evlist[0].event;   // save our function pointer
+          remove_event();           // remove the top event
+          (*efun)();                // execute the event function
+        }
+      }
+    }
+
+The function remove_event() is not called by the user.  It removes the top event from the event list, the event that the caller is poised to execute once this is done.
+
+    // =====================================================
+    // remove_event() - delete the top event
+
+    void remove_event(void) {
+      nevents--;                // one fewer events now
+      if (nevents) {            // if any left, move them up in list
+        char i;
+
+        CLI();                  // no interrupts, please
+        for (i = 0; i < nevents; i++)  // all remaining events
+          evlist[i] = evlist[i + 1];   // scoot them up
+        SEI();                  // interrupts OK again
+      }
+    }
+
+    // =====================================================
+    // cancel_event(who) - throw out one or all events
+    //
+    // who – if nonzero, cancel event with this id
+    //       if zero, cancel all events
+
+    void cancel_event(unsigned int who) {
+      int i;
+
+      CLI();                    // no interrupts during this
+      if (who) {                // single id, or everyone?
+        for (i = 0; i < nevents; i++) {   // look through all of them
+          if (who == evlist[i].id) {      // find our guy?
+            while (i < nevents - 1) {     // all remaining events
+              evlist[i] = evlist[i + 1];  // move it up
+              i++;
+            }
+            nevents--;          // it’s gone
+            break;              // we’re done with this loop
+          }
+        }
+      } else {                  // cancel all events
+        nevents = 0;            // no active events
+      }
+      SEI();                    // interrupts OK again
+    }
+
+Because the event list is manipulated by both the mainline and the interrupt handler, we need to disable interrupts when we are manipulating the event list.  They are never disabled for long, and the delay in servicing an interrupt will not affect our timing adversely.
+
+    // =====================================================
+    // our_ISR() – timer 0 compare match interrupt handler
+    //
+    // this is called on every timer 0 compare match interrupt,
+    // approximately every 1 ms in this example
+
+    #pragma interrupt_handler our_ISR:iv_TIM0_COMP
+    void our_ISR(void) {
+      if (nevents) {                // update counts for any active events
+        int i;
+        for (i = 0; i < nevents; i++)
+          if (evlist[i].tcnt) evlist[i].tcnt--;   // zero is the minimum
+      }
+    }
+
+
+
+Now for some examples of how we might use these events
+
+--------------------------------------------------------------
+example: flash an LED a specified number of times
+--------------------------------------------------------------
+
+We have a global variable which tells how many times we want the LED to flash.
+
+    unsigned int flashcnt;        // number of times to flash LED
+
+
+First we will write any event functions we may be using. In this example each will schedule other events, although that is not a requirement.
+
+    void LEDon(void) {
+      <turn on the LED>
+      start_event(LEDoff, 500);   // leave on one half second
+    }
+    void LEDoff(void) {
+      <turn off the LED>
+      if (--flashcnt) start_event(LEDon, 500);    // leave off one half second
+    }
+
+The mainline does various initializations, sets the number of times to flash, and turns the LED on. The rest is handled automatically.
+
+    void main(void) {
+      ex8_init();                     // initialize the event list
+      <set up output ports, etc.>
+
+      while (1) {                     // infinite loop
+
+        <do anything you want here>
+
+        if (<decide to flash LEDs>) {
+          flashcnt = 10;              // number of times to flash
+          LEDon();                    // start the process
+        }
+
+        <do anything you want here>
+
+        do_events();                  // execute any events that are ready
+      }
+    }
+
+--------------------------------------------------------------
+example: give the user 20 seconds to push buttons, or push them for him
+--------------------------------------------------------------
+
+In this example we'll come to a point where we want some user input via a keypad.  If they don't give it within 20 seconds, we make the choice for them.
+
+
+We will have a global variable which will tell us if we are currently checking the keypad or not.
+
+    char chk_button;                  // check keypad if nonzero
+
+
+And our event function:
+
+    void choose_default(void) {
+      <set the default input value>   // make the choice for them
+      chk_button = 0;                 // quit waiting on the user
+    }
+
+
+In the mainline we will start out not expecting user input.  At some point we'll decide we want it, and start watching the keypad.  At that same time we will schedule our choose_default() event to occur 20 seconds later.
+
+    void main(void) {
+      chk_button = 0;                 // we are not looking at keypad
+      ex8_init();                     // initialize the event list
+      <set up keypad ports, etc.>
+
+      while (1) {                     // infinite loop
+
+        <do anything you want here>
+
+        if (<decide to get user input>) {      // time to hear from the user?
+          start_event(choose_default, 20000);  // yes - but we have ADD
+          chk_button = 1;                      // start checking the keypad
+        }
+
+        <do anything you want here>
+
+        do_events();                  // execute any events that are ready
+
+        if (chk_button) {             // are we expecting user input?
+          <whatever it takes to read the keypad>
+          if (<user inputs something>) {
+            cancel_event(0);          // kill all events
+          }
+        }
+      }
+    }
+
+If the user does respond, we just cancel all events.  We could have saved the event id when we called start_event(), and then just canceled that one event.  In our example, there was the only one active event so we just canceled all of them.
+
+--------------------------------------------------------------
+example: do a longer delay than 65,535 timer tics
+--------------------------------------------------------------
+
+Maybe we want a delay longer than 65 seconds.  We could easily change the code to use longs instead of unsigned ints for the count values, but we can also simply cascade events, sort of a poor man's nested loop.  We'll have a 1 minute event, and a global variable which tells how many minutes we want.
+
+    unsigned int minutes;           // total minutes to wait
+
+
+We will have an event which will either reschedule itself one minute later, or execute the code that we want to have happen at the end of the long interval.
+
+    void cascade(void) {
+      if (--minutes) {
+        set_event(cascade, 60000);    // one minute from now
+      } else {
+        < do whatever - we've arrived >
+      }
+    }
+
+
+And the mainline:
+
+    void main(void) {
+      ex8_init();                          // initialize the event list
+      <any other initialization>
+
+      while (1) {                          // infinite loop
+
+        <do anything you want here>
+
+        if (<decide on long interval>) {   // is it time for our wait?
+          minutes = 4;                     // # of minutes for interval
+          start_event(cascade, 60000);     // start the first minute
+        }
+
+        <do anything you want here>
+
+        do_events();                       // execute any events that are ready
+      }
+    }
+
+

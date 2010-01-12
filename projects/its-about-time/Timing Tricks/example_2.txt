@@ -1,0 +1,65 @@
+file name: example_2.txt – timing loops
+
+
+Timing loops are functionally equivalent to the timing macros and functions provided with some compilers.  They simply execute some instructions, usually thousands or more, to waste time.  While the compiler has an advantage from being able to accurately calculate the exact number of instructions that need to be executed to correspond to a given delay, we may or may not need this level of accuracy.
+
+A simple form of a delay might use a for or while loop:
+
+    void wait(void) {
+      unsigned int cntr;
+
+      for (cntr = 0; cntr < 40000; cntr++) ;
+    }
+
+or
+
+    void wait(void) {
+      unsigned int cntr = 40000;
+
+      while (cntr--) ;
+    }
+
+As pointed out in the article, there is a danger that an optimizing compiler will recognize that the loop (in either construction) does no actual work in the traditional sense, and remove it all together.  In this case, calling the function will result in an immediate return, and the desired delay, although coded, will not happen.
+
+While you can probably manipulate the optimizer’s settings to prevent this, a better approach is to declare the loop counter volatile.  This lets the compiler know that the variable may be used asynchronously elsewhere, and thus it will assume it cannot blithely remove any code that contains it.  The resulting function might resemble this:
+
+    void wait(void) {
+      volatile unsigned int cntr;
+
+      for (cntr = 0; cntr < 40000; cntr++) ;
+    }
+
+If your optimizer is very smart it could recognize cntr as a local variable and assume the volatile does not really apply, and still remove it.  If this example doesn’t work, make the counter global:
+
+    volatile unsigned int cntr;
+    ....
+    void wait(void) {
+      for (cntr = 0; cntr < 40000; cntr++) ;
+    }
+
+and the optimizer should leave it alone.
+
+If you need longer delays, simply nest some loops.  To keep the optimizer at bay, only the innermost loop counter needs to be declared volatile.
+
+    void wait(void) {
+      unsigned int c1;
+      volatile unsigned int c2;
+
+      for (c1 = 0; c1 < 500; c1++) {
+        for (c2 = 0; c2 < 30000; c2++) ;
+      }
+    }
+
+It doesn’t hurt to declare them all volatile, but doing so for the innermost counter will suffice.
+
+If you wish to have a variable delay, pass one or more of the counter limits as arguments:
+
+    void wait(unsigned int climit) {
+      volatile unsigned int c2;
+
+      while (climit--) {
+        for (c2 = 0; c2 < 30000; c2++) ;
+      }
+    }
+
+You may look at the generated assembly language and, knowing your processor’s speed and the number of cycles per instruction, calculate the time various loop counts will delay.  Often you can also simply use trial and error to get reasonable delays if the actual times aren’t critical.  Flashing an LED or watching an output pin on an oscilloscope can give you useful feedback as you tweak the values.

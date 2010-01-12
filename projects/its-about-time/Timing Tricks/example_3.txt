@@ -1,0 +1,93 @@
+file name: example_3.txt – single event timer without interrupts
+
+
+This example is one that is not discussed in the article.  It is similar to the next one (example 4), although here we don't use interrupts, just polling.
+
+On the AVR product line a timer has a counter and one or more compare registers.  It sets a bit in another register (the output compare flag) when the count matches a compare value.  That bit can be tested by software at any time to see if the timer has set it.  The programmer can also reset the bit as desired.
+
+There is an option to also tie that bit to the interrupt mechanism.  If the interrupt is generated, then as it is serviced the timer's flag bit is cleared.  The programmer doesn't have to clear it manually.
+
+Some times using an interrupt is a handy way of being told the timer has run out, and at other times polling is preferred.  If we didn't happen to have the direct polling option available, we could always use the interrupt handler to set a flag, and we could poll it.
+
+Anyway, here is how to set up an AVR ATmega16 timer without having the interrupt generated.  The processor is running at 8 MHz and the timer is being clocked by dividing that 8 MHz by 256.  If we count up to 31 (0x1f), the resulting frequency is 1008 Hz, about 0.992 milliseconds.  We are using the timer in "normal" mode which simply continuously counts.  When the count matches we stop the timer, although we could just let it go.
+
+We are using timer 0, one of the 8 bit timers, for simplicity.  There is also a 16 bit timer which would give us greater accuracy and flexibility, but its use complicates the code slightly.  The 8 bit timer suffices for an example.
+
+To start timing for one millisecond (approximately):
+
+    TCCR0 = 0x00;             // stop timer 0
+    TCNT0 = 0x00;             // set count to zero
+    OCR0  = 0x1F;             // set compare value (decimal 31)
+    TIFR |= 1 << OCF0;        // clear the compare match flag
+    TCCR0 = 0x04;             // start timer with prescaler of 256
+
+Then, in a loop, we would test the compare flag:
+
+    if (TIFR & (1 << OCF0)) {    // timer reach the compare match value?
+      TCCR0 = 0x00;              // yes - stop the timer (optional)
+      <do whatever>
+    }
+
+One source of errors when using timers clocked off the prescaler is that we don't know exactly where the prescaler is in the divisor count when we start the timer.  That is, the next processor clock cycle could complete the prescaler's divisor countdown and increment the timer, or it could be that the previous clock cycle just did it.  This means the first timer count will take place anywhere from 1 to prescaler - 1 clock cycles after we start the timer.
+
+To allow for this, there is a mechanism to reset the prescaler counter.  The downside is, more than one timer share the prescaler hardware, and resetting it affects them all.  Hopefully your application is flexible enough in its timing needs that these sorts of difficulties can be ignored or easily resolved.
+
+This will not a problem later when we are producing continuous interrupts with the timer compare matches.  The prescaler synchronization only affects the length of time to the first match, and consequently, the first count.  After that, everything is in step and the timing is consistent.
+
+--------------------------------------------------------------
+example: turn off an output pin after a millisecond
+--------------------------------------------------------------
+
+Here we will write a 1 to an output port, then about a millisecond later write a 0 to it.
+
+    void main(void) {
+      <any port and/or other initialization>
+
+      while (1) {                          // infinite loop
+
+        <do anything you want here>
+
+        if (<decide to pulse port>) {      // is it time to toggle the port?
+          TCCR0 = 0x00;                    // stop timer 0
+          TCNT0 = 0x00;                    // set count to zero
+          OCR0  = 0x1F;                    // set compare value (decimal 31)
+          TIFR |= 1 << OCF0;               // clear the compare match flag
+          <write 1 to port>
+          TCCR0 = 0x04;                    // start timer with prescaler of 256
+        }
+
+        <do anything you want here>
+
+        if (TIFR & (1 << OCF0)) {          // reach the compare match value?
+          TCCR0 = 0x00;                    // yes - stop the timer
+          TIFR |= 1 << OCF0;               // clear the compare flag
+          <write 0 to port>
+        }
+      }
+    }
+
+In this example we do want to stop the timer and clear the compare flag when the match occurs.  This is because we are continually testing the flag, even when we aren't using the timer.  If we don't clear the flag we will continually see the timer as having run out, and if we don't stop the timer it will set the compare flag every time it rolls over and again reaches our match value (about every 8 milliseconds in this example).
+
+
+--------------------------------------------------------------
+example: delay routine
+--------------------------------------------------------------
+
+And here's a delay routine using a polled timer.
+
+    void delay(unsigned char dtime) {
+      if (dtime) {                       // ignore delay of zero
+        TCCR0 = 0x00;                    // stop timer 0
+        TCNT0 = 0x00;                    // set count to zero
+        OCR0  = dtime;                   // set compare value to what they said
+        TIFR |= 1 << OCF0;               // clear the compare match flag
+        TCCR0 = 0x04;                    // start timer with prescaler of 256
+
+        while (~(TIFR & (1 << OCF0))) ;  // wait for timer to reach count
+        TCCR0 = 0x00;                    // OK - stop the timer (optional)
+      }
+    }
+
+Since we are using a clock frequency of 8 MHz and a prescaler of 256, an argument of 1 will delay 0.032 milliseconds, more or less.  Remember the problem with the prescaler possibly (probably) being midcycle in its count up to the divisor value of 256, rendering the first interval inaccurate.
+
+But for reasonably accurate timing, you could call this with a value of 31 to approximate a millisecond.

@@ -1,0 +1,167 @@
+file name: example_6.txt – simple delay using 1 ms interrupts
+
+
+Once we have a source of regular interrupts (see example 5), we can do a variety of things with it.  We will use an approximately 1 KHz timer to generate the interrupts (about 1 millisecond between interrupts).  Again, the timer specifics vary enormously between different MCU manuafacturers and even within similar product lines.
+
+We will give ourselves a volatile global variable for the amount of delay time.  Volatile because we're changing it in the interrupt handler, and we want everyone else to always use a current value.
+
+    volatile unsigned int pause;         // number of milliseconds to wait
+
+And a delay routine:
+
+    void wait(void) {
+      while (pause--) ;                  // wait until pause goes to zero
+    }
+
+And an interrupt handler:
+
+    #pragma interrupt_handler our_ISR:iv_TIM0_COMP
+    void our_ISR(void) {
+       if (pause) pause--;               // if nonzero, decrement
+    }
+
+And some initialization code, called once at the beginning:
+
+    void ex6_init(void) {
+      CLI();                // turn interrupts off
+      TCCR0 = 0x00;         // stop the timer
+      TCNT0 = 0x00;         // initialize counter value
+      OCR0  = 0x7D;         // set compare value (0.992KHz)
+      TCCR0 = 0x0B;         // CTC mode, prescale = 64
+      TIMSK |= 1 << OCIE0;  // enable timer 0 compare interrupts
+      SEI();                // enable global interrupts
+    }
+
+so we now have the ability to set a variable number of milliseconds and then be told (via pause being set to zero) when they have elapsed.
+
+If we just want to hang around while we are waiting, we can simply do the following:
+
+    pause = 500;            // one half second delay
+    wait();                 // loop until it passes
+
+Or we can make another layer and it will be even easier:
+
+    void wait_ms(unsigned int ms) {
+      pause = ms;           // the argument is the wait time
+      while (pause--) ;     // wait for it to go to zero
+    }
+
+So our example above can be written as:
+
+    wait_ms(500);           // wait half a second
+
+
+We don't have to use the wait() or wait_ms() functions; we can just use pause directly.  The examples show a couple of ways to do so.
+
+--------------------------------------------------------------
+example: flash an LED 5 cycles of a half second each
+--------------------------------------------------------------
+
+We will make a decision at some point to flash an LED at the user.  We use a half second on and a half second off, but these could be anything.  We're flashing for 5 cycles, or 5 seconds total.
+
+Using one timer we need to keep track of whether we need to turn the LED on or off when the timer runs out.  The third possibility is that we are not currently messing with the LED.  These three conditions are held in the variable name led.
+
+
+    void main(void) {
+      int times;                       // number of times to flash
+      char led = 0;                    // 0=LED inactive, 1=off, 2=on
+
+      ex6_init();                      // initialize the timer
+      <set up output ports, etc.>
+
+      while (1) {                      // infinite loop
+
+        <do anything you want here>
+
+        if (<make decision to flash>) {
+          times = 5;                   // number of cycles we’ll flash
+          led = 1;                     // flag that led is now off
+          pause = 0;                   // fake a timer runout
+        }
+
+        <do anything you want here>
+
+        if (led) {                     // are we messing with the LED?
+          if (!pause) {                // yes - is its time up?
+            if (led - 1) {             // yes - is it now on?
+              pause = 500;             // turn off for a half second
+              led = 1;                 // flag that it's off
+              <turn LED off>
+            } else {                   // it's now off
+              if (times--) {           // should we do it again?
+                pause = 500;           // yes - on for a half second
+                led = 2;               // flag that it's now on        
+                <turn LED on>
+              } else {
+                led = 0;               // all done - quit
+              }
+            }
+          }
+        }
+
+        <do anything you want here>
+
+      }
+    }
+
+
+--------------------------------------------------------------
+example: primitive debouncing of a pushbutton
+--------------------------------------------------------------
+
+We will read a pushbutton every 3 milliseconds and see if it is open or closed.  We will consider 4 consecutive identical reads (switch either open or closed) to mean the pushbutton is in a stable condition, and any other situation to mean that the pushbutton is in transition.
+
+Here we will just have an LED follow the switch.  Push the switch, the LED comes on.  Release the switch, the LED goes off.
+
+This is not a particularly good way of debouncing a switch.  The logic could all be put inside an interrupt handler much more transparently and efficiently, but we're exploring ways to use the timer.
+
+
+    void main(void) {
+      unsigned char sw;                // switch status (0, 0x0f, or other)
+      unsigned char x;                 // current switch value (0 or 1)
+
+      ex6_init();                      // initialize the timer
+      sw = 0x0a;                       // arbitrary bit pattern
+      <set up input ports, LED, etc.>
+
+      pause = 3;                       // check switch in 3 milliseconds
+      while (1) {                      // infinite loop
+
+        <do anything you want here>
+
+
+        // you can test the variable sw any time
+        // if sw == 0, the switch is open and debounced
+        // if sw == 0x0f (decimal 15), the switch is closed
+        //   and debounced
+        // if sw == anything else, it is in transition. wait
+             a while and check again
+
+        if (sw == 0x0f) {              // make LED follow switch
+          <turn LED on>
+        }
+        if (!sw) {
+          <turn LED off>
+        }
+
+        <do anything you want here>
+
+        if (!pause) {                  // our 3 milliseconds are up
+          pause = 3;                   // set up for next interval
+
+          <read switch: set x=1 if pushed, x=0 if open>
+
+	  sw <<= 1;                    // shift old reads left 1
+          sw |= x;                     // OR in this read
+          sw &= 0x0f;                  // keep last 4 reads
+        }
+
+        <do anything you want here>
+
+      }
+    }
+
+Each 3 milliseconds we read the current value of the switch and put it into the variable x.  If the switch is open we will set x = 0, and if the switch is closed we will set x = 1.  How this is actually done depends on your hardware.
+
+We then shift the variable sw left by one position, OR in x, and keep only the lower 4 bits.  This in effect stacks the last four reads of the switch into sw, and as we get a new reading an old one falls off the left end.  So if we get 4 reads of open (0) in a row, sw will equal 0.  If we get four reads of closed (1) in a row, sw will equal 0x0f, or 15.  Any combination of open and closed will take on some other value, and means that we don't have 4 identical reads in a row.
+

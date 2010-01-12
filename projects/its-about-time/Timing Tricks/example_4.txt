@@ -1,0 +1,128 @@
+file name: example_4.txt – single event timer using interrupts
+
+
+For this example we will build on example 3, except we will enable the timer's compare match interrupt.  That means that when the timer reaches the preset count, an interrupt will occur.  When the interrupt's ISR is called, the compare match flag will automatically be cleared.
+
+Please have a look at example 3, since many of its details will not be repeated here.
+
+
+To start timing for one millisecond (approximately):
+
+    CLI();                    // disable interrupts
+    TCCR0 = 0x00;             // stop timer 0
+    TCNT0 = 0x00;             // set count to zero
+    OCR0  = 0x1F;             // set compare value (decimal 31)
+    TCCR0 = 0x04;             // start timer with prescaler of 256
+
+    TIMSK = 0x02;             // interrupt on compare match
+    SEI();                    // global interrupts on
+
+
+This is essentially the same, although we have (through a bit in TIMSK) told the MCU to generate an interrupt when the compare match flag sets.  We also have to enable global interrupts.
+
+When the match occurs, we will execute the following interrupt handler:
+
+    // =====================================================
+    // our_ISR() – timer 0 compare match interrupt handler
+    //
+    // this is called on a timer 0 compare match interrupt
+
+    #pragma interrupt_handler our_ISR:iv_TIM0_COMP
+    void our_ISR(void) {
+      TCCR0 = 0x00;           // stop the timer
+    }
+
+We do not have to clear the compare match flag (as we did in example 3) because the interrupt mechanism automatically clears it for us.
+
+
+--------------------------------------------------------------
+example: turn off an output pin after a millisecond
+--------------------------------------------------------------
+
+Here we will write a 1 to an output port, then about a millisecond later write a 0 to it.
+
+    void main(void) {
+      <any port and/or other initialization>
+
+      while (1) {                          // infinite loop
+
+        <do anything you want here>
+
+        if (<decide to pulse port>) {      // is it time to toggle the port?
+          CLI();                           // disable interrupts
+          TCCR0 = 0x00;                    // stop timer 0
+          TCNT0 = 0x00;                    // set count to zero
+          OCR0  = 0x1F;                    // set compare value (decimal 31)
+          TIMSK = 0x02;                    // timer interrupt sources
+          SEI();                           // re-enable interrupts
+          <write 1 to port>
+          TCCR0 = 0x04;                    // start timer with prescaler of 256
+        }
+
+        <do anything you want here>
+
+      }
+    }
+
+    // =====================================================
+    // our_ISR() – timer 0 compare match interrupt handler
+    //
+    // this is called on a timer 0 compare match interrupt
+
+    #pragma interrupt_handler our_ISR:iv_TIM0_COMP
+    void our_ISR(void) {
+      TCCR0 = 0x00;           // stop the timer
+      <write 0 to port>
+    }
+
+Don't be tempted to put a lot of code in an interrupt handler.  Here it is fine, since we are only writing to an output port.  If you have more than a few lines of code, set a flag in the ISR and do the actual work back in the mainline, as shown in the following example.
+
+--------------------------------------------------------------
+example: delay routine
+--------------------------------------------------------------
+
+This delay routine uses interrupts and a global flag to signal the interval is over.
+
+    unsigned char dflag = 0;             // flag = 1 when timing is done
+
+    void main(void) {
+      <any port and/or other initialization>
+
+      while (1) {                        // infinite loop
+
+        <do anything you want here>
+
+        if (<decide to delay>) {         // is it time to delay?
+          delay(31);                     // delay about a millisecond
+        }
+
+        <do anything you want here>
+
+      if (dflag) {                       // did the time run out?
+        dflag = 0;                       // yes - clear flag
+        <do whatever>                    // whatever you want to do
+      }
+    }
+
+    #pragma interrupt_handler our_ISR:iv_TIM0_COMP
+    void our_ISR(void) {
+      TCCR0 = 0x00;                      // stop the timer
+      dflag = 1;                         // tell them about it
+    }
+
+    void delay(unsigned char dtime) {
+      if (dtime) {                       // ignore delay of zero
+        CLI();                           // interrupts off
+        TCCR0 = 0x00;                    // stop timer 0
+        TCNT0 = 0x00;                    // set count to argument
+        OCR0  = dtime;                   // set compare value to what they said
+        TIMSK = 0x02;                    // interrupt on compare match
+        TCCR0 = 0x04;                    // start timer with prescaler of 256
+        dflag = 0;                       // timer is running
+        SEI();                           // interrupts on
+      } else {
+        dflag = 1;                       // delay of 0 means it's run out
+      }
+    }
+
+Since we are using a clock frequency of 8 MHz and a prescaler of 256, an argument of 1 will delay 0.032 milliseconds, more or less.  See example 3 for a discussion of the problem with the prescaler possibly (probably) being midcycle in its count up to the divisor value of 256.  For reasonably accurate timing, you can call this with a value of 31 to approximate a millisecond.
