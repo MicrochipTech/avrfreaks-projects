@@ -1,0 +1,40 @@
+# Baud-rate Converter
+
+Uploaded by Simonetta on 2010-03-23 14:07:00 (rating 0 out of 5)
+
+## Summary
+
+This tiny program is a baud-rate converter that exchanges RS232 data from a PC and MIDI data from a tone module synthesizer. The RS232 and MIDI data are in the same 8/N/1 format, but one is 38.4K baud and the other is 31.25K baud.
+
+
+The Windows OS is very difficult to program for the I/O ports. You can't just stuff bytes into I/O addresses. Windows has complex and undocumented layers of the OS between the application and the I/O. The PC MIDI port is especially difficult. 
+
+
+However, the PC serial port is straightforward to use by mere mortals with Visual BASIC. Using an AVR baud-converter allows for writing custom PC MIDI application programs while bypassing the advanced Windows OS API complexities.
+
+
+This converter uses two hardware USARTs: software UARTs generally collapse after 100 bytes of a continous input data stream. Data from the faster source (the RS232 in this case) must be queued into a first-in:first-out buffer because it is arriving faster than the other USART can retransmit it. 
+
+
+The queue has to be big enough to handle MIDI SysEx 'data dumps' that are between 100 and 10000 bytes in size, depending on the synthesizer. Given these two baud rates, the queue needs to be at least 200 bytes in size for every 1000 bytes transferred from the PC in a continous data burst. Otherwise the input data overtakes the queued output data. Fortunately, the dual-USART AVRs have large SRAM fields.
+
+
+All the code is in interrupt procedures. There is no main code for baud-conversion apart from the peripheral initialization. Any main program added need not have any connection to the interrupt-driven background task, except that the XL:XH:YL:YH registers are reserved for input/output pointers. But these pointers can go to SRAM if needed.
+
+
+The main program can use the USARTs by polling status flags that will verify that they are not currently in background use. Then it can directly place data into the USART or read the input buffer. 
+
+
+The code was written in assembler in order to make it easier for me to understand what's going on at an instruction-by-instruction basis. Since it now works well, it can be converted to C without difficulty.
+
+
+The hardware uses a MAX232 IC to convert AVR to RS232 voltage levels. MIDI input is a 5-mA current-loop that gets converted to logic levels with an opto-isolator. MIDI output is driven by the AVR USART Tx pin through a 220-ohm resistor.
+
+## Compilers
+
+- AVR Assembler
+
+## Tags
+
+- Complete code
+- AVR Assembler
