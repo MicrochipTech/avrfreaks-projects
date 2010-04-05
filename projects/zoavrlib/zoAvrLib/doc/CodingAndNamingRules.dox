@@ -1,0 +1,114 @@
+/** \page code_rules Coding and naming Rules
+
+\par Naming Conventions
+
+The naming conventions adopted by zoAvrLib are a result of several years of experience. 
+The aim is to exploit auto-complete features provided by IDEs in order to reduce coding 
+time and provide extended ease of use to the zoAvrLib user. With auto-complete the user 
+can write a part of a function/variable etc and then press Ctrl+Space on the keyboard 
+to invoke the auto-complete feature in the IDE. 
+
+- Filenames in zoAvrLib are always preceded by the lowercase letters zo (which 
+stand for zero-one Mechatronics).Camel-case punctuation is used. Ie each new word in the 
+filename starts with a capital letter. So, for example, the driver files for tha Analog to
+Digital Converter AVR submodule are named zoAdc.h and zoAdc.c.<br>
+- Library functions are preceded with the associated filename and use camel-case. 
+So, for example, a library function that is related to the ADC is named ie zoAdcRead().
+<br>
+- Local variables follow camel-case punctuation, starting with a lowercase letter.
+<br>
+- Global variables follow camel-case punctuation, starting with an uppercase 
+letter. <br>
+- Library types and defines are written with capital letters and words in a name 
+are distinguished by an underscore. The associated library file always proceeds the 
+'define' or 'typedef' name. For example an enumeration type containing all ADC channels 
+is named ZO_ADC_CHANNEL. <br>
+- Enumeration members are written with capital letters and words in a name are 
+distinguished by an underscore. The enumeration name is always the first part of the 
+member name. For example the ADC channel 0 is a member of the enumeration ZO_ADC_CHANNEL 
+and it's name is ZO_ADC_CHANNEL_0.<br>
+- Structure and union members are written using camel-case punctuation, starting 
+with a lowercase letter.<br>
+- Library Internal functions and variables follow camel-case punctuation and are 
+declared static inside the .c files.<br>
+
+
+
+\par Coding Style
+
+- Driver initialization functions: A prototype of such functions is presented:<br>
+ \code void zoDriverNameInit(void); \endcode 
+The driver initialization functions do not require any arguments, neither they return a 
+value. Default initialization values are used to enhance ease of use of the driver 
+libraries. For example zoUartInit(); initializes the uart peripheral to 
+a baud rate of 115200, 8 data bits, no parity, 1 stop bit. The default initialization 
+values for any peripheral are always defined in the associated .h file. Each library has 
+always the necessary functions to configure the MCU peripheral at full. 
+These functions are designed to be called after the init() function.<br>
+
+- Driver functions: When there is a possibility of the function failing, the return
+value of this function is always a Boolean indicating success. In this way it is easy to
+check the success of the function call like the example below:<br>
+\code
+If(!zoUartPutChar('a'))
+	handleError();
+\endcode
+
+
+
+\par Error Handling Scheme
+
+- ZO_ERROR type: The zoAvrLib includes functionality for a circular, ISR-protected 
+error buffer. This type is always used to store errors that may happen during driver 
+function execution. Typically each library file will have an associated ZO_ERROR type 
+global variable declared. Ie for the uart the error buffer is: <br>
+\code
+extern ZO_ERROR zoUartError;
+\endcode
+The error handling tactic is described in the pseudo-code below:
+\code
+If(!zoUartPutChar('a'))
+{
+	if( zoErrorGet(&zoUartError) == ZO_UART_ERROR_TX_TIMEOUT)
+		doSomething();
+}
+\endcode
+
+- User file recommended error handling: The users are advised to keep the zoAvrLib 
+error handling scheme in their projects. If a user file is closely related to a zoAvrLib 
+file then there is the possibility to use the existing error buffer 
+(to save on MCU memory) , like this:
+\code
+//file: MyUartProtocol.h
+
+#include "zoUart.h"
+
+//first user defined error value is greater than any zoUart error define
+#define MY_UART_PROTOCOL_ERROR_1	10 	
+#define MY_UART_PROTOCOL_ERROR_2	11
+
+ZO_ERROR *MyUartProtocolError = zoUartError;
+
+//file: MyUartProtocol.c
+
+#include "MyUartProtocol.h"
+
+bool MyUartProtocolMyFunction(void)
+{
+
+	doSomeStuff();
+
+	If( protocolErrorIsPresent() )
+	{
+		zoErrorPut(MyUartProtocolError, MY_UART_PROTOCOL_ERROR_1);
+		return false;
+	}
+
+return true;
+}
+\endcode
+
+The main advantage of the zoAvrLib error handling scheme is that it provides a centralized
+handling of errors which is often crucial, especially for large projects.
+
+*/
