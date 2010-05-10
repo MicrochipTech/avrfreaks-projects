@@ -1,0 +1,751 @@
+
+pedometr.elf:     file format elf32-avr
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         00000394  00000000  00000000  00000074  2**1
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 .bss          00000002  00800060  00800060  00000408  2**0
+                  ALLOC
+  2 .debug_aranges 00000020  00000000  00000000  00000408  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  3 .debug_pubnames 000000b2  00000000  00000000  00000428  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  4 .debug_info   000006c3  00000000  00000000  000004da  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  5 .debug_abbrev 0000023b  00000000  00000000  00000b9d  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  6 .debug_line   00000435  00000000  00000000  00000dd8  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  7 .debug_frame  000000b0  00000000  00000000  00001210  2**2
+                  CONTENTS, READONLY, DEBUGGING
+  8 .debug_str    00000168  00000000  00000000  000012c0  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  9 .debug_loc    0000034c  00000000  00000000  00001428  2**0
+                  CONTENTS, READONLY, DEBUGGING
+ 10 .debug_ranges 000002e8  00000000  00000000  00001774  2**0
+                  CONTENTS, READONLY, DEBUGGING
+
+Disassembly of section .text:
+
+00000000 <__vectors>:
+   0:	18 c0       	rjmp	.+48     	; 0x32 <__ctors_end>
+   2:	25 c0       	rjmp	.+74     	; 0x4e <__bad_interrupt>
+   4:	43 c1       	rjmp	.+646    	; 0x28c <__vector_2>
+   6:	23 c0       	rjmp	.+70     	; 0x4e <__bad_interrupt>
+   8:	22 c0       	rjmp	.+68     	; 0x4e <__bad_interrupt>
+   a:	21 c0       	rjmp	.+66     	; 0x4e <__bad_interrupt>
+   c:	20 c0       	rjmp	.+64     	; 0x4e <__bad_interrupt>
+   e:	1f c0       	rjmp	.+62     	; 0x4e <__bad_interrupt>
+  10:	1e c0       	rjmp	.+60     	; 0x4e <__bad_interrupt>
+  12:	1d c0       	rjmp	.+58     	; 0x4e <__bad_interrupt>
+
+00000014 <morseData>:
+  14:	ff c0 bf c0 af c0 ab c0 aa c0 aa 80 ea 80 fa 80     ................
+  24:	fe 80 ff 80                                         ....
+
+00000028 <mags>:
+  28:	10 27 e8 03 64 00 0a 00 01 00                       .'..d.....
+
+00000032 <__ctors_end>:
+  32:	11 24       	eor	r1, r1
+  34:	1f be       	out	0x3f, r1	; 63
+  36:	cf e9       	ldi	r28, 0x9F	; 159
+  38:	cd bf       	out	0x3d, r28	; 61
+
+0000003a <__do_clear_bss>:
+  3a:	10 e0       	ldi	r17, 0x00	; 0
+  3c:	a0 e6       	ldi	r26, 0x60	; 96
+  3e:	b0 e0       	ldi	r27, 0x00	; 0
+  40:	01 c0       	rjmp	.+2      	; 0x44 <.do_clear_bss_start>
+
+00000042 <.do_clear_bss_loop>:
+  42:	1d 92       	st	X+, r1
+
+00000044 <.do_clear_bss_start>:
+  44:	a2 36       	cpi	r26, 0x62	; 98
+  46:	b1 07       	cpc	r27, r17
+  48:	e1 f7       	brne	.-8      	; 0x42 <.do_clear_bss_loop>
+  4a:	73 d1       	rcall	.+742    	; 0x332 <main>
+  4c:	a1 c1       	rjmp	.+834    	; 0x390 <_exit>
+
+0000004e <__bad_interrupt>:
+  4e:	d8 cf       	rjmp	.-80     	; 0x0 <__vectors>
+
+00000050 <init>:
+#define DISP_M 1
+
+volatile unsigned count;	// footstep count
+
+void init() {
+	cli();
+  50:	f8 94       	cli
+
+	// piezo output
+	DDRB = PIEZO;
+  52:	81 e0       	ldi	r24, 0x01	; 1
+  54:	87 bb       	out	0x17, r24	; 23
+	
+	// button input
+	PORTB = BUTTON | SENSOR;
+  56:	88 e1       	ldi	r24, 0x18	; 24
+  58:	88 bb       	out	0x18, r24	; 24
+	PCMSK = BUTTON | SENSOR;
+  5a:	85 bb       	out	0x15, r24	; 21
+	GIMSK = _BV(PCIF);
+  5c:	80 e2       	ldi	r24, 0x20	; 32
+  5e:	8b bf       	out	0x3b, r24	; 59
+
+	// power config
+	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  60:	85 b7       	in	r24, 0x35	; 53
+  62:	87 7e       	andi	r24, 0xE7	; 231
+  64:	80 61       	ori	r24, 0x10	; 16
+  66:	85 bf       	out	0x35, r24	; 53
+	count = 0;
+  68:	10 92 61 00 	sts	0x0061, r1
+  6c:	10 92 60 00 	sts	0x0060, r1
+	sei();
+  70:	78 94       	sei
+}
+  72:	08 95       	ret
+
+00000074 <tick>:
+
+void tick() {
+	PORTB ^= PIEZO;
+  74:	88 b3       	in	r24, 0x18	; 24
+  76:	91 e0       	ldi	r25, 0x01	; 1
+  78:	89 27       	eor	r24, r25
+  7a:	88 bb       	out	0x18, r24	; 24
+}
+  7c:	08 95       	ret
+
+0000007e <beep>:
+
+void beep(unsigned long us) {
+  7e:	9b 01       	movw	r18, r22
+  80:	ac 01       	movw	r20, r24
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+		PORTB ^= PIEZO;
+  82:	e1 e0       	ldi	r30, 0x01	; 1
+    milliseconds can be achieved.
+ */
+void
+_delay_loop_2(uint16_t __count)
+{
+	__asm__ volatile (
+  84:	68 e3       	ldi	r22, 0x38	; 56
+  86:	71 e0       	ldi	r23, 0x01	; 1
+  88:	0a c0       	rjmp	.+20     	; 0x9e <beep+0x20>
+  8a:	88 b3       	in	r24, 0x18	; 24
+  8c:	8e 27       	eor	r24, r30
+  8e:	88 bb       	out	0x18, r24	; 24
+  90:	cb 01       	movw	r24, r22
+  92:	01 97       	sbiw	r24, 0x01	; 1
+  94:	f1 f7       	brne	.-4      	; 0x92 <beep+0x14>
+void tick() {
+	PORTB ^= PIEZO;
+}
+
+void beep(unsigned long us) {
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+  96:	22 5e       	subi	r18, 0xE2	; 226
+  98:	34 40       	sbci	r19, 0x04	; 4
+  9a:	40 40       	sbci	r20, 0x00	; 0
+  9c:	50 40       	sbci	r21, 0x00	; 0
+  9e:	21 15       	cp	r18, r1
+  a0:	31 05       	cpc	r19, r1
+  a2:	41 05       	cpc	r20, r1
+  a4:	51 05       	cpc	r21, r1
+  a6:	89 f7       	brne	.-30     	; 0x8a <beep+0xc>
+		PORTB ^= PIEZO;
+		_delay_us(BEEP_HALF_PERIOD);
+	}
+}
+  a8:	08 95       	ret
+
+000000aa <debounce_button>:
+
+unsigned char debounce_button() {
+	if(!(PINB & BUTTON)) {
+  aa:	b4 9b       	sbis	0x16, 4	; 22
+  ac:	02 c0       	rjmp	.+4      	; 0xb2 <debounce_button+0x8>
+  ae:	80 e0       	ldi	r24, 0x00	; 0
+  b0:	08 95       	ret
+  b2:	88 e8       	ldi	r24, 0x88	; 136
+  b4:	93 e1       	ldi	r25, 0x13	; 19
+  b6:	01 97       	sbiw	r24, 0x01	; 1
+  b8:	f1 f7       	brne	.-4      	; 0xb6 <debounce_button+0xc>
+		_delay_ms(DEBOUNCE_WAIT);
+		return (!(PINB & BUTTON)?(1):(0));
+  ba:	86 b3       	in	r24, 0x16	; 22
+  bc:	82 95       	swap	r24
+  be:	8f 70       	andi	r24, 0x0F	; 15
+  c0:	80 95       	com	r24
+  c2:	81 70       	andi	r24, 0x01	; 1
+	}
+	return 0;
+}
+  c4:	08 95       	ret
+
+000000c6 <button_press>:
+
+// 0 = not pressed, 1 = a press, 2 = a hold
+unsigned char button_press() {
+	unsigned heldTicks = 0;
+	if(!debounce_button()) return 0;
+  c6:	f1 df       	rcall	.-30     	; 0xaa <debounce_button>
+  c8:	88 23       	and	r24, r24
+  ca:	89 f0       	breq	.+34     	; 0xee <button_press+0x28>
+  cc:	20 e0       	ldi	r18, 0x00	; 0
+  ce:	30 e0       	ldi	r19, 0x00	; 0
+  d0:	44 ed       	ldi	r20, 0xD4	; 212
+  d2:	50 e3       	ldi	r21, 0x30	; 48
+	while(heldTicks < HOLD_TIME/HOLD_POLL_INTERVAL) {
+		if(PINB & BUTTON) return 1;
+  d4:	b4 9b       	sbis	0x16, 4	; 22
+  d6:	02 c0       	rjmp	.+4      	; 0xdc <button_press+0x16>
+  d8:	81 e0       	ldi	r24, 0x01	; 1
+  da:	08 95       	ret
+  dc:	ca 01       	movw	r24, r20
+  de:	01 97       	sbiw	r24, 0x01	; 1
+  e0:	f1 f7       	brne	.-4      	; 0xde <button_press+0x18>
+		_delay_ms(HOLD_POLL_INTERVAL);
+		heldTicks++;
+  e2:	2f 5f       	subi	r18, 0xFF	; 255
+  e4:	3f 4f       	sbci	r19, 0xFF	; 255
+
+// 0 = not pressed, 1 = a press, 2 = a hold
+unsigned char button_press() {
+	unsigned heldTicks = 0;
+	if(!debounce_button()) return 0;
+	while(heldTicks < HOLD_TIME/HOLD_POLL_INTERVAL) {
+  e6:	28 32       	cpi	r18, 0x28	; 40
+  e8:	31 05       	cpc	r19, r1
+  ea:	a1 f7       	brne	.-24     	; 0xd4 <button_press+0xe>
+  ec:	82 e0       	ldi	r24, 0x02	; 2
+		if(PINB & BUTTON) return 1;
+		_delay_ms(HOLD_POLL_INTERVAL);
+		heldTicks++;
+	}
+	return 2;
+}
+  ee:	08 95       	ret
+
+000000f0 <footstep>:
+
+unsigned char footstep() {
+	if(!(PINB & SENSOR)) {
+  f0:	b3 99       	sbic	0x16, 3	; 22
+  f2:	11 c0       	rjmp	.+34     	; 0x116 <footstep+0x26>
+  f4:	84 ed       	ldi	r24, 0xD4	; 212
+  f6:	90 e3       	ldi	r25, 0x30	; 48
+  f8:	01 97       	sbiw	r24, 0x01	; 1
+  fa:	f1 f7       	brne	.-4      	; 0xf8 <footstep+0x8>
+		_delay_ms(SENSOR_DEBOUNCE);
+		if(PINB & SENSOR) return 0;
+  fc:	b3 99       	sbic	0x16, 3	; 22
+  fe:	0b c0       	rjmp	.+22     	; 0x116 <footstep+0x26>
+ 100:	88 eb       	ldi	r24, 0xB8	; 184
+ 102:	9b e0       	ldi	r25, 0x0B	; 11
+ 104:	29 e1       	ldi	r18, 0x19	; 25
+ 106:	30 e0       	ldi	r19, 0x00	; 0
+ 108:	f9 01       	movw	r30, r18
+ 10a:	31 97       	sbiw	r30, 0x01	; 1
+ 10c:	f1 f7       	brne	.-4      	; 0x10a <footstep+0x1a>
+		__ticks = (uint16_t) (__ms * 10.0);
+		while(__ticks)
+		{
+			// wait 1/10 ms
+			_delay_loop_2(((F_CPU) / 4e3) / 10);
+			__ticks --;
+ 10e:	01 97       	sbiw	r24, 0x01	; 1
+		__ticks = 1;
+	else if (__tmp > 65535)
+	{
+		//	__ticks = requested delay in 1/10 ms
+		__ticks = (uint16_t) (__ms * 10.0);
+		while(__ticks)
+ 110:	d9 f7       	brne	.-10     	; 0x108 <footstep+0x18>
+ 112:	81 e0       	ldi	r24, 0x01	; 1
+ 114:	08 95       	ret
+ 116:	80 e0       	ldi	r24, 0x00	; 0
+		_delay_ms(SENSOR_LOCKOUT);
+		return 1;
+	}
+	return 0;
+}
+ 118:	08 95       	ret
+
+0000011a <sendMorse>:
+
+void sendMorse(unsigned char num) {
+ 11a:	df 92       	push	r13
+ 11c:	ef 92       	push	r14
+ 11e:	ff 92       	push	r15
+ 120:	0f 93       	push	r16
+ 122:	1f 93       	push	r17
+ 124:	cf 93       	push	r28
+ 126:	df 93       	push	r29
+	unsigned char i;
+	unsigned data;
+
+	if(num > 9) return;
+ 128:	8a 30       	cpi	r24, 0x0A	; 10
+ 12a:	08 f0       	brcs	.+2      	; 0x12e <sendMorse+0x14>
+ 12c:	64 c0       	rjmp	.+200    	; 0x1f6 <sendMorse+0xdc>
+
+	data = pgm_read_byte(&morseData[2*num]) << 8 | pgm_read_byte(&morseData[(2*num) + 1]);
+ 12e:	48 2f       	mov	r20, r24
+ 130:	50 e0       	ldi	r21, 0x00	; 0
+ 132:	44 0f       	add	r20, r20
+ 134:	55 1f       	adc	r21, r21
+ 136:	ca 01       	movw	r24, r20
+ 138:	8c 5e       	subi	r24, 0xEC	; 236
+ 13a:	9f 4f       	sbci	r25, 0xFF	; 255
+ 13c:	fc 01       	movw	r30, r24
+ 13e:	24 91       	lpm	r18, Z+
+ 140:	4b 5e       	subi	r20, 0xEB	; 235
+ 142:	5f 4f       	sbci	r21, 0xFF	; 255
+ 144:	fa 01       	movw	r30, r20
+ 146:	34 91       	lpm	r19, Z+
+ 148:	92 2f       	mov	r25, r18
+ 14a:	80 e0       	ldi	r24, 0x00	; 0
+ 14c:	e3 2f       	mov	r30, r19
+ 14e:	f0 e0       	ldi	r31, 0x00	; 0
+ 150:	e8 2b       	or	r30, r24
+ 152:	f9 2b       	or	r31, r25
+ 154:	4e e0       	ldi	r20, 0x0E	; 14
+ 156:	50 e0       	ldi	r21, 0x00	; 0
+ 158:	80 e6       	ldi	r24, 0x60	; 96
+ 15a:	e8 2e       	mov	r14, r24
+ 15c:	8a ee       	ldi	r24, 0xEA	; 234
+ 15e:	f8 2e       	mov	r15, r24
+	PORTB ^= PIEZO;
+}
+
+void beep(unsigned long us) {
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+		PORTB ^= PIEZO;
+ 160:	09 e1       	ldi	r16, 0x19	; 25
+ 162:	10 e0       	ldi	r17, 0x00	; 0
+ 164:	dd 24       	eor	r13, r13
+ 166:	d3 94       	inc	r13
+ 168:	c8 e3       	ldi	r28, 0x38	; 56
+ 16a:	d1 e0       	ldi	r29, 0x01	; 1
+
+	if(num > 9) return;
+
+	data = pgm_read_byte(&morseData[2*num]) << 8 | pgm_read_byte(&morseData[(2*num) + 1]);
+	for(i = 0; i < NUM_LENGTH*2; i += 2) {
+		switch(data >> (14 - i) & 0x03) {
+ 16c:	60 e2       	ldi	r22, 0x20	; 32
+ 16e:	7e e4       	ldi	r23, 0x4E	; 78
+ 170:	cf 01       	movw	r24, r30
+ 172:	04 2e       	mov	r0, r20
+ 174:	02 c0       	rjmp	.+4      	; 0x17a <sendMorse+0x60>
+ 176:	96 95       	lsr	r25
+ 178:	87 95       	ror	r24
+ 17a:	0a 94       	dec	r0
+ 17c:	e2 f7       	brpl	.-8      	; 0x176 <sendMorse+0x5c>
+ 17e:	83 70       	andi	r24, 0x03	; 3
+ 180:	90 70       	andi	r25, 0x00	; 0
+ 182:	81 30       	cpi	r24, 0x01	; 1
+ 184:	91 05       	cpc	r25, r1
+ 186:	89 f0       	breq	.+34     	; 0x1aa <sendMorse+0x90>
+ 188:	81 30       	cpi	r24, 0x01	; 1
+ 18a:	91 05       	cpc	r25, r1
+ 18c:	30 f0       	brcs	.+12     	; 0x19a <sendMorse+0x80>
+ 18e:	82 30       	cpi	r24, 0x02	; 2
+ 190:	91 05       	cpc	r25, r1
+ 192:	69 f0       	breq	.+26     	; 0x1ae <sendMorse+0x94>
+ 194:	03 97       	sbiw	r24, 0x03	; 3
+ 196:	49 f5       	brne	.+82     	; 0x1ea <sendMorse+0xd0>
+ 198:	18 c0       	rjmp	.+48     	; 0x1ca <sendMorse+0xb0>
+ 19a:	80 ee       	ldi	r24, 0xE0	; 224
+ 19c:	95 e1       	ldi	r25, 0x15	; 21
+ 19e:	d8 01       	movw	r26, r16
+ 1a0:	11 97       	sbiw	r26, 0x01	; 1
+ 1a2:	f1 f7       	brne	.-4      	; 0x1a0 <sendMorse+0x86>
+		{
+			// wait 1/10 ms
+			_delay_loop_2(((F_CPU) / 4e3) / 10);
+			__ticks --;
+ 1a4:	01 97       	sbiw	r24, 0x01	; 1
+		__ticks = 1;
+	else if (__tmp > 65535)
+	{
+		//	__ticks = requested delay in 1/10 ms
+		__ticks = (uint16_t) (__ms * 10.0);
+		while(__ticks)
+ 1a6:	d9 f7       	brne	.-10     	; 0x19e <sendMorse+0x84>
+ 1a8:	20 c0       	rjmp	.+64     	; 0x1ea <sendMorse+0xd0>
+ 1aa:	c7 01       	movw	r24, r14
+ 1ac:	1c c0       	rjmp	.+56     	; 0x1e6 <sendMorse+0xcc>
+ 1ae:	20 e0       	ldi	r18, 0x00	; 0
+ 1b0:	30 e0       	ldi	r19, 0x00	; 0
+	PORTB ^= PIEZO;
+}
+
+void beep(unsigned long us) {
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+		PORTB ^= PIEZO;
+ 1b2:	88 b3       	in	r24, 0x18	; 24
+ 1b4:	8d 25       	eor	r24, r13
+ 1b6:	88 bb       	out	0x18, r24	; 24
+ 1b8:	ce 01       	movw	r24, r28
+ 1ba:	01 97       	sbiw	r24, 0x01	; 1
+ 1bc:	f1 f7       	brne	.-4      	; 0x1ba <sendMorse+0xa0>
+ 1be:	2f 5f       	subi	r18, 0xFF	; 255
+ 1c0:	3f 4f       	sbci	r19, 0xFF	; 255
+void tick() {
+	PORTB ^= PIEZO;
+}
+
+void beep(unsigned long us) {
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+ 1c2:	20 34       	cpi	r18, 0x40	; 64
+ 1c4:	31 05       	cpc	r19, r1
+ 1c6:	a9 f7       	brne	.-22     	; 0x1b2 <sendMorse+0x98>
+ 1c8:	0d c0       	rjmp	.+26     	; 0x1e4 <sendMorse+0xca>
+ 1ca:	20 e0       	ldi	r18, 0x00	; 0
+ 1cc:	30 e0       	ldi	r19, 0x00	; 0
+		PORTB ^= PIEZO;
+ 1ce:	88 b3       	in	r24, 0x18	; 24
+ 1d0:	8d 25       	eor	r24, r13
+ 1d2:	88 bb       	out	0x18, r24	; 24
+ 1d4:	ce 01       	movw	r24, r28
+ 1d6:	01 97       	sbiw	r24, 0x01	; 1
+ 1d8:	f1 f7       	brne	.-4      	; 0x1d6 <sendMorse+0xbc>
+ 1da:	2f 5f       	subi	r18, 0xFF	; 255
+ 1dc:	3f 4f       	sbci	r19, 0xFF	; 255
+void tick() {
+	PORTB ^= PIEZO;
+}
+
+void beep(unsigned long us) {
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+ 1de:	20 3c       	cpi	r18, 0xC0	; 192
+ 1e0:	31 05       	cpc	r19, r1
+ 1e2:	a9 f7       	brne	.-22     	; 0x1ce <sendMorse+0xb4>
+ 1e4:	cb 01       	movw	r24, r22
+ 1e6:	01 97       	sbiw	r24, 0x01	; 1
+ 1e8:	f1 f7       	brne	.-4      	; 0x1e6 <sendMorse+0xcc>
+ 1ea:	42 50       	subi	r20, 0x02	; 2
+ 1ec:	50 40       	sbci	r21, 0x00	; 0
+	unsigned data;
+
+	if(num > 9) return;
+
+	data = pgm_read_byte(&morseData[2*num]) << 8 | pgm_read_byte(&morseData[(2*num) + 1]);
+	for(i = 0; i < NUM_LENGTH*2; i += 2) {
+ 1ee:	44 30       	cpi	r20, 0x04	; 4
+ 1f0:	51 05       	cpc	r21, r1
+ 1f2:	09 f0       	breq	.+2      	; 0x1f6 <sendMorse+0xdc>
+ 1f4:	bd cf       	rjmp	.-134    	; 0x170 <sendMorse+0x56>
+				beep(DIT_TIME * 3000UL);
+				_delay_ms(DIT_TIME);
+				break;
+		}
+	}
+}
+ 1f6:	df 91       	pop	r29
+ 1f8:	cf 91       	pop	r28
+ 1fa:	1f 91       	pop	r17
+ 1fc:	0f 91       	pop	r16
+ 1fe:	ff 90       	pop	r15
+ 200:	ef 90       	pop	r14
+ 202:	df 90       	pop	r13
+ 204:	08 95       	ret
+
+00000206 <display>:
+
+void display() {
+ 206:	ef 92       	push	r14
+ 208:	ff 92       	push	r15
+ 20a:	0f 93       	push	r16
+ 20c:	1f 93       	push	r17
+ 20e:	cf 93       	push	r28
+ 210:	df 93       	push	r29
+	unsigned char i, n, first = 1;
+	unsigned m, c;
+	
+	if(DISP_M){
+	// convert foot steps to meters
+	m=count*AVG_STEP/100;
+ 212:	80 91 60 00 	lds	r24, 0x0060
+ 216:	90 91 61 00 	lds	r25, 0x0061
+ 21a:	6f e3       	ldi	r22, 0x3F	; 63
+ 21c:	70 e0       	ldi	r23, 0x00	; 0
+ 21e:	92 d0       	rcall	.+292    	; 0x344 <__mulhi3>
+ 220:	64 e6       	ldi	r22, 0x64	; 100
+ 222:	70 e0       	ldi	r23, 0x00	; 0
+ 224:	a1 d0       	rcall	.+322    	; 0x368 <__udivmodhi4>
+ 226:	08 e2       	ldi	r16, 0x28	; 40
+ 228:	10 e0       	ldi	r17, 0x00	; 0
+ 22a:	eb 01       	movw	r28, r22
+ 22c:	91 e0       	ldi	r25, 0x01	; 1
+ 22e:	20 e6       	ldi	r18, 0x60	; 96
+ 230:	e2 2e       	mov	r14, r18
+ 232:	2a ee       	ldi	r18, 0xEA	; 234
+ 234:	f2 2e       	mov	r15, r18
+	} else m=count;
+	c=m;
+
+	for(i = 0; i < 5; i++) {
+		m = pgm_read_word(&mags[(unsigned)i]);
+ 236:	f8 01       	movw	r30, r16
+ 238:	25 91       	lpm	r18, Z+
+ 23a:	34 91       	lpm	r19, Z+
+ 23c:	80 e0       	ldi	r24, 0x00	; 0
+		for(n = 0; c >= m; c -= m) n++;
+ 23e:	44 27       	eor	r20, r20
+ 240:	55 27       	eor	r21, r21
+ 242:	42 1b       	sub	r20, r18
+ 244:	53 0b       	sbc	r21, r19
+ 246:	03 c0       	rjmp	.+6      	; 0x24e <display+0x48>
+ 248:	8f 5f       	subi	r24, 0xFF	; 255
+ 24a:	c4 0f       	add	r28, r20
+ 24c:	d5 1f       	adc	r29, r21
+ 24e:	c2 17       	cp	r28, r18
+ 250:	d3 07       	cpc	r29, r19
+ 252:	d0 f7       	brcc	.-12     	; 0x248 <display+0x42>
+		if(first && n < 1) continue;
+ 254:	99 23       	and	r25, r25
+ 256:	21 f0       	breq	.+8      	; 0x260 <display+0x5a>
+ 258:	88 23       	and	r24, r24
+ 25a:	11 f4       	brne	.+4      	; 0x260 <display+0x5a>
+ 25c:	91 e0       	ldi	r25, 0x01	; 1
+ 25e:	05 c0       	rjmp	.+10     	; 0x26a <display+0x64>
+		first = 0;
+		sendMorse(n);
+ 260:	5c df       	rcall	.-328    	; 0x11a <sendMorse>
+ 262:	c7 01       	movw	r24, r14
+ 264:	01 97       	sbiw	r24, 0x01	; 1
+ 266:	f1 f7       	brne	.-4      	; 0x264 <display+0x5e>
+ 268:	90 e0       	ldi	r25, 0x00	; 0
+ 26a:	0e 5f       	subi	r16, 0xFE	; 254
+ 26c:	1f 4f       	sbci	r17, 0xFF	; 255
+	// convert foot steps to meters
+	m=count*AVG_STEP/100;
+	} else m=count;
+	c=m;
+
+	for(i = 0; i < 5; i++) {
+ 26e:	80 e0       	ldi	r24, 0x00	; 0
+ 270:	02 33       	cpi	r16, 0x32	; 50
+ 272:	18 07       	cpc	r17, r24
+ 274:	01 f7       	brne	.-64     	; 0x236 <display+0x30>
+		sendMorse(n);
+		_delay_ms(DIT_TIME * 3);
+	}
+
+	// zero
+	if(first) {
+ 276:	99 23       	and	r25, r25
+ 278:	11 f0       	breq	.+4      	; 0x27e <display+0x78>
+		sendMorse(0);
+ 27a:	80 e0       	ldi	r24, 0x00	; 0
+ 27c:	4e df       	rcall	.-356    	; 0x11a <sendMorse>
+	}
+}
+ 27e:	df 91       	pop	r29
+ 280:	cf 91       	pop	r28
+ 282:	1f 91       	pop	r17
+ 284:	0f 91       	pop	r16
+ 286:	ff 90       	pop	r15
+ 288:	ef 90       	pop	r14
+ 28a:	08 95       	ret
+
+0000028c <__vector_2>:
+
+ISR(PCINT0_vect) {
+ 28c:	1f 92       	push	r1
+ 28e:	0f 92       	push	r0
+ 290:	0f b6       	in	r0, 0x3f	; 63
+ 292:	0f 92       	push	r0
+ 294:	11 24       	eor	r1, r1
+ 296:	2f 93       	push	r18
+ 298:	3f 93       	push	r19
+ 29a:	4f 93       	push	r20
+ 29c:	5f 93       	push	r21
+ 29e:	6f 93       	push	r22
+ 2a0:	7f 93       	push	r23
+ 2a2:	8f 93       	push	r24
+ 2a4:	9f 93       	push	r25
+ 2a6:	af 93       	push	r26
+ 2a8:	bf 93       	push	r27
+ 2aa:	ef 93       	push	r30
+ 2ac:	ff 93       	push	r31
+	switch(button_press()) {
+ 2ae:	0b df       	rcall	.-490    	; 0xc6 <button_press>
+ 2b0:	81 30       	cpi	r24, 0x01	; 1
+ 2b2:	19 f0       	breq	.+6      	; 0x2ba <__vector_2+0x2e>
+ 2b4:	82 30       	cpi	r24, 0x02	; 2
+ 2b6:	c9 f4       	brne	.+50     	; 0x2ea <__vector_2+0x5e>
+ 2b8:	02 c0       	rjmp	.+4      	; 0x2be <__vector_2+0x32>
+		case 1:
+			display();
+ 2ba:	a5 df       	rcall	.-182    	; 0x206 <display>
+ 2bc:	26 c0       	rjmp	.+76     	; 0x30a <__vector_2+0x7e>
+			break;
+		case 2:
+			count = 0;
+ 2be:	10 92 61 00 	sts	0x0061, r1
+ 2c2:	10 92 60 00 	sts	0x0060, r1
+ 2c6:	20 e0       	ldi	r18, 0x00	; 0
+ 2c8:	30 e0       	ldi	r19, 0x00	; 0
+	PORTB ^= PIEZO;
+}
+
+void beep(unsigned long us) {
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+		PORTB ^= PIEZO;
+ 2ca:	61 e0       	ldi	r22, 0x01	; 1
+ 2cc:	48 e3       	ldi	r20, 0x38	; 56
+ 2ce:	51 e0       	ldi	r21, 0x01	; 1
+ 2d0:	88 b3       	in	r24, 0x18	; 24
+ 2d2:	86 27       	eor	r24, r22
+ 2d4:	88 bb       	out	0x18, r24	; 24
+ 2d6:	ca 01       	movw	r24, r20
+ 2d8:	01 97       	sbiw	r24, 0x01	; 1
+ 2da:	f1 f7       	brne	.-4      	; 0x2d8 <__vector_2+0x4c>
+ 2dc:	2f 5f       	subi	r18, 0xFF	; 255
+ 2de:	3f 4f       	sbci	r19, 0xFF	; 255
+void tick() {
+	PORTB ^= PIEZO;
+}
+
+void beep(unsigned long us) {
+	for(; us > 0; us -= BEEP_HALF_PERIOD) {
+ 2e0:	83 e0       	ldi	r24, 0x03	; 3
+ 2e2:	20 32       	cpi	r18, 0x20	; 32
+ 2e4:	38 07       	cpc	r19, r24
+ 2e6:	a1 f7       	brne	.-24     	; 0x2d0 <__vector_2+0x44>
+ 2e8:	10 c0       	rjmp	.+32     	; 0x30a <__vector_2+0x7e>
+		case 2:
+			count = 0;
+			beep(LONG_BEEP);
+			break;
+		default:
+			if(footstep()) {
+ 2ea:	02 df       	rcall	.-508    	; 0xf0 <footstep>
+ 2ec:	88 23       	and	r24, r24
+ 2ee:	69 f0       	breq	.+26     	; 0x30a <__vector_2+0x7e>
+				count++;
+ 2f0:	80 91 60 00 	lds	r24, 0x0060
+ 2f4:	90 91 61 00 	lds	r25, 0x0061
+ 2f8:	01 96       	adiw	r24, 0x01	; 1
+ 2fa:	90 93 61 00 	sts	0x0061, r25
+ 2fe:	80 93 60 00 	sts	0x0060, r24
+	count = 0;
+	sei();
+}
+
+void tick() {
+	PORTB ^= PIEZO;
+ 302:	88 b3       	in	r24, 0x18	; 24
+ 304:	91 e0       	ldi	r25, 0x01	; 1
+ 306:	89 27       	eor	r24, r25
+ 308:	88 bb       	out	0x18, r24	; 24
+
+	// We clear the interrupt flag here to prevent
+	// button interrupts from causing a false count
+	// from the sensor if it was held low during the
+	// button press.
+	GIFR |= _BV(PCIF);
+ 30a:	8a b7       	in	r24, 0x3a	; 58
+ 30c:	80 62       	ori	r24, 0x20	; 32
+ 30e:	8a bf       	out	0x3a, r24	; 58
+}
+ 310:	ff 91       	pop	r31
+ 312:	ef 91       	pop	r30
+ 314:	bf 91       	pop	r27
+ 316:	af 91       	pop	r26
+ 318:	9f 91       	pop	r25
+ 31a:	8f 91       	pop	r24
+ 31c:	7f 91       	pop	r23
+ 31e:	6f 91       	pop	r22
+ 320:	5f 91       	pop	r21
+ 322:	4f 91       	pop	r20
+ 324:	3f 91       	pop	r19
+ 326:	2f 91       	pop	r18
+ 328:	0f 90       	pop	r0
+ 32a:	0f be       	out	0x3f, r0	; 63
+ 32c:	0f 90       	pop	r0
+ 32e:	1f 90       	pop	r1
+ 330:	18 95       	reti
+
+00000332 <main>:
+
+int main() {
+	init();
+ 332:	8e de       	rcall	.-740    	; 0x50 <init>
+	while(1) sleep_mode();
+ 334:	85 b7       	in	r24, 0x35	; 53
+ 336:	80 62       	ori	r24, 0x20	; 32
+ 338:	85 bf       	out	0x35, r24	; 53
+ 33a:	88 95       	sleep
+ 33c:	85 b7       	in	r24, 0x35	; 53
+ 33e:	8f 7d       	andi	r24, 0xDF	; 223
+ 340:	85 bf       	out	0x35, r24	; 53
+ 342:	f8 cf       	rjmp	.-16     	; 0x334 <main+0x2>
+
+00000344 <__mulhi3>:
+ 344:	55 27       	eor	r21, r21
+ 346:	00 24       	eor	r0, r0
+
+00000348 <__mulhi3_loop>:
+ 348:	80 ff       	sbrs	r24, 0
+ 34a:	02 c0       	rjmp	.+4      	; 0x350 <__mulhi3_skip1>
+ 34c:	06 0e       	add	r0, r22
+ 34e:	57 1f       	adc	r21, r23
+
+00000350 <__mulhi3_skip1>:
+ 350:	66 0f       	add	r22, r22
+ 352:	77 1f       	adc	r23, r23
+ 354:	61 15       	cp	r22, r1
+ 356:	71 05       	cpc	r23, r1
+ 358:	21 f0       	breq	.+8      	; 0x362 <__mulhi3_exit>
+ 35a:	96 95       	lsr	r25
+ 35c:	87 95       	ror	r24
+ 35e:	00 97       	sbiw	r24, 0x00	; 0
+ 360:	99 f7       	brne	.-26     	; 0x348 <__mulhi3_loop>
+
+00000362 <__mulhi3_exit>:
+ 362:	95 2f       	mov	r25, r21
+ 364:	80 2d       	mov	r24, r0
+ 366:	08 95       	ret
+
+00000368 <__udivmodhi4>:
+ 368:	aa 1b       	sub	r26, r26
+ 36a:	bb 1b       	sub	r27, r27
+ 36c:	51 e1       	ldi	r21, 0x11	; 17
+ 36e:	07 c0       	rjmp	.+14     	; 0x37e <__udivmodhi4_ep>
+
+00000370 <__udivmodhi4_loop>:
+ 370:	aa 1f       	adc	r26, r26
+ 372:	bb 1f       	adc	r27, r27
+ 374:	a6 17       	cp	r26, r22
+ 376:	b7 07       	cpc	r27, r23
+ 378:	10 f0       	brcs	.+4      	; 0x37e <__udivmodhi4_ep>
+ 37a:	a6 1b       	sub	r26, r22
+ 37c:	b7 0b       	sbc	r27, r23
+
+0000037e <__udivmodhi4_ep>:
+ 37e:	88 1f       	adc	r24, r24
+ 380:	99 1f       	adc	r25, r25
+ 382:	5a 95       	dec	r21
+ 384:	a9 f7       	brne	.-22     	; 0x370 <__udivmodhi4_loop>
+ 386:	80 95       	com	r24
+ 388:	90 95       	com	r25
+ 38a:	bc 01       	movw	r22, r24
+ 38c:	cd 01       	movw	r24, r26
+ 38e:	08 95       	ret
+
+00000390 <_exit>:
+ 390:	f8 94       	cli
+
+00000392 <__stop_program>:
+ 392:	ff cf       	rjmp	.-2      	; 0x392 <__stop_program>
