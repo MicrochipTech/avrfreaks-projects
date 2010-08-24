@@ -1,0 +1,230 @@
+;===============================================================
+;T E E N S Y  +  +   B O A R D  L E D  P R O G R A M 
+;===============================================================
+;     Program:	LCD Display Driver
+;    Function:	Driver for LCD in 4-bit mode, HD44780 or equiv.
+;   Assembler:	AVR assembler avrasm
+;      Target:	AT90USB646 (Teensy++) 16 MHz xtal
+;  Written by:  Christoph Redecker
+; Modified by:  W.S. Walker
+;        File:  LCDDrv2.asm
+;===============================================================
+; Wire the LCD display as follows:
+; PortB.1 ->  LCD RS (register select)
+; PortB.2 ->  LCD RW (read/write)
+; PortB.3 ->  LCD E  (Enable)
+; PortB.4 ... PortB.7 -> LCD data.4 ... data.7
+;----------------------------------------------
+
+;===================
+;equates and defines
+;===================
+.equ    DDRB    = $04            ;port B assignments
+.equ    PortB   = $05
+.equ    PINB    = $03
+
+.equ    LCD_RS  = 1              ;control line assigments
+.equ	LCD_RW	= 2
+.equ	LCD_E	= 3
+
+.equ    NULL    = 0              ;ascii null char
+
+.def	temp	= r16            ;temporary register
+.def    arg     = r17            ;arg for calling subroutines
+.def    return  = r18            ;return value from subroutines
+.def    ZL      = r30            ;Z reg
+.def    ZH      = r31
+
+.org 0
+;=======
+;M A I N
+;=======
+
+; * This section of code written by WS Walker *
+
+main:   rcall   LCD_init              ; init LCD
+        ldi     ZL,low(msg1<<1)	      ; point Z to 1st message
+        ldi     ZH,high(msg1<<1)
+        rcall   LCD_string            ; send first string
+        rcall   LCD_line2             ; set cursor to line 2
+        ldi     ZL,low(msg2<<1)	      ; point Z to 2nd message
+        ldi     ZH,high(msg2<<1)
+        rcall   LCD_string            ; send second string
+        rjmp    PC                    ; stall
+
+;* This section of code written by Christopher Redecker
+;  but modified by W.S. Walker for 16 MHz operation *
+
+;===========================
+; Send string
+; entry: Z points to message
+;===========================
+LCD_string:
+	lpm	arg,Z+		      ;get char from string and bump pointer
+	ori	arg,NULL	      ;is it a NULL?
+	breq    PC+3		      ;yes, done
+        rcall   LCD_putchar	      ;no, put char to LCD
+        rjmp    LCD_string            ;do some more
+	ret			      ;done with send string
+
+;===========================
+; Set cursor to line 2
+;===========================
+LCD_line2:
+        ldi     arg,0xC0              ; position cursor to line 2, fall thru
+
+;=====================
+; Send 4 bit command
+; entry: arg = command
+;=====================
+LCD_command:	 
+	set			       ;set command flag
+        rjmp    LCD_common	       ;go to putchar/command common code
+
+;=================================
+; Send character to LCD at cursor
+; entry: arg = character
+; exit:  cursor will advance if 
+;        auto-inc cursor in effect
+;=================================
+LCD_putchar:
+	clt			       ;clear command flag
+			               ;fall thru to putchar/command common code
+LCD_common:        
+        push    arg                    ;save the argmuent
+        in      temp, DDRB             ;get data direction bits
+        sbr     temp, 0b11110000       ;set the data lines to output
+        out     DDRB, temp             ;write value to DDRB
+        in      temp, PortB            ;then get the data from PortB
+        cbr     temp, 0b11111110       ;clear all LCD lines (data and control)
+        cbr     arg, 0b00001111        ;write the high nibble of our argument first
+        or      temp, arg              ;set the argument bits in the Port value
+        out     PortB, temp            ; and write the port value
+        brts	PC+2		       ;keep RS low if command
+        sbi     PortB, LCD_RS          ;take RS high for LCD char data register access
+        sbi     PortB, LCD_E           ;strobe Enable, go high
+        jmp     PC+1		       ; waste 6 cycles
+        jmp     PC+1
+        cbi     PortB, LCD_E           ; take E low
+        pop     arg                    ;restore the argument, we need the low nibble
+        cbr     temp, 0b11110000       ;clear the data bits of our port value
+        swap    arg                    ;swap nibbles to write the HIGH bits of the arg
+        cbr     arg, 0b00001111        ;clear unused bits
+        or      temp, arg              ;set the argument bits in the port value
+        out     PortB, temp            ;write data to port
+        brts	PC+2		       ;again, keep RS low if command
+        sbi     PortB, LCD_RS          ;take RS high
+        sbi     PortB, LCD_E           ;strobe Enable, go high
+        jmp     PC+1		       ; waste 6 cycles
+        jmp     PC+1
+        cbi     PortB, LCD_E           ; take E low
+        cbi     PortB, LCD_RS          ; clear RS
+        in      temp, DDRB
+        cbr     temp, 0b11110000       ;data lines are input again
+        out     DDRB, temp             ;fall thru to check busy flag
+
+;=========================
+; Wait for busy flag clear 
+;=========================
+LCD_wait:
+        rcall   LCD_getaddr
+        andi    return, 0x80
+        brne    LCD_wait 
+        ret
+
+;=====================
+; Send 8 bit command
+; entry: arg = command
+;=====================
+LCD_command8:
+        in      temp, DDRB             ;set only the high nibble of DDRB
+        sbr     temp, 0b11110000
+        out     DDRB, temp
+        in      temp, PortB            ;get the port value
+        cbr     temp, 0b11110000       ;clear the data bits
+        cbr     arg, 0b00001111        ;clear the low nibble of the argument
+        or      temp, arg              ;then set the data bits
+        out     PortB, temp            ;and write the port value.
+        sbi     PortB, LCD_E           ;now strobe E
+        jmp     PC+1		       ; waste 4 cycles
+        jmp     PC+1
+        cbi     PortB, LCD_E
+        in      temp, DDRB             ;make the data lines input again
+        cbr     temp, 0b11110000       ;clear data line direction bits
+        out     DDRB, temp             ;and write to DDRB
+        ret
+
+;=====================================
+; Get address of CGRAM
+; exit:  return = address
+;=====================================
+LCD_getaddr:    
+;return.7 is the busy flag
+        in      temp, DDRB             ;make the data lines inputs
+        andi    temp, 0b00001111
+        out	DDRB, temp
+        cbi	PortB, LCD_RS	       ;to access the char data register, make RS low
+        sbi	PortB, LCD_RW          ;read from the LCD by setting RW high
+        sbi	PortB, LCD_E           ; while E is high
+        rjmp    PC+1		       ;wait two cycles
+        in      temp, PinB             ;fetch the HIGH nibble
+        andi    temp, 0b11110000       ;mask off the control line data
+        mov     return, temp           ;and copy the HIGH nibble to return
+        cbi     PortB, LCD_E           ;strobe E by taking it low
+        rjmp    PC+1		       ;  waste 4 cycles
+        rjmp    PC+1
+        sbi     PortB, LCD_E           ;  E back high
+        rjmp    PC+1		       ;waste 2 cycles
+        in      temp, PinB             ;get the data
+        andi    temp, 0b11110000       ;again, mask off the control line bits
+        swap    temp                   ;temp HIGH contains data LOW nibble, so swap
+        or      return, temp           ;combine with previous data = return value
+        cbi     PortB, LCD_E           ;take control lines low again
+        cbi     PortB, LCD_RW
+        ret			       ;done, address in return register
+
+;=======================
+; Initialize the display
+;=======================
+LCD_init:	
+        ldi     temp, 0b00001110       ;control lines are output, rest are input
+        out     DDRB, temp	
+        rcall   LCD_delay              ;tell the LCD that we want to use it
+        ldi     arg, 0x20              ; in 4-bit mode.
+        rcall   LCD_command8           ;LCD is still in 8-bit mode while writing this command!
+        rcall   LCD_wait
+        ldi     arg, 0x28              ;now set to 2 lines, 5*7 font, 4-bit mode
+        rcall   LCD_command
+        ldi     arg, 0x28              ;send again
+        rcall   LCD_command
+        ldi     arg, 0x0C              ;now proceed as usual: Display on, cursor off
+        rcall   LCD_command	
+        ldi     arg, 0x06              ;auto-inc cursor
+        rcall   LCD_command
+LCD_CLS:
+        ldi     arg, 0x01              ;clear display, cursor home
+	rcall	LCD_command	
+        ret                            ;done with init
+
+;===========================
+; Settling time for power up
+;===========================
+LCD_delay:
+        clr     r2
+LCD_delay_outer:
+        clr     r3
+LCD_delay_inner:
+        dec     r3
+        brne    LCD_delay_inner
+        dec     r2
+        nop
+        brne    LCD_delay_outer
+        ret
+
+;=========
+; Messages
+;=========
+msg1:   .DB     "-Hello, World!- ", NULL
+msg2:   .DB     " from Teensy++  ", NULL
+
+
