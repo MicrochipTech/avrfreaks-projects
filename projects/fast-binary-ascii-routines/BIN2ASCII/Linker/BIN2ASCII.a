@@ -1,0 +1,840 @@
+;
+;/**** A P P L I C A T I O N   N O T E	A V R ? ? ? ************************
+;;*
+;;* Title:		32-bit Arithmetic Routines with Macrolibrary
+;;* Project:		Math32
+;;* Version:		2.3
+;;* Last updated:	2003.09.15
+;;* Create Date: 	1999.10.25
+;;* Target MCU:		AT90S8515 (as well as others AVR uC)
+;;*			(C) ATMEL Corporation (mailto:avr@atmel.com)
+;;* Originator:		(C) 1999-2003 Andre Birua (mailto:birua@hotmail.com)
+;;*			This Application Note absolutely free in use anybody
+;;* INTERPRETATION
+;;* This package of assembler subprograms is developed for integer arithmetic
+;;* with tracing of sign bit in 32 bits calculations and data reloads.
+;;* It is based on microcontroller register file to the maximum.
+;;* In real users projects available abundant digit capacity allows to avoid
+;;* overflow and reduces inaccuracy of rounding errors in chain calculations.
+;;* Included macro definitions will increase readability of assembler source
+;;* at bit by bit and multibyte data operations inside AVR software model
+;;*
+;;* DESCRIPTION
+;;* This Application Note lists:
+;;*   i) Math32 subroutines for the following:
+;;*	Add/Subtract/Multiply/Divide/Complement 32 bits operands,
+;;*	Binary 16 & 24 bits operand to/back BCD conversion,
+;;*	Binary 32 bits operand to BCD conversion,
+;;*	Initialization of data memory on a pattern,
+;;*	Load/Store group of registers from/to data space;
+;;*  ii) macro definitions call mathematical and data transfer subroutines;
+;;* iii) useful general macroinstructions for the AVR 8-Bit RISC family
+;;*
+;;* "ADD32"      Add without Carry       Rd32 = Rd32 + Rr32
+;;* "SUB32"      Subtract without Carry  Rd32 = Rd32 - Rr32
+;;* "MUL32"      Multiply Unsigned       Rd64 = Rd32 * Rr32
+;;* "DIV32"      Divide Unsigned         Rd32 = Rd32 / Rr32 (Rd64)
+;;* "COM32"      One's Complement        Rd32 = 0xffffffff - Rd32
+;;* "NEG32"      Two's Complement        Rd32 = 0x00000000 - Rd32
+;;* "BCD2bin"    BCD to Binary 16        Rd16 = Rd24|Rr24
+;;* "BCD3bin"    BCD to Binary 24        Rd24 = Rd32|Rr32
+;;* "Bin2BCD"    Binary 16 to BCD        Rd24 = Rd16|Rr16
+;;* "Bin3BCD"    Binary 24 to BCD        Rd32 = Rd24|Rr24
+;;* "Bin4BCD"    Binary 32 to BCD        Rd40 = Rd32|Rr32 || hwrd(Rr32)&Rd16
+;;* "MathMem"    Init Data Memory        (MA) = 0x00|0xff
+;;* "MathLoad"   Load Registers          Rd32|Rr32 = (MA)
+;;* "MathSave"   Store Registers         (MA) = Rd32|Rd64
+;;*
+;;* Rd64: destination registers (8) in the register file
+;;* Rd32: destination (and source) registers (4) in the register file
+;;* Rr32: source registers (4) in the register file
+;;* (MA): address for access to variable in the internal memory (SRAM)
+;;* Note: Math32 use high registers, r0 and lower 512 bytes of data space,
+;;*    so Rd64=r20:r27, Rd32=r20:r23, Rd24=r20:r22, Rd16=r20:r21,
+;;*	 Rd40=r20:r24, Rr32=r16:r19, Rr24=r16:r18, Rr16=r16:r17, MA=0:511
+;;*
+;;* Number of words & cycles (Min|Max)		c o m m e n t s
+;;* "ADD32"      6    4|5    Size of Add32sign
+;;* "SUB32"     16    6|15   Size of Sub32sign
+;;* "MUL32"     24  460|556  Size of Mul32b, based on AVR200 16x16 unsigned
+;;* "DIV32"     28  528|688  Size of Div32b, based on AVR200 16/16 unsigned
+;;* "COM32"      5    4|4    Part of Sub32
+;;* "NEG32"      9    8|8    Part of Sub32
+;;* "BCD2bin"   26   86|89   Equivalent of AVR204, but smaller & quicker
+;;* "BCD3bin"   43   38|402  Different from BCD2bin translation algorithm
+;;* "Bin2BCD"   22   19|177  Equivalent of AVR204, but smaller & much faster
+;;* "Bin3BCD"   21   36|366  In the form of preamble for Bin2BCD
+;;* "Bin3BCD"   40   36|333  All-sufficient expansion of Bin2BCD
+;;* "Bin4BCD"   37  515|671  Based on AVR204 16-bit Bin to BCD conversion
+;;* "Bin4BCD"   48  874|878  All-sufficient transform instead of pre-Bin4BCD
+;;* "MathMem"   10    7|645  Size of MathMemLimit, max cycle for 128 bytes
+;;* "MathLoad"  15   41|46   Size and max cycle for Rr32 load
+;;* "MathSave"  14   13|78   Size and max cycle for Rd64 save
+;;* In total:  350 words     Usually +7 cycles: rcall & ret
+;;*
+;;* All routines are Code Size` optimized implementations and debugged with
+;;* macrocode for AVR macro assembler version 1.30 (Jan 27 1999 01:30:00) &
+;;*	       AVR32 macro assembler version 1.30 (Sep	8 1999 01:30:00).
+;;*    However, AVR32 macro assembler version 1.54 (Nov 14 2001 14:05:48) &
+;;*	       AVR32 macro assembler version 1.56 (May	6 2002 14:54:01)
+;;* generate dummy warnings: Register already defined by the .DEF directive
+;;* (command option for disable this kind of warning as yet is absent...)
+;;*			   CheckIt with AVR Studio !
+;;* NOTE
+;;* ` Bin4BCD transformations has partial loop optimization for speed-up
+;;* While using Math32, it is important to consider the allocation of the
+;;* microcontroller resources available for the program. It is required:
+;;* - to use r0,r16..r31 with Math32;
+;;* - to allocate variables used in calculation in the bottom of the memory;
+;;* - to use T flag as a sign bit (input, output and temporary),
+;;*   if you need to operate negative numbers or up-down overflow error
+;;*
+;;* VERSION
+;;* 1.0 Original version (in use starting with 1999.12.22)
+;;* 1.1 Fixed precedence bugs if macroparameter is an assembler expression
+;;* 1.2 Modify CBF & SBF & IBF macrocalls
+;;* 1.3 Full modification mathematical and data transfer macronotation
+;;* 1.4 Optimaze for speed and code size Mul32 & Div32 & BCD2bin & Bin2BCD
+;;* 2.0 Version for publication (added description, note and demo sections)
+;;* 2.1 Updated Bin2BCD, added Bin4BCD conversion & XCH macrocall
+;;* 2.2 Added functionally closed modifications of Bin3&4BCD translation
+;;* 2.3 Added BCD3bin conversion, normalize the comment of Bin3&4BCD
+;;*
+;;* DEMO
+;;* section below is a sample of macrocalls and not an ordinary Math32 usage
+;*/
+;
+;#include	 <mega32.h>
+;PCODE: $00000000 VOL: 0
+	#ifndef __SLEEP_DEFINED__
+;PCODE: $00000001 VOL: 0
+	#define __SLEEP_DEFINED__
+;PCODE: $00000002 VOL: 0
+	.EQU __se_bit=0x80
+;PCODE: $00000003 VOL: 0
+	.EQU __sm_mask=0x70
+;PCODE: $00000004 VOL: 0
+	.EQU __sm_powerdown=0x20
+;PCODE: $00000005 VOL: 0
+	.EQU __sm_powersave=0x30
+;PCODE: $00000006 VOL: 0
+	.EQU __sm_standby=0x60
+;PCODE: $00000007 VOL: 0
+	.EQU __sm_ext_standby=0x70
+;PCODE: $00000008 VOL: 0
+	.EQU __sm_adc_noise_red=0x10
+;PCODE: $00000009 VOL: 0
+	.SET power_ctrl_reg=mcucr
+;PCODE: $0000000A VOL: 0
+	#endif
+;PCODE: $0000000B VOL: 0
+;PCODE: $0000000C VOL: 0
+;#include	"bin2ascii.h"
+;
+;
+;void utoa16(unsigned int num,char *buff)
+; 0001 0070 {
+
+	.CSEG
+;PCODE: $0000000D VOL: 0
+;PCODE: $0000000E VOL: 0
+; 0001 0071 /****************************************************************************
+; 0001 0072 ;*
+; 0001 0073 ;* Bin2BCD == 16-bit Binary to BCD conversion
+; 0001 0074 ;*
+; 0001 0075 ;* Important: You have to disable the autamtic global register allocation in the compiler settings.
+; 0001 0076 ;*            Only (R0,R1,R22,R23 ,R24,R25 ,R26,R27,R30,R31) can be used in ASM routines.
+; 0001 0077 ;*            you have to save the other registers in the stack if wanna use them.
+; 0001 0078 ;***************************************************************************/
+; 0001 0079 #asm
+;	num -> Y+2
+;	*buff -> Y+0
+;PCODE: $0000000F VOL: 0
+; 0001 007A 
+
+;PCODE: $00000010 VOL: 0
+; 0001 007B #define	fbinL	r30	; binary value Low byte
+#define	fbinL	r30	; binary value Low byte
+;PCODE: $00000011 VOL: 0
+; 0001 007C #define	fbinH	r31	; binary value High byte
+#define	fbinH	r31	; binary value High byte
+;PCODE: $00000012 VOL: 0
+; 0001 007D #define	temp    r22
+#define	temp    r22
+;PCODE: $00000013 VOL: 0
+; 0001 007E #define	tBCD0	r24	; BCD value digits 0 and 1
+#define	tBCD0	r24	; BCD value digits 0 and 1
+;PCODE: $00000014 VOL: 0
+; 0001 007F #define	tBCD1	r25	; BCD value digits 2 and 3
+#define	tBCD1	r25	; BCD value digits 2 and 3
+;PCODE: $00000015 VOL: 0
+; 0001 0080 #define	tBCD2	r26	; BCD value digit 4 (MSD is lowermost nibble)
+#define	tBCD2	r26	; BCD value digit 4 (MSD is lowermost nibble)
+;PCODE: $00000016 VOL: 0
+; 0001 0081 
+
+;PCODE: $00000017 VOL: 0
+; 0001 0082     ldd     r31,Y+3 ;//loading the unsigned integer
+    ldd     r31,Y+3 ;//loading the unsigned integer
+;PCODE: $00000018 VOL: 0
+; 0001 0083     ldd     r30,y+2 ;
+    ldd     r30,y+2 ;
+;PCODE: $00000019 VOL: 0
+; 0001 0084 Bin2BCD:
+Bin2BCD:
+;PCODE: $0000001A VOL: 0
+; 0001 0085 Bin2BCD16:	ldi	tBCD2,0xff	;initialize digit 4
+Bin2BCD16:	ldi	tBCD2,0xff	;initialize digit 4
+;PCODE: $0000001B VOL: 0
+; 0001 0086 binbcd_4:	inc	tBCD2		;
+binbcd_4:	inc	tBCD2		;
+;PCODE: $0000001C VOL: 0
+; 0001 0087 		subi	fbinL,0x10;low(10000);subiw fbin,10000
+		subi	fbinL,0x10;low(10000);subiw fbin,10000
+;PCODE: $0000001D VOL: 0
+; 0001 0088 		sbci	fbinH,0x27;high(10000)
+		sbci	fbinH,0x27;high(10000)
+;PCODE: $0000001E VOL: 0
+; 0001 0089 		brcc	binbcd_4	;
+		brcc	binbcd_4	;
+;PCODE: $0000001F VOL: 0
+; 0001 008A 		ldi	tBCD1,0x9f	;initialize digits 3 and 2
+		ldi	tBCD1,0x9f	;initialize digits 3 and 2
+;PCODE: $00000020 VOL: 0
+; 0001 008B binbcd_3:	subi	tBCD1,0x10	;
+binbcd_3:	subi	tBCD1,0x10	;
+;PCODE: $00000021 VOL: 0
+; 0001 008C 		subi	fbinL,0x18;low(-1000);addiw fbin,1000
+		subi	fbinL,0x18;low(-1000);addiw fbin,1000
+;PCODE: $00000022 VOL: 0
+; 0001 008D 		sbci	fbinH,0xfc;high(-1000)
+		sbci	fbinH,0xfc;high(-1000)
+;PCODE: $00000023 VOL: 0
+; 0001 008E 		brcs	binbcd_3	;
+		brcs	binbcd_3	;
+;PCODE: $00000024 VOL: 0
+; 0001 008F binbcd_2:	inc	tBCD1		;
+binbcd_2:	inc	tBCD1		;
+;PCODE: $00000025 VOL: 0
+; 0001 0090 		subi	fbinL,0x64;low(100)	;subiw fbin,100
+		subi	fbinL,0x64;low(100)	;subiw fbin,100
+;PCODE: $00000026 VOL: 0
+; 0001 0091 		sbci	fbinH,0x00;high(100) ;
+		sbci	fbinH,0x00;high(100) ;
+;PCODE: $00000027 VOL: 0
+; 0001 0092 		brcc	binbcd_2	;
+		brcc	binbcd_2	;
+;PCODE: $00000028 VOL: 0
+; 0001 0093 		ldi	tBCD0,0xa0	;initialize digits 1 and 0
+		ldi	tBCD0,0xa0	;initialize digits 1 and 0
+;PCODE: $00000029 VOL: 0
+; 0001 0094 binbcd_1:	subi	tBCD0,0x10	;
+binbcd_1:	subi	tBCD0,0x10	;
+;PCODE: $0000002A VOL: 0
+; 0001 0095 		subi	fbinL,-10	;addi fbin,10
+		subi	fbinL,-10	;addi fbin,10
+;PCODE: $0000002B VOL: 0
+; 0001 0096 		brcs	binBCD_1	;
+		brcs	binBCD_1	;
+;PCODE: $0000002C VOL: 0
+; 0001 0097 		add	tBCD0,fbinL	;LSD
+		add	tBCD0,fbinL	;LSD
+;PCODE: $0000002D VOL: 0
+; 0001 0098 binBCD_ret:
+binBCD_ret:
+;PCODE: $0000002E VOL: 0
+; 0001 0099 
+
+;PCODE: $0000002F VOL: 0
+; 0001 009A         ldd     r31,y+1// loading buffer's address
+        ldd     r31,y+1// loading buffer's address
+;PCODE: $00000030 VOL: 0
+; 0001 009B         ld      r30,y
+        ld      r30,y
+;PCODE: $00000031 VOL: 0
+; 0001 009C 
+
+;PCODE: $00000032 VOL: 0
+; 0001 009D 		MOV		temp,tBCD0
+		MOV		temp,tBCD0
+;PCODE: $00000033 VOL: 0
+; 0001 009E 		ANDI	tBCD0,0X0F
+		ANDI	tBCD0,0X0F
+;PCODE: $00000034 VOL: 0
+; 0001 009F 		SUBI	tBCD0,-0x30
+		SUBI	tBCD0,-0x30
+;PCODE: $00000035 VOL: 0
+; 0001 00A0         push    tBCD0
+        push    tBCD0
+;PCODE: $00000036 VOL: 0
+; 0001 00A1 
+
+;PCODE: $00000037 VOL: 0
+; 0001 00A2 		ANDI	temp,0XF0
+		ANDI	temp,0XF0
+;PCODE: $00000038 VOL: 0
+; 0001 00A3 		SWAP	temp
+		SWAP	temp
+;PCODE: $00000039 VOL: 0
+; 0001 00A4 		SUBI	temp,-0x30
+		SUBI	temp,-0x30
+;PCODE: $0000003A VOL: 0
+; 0001 00A5         push    temp
+        push    temp
+;PCODE: $0000003B VOL: 0
+; 0001 00A6 
+
+;PCODE: $0000003C VOL: 0
+; 0001 00A7 		MOV		temp,tBCD1
+		MOV		temp,tBCD1
+;PCODE: $0000003D VOL: 0
+; 0001 00A8 		ANDI	tBCD1,0X0F
+		ANDI	tBCD1,0X0F
+;PCODE: $0000003E VOL: 0
+; 0001 00A9 		SUBI	tBCD1,-0x30
+		SUBI	tBCD1,-0x30
+;PCODE: $0000003F VOL: 0
+; 0001 00AA         push    tBCD1
+        push    tBCD1
+;PCODE: $00000040 VOL: 0
+; 0001 00AB 
+
+;PCODE: $00000041 VOL: 0
+; 0001 00AC 		ANDI	temp,0XF0
+		ANDI	temp,0XF0
+;PCODE: $00000042 VOL: 0
+; 0001 00AD 		SWAP	temp
+		SWAP	temp
+;PCODE: $00000043 VOL: 0
+; 0001 00AE 		SUBI	temp,-0x30
+		SUBI	temp,-0x30
+;PCODE: $00000044 VOL: 0
+; 0001 00AF         push    temp
+        push    temp
+;PCODE: $00000045 VOL: 0
+; 0001 00B0 
+
+;PCODE: $00000046 VOL: 0
+; 0001 00B1 		MOV		temp,tBCD2
+		MOV		temp,tBCD2
+;PCODE: $00000047 VOL: 0
+; 0001 00B2 		ANDI	tBCD2,0X0F
+		ANDI	tBCD2,0X0F
+;PCODE: $00000048 VOL: 0
+; 0001 00B3 		SUBI	tBCD2,-0x30
+		SUBI	tBCD2,-0x30
+;PCODE: $00000049 VOL: 0
+; 0001 00B4         push    tBCD2
+        push    tBCD2
+;PCODE: $0000004A VOL: 0
+; 0001 00B5 
+
+;PCODE: $0000004B VOL: 0
+; 0001 00B6         pop     temp
+        pop     temp
+;PCODE: $0000004C VOL: 0
+; 0001 00B7         st      z+,temp
+        st      z+,temp
+;PCODE: $0000004D VOL: 0
+; 0001 00B8         pop     temp
+        pop     temp
+;PCODE: $0000004E VOL: 0
+; 0001 00B9         st      z+,temp
+        st      z+,temp
+;PCODE: $0000004F VOL: 0
+; 0001 00BA         pop     temp
+        pop     temp
+;PCODE: $00000050 VOL: 0
+; 0001 00BB         st      z+,temp
+        st      z+,temp
+;PCODE: $00000051 VOL: 0
+; 0001 00BC         pop     temp
+        pop     temp
+;PCODE: $00000052 VOL: 0
+; 0001 00BD         st      z+,temp
+        st      z+,temp
+;PCODE: $00000053 VOL: 0
+; 0001 00BE         pop     temp
+        pop     temp
+;PCODE: $00000054 VOL: 0
+; 0001 00BF         st      z+,temp
+        st      z+,temp
+;PCODE: $00000055 VOL: 0
+; 0001 00C0 
+
+;PCODE: $00000056 VOL: 0
+;PCODE: $00000057 VOL: 0
+; 0001 00C1 #endasm
+; 0001 00C2 }
+;PCODE: $00000058 VOL: 0
+;PCODE: $00000059 VOL: 0
+;PCODE: $0000005A VOL: 0
+;
+;void utoa32(unsigned long num,char *buff)
+; 0001 00C5 {
+;PCODE: $0000005B VOL: 0
+;PCODE: $0000005C VOL: 0
+; 0001 00C6 /***************************************************************************
+; 0001 00C7 ;*
+; 0001 00C8 ;* Bin4BCD == 32-bit Binary to BCD conversion
+; 0001 00C9 ;*
+; 0001 00CA ;* Important:   You have to disable the autamtic global register allocation in the compiler settings.
+; 0001 00CB ;*              Only (R0,R1,R22,R23 ,R24,R25 ,R26,R27,R30,R31) can be used in ASM routines.
+; 0001 00CC ;*              you have to save the other registers in the stack if wanna use them.
+; 0001 00CD ;*
+; 0001 00CE ;**************************************************************************/
+; 0001 00CF //R0,R1, R22,R23  R24,R25 ,R26,R27   R30,R31
+; 0001 00D0 #asm
+;	num -> Y+2
+;	*buff -> Y+0
+;PCODE: $0000005D VOL: 0
+; 0001 00D1 #define	fbin0	r22	; binary value byte 0 (LSB)
+#define	fbin0	r22	; binary value byte 0 (LSB)
+;PCODE: $0000005E VOL: 0
+; 0001 00D2 #define	fbin1	r23	; binary value byte 1
+#define	fbin1	r23	; binary value byte 1
+;PCODE: $0000005F VOL: 0
+; 0001 00D3 #define	fbin2	r24	; binary value byte 2
+#define	fbin2	r24	; binary value byte 2
+;PCODE: $00000060 VOL: 0
+; 0001 00D4 #define	fbin3	r25	; binary value byte 3 (MSB)
+#define	fbin3	r25	; binary value byte 3 (MSB)
+;PCODE: $00000061 VOL: 0
+; 0001 00D5 #define	tBCD0	r16	; BCD value digits 0 and 1
+#define	tBCD0	r16	; BCD value digits 0 and 1
+;PCODE: $00000062 VOL: 0
+; 0001 00D6 #define	tBCD1	r17	; BCD value digits 2 and 3
+#define	tBCD1	r17	; BCD value digits 2 and 3
+;PCODE: $00000063 VOL: 0
+; 0001 00D7 #define	tBCD2	r18	; BCD value digits 4 and 5
+#define	tBCD2	r18	; BCD value digits 4 and 5
+;PCODE: $00000064 VOL: 0
+; 0001 00D8 #define	tBCD3	r19	; BCD value digits 6 and 7
+#define	tBCD3	r19	; BCD value digits 6 and 7
+;PCODE: $00000065 VOL: 0
+; 0001 00D9 #define	tBCD4	r20	; BCD value digits 8 and 9 (MSD)
+#define	tBCD4	r20	; BCD value digits 8 and 9 (MSD)
+;PCODE: $00000066 VOL: 0
+; 0001 00DA #define	TEMP    r22
+#define	TEMP    r22
+;PCODE: $00000067 VOL: 0
+; 0001 00DB 
+
+;PCODE: $00000068 VOL: 0
+; 0001 00DC 
+
+;PCODE: $00000069 VOL: 0
+; 0001 00DD Bin4BCD:
+Bin4BCD:
+;PCODE: $0000006A VOL: 0
+; 0001 00DE         push    r16
+        push    r16
+;PCODE: $0000006B VOL: 0
+; 0001 00DF         push    r17
+        push    r17
+;PCODE: $0000006C VOL: 0
+; 0001 00E0         push    r18
+        push    r18
+;PCODE: $0000006D VOL: 0
+; 0001 00E1         push    r19
+        push    r19
+;PCODE: $0000006E VOL: 0
+; 0001 00E2         push    r20
+        push    r20
+;PCODE: $0000006F VOL: 0
+; 0001 00E3 
+
+;PCODE: $00000070 VOL: 0
+; 0001 00E4         ldd     fbin3,Y+5 ;//loading the unsigned long
+        ldd     fbin3,Y+5 ;//loading the unsigned long
+;PCODE: $00000071 VOL: 0
+; 0001 00E5         ldd     fbin2,y+4 ;
+        ldd     fbin2,y+4 ;
+;PCODE: $00000072 VOL: 0
+; 0001 00E6         ldd     fbin1,Y+3 ;
+        ldd     fbin1,Y+3 ;
+;PCODE: $00000073 VOL: 0
+; 0001 00E7         ldd     fbin0,y+2 ;
+        ldd     fbin0,y+2 ;
+;PCODE: $00000074 VOL: 0
+; 0001 00E8 
+
+;PCODE: $00000075 VOL: 0
+; 0001 00E9 Bin4BCD16:	clr	tBCD0		;initial result (5 bytes)
+Bin4BCD16:	clr	tBCD0		;initial result (5 bytes)
+;PCODE: $00000076 VOL: 0
+; 0001 00EA 		clr	tBCD1		;	& shift
+		clr	tBCD1		;	& shift
+;PCODE: $00000077 VOL: 0
+; 0001 00EB 		clr	tBCD2		;	       loop
+		clr	tBCD2		;	       loop
+;PCODE: $00000078 VOL: 0
+; 0001 00EC 		ldi	tBCD3,0xfe	;		   counter
+		ldi	tBCD3,0xfe	;		   counter
+;PCODE: $00000079 VOL: 0
+; 0001 00ED 		ldi	tBCD4,0xff	;			  too
+		ldi	tBCD4,0xff	;			  too
+;PCODE: $0000007A VOL: 0
+; 0001 00EE 		rjmp	binbcd_jump	;for speed-up and skip of MSD corr
+		rjmp	binbcd_jump	;for speed-up and skip of MSD corr
+;PCODE: $0000007B VOL: 0
+; 0001 00EF binbcd_876:	subi	tBCD4,-0x03	;add 0x03 to digit 8 only
+binbcd_876:	subi	tBCD4,-0x03	;add 0x03 to digit 8 only
+;PCODE: $0000007C VOL: 0
+; 0001 00F0 		sbrs	tBCD4,3 	;if bit 3 clear
+		sbrs	tBCD4,3 	;if bit 3 clear
+;PCODE: $0000007D VOL: 0
+; 0001 00F1 		subi	tBCD4,0x03	;	sub 3
+		subi	tBCD4,0x03	;	sub 3
+;PCODE: $0000007E VOL: 0
+; 0001 00F2 		subi	tBCD3,-0x33	;add 0x33 to digits 7 and 6
+		subi	tBCD3,-0x33	;add 0x33 to digits 7 and 6
+;PCODE: $0000007F VOL: 0
+; 0001 00F3 		sbrs	tBCD3,3 	;if bit 3 clear
+		sbrs	tBCD3,3 	;if bit 3 clear
+;PCODE: $00000080 VOL: 0
+; 0001 00F4 		subi	tBCD3,0x03	;	sub 3
+		subi	tBCD3,0x03	;	sub 3
+;PCODE: $00000081 VOL: 0
+; 0001 00F5 		sbrs	tBCD3,7 	;if bit 7 clear
+		sbrs	tBCD3,7 	;if bit 7 clear
+;PCODE: $00000082 VOL: 0
+; 0001 00F6 		subi	tBCD3,0x30	;	sub $30
+		subi	tBCD3,0x30	;	sub $30
+;PCODE: $00000083 VOL: 0
+; 0001 00F7 binbcd_54:	subi	tBCD2,-0x33	;add 0x33 to digits 5 and 4
+binbcd_54:	subi	tBCD2,-0x33	;add 0x33 to digits 5 and 4
+;PCODE: $00000084 VOL: 0
+; 0001 00F8 		sbrs	tBCD2,3 	;if bit 3 clear
+		sbrs	tBCD2,3 	;if bit 3 clear
+;PCODE: $00000085 VOL: 0
+; 0001 00F9 		subi	tBCD2,0x03	;	sub 3
+		subi	tBCD2,0x03	;	sub 3
+;PCODE: $00000086 VOL: 0
+; 0001 00FA 		sbrs	tBCD2,7 	;if bit 7 clear
+		sbrs	tBCD2,7 	;if bit 7 clear
+;PCODE: $00000087 VOL: 0
+; 0001 00FB 		subi	tBCD2,0x30	;	sub $30
+		subi	tBCD2,0x30	;	sub $30
+;PCODE: $00000088 VOL: 0
+; 0001 00FC binbcd_3210:	subi	tBCD1,-0x33	;add 0x33 to digits 3 and 2
+binbcd_3210:	subi	tBCD1,-0x33	;add 0x33 to digits 3 and 2
+;PCODE: $00000089 VOL: 0
+; 0001 00FD 		sbrs	tBCD1,3 	;if bit 3 clear
+		sbrs	tBCD1,3 	;if bit 3 clear
+;PCODE: $0000008A VOL: 0
+; 0001 00FE 		subi	tBCD1,0x03	;	sub 3
+		subi	tBCD1,0x03	;	sub 3
+;PCODE: $0000008B VOL: 0
+; 0001 00FF 		sbrs	tBCD1,7 	;if bit 7 clear
+		sbrs	tBCD1,7 	;if bit 7 clear
+;PCODE: $0000008C VOL: 0
+; 0001 0100 		subi	tBCD1,0x30	;	sub $30
+		subi	tBCD1,0x30	;	sub $30
+;PCODE: $0000008D VOL: 0
+; 0001 0101 		subi	tBCD0,-0x33	;add 0x33 to digits 1 and 0
+		subi	tBCD0,-0x33	;add 0x33 to digits 1 and 0
+;PCODE: $0000008E VOL: 0
+; 0001 0102 		sbrs	tBCD0,3 	;if bit 3 clear
+		sbrs	tBCD0,3 	;if bit 3 clear
+;PCODE: $0000008F VOL: 0
+; 0001 0103 		subi	tBCD0,0x03	;	sub 3
+		subi	tBCD0,0x03	;	sub 3
+;PCODE: $00000090 VOL: 0
+; 0001 0104 		sbrs	tBCD0,7 	;if bit 7 clear
+		sbrs	tBCD0,7 	;if bit 7 clear
+;PCODE: $00000091 VOL: 0
+; 0001 0105 		subi	tBCD0,0x30	;	sub $30
+		subi	tBCD0,0x30	;	sub $30
+;PCODE: $00000092 VOL: 0
+; 0001 0106 binbcd_jump:	lsl	fbin0		;
+binbcd_jump:	lsl	fbin0		;
+;PCODE: $00000093 VOL: 0
+; 0001 0107 		rol	fbin1		;
+		rol	fbin1		;
+;PCODE: $00000094 VOL: 0
+; 0001 0108 		rol	fbin2		;
+		rol	fbin2		;
+;PCODE: $00000095 VOL: 0
+; 0001 0109 		rol	fbin3		;shift input value
+		rol	fbin3		;shift input value
+;PCODE: $00000096 VOL: 0
+; 0001 010A 		rol	tBCD0		;through all bytes
+		rol	tBCD0		;through all bytes
+;PCODE: $00000097 VOL: 0
+; 0001 010B 		rol	tBCD1		;
+		rol	tBCD1		;
+;PCODE: $00000098 VOL: 0
+; 0001 010C 		rol	tBCD2		;
+		rol	tBCD2		;
+;PCODE: $00000099 VOL: 0
+; 0001 010D 		rol	tBCD3		;
+		rol	tBCD3		;
+;PCODE: $0000009A VOL: 0
+; 0001 010E 		rol	tBCD4		;
+		rol	tBCD4		;
+;PCODE: $0000009B VOL: 0
+; 0001 010F 		brcs	binbcd_3210	;16_lsl w/o correction of dig_87654
+		brcs	binbcd_3210	;16_lsl w/o correction of dig_87654
+;PCODE: $0000009C VOL: 0
+; 0001 0110 		inc	fbin0		;
+		inc	fbin0		;
+;PCODE: $0000009D VOL: 0
+; 0001 0111 		brpl	binbcd_54	;+7_lsl w/o correction of dig_876
+		brpl	binbcd_54	;+7_lsl w/o correction of dig_876
+;PCODE: $0000009E VOL: 0
+; 0001 0112 		sbrs	fbin2,0 	;
+		sbrs	fbin2,0 	;
+;PCODE: $0000009F VOL: 0
+; 0001 0113 		rjmp	binbcd_876	;32_lsl in total (fbin = 0x1ffff)
+		rjmp	binbcd_876	;32_lsl in total (fbin = 0x1ffff)
+;PCODE: $000000A0 VOL: 0
+; 0001 0114 
+
+;PCODE: $000000A1 VOL: 0
+; 0001 0115 
+
+;PCODE: $000000A2 VOL: 0
+; 0001 0116         ldd     r31,y+1//loading the buffer's address
+        ldd     r31,y+1//loading the buffer's address
+;PCODE: $000000A3 VOL: 0
+; 0001 0117         ld      r30,y
+        ld      r30,y
+;PCODE: $000000A4 VOL: 0
+; 0001 0118 
+
+;PCODE: $000000A5 VOL: 0
+; 0001 0119 		MOV		temp,tBCD0
+		MOV		temp,tBCD0
+;PCODE: $000000A6 VOL: 0
+; 0001 011A 		ANDI	tBCD0,0X0F
+		ANDI	tBCD0,0X0F
+;PCODE: $000000A7 VOL: 0
+; 0001 011B 		SUBI	tBCD0,-0x30
+		SUBI	tBCD0,-0x30
+;PCODE: $000000A8 VOL: 0
+; 0001 011C         push    tBCD0
+        push    tBCD0
+;PCODE: $000000A9 VOL: 0
+; 0001 011D 
+
+;PCODE: $000000AA VOL: 0
+; 0001 011E 		ANDI	temp,0XF0
+		ANDI	temp,0XF0
+;PCODE: $000000AB VOL: 0
+; 0001 011F 		SWAP	temp
+		SWAP	temp
+;PCODE: $000000AC VOL: 0
+; 0001 0120 		SUBI	temp,-0x30
+		SUBI	temp,-0x30
+;PCODE: $000000AD VOL: 0
+; 0001 0121         push    temp
+        push    temp
+;PCODE: $000000AE VOL: 0
+; 0001 0122 
+
+;PCODE: $000000AF VOL: 0
+; 0001 0123 		MOV		temp,tBCD1
+		MOV		temp,tBCD1
+;PCODE: $000000B0 VOL: 0
+; 0001 0124 		ANDI	tBCD1,0X0F
+		ANDI	tBCD1,0X0F
+;PCODE: $000000B1 VOL: 0
+; 0001 0125 		SUBI	tBCD1,-0x30
+		SUBI	tBCD1,-0x30
+;PCODE: $000000B2 VOL: 0
+; 0001 0126         push    tBCD1
+        push    tBCD1
+;PCODE: $000000B3 VOL: 0
+; 0001 0127 
+
+;PCODE: $000000B4 VOL: 0
+; 0001 0128 		ANDI	temp,0XF0
+		ANDI	temp,0XF0
+;PCODE: $000000B5 VOL: 0
+; 0001 0129 		SWAP	temp
+		SWAP	temp
+;PCODE: $000000B6 VOL: 0
+; 0001 012A 		SUBI	temp,-0x30
+		SUBI	temp,-0x30
+;PCODE: $000000B7 VOL: 0
+; 0001 012B         push    temp
+        push    temp
+;PCODE: $000000B8 VOL: 0
+; 0001 012C 
+
+;PCODE: $000000B9 VOL: 0
+; 0001 012D 		MOV		temp,tBCD2
+		MOV		temp,tBCD2
+;PCODE: $000000BA VOL: 0
+; 0001 012E 		ANDI	tBCD2,0X0F
+		ANDI	tBCD2,0X0F
+;PCODE: $000000BB VOL: 0
+; 0001 012F 		SUBI	tBCD2,-0x30
+		SUBI	tBCD2,-0x30
+;PCODE: $000000BC VOL: 0
+; 0001 0130         push    tBCD2
+        push    tBCD2
+;PCODE: $000000BD VOL: 0
+; 0001 0131 
+
+;PCODE: $000000BE VOL: 0
+; 0001 0132 		ANDI	temp,0XF0
+		ANDI	temp,0XF0
+;PCODE: $000000BF VOL: 0
+; 0001 0133 		SWAP	temp
+		SWAP	temp
+;PCODE: $000000C0 VOL: 0
+; 0001 0134 		SUBI	temp,-0x30
+		SUBI	temp,-0x30
+;PCODE: $000000C1 VOL: 0
+; 0001 0135         push    temp
+        push    temp
+;PCODE: $000000C2 VOL: 0
+; 0001 0136 
+
+;PCODE: $000000C3 VOL: 0
+; 0001 0137 		MOV		temp,tBCD3
+		MOV		temp,tBCD3
+;PCODE: $000000C4 VOL: 0
+; 0001 0138 		ANDI	tBCD3,0X0F
+		ANDI	tBCD3,0X0F
+;PCODE: $000000C5 VOL: 0
+; 0001 0139 		SUBI	tBCD3,-0x30
+		SUBI	tBCD3,-0x30
+;PCODE: $000000C6 VOL: 0
+; 0001 013A         push    tBCD3
+        push    tBCD3
+;PCODE: $000000C7 VOL: 0
+; 0001 013B 
+
+;PCODE: $000000C8 VOL: 0
+; 0001 013C 		ANDI	temp,0XF0
+		ANDI	temp,0XF0
+;PCODE: $000000C9 VOL: 0
+; 0001 013D 		SWAP	temp
+		SWAP	temp
+;PCODE: $000000CA VOL: 0
+; 0001 013E 		SUBI	temp,-0x30
+		SUBI	temp,-0x30
+;PCODE: $000000CB VOL: 0
+; 0001 013F         push    temp
+        push    temp
+;PCODE: $000000CC VOL: 0
+; 0001 0140 
+
+;PCODE: $000000CD VOL: 0
+; 0001 0141 		MOV		temp,tBCD4
+		MOV		temp,tBCD4
+;PCODE: $000000CE VOL: 0
+; 0001 0142 		ANDI	tBCD4,0X0F
+		ANDI	tBCD4,0X0F
+;PCODE: $000000CF VOL: 0
+; 0001 0143 		SUBI	tBCD4,-0x30
+		SUBI	tBCD4,-0x30
+;PCODE: $000000D0 VOL: 0
+; 0001 0144         push    tBCD4
+        push    tBCD4
+;PCODE: $000000D1 VOL: 0
+; 0001 0145 
+
+;PCODE: $000000D2 VOL: 0
+; 0001 0146 		ANDI	temp,0XF0
+		ANDI	temp,0XF0
+;PCODE: $000000D3 VOL: 0
+; 0001 0147 		SWAP	temp
+		SWAP	temp
+;PCODE: $000000D4 VOL: 0
+; 0001 0148 		SUBI	temp,-0x30
+		SUBI	temp,-0x30
+;PCODE: $000000D5 VOL: 0
+; 0001 0149         push    temp
+        push    temp
+;PCODE: $000000D6 VOL: 0
+; 0001 014A 
+
+;PCODE: $000000D7 VOL: 0
+; 0001 014B         pop     temp
+        pop     temp
+;PCODE: $000000D8 VOL: 0
+; 0001 014C         st      z+,temp
+        st      z+,temp
+;PCODE: $000000D9 VOL: 0
+; 0001 014D         pop     temp
+        pop     temp
+;PCODE: $000000DA VOL: 0
+; 0001 014E         st      z+,temp
+        st      z+,temp
+;PCODE: $000000DB VOL: 0
+; 0001 014F         pop     temp
+        pop     temp
+;PCODE: $000000DC VOL: 0
+; 0001 0150         st      z+,temp
+        st      z+,temp
+;PCODE: $000000DD VOL: 0
+; 0001 0151         pop     temp
+        pop     temp
+;PCODE: $000000DE VOL: 0
+; 0001 0152         st      z+,temp
+        st      z+,temp
+;PCODE: $000000DF VOL: 0
+; 0001 0153         pop     temp
+        pop     temp
+;PCODE: $000000E0 VOL: 0
+; 0001 0154         st      z+,temp
+        st      z+,temp
+;PCODE: $000000E1 VOL: 0
+; 0001 0155         pop     temp
+        pop     temp
+;PCODE: $000000E2 VOL: 0
+; 0001 0156         st      z+,temp
+        st      z+,temp
+;PCODE: $000000E3 VOL: 0
+; 0001 0157         pop     temp
+        pop     temp
+;PCODE: $000000E4 VOL: 0
+; 0001 0158         st      z+,temp
+        st      z+,temp
+;PCODE: $000000E5 VOL: 0
+; 0001 0159         pop     temp
+        pop     temp
+;PCODE: $000000E6 VOL: 0
+; 0001 015A         st      z+,temp
+        st      z+,temp
+;PCODE: $000000E7 VOL: 0
+; 0001 015B         pop     temp
+        pop     temp
+;PCODE: $000000E8 VOL: 0
+; 0001 015C         st      z+,temp
+        st      z+,temp
+;PCODE: $000000E9 VOL: 0
+; 0001 015D         pop     temp
+        pop     temp
+;PCODE: $000000EA VOL: 0
+; 0001 015E         st      z+,temp
+        st      z+,temp
+;PCODE: $000000EB VOL: 0
+; 0001 015F //Recovering the registers //Other registers will recover by the compiler
+//Recovering the registers //Other registers will recover by the compiler
+;PCODE: $000000EC VOL: 0
+; 0001 0160         pop     r20
+        pop     r20
+;PCODE: $000000ED VOL: 0
+; 0001 0161         pop     r19
+        pop     r19
+;PCODE: $000000EE VOL: 0
+; 0001 0162         pop     r18
+        pop     r18
+;PCODE: $000000EF VOL: 0
+; 0001 0163         pop     r17
+        pop     r17
+;PCODE: $000000F0 VOL: 0
+; 0001 0164         pop     r16
+        pop     r16
+;PCODE: $000000F1 VOL: 0
+;PCODE: $000000F2 VOL: 0
+; 0001 0165 #endasm
+; 0001 0166 }
+;PCODE: $000000F3 VOL: 0
+;PCODE: $000000F4 VOL: 0
+;PCODE: $000000F5 VOL: 0
