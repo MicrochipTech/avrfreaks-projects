@@ -1,0 +1,219 @@
+Interrupt Vectors
+00000 C017      RJMP	__text_start|__start
+00001 C05C      RJMP	_int0_isr          
+
+
+00003 C048      RJMP	_timer2_comp_isr   
+Program Code (text area)
+FILE: C:\DOCUME~1\1234\Desktop\RPM\RPM\main.c
+(0001) // Target : M8535
+(0002) // Crystal: 8.0000Mhz
+(0003) 
+(0004) #include <iom8535v.h>
+(0005) #include <macros.h>
+(0006) 
+(0007) unsigned int count_1 = 0,RPM = 0;
+(0008) unsigned char j = 0, iter = 0;
+(0009) 
+(0010) void port_init(void)
+(0011) {
+(0012)  PORTA = 0x00;
+_port_init:
+    0003A 2422      CLR	R2
+    0003B BA2B      OUT	0x1B,R2
+(0013)  DDRA  = 0x00;
+    0003C BA2A      OUT	0x1A,R2
+(0014)  DDRB  = 0xFF;
+    0003D EF8F      LDI	R24,0xFF
+    0003E BB87      OUT	0x17,R24
+(0015)  PORTB = 0xFF;
+    0003F BB88      OUT	0x18,R24
+(0016)  PORTC = 0x00;
+    00040 BA25      OUT	0x15,R2
+(0017)  DDRC  = 0xFF;
+    00041 BB84      OUT	0x14,R24
+(0018)  PORTD = 0x00;
+    00042 BA22      OUT	0x12,R2
+(0019)  DDRD  = 0x00;
+    00043 BA21      OUT	0x11,R2
+    00044 9508      RET
+(0020) }
+(0021) 
+(0022) void timer2_init(void)
+(0023) {
+(0024)  TCCR2 = 0x00;
+_timer2_init:
+    00045 2422      CLR	R2
+    00046 BC25      OUT	0x25,R2
+(0025)  OCR2  = 0x53;
+    00047 E583      LDI	R24,0x53
+    00048 BD83      OUT	0x23,R24
+(0026)  ASSR  = 0x00;
+    00049 BC22      OUT	0x22,R2
+(0027)  TCNT2 = 0x00;
+    0004A BC24      OUT	0x24,R2
+    0004B 9508      RET
+_timer2_comp_isr:
+    0004C 938A      ST	-Y,R24
+    0004D 939A      ST	-Y,R25
+    0004E B78F      IN	R24,0x3F
+    0004F 938A      ST	-Y,R24
+(0028)  //do not start d timer here..
+(0029) }
+(0030) 
+(0031) #pragma interrupt_handler timer2_comp_isr:iv_TIMER2_COMPA
+(0032) void timer2_comp_isr(void)
+(0033) {
+(0034)     count_1++;
+    00050 9180 0060 LDS	R24,count_1
+    00052 9190 0061 LDS	R25,count_1+1
+    00054 9601      ADIW	R24,1
+    00055 9390 0061 STS	count_1+1,R25
+    00057 9380 0060 STS	count_1,R24
+    00059 9189      LD	R24,Y+
+    0005A BF8F      OUT	0x3F,R24
+    0005B 9199      LD	R25,Y+
+    0005C 9189      LD	R24,Y+
+    0005D 9518      RETI
+_int0_isr:
+    0005E 922A      ST	-Y,R2
+    0005F 923A      ST	-Y,R3
+    00060 930A      ST	-Y,R16
+    00061 931A      ST	-Y,R17
+    00062 932A      ST	-Y,R18
+    00063 933A      ST	-Y,R19
+    00064 938A      ST	-Y,R24
+    00065 939A      ST	-Y,R25
+    00066 B62F      IN	R2,0x3F
+    00067 922A      ST	-Y,R2
+(0035) }
+(0036) 
+(0037) 
+(0038) #pragma interrupt_handler int0_isr:iv_INT0
+(0039) void int0_isr(void)
+(0040) {
+(0041)     iter++;
+    00068 9180 0065 LDS	R24,iter
+    0006A 5F8F      SUBI	R24,0xFF
+    0006B 9380 0065 STS	iter,R24
+(0042)     if (j == 0)
+    0006D 9020 0064 LDS	R2,j
+    0006F 2022      TST	R2
+    00070 F461      BNE	0x007D
+(0043)     {
+(0044)     count_1 = 0;
+    00071 2422      CLR	R2
+    00072 2433      CLR	R3
+    00073 9230 0061 STS	count_1+1,R3
+    00075 9220 0060 STS	count_1,R2
+(0045)     TCCR2 = 0x0A;//start timer 2
+    00077 E08A      LDI	R24,0xA
+    00078 BD85      OUT	0x25,R24
+(0046)     j = 1;
+    00079 E081      LDI	R24,1
+    0007A 9380 0064 STS	j,R24
+(0047)     }
+    0007C C017      RJMP	0x0094
+(0048)     else if (iter > 60)
+    0007D E38C      LDI	R24,0x3C
+    0007E 9020 0065 LDS	R2,iter
+    00080 1582      CP	R24,R2
+    00081 F490      BCC	0x0094
+(0049)     {
+(0050)       TCCR2 = 0x00;    //stop timer 2
+    00082 2422      CLR	R2
+    00083 BC25      OUT	0x25,R2
+(0051)       RPM = 12287/count_1;
+    00084 9120 0060 LDS	R18,count_1
+    00086 9130 0061 LDS	R19,count_1+1
+    00088 EF0F      LDI	R16,0xFF
+    00089 E21F      LDI	R17,0x2F
+    0008A D022      RCALL	div16u
+    0008B 9310 0063 STS	RPM+1,R17
+    0008D 9300 0062 STS	RPM,R16
+(0052)       j = 0;
+    0008F 2422      CLR	R2
+    00090 9220 0064 STS	j,R2
+(0053)       iter = 0;
+    00092 9220 0065 STS	iter,R2
+(0054)     }
+    00094 9029      LD	R2,Y+
+    00095 BE2F      OUT	0x3F,R2
+    00096 9199      LD	R25,Y+
+    00097 9189      LD	R24,Y+
+    00098 9139      LD	R19,Y+
+    00099 9129      LD	R18,Y+
+    0009A 9119      LD	R17,Y+
+    0009B 9109      LD	R16,Y+
+    0009C 9039      LD	R3,Y+
+    0009D 9029      LD	R2,Y+
+    0009E 9518      RETI
+(0055) 
+(0056) }
+(0057) 
+(0058) void init_devices(void)
+(0059) {
+(0060)  CLI();
+_init_devices:
+    0009F 94F8      BCLR	7
+(0061)  port_init();
+    000A0 DF99      RCALL	_port_init
+(0062)  timer2_init();
+    000A1 DFA3      RCALL	_timer2_init
+(0063) 
+(0064) MCUCR = 0x02;
+    000A2 E082      LDI	R24,2
+    000A3 BF85      OUT	0x35,R24
+(0065)  GIMSK = 0x40;
+    000A4 E480      LDI	R24,0x40
+    000A5 BF8B      OUT	0x3B,R24
+(0066)  TIMSK = 0x80;
+    000A6 E880      LDI	R24,0x80
+    000A7 BF89      OUT	0x39,R24
+(0067)  SEI();
+    000A8 9478      BSET	7
+    000A9 9508      RET
+(0068) }
+(0069) 
+(0070) 
+(0071) 
+(0072) 
+(0073) void main(void)
+(0074) {
+(0075)  init_devices();
+_main:
+    000AA CFF4      RJMP	_init_devices
+mod16u:
+    000AB 9468      BSET	6
+    000AC C001      RJMP	xdiv16u
+div16u:
+    000AD 94E8      BCLR	6
+xdiv16u:
+    000AE 92EA      ST	-Y,R14
+    000AF 92FA      ST	-Y,R15
+    000B0 938A      ST	-Y,R24
+    000B1 24EE      CLR	R14
+    000B2 24FF      CLR	R15
+    000B3 E180      LDI	R24,0x10
+    000B4 0F00      LSL	R16
+    000B5 1F11      ROL	R17
+    000B6 1CEE      ROL	R14
+    000B7 1CFF      ROL	R15
+    000B8 16E2      CP	R14,R18
+    000B9 06F3      CPC	R15,R19
+    000BA F018      BCS	0x00BE
+    000BB 1AE2      SUB	R14,R18
+    000BC 0AF3      SBC	R15,R19
+    000BD 9503      INC	R16
+    000BE 958A      DEC	R24
+    000BF F7A1      BNE	0x00B4
+    000C0 F416      BRTC	0x00C3
+    000C1 2D0E      MOV	R16,R14
+    000C2 2D1F      MOV	R17,R15
+    000C3 9189      LD	R24,Y+
+    000C4 90F9      LD	R15,Y+
+    000C5 90E9      LD	R14,Y+
+    000C6 9508      RET
+(0076) }
+(0077) 
+FILE: <library>
