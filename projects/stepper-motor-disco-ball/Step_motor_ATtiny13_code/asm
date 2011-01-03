@@ -1,0 +1,448 @@
+.device ATtiny13
+
+;+---------------------------------------------------------------------------+
+;|                                                                           |
+;|         Code for steper motor (Epson LX-300) for disco ball, 2-phase      |
+;|                                                                           |
+;|            Pin 1 -  (RC (1K+47n) + 1N4148)			                     |
+;|    PORTB3  Pin 2 - speed motor UP  (low level active), taster UP          |
+;|    PORTB4  Pin 3 - speed motor DOWN (low level active), taster DOWN       |
+;|            Pin 4 - gnd                                                    |
+;|    portB0  Pin 5 - ext interrupt, active in  falling edge, save speed     |
+;|                    and direction rotation in the EEPROM                   |
+;|    portB1  Pin 6 - OUT1, first phase motor turn					         |
+;|    portB2  Pin 7 - OUT2, 2-phase motor turn                               |
+;|            Pin 8 - Vcc (5V)                                               |
+;|                                                                           |
+;|     Press taster UP and DOWN simultaneously => change diroction rotate    |
+;|     Time debauncing 0x0A*6.8ms=68ms.                                      |
+;|     Max speed 0x05*6.8mS = 34mS	                                  		 |
+;|     Min speed 0x64*6.8mS =681mS		                                	 |
+;|                                                                           |
+;| Direction rotation:   ->                    <-                      		 |
+;|                                                                           |
+;|  OUT1(Pin6) _|¯¯¯|___|¯¯¯|___     _|¯¯¯|___|¯¯¯|___                       |
+;|                                                                           |
+;|  OUT2(Pin7) ¯¯¯|___|¯¯¯|___|¯     ___|¯¯¯|___|¯¯¯|_                       |
+;|                                                                           |
+;|                                                                           |
+;+---------------------------------------------------------------------------+
+
+
+;-----------------------------------------------------------------------+
+.equ	SREG	=$3F	                   							   ;|
+.equ	SPL		=$3D									               ;|
+.equ	GIMSK	=$3B		                                           ;|
+.equ	GICR	=$3B   												   ;|
+.equ	GIFR	=$3A				                                   ;|
+.equ	TIMSK0	=$39				                                   ;|
+.equ	TIFR0	=$38									               ;|
+.equ	SPMCSR  =$37   												   ;|
+.equ	OCR0A	=$36   												   ;|
+.equ	MCUCR	=$35								                   ;|
+.equ	MCUSR	=$34							                       ;|
+.equ	TCCR0B	=$33	 				                               ;|
+.equ	TCNT0	=$32	 											   ;|
+.equ	OSCCAL	=$31   												   ;|
+.equ	TCCR0A	=$2F  												   ;|
+.equ	DWDR	=$2E   												   ;|
+.equ	OCR0B	=$29   												   ;|
+.equ	GTCCR	=$28   												   ;|
+.equ	CLKPR	=$26   												   ;|
+.equ	WDTCR	=$21   												   ;|
+   																	   ;|
+.equ   	EEAR	=$1E   												   ;|
+.equ	EEARL	=$1E   												   ;|
+.equ	EEDR	=$1D   												   ;|
+.equ	EECR	=$1C   												   ;|
+.equ	PORTB	=$18	                                               ;|
+.equ	DDRB	=$17	                                               ;|
+.equ	PINB	=$16	                                               ;|
+.equ	PCMSK	=$15	                                               ;|
+.equ	DIDR0	=$14	  											   ;|	
+.equ	ACSR	=$08	                                               ;|
+.equ	ADMUX	=$07   												   ;|
+.equ	ADCSRA	=$06    											   ;|
+.equ	ADCH	=$05                                                   ;|
+.equ	ADCL	=$04   												   ;|
+.equ	ADCSRB	=$03												   ;|
+;-----------------------------------------------------------------------+
+
+
+	.equ max = 0x64		;parameter	 <------------MIN BRZINA
+	.equ min = 0x05	    ;parameter	 <------------MAX BRZINA
+	.equ ini = 0x1A		;inicijal value for error in the write/read EEPROM or first power on for uC
+	.equ deb = 0x0A		;parameter for debaunsing (x6.81mS) example 0x0A*6.81mS = 10*6.81mS = 68.1mS
+
+	;+------------------------------------------------------------------+
+	;|                                                                  |
+	;|                  FORMULA ZA RACUNANJE GRANICA:                   |
+	;|																	|
+	;|   K - number whole step positions for motors					    |
+	;| 4*K - number for all step positions for motors                   |
+	;| 	 t - time for timer overflow (9,6MHz) ->6.81mS                  |
+	;|   O - rotate motor per minute                    				|
+	;|																	|
+	;|	max=...=15/(k*Omin*t)=2.20/(k*Omin)	 ...to multiplication With 100
+	;|																	|
+	;|  min=...=15/(k*Omax*t)=2.20/(k*Omax)	 ...to multiplication With 100
+	;|																	|
+	;+------------------------------------------------------------------+
+
+
+;-----------------------------------------------------------------------+
+.def temp	=r16													   ;|
+.def brojac	=r17													   ;|
+.def brojacm=r18													   ;|
+.def semafor=r19													   ;|
+.def tempx	=r20													   ;|
+.def tempy	=r21													   ;|
+.def smer	=r22		;direction for rotation                         |
+.def n		=r23													   ;|
+.def preth	=r24													   ;|
+.def stanje	=r25													   ;|
+.def brojac_tek=r26													   ;|
+.def ttemp	=r27													   ;|
+;-----------------------------------------------------------------------+
+
+;----------------INTERRUPT VECTOR TABLE-----------------------------------------+
+;                                       										|
+.org	0x000				;Reset, Brown-on, Watchdog, Power on				|
+	rjmp	reset															   ;|
+.org	0x001				;External Interrupt Request 0		(INT0)			|
+	reti																	   ;|
+.org	0x002				;Pin Change Interrupt Request 0		(PCINT0)		|
+	rjmp spoljni_prekid														   ;|
+.org	0x003				;Timer/Counter Overflow				(TIM0_OVF)		|
+	rjmp prekoracenje_tajmera												   ;|
+.org	0x004				;EEPROM Ready										|
+	reti																	   ;|
+.org	0x005				;Analog Comparator									|
+	reti																	   ;|
+.org	0x006				;Timer/Counter Compare Match A						|
+	reti																	   ;|
+.org	0x007				;Timer/Counter Compare Match B						|
+	reti																	   ;|
+.org	0x008				;Watchdog Time-out									|
+	reti																	   ;|
+.org	0x009				;ADC Conversion Complete							|
+	reti																	   ;|
+;-------------------------------------------------------------------------------+
+
+	;----------------Definisanje registara-------------------
+	reset:																							
+		cli																		
+		nop																							
+																										
+		ldi temp, 0x9F											
+		out SPL, temp			
+																									
+		ldi temp, 0b00000110														
+		out DDRB, temp																
+																										   
+		ldi temp, 0x00			
+		out PORTB, temp			
+								
+		ldi temp, 0x80			
+		out ACSR, temp			
+								
+		ldi temp, 0b00000011	
+		out TCCR0B, temp		
+		ldi temp, 0b00000010	
+		out TIMSK0, temp		
+								
+		ldi temp, 0b00000010	
+		out MCUCR, temp			
+		ldi temp, 0b00000001	
+		out PCMSK, temp			
+		ldi temp, 0b00100000	
+		out GIMSK, temp			
+	
+	
+	
+				;----------Read value in the EEPROM
+				ldi ttemp, 0b00000000	;first adress - value for speed
+				rcall citanje			
+				mov temp, ttemp			
+					mov tempy, temp		
+													
+						ldi temp, 0xFF				
+						cp temp, tempy				
+						breq inicijalna_vrednost		
+														
+						ldi temp, max	   			;MAX, limit value, test for previously save value in EEPROM
+						cp temp, tempy				
+						brlt inicijalna_vrednost	
+						ldi temp, min				;MIN
+						cp tempy, temp				
+						brlt inicijalna_vrednost	
+													
+				ldi ttemp, 0b00000001	;second adress - value for speed, double value, for safety write and read in the EEPROM
+				rcall citanje
+				mov temp, ttemp														
+																					
+					cp temp, tempy													
+					breq brzina_OK		;
+																								
+		inicijalna_vrednost:																	
+						ldi brojac_tek, ini		;load inicial value if have error or first power on uC
+						clr smer				;load inicial value for direction rotation
+						rjmp brzina_dalje												
+		brzina_OK:																		
+					mov brojac_tek, temp	
+											
+				ldi ttemp, 0b00000010	;third adress - value for direction rotation
+				rcall citanje														
+				mov temp, ttemp					
+												
+					mov smer,temp				
+		brzina_dalje:	;-------------------------------------------
+					
+				
+	sei
+	nop
+		clr brojac				
+		clr semafor				
+		clr n					
+		clr preth				
+		clr stanje				
+								
+	
+
+;----------------------------------------------------------------------------------------------------	
+			mov brojacm, brojac_tek	
+	pocetak:
+
+			ldi temp, 0x00	
+		cekaj:	;--------------------------------------+
+			cp temp, semafor						  ;|
+			breq cekaj				                  ;|
+			clr semafor				                  ;|		
+				;-----------6.81mS---------------------+
+				
+
+				;----------------load taster status--------------------+
+			in tempy,PINB			                                  ;|
+			ldi temp, 0b00011000									  ;|
+			and tempy, temp			                                  ;|
+			ldi temp, 0b00011000	                                  ;|
+			eor tempy, temp			                                  ;|
+			lsr tempy				                                  ;|
+			lsr tempy											      ;|
+			lsr tempy			                                 	  ;|
+				;------------------------------------------------------+
+
+
+		;--------------------------------debauncing----------------------+
+																		;|
+		debaunsing:														;|
+			ldi temp, 0b00000011										;|
+			cp temp, tempy												;|
+			breq test_ab												;|
+			rjmp test_a													;|
+			test_ab:													;|
+				ldi temp, 0b00000011									;|
+				cp temp, preth 											;|
+				breq test_ab_2											;|
+					ldi preth, 0b00000011								;|
+					rjmp brisi_n										;|
+				test_ab_2:												;|
+						ldi temp, deb	 ;<--------						 |
+						cp temp, n										;|
+						breq test_ab_3									;|
+							ldi preth, 0b00000011						;|
+							rjmp povecaj_n								;|
+						test_ab_3:										;|
+								;----change direction rotate-+			;|
+								clr preth					;|			;|
+								ldi temp, 0x00				;|			;|
+								cp temp, smer				;|			;|
+								breq smer_levi				;|			;|
+							smer_desni:						;|			;|
+									clr smer				;|			;|
+									cbi PORTB,0				;|			;|
+									rjmp brisi_n			;|			;|
+							smer_levi:						;|			;|
+									ldi smer, 0b00000001	;|			;|
+									sbi PORTB,0				;|			;|
+									rjmp brisi_n	;--------+			;|
+																		;|
+		test_a:															;|
+			ldi temp, 0b00000010										;|
+			cp temp, tempy												;|
+			breq test_a_1												;|
+			rjmp test_b													;|
+			test_a_1:													;|
+				ldi temp, 0b00000010									;|
+				cp temp, preth											;|
+				breq test_a_2											;|
+					ldi preth, 0b00000010								;|
+					rjmp brisi_n										;|
+				test_a_2:												;|
+						ldi temp, deb	;<---------------          		;|
+						cp temp, n										;|
+						breq test_a_3									;|
+							ldi preth, 0b00000010						;|
+							rjmp povecaj_n								;|
+					test_a_3:											;|
+								;---speed rotation UP--------+			;|
+								dec brojac_tek				;|			;|
+								clr preth					;|			;|
+								rjmp brisi_n   ;-------------+			;|
+																		;|
+		test_b:															;|
+			ldi temp, 0b00000001										;|
+			cp temp, tempy												;|
+			breq test_b_1												;|
+			clr preth													;|
+			rjmp brisi_n												;|
+			test_b_1:													;|	
+				ldi temp, 0b000000001									;|		
+				cp temp, preth											;|
+				breq test_b_2											;|
+					ldi preth, 0b00000001								;|		
+					rjmp brisi_n										;|
+				test_b_2:												;|
+						ldi temp, deb	;<---------------           	;|
+						cp temp, n										;|
+						breq test_b_3									;|
+							ldi preth, 0b00000001						;|
+							rjmp povecaj_n								;|
+					test_b_3:											;|
+								;--speed rotation DOWN-------+			;|
+								inc brojac_tek				;|			;|
+								clr preth					;|			;|
+								;rjmp brisi_n ;--------------+			;|
+		brisi_n:														;|
+			clr n														;|
+			rjmp debaunsing_dalje										;|
+		povecaj_n:														;|
+			inc n														;|
+		debaunsing_dalje:												;|
+		;----------------------------------------------------------------+
+
+
+		;-----------------------limiter for change speed---------------------+
+			ldi temp, max	   				;max							 |							
+			cp brojac_tek, temp												;|
+			brlt kraj_granica_2												;|
+				ldi brojac_tek, max											;|
+				rjmp kraj_granica											;|
+		kraj_granica_2:														;|
+			ldi temp, min					;min           					 |
+			cp temp, brojac_tek												;|
+			brlt kraj_granica												;|
+				ldi brojac_tek, min			                                ;|
+		kraj_granica:														;|	
+		;--------------------------------------------------------------------+
+
+
+			;----------------------------------------+
+			inc brojac								;|
+			cp brojac, brojacm		                ;|
+			brne dalje_2		                    ;|	
+			clr brojac								;|
+			;----------------312mS-------------------+
+		
+			mov brojacm, brojac_tek	
+
+			;----------------change pin out--------------+
+			ldi temp, 0b00000000						;|
+			cp temp, stanje								;|
+			brne smer_01								;|
+				ldi stanje,0b00000001					;|
+				cbi PORTB,2								;|
+				rjmp smer_dalje							;|
+		smer_01:										;|
+			ldi temp, 0b00000001						;|
+			cp temp, stanje								;|
+			brne smer_11								;|
+				ldi stanje,0b00000011					;|
+				sbi PORTB,2								;|
+				rjmp smer_dalje							;|
+		smer_11:										;|
+			ldi temp, 0b00000011						;|
+			cp temp, stanje								;|
+			brne smer_00								;|
+				ldi stanje,0b00000010		    		;|
+				sbi PORTB,2								;|
+				rjmp smer_dalje							;|
+		smer_00:										;|
+				cbi PORTB,2								;|
+				ldi stanje,0b00000000			 		;|	
+														;|
+	smer_dalje:											;|
+			sbrs smer,0									;|
+			rjmp smer_D									;|
+	smer_L:												;|
+			nop											;|
+			sbrs stanje,0								;|
+				rjmp smer_0								;|
+				rjmp smer_1								;|
+	smer_D:												;|
+			sbrs stanje,0								;|
+				rjmp smer_1								;|
+		smer_0:											;|
+			cbi PORTB,1									;|
+			rjmp smer_kraj								;|
+		smer_1:											;|
+			sbi PORTB,1									;|
+	smer_kraj:											;|
+			;--------------------------------------------+
+	dalje_2:
+		rjmp pocetak
+		
+
+	;----------------timer/counter overflow interrupt souce--------------------------+
+	prekoracenje_tajmera:			; f=9,6MHz => 0.416uS ; clk/64 =>26.624uS		;|
+		ldi semafor,0b00000001														;|
+									;timer clock 64*0.416uS=26.6uS 8-bit => 256      |
+		reti						;total time for overflow timer 256*26.624uS=6.815ms
+	;--------------------------------------------------------------------------------+
+
+	;----------------pin change interrupt request0 (falling output edge) PB0 (Pin 5)-----+
+spoljni_prekid:																			;|
+				clr ttemp																;|
+				out EECR, ttemp															;|
+					;sbi EECR, 5														;|
+					;sbi EECR, 4	;erase old and write new data						;|
+				ldi ttemp, 0b00000000													;|
+				out EEARL, ttemp		                                                ;|
+				out EEDR, brojacm														;|
+			sbi EECR,2																	;|
+			sbi EECR,1																	;|
+cekaj_upis_1:																			;|
+		sbic EECR, 1																	;|
+		rjmp cekaj_upis_1																;|
+																						;|
+				ldi ttemp, 0b00000001													;|
+				out EEARL, ttemp														;|
+				out EEDR, brojacm														;|
+			sbi EECR,2																	;|
+			sbi EECR,1																	;|
+cekaj_upis_2:																			;|
+		sbic EECR, 1																	;|
+		rjmp cekaj_upis_2																;|
+																						;|
+				ldi ttemp, 0b00000010													;|
+				out EEARL, ttemp														;|
+				out EEDR, smer															;|
+			sbi EECR,2																	;|
+			sbi EECR,1																	;|
+cekaj_upis_3:																			;|
+		sbic EECR, 1																	;|
+		rjmp cekaj_upis_3																;|
+																						;|
+		reti  ;--------------------------------------------------------------------------+
+
+
+	citanje:  ;----Read in the EEPROM----------------------------------------+
+			out EEARL, ttemp												;|
+			clr ttemp														;|
+			out EECR, ttemp													;|
+				sbi EECR, 0													;|
+cekaj_citanje:																;|
+			sbic EECR, 0													;|
+			rjmp cekaj_citanje												;|
+			in ttemp, EEDR													;|
+		ret	;----------------------------------------------------------------+
