@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files (x86)\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "C:\ludo\electronique\foamcutting\labels.tmp" -fI -W+ie -C V2E -o "C:\ludo\electronique\foamcutting\foamcutting.hex" -d "C:\ludo\electronique\foamcutting\foamcutting.obj" -e "C:\ludo\electronique\foamcutting\foamcutting.eep" -m "C:\ludo\electronique\foamcutting\foamcutting.map" "C:\ludo\electronique\foamcutting\foamcutting.asm"
