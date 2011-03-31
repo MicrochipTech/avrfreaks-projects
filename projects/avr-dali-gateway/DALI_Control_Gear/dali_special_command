@@ -1,0 +1,144 @@
+void direct_arc_power()
+{
+  //WHAT IF INDIRECT ARC POWER RECEIVED DURING FADING ????????????
+  requestedLevel = dali.dataByte;
+  change_output_w_fadetime();
+  dali.status.resetState = 0;
+  dali.status.powerFailure = 0;
+  return;
+}
+
+void none(void)
+{
+  return;
+}
+
+//SPECIAL COMMANDS
+void terminate(){
+  timeOut2 = 0;
+  compareMode = 0;
+  physicalSelectionMode = 0;
+  return;
+}
+
+void data_transfer_register(){
+  dali.dtr = dali.dataByte;
+  return;
+}
+
+void initialise(){
+  if ((dali.dataByte == 0) ||                     //broadcast
+      ((dali.dataByte & 0x7e) == (dali.shortAdd & 0x7e)))           //short address OK
+  {
+    timeOut2 = 3600;    //enables special commands for 3600*1/4th second = 15min.
+    compareMode = 1;
+  }
+  return;
+}
+
+void randomise(){
+  if (timeOut2 != 0)    //specialMode enabled
+  {
+    srand(TCNT1L);
+    dali.randomAddH = /*rand(TCNT1L)*/rand();
+    dali.randomAddM = /*rand(dali.randomAddH)*/rand();
+    dali.randomAddL = /*rand(dali.randomAddM)*/rand();  
+  }
+  return;
+}
+
+void compare(){
+  if ((timeOut2 != 0) && (compareMode == 1))    //specialMode enabled
+  {
+    if (dali.randomAddH > dali.searchAddH)
+      return;
+    else
+    {
+      if (dali.randomAddH == dali.searchAddH)
+      {
+        if (dali.randomAddM > dali.searchAddM)
+          return;
+        else
+        {
+          if (dali.randomAddM == dali.searchAddM)
+          {
+            if (dali.randomAddL > dali.searchAddL)
+              return;
+          }
+        }
+      }
+    }     
+    dali_answer(YES);           
+  }
+  return;
+}
+
+void withdraw(){
+  if (timeOut2 != 0)    //specialMode enabled
+  {          
+    if ((dali.randomAddH == dali.searchAddH) &&
+        (dali.randomAddM == dali.searchAddM) &&
+        (dali.randomAddL == dali.searchAddL))
+      compareMode = 0;
+  }
+  return;
+}
+
+void search_addr_h(){
+  if (timeOut2 != 0)    //specialMode enabled          
+    dali.searchAddH = dali.dataByte;
+  return
+}
+
+void search_addr_m){
+  if (timeOut2 != 0)    //specialMode enabled          
+    dali.searchAddM dali.dataByte;
+  return
+}
+
+void search_addr_l){
+  if (timeOut2 != 0)    //specialMode enabled          
+    dali.searchAddL= dali.dataByte;
+  return
+}
+
+void program_short_address(){
+  if (timeOut2 != 0)    //specialMode enabled
+  {
+    if (((dali.randomAddH == dali.searchAddH) &&
+        (dali.randomAddM == dali.searchAddM) &&
+        (dali.randomAddL == dali.searchAddL)) ||
+        (physicalSelectionMode == 1))
+    {
+        dali.shortAdd = (dali.dataByte & 0x7f);
+        if ((dali.shortAdd & 0x7e) == 0x7e)
+          dali.status.missingShortAdd = 1;
+        else
+          dali.status.missingShortAdd = 0;     
+    }
+  }
+  return;
+}
+
+void verify_short_address(){
+  if (timeOut2 != 0)    //specialMode enabled
+    if ((dali.shortAdd & 0x7e) == (dali.dataByte & 0x7e))
+      dali_answer(YES);
+  return;
+}
+
+void query_short_address(){
+  if (timeOut2 != 0)    //specialMode enabled
+    if (((dali.randomAddH == dali.searchAddH) &&
+        (dali.randomAddM == dali.searchAddM) &&
+        (dali.randomAddL == dali.searchAddL)) ||
+        (physicalSelectionMode == 1))             
+      dali_answer(dali.shortAdd);
+  return;
+}
+
+void physical_selection(){
+  if (timeOut2 != 0)    //specialMode enabled
+    physicalSelectionMode = 1;
+  return
+}
