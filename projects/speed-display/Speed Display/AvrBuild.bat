@@ -1,0 +1,2 @@
+@ECHO OFF
+"D:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "C:\Documents and Settings\rld\Desktop\Speed Display\labels.tmp" -fI -W+ie -C V2E -o "C:\Documents and Settings\rld\Desktop\Speed Display\SpeedDisplay.hex" -d "C:\Documents and Settings\rld\Desktop\Speed Display\SpeedDisplay.obj" -e "C:\Documents and Settings\rld\Desktop\Speed Display\SpeedDisplay.eep" -w -m "C:\Documents and Settings\rld\Desktop\Speed Display\SpeedDisplay.map" "C:\Documents and Settings\rld\Desktop\Speed Display\SpeedDisplay.asm"
