@@ -1,0 +1,1 @@
+This ZIP archive contains a PDF of the joystick schematics (joystick.pdf), as well as the AVR Sudio project files.
