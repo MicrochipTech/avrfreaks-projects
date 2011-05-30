@@ -1,0 +1,1 @@
+lito.o: ../lito.c
