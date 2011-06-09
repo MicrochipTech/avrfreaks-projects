@@ -1,0 +1,334 @@
+/*
+ *  attiny861_ADC.asm
+ *
+ *  Simple code for getting the analog reading of PORTA (ADC0 to ADC7) and saving it in SRAM easily accesible via SPI
+ *
+ *  Created: 6/7/2011 10:12:15 PM
+ *  Email:  hzrnbgy@gmail.com
+ */
+
+.CSEG
+.ORG 0x0000
+
+/*******************************************************************
+*Interrupt vectors, not everything is needed but put here for
+*consistency's sake
+*******************************************************************/
+RJMP RESET_routine					; Reset Handler
+RJMP EXT_INT0_routine				; IRQ0 Handler
+RJMP PCINT_routine					; PCINT Handler
+RJMP TIM1_COMPA_routine				;Timer1 CompareA Handler
+RJMP TIM1_COMPB_routine				;Timer1 CompareB Handler
+RJMP TIM1_OVF_routine				;Timer1 Overflow Handler
+RJMP TIM0_OVF_routine				;Timer0 Overflow Handler
+RJMP USI_START_routine				;USI Start Handler
+RJMP USI_OVF_routine				;USI Overflow Handler
+RJMP EE_RDY_routine					;EEPROM Ready Handler
+RJMP ANA_COMP_routine				;Analog Comparator Handler
+RJMP ADC_routine					;ADC Conversion Handler
+RJMP WDT_routine					;WDT Interrupt Handler
+RJMP EXT_INT1_routine				;IRQ1 Handler
+RJMP TIM0_COMPA_routine				;Timer0 CompareA Handler
+RJMP TIM0_COMPB_routine				;Timer0 CompareB Handler
+RJMP TIM0_CAPT_routine				;Timer0 Capture Event Handler
+RJMP TIM1_COMPD_routine				;Timer1 CompareD Handler
+RJMP FAULT_PROTECTION_routine		;Timer1 Fault Protection
+
+RESET_routine:
+
+//set stack pointer
+LDI R16, low(RAMEND)
+LDI R17, high(RAMEND)
+OUT SPL, R16
+OUT SPH, R17
+
+//disable global interrupt for now
+CLI
+
+//set MCU Control Register
+LDI R16, (1<<PUD) | (1<<SE) | (0<<SM1) | (0<<SM0)	;pull up disabled, sleep enabled, idle sleep mode
+OUT MCUCR, R16
+
+//set analog input pins with no pull ups (PORTA)
+CLR R16
+OUT DDRA, R16										;all pins input
+OUT PORTA, R16										;no pull ups, not necessary as PUD is enabled
+
+//set up OC1A(PB1), OC1B(PB3) and OC1D(PB5) as outputs(PWM)
+SBI DDRB, 1											;set PortB1 as output
+SBI DDRB, 3											;set PortB3 as output
+SBI DDRB, 5											;set PortB5 as output
+
+/*******************************************************************
+*Initialize the ADC circuitry
+*******************************************************************/
+//ADC Multiplexer Selection Register - ADCMUX
+LDI R16, (0<<REFS1) | (0<<REFS0) | (1<<ADLAR) | (0<<MUX4) | (0<<MUX3) | (0<<MUX2) | (0<<MUX1) | (0<<MUX0)			;set voltage reference at Vcc, use ADC0 as initial input, use 8 bit resolution left adjusted
+OUT ADMUX, R16
+
+//ADC Control and Status Register A
+LDI R16, (1<<ADEN) | (0<<ADSC) | (0<<ADATE) | (1<<ADIF) | (1<<ADIE) | (0<<ADPS2) | (0<<ADPS1) | (1<<ADPS0)			;enable ADC, no conversion yet, auto trigger disabled, clear flag, ADC interrupt enabled
+OUT ADCSRA, R16																										;run ADC clock at 500kHz (2 div factor)
+
+//ADC Control and Status Register B
+LDI R16, (0<<BIN) | (0<<GSEL) | (0<<REFS2) | (0<<MUX5) | (0<<ADTS2) | (0<<ADTS1) | (0<<ADTS0)						;Vcc reference, trigger source doesn't matter, initial ADC input at ADC0
+OUT ADCSRB, R16
+
+//DIDR0 Digital Input Disable Register 0 and 1
+SER R16												;disable digital input buffers on ADC0 to ADC7
+OUT DIDR0, R16
+SBI DIDR1, 4
+
+//initialize and stabilize ADC clocking by doing an intial conversion
+SBI ADCSRA, ADSC				;start initial conversion to stabilize ADC clock, first conversion will take 25 ADC clock cycles or 50 CPU clks
+RCALL wait_38us					;wait
+RCALL wait_38us					;wait
+SBI ADCSRA, 4					;clear ADC interrupt flag
+NOP
+NOP
+
+/*******************************************************************
+*Initialize 8 bit timer1 and all 3 PWM outputs
+*PWM duty cycle is dependent on ADC reading on ADC0, ADC1, and ADC2
+*for visual debugging purposes
+*******************************************************************/
+LDI R16, (1<<COM1A1) | (0<<COM1A0) | (1<<COM1B1) | (0<<COM1B0) | (1<<PWM1A) | (1<<PWM1B)				;fast-PWM output on OC1A and OC1B
+OUT TCCR1A, R16
+
+LDI R16, (0<<CS13) | (0<<CS12) | (1<<CS11) | (0<<CS10)													;run timer1 at 2 prescaler
+OUT TCCR1B, R16
+
+LDI R16, (1<<COM1A1S) | (0<<COM1A0S) | (1<<COM1B1S) | (0<<COM1B0S) | (1<<COM1D1) | (0<<COM1D0) | (1<<PWM1D)				;fast-PWM output on OC1D, shadow bits
+OUT TCCR1C, R16
+
+LDI R16, (0<<WGM11) | (0<<WGM10)							;fast PWM waveform generation
+OUT TCCR1D, R16
+
+LDI R16, 0x01												;load output compare match A, B and D, describes duty cycle, all starts at 255/256 duty cycle
+OUT OCR1A, R16
+OUT OCR1B, R16
+OUT OCR1D, R16
+
+SER R16														;defines TOP for TNT1, describes PWM frequency, set to 0xFF MAX, PWM freq at 500kHz/256
+OUT OCR1C, R16
+
+/*******************************************************************
+*Initialize 8 bit timer, poller for ADC, takes ADC measurement every ~16ms
+*******************************************************************/
+//TCCR0A
+LDI R16, (0<<TCW0)											;8 bit counter width, input capture disabled, normal timer mode
+OUT TCCR0A, R16
+
+LDI R16, (1<<TOIE0)											;timer0 overflow interrupt enabled
+OUT TIMSK, R16
+
+LDI R16, (0<<CS02) | (1<<CS01) | (1<<CS00)					;64 prescaler, starts timer
+OUT TCCR0B, R16
+
+CLR R19								;set multiplexer counter source, start at ADC0
+
+SEI									;enable global interrupt
+
+main_loop:							;start waiting for interrupt
+NOP
+NOP
+//SLEEP
+NOP
+NOP
+RJMP main_loop
+
+/*******************************************************************
+*Interrupt Service Routines
+*Populate when necessary
+*******************************************************************/
+EXT_INT0_routine:
+NOP
+RETI
+
+PCINT_routine:
+NOP
+RETI
+
+TIM1_COMPA_routine:
+NOP
+RETI
+
+TIM1_COMPB_routine:
+NOP
+RETI
+
+TIM1_OVF_routine:
+NOP
+RETI
+
+/*******************************************************************
+*Polled timer for ADC measurement
+*ADC sampling rate may not exceed 200kHz
+*******************************************************************/
+TIM0_OVF_routine:				;routine for handling timed measurement of ADC, configurable sampling rate
+NOP
+SBI ADCSRA, 6					;start conversion on ADC
+RCALL wait_38us					;wait for ADC to finish, will proceed to ADC ISR immediately upon return from interrupt, will take 13 ADC clocks or 26 CPU clk (ADC div factor of 2)
+NOP
+INC R19							;select next ADC channel
+MOV R16, R19					;copy R19 temporarily, R19 being the next ADC channel
+ANDI R16, 0b11011111			;clear ADLAR bit first before comparison
+CPI R16, 8						;if next is ADC8, go back to ADC0
+BREQ return_to_ADC0
+ORI R19, 0b00100000				;set ADLAR bit
+OUT ADMUX, R19					;set next multiplexer setting
+NOP
+RETI
+
+return_to_ADC0:
+CLR R19							;return to ADC0
+ORI R19, 0b00100000				;set ADLAR bit
+OUT ADMUX, R19					;set next multiplexer setting
+NOP
+RETI
+
+USI_START_routine:
+NOP
+//not implemented yet
+RETI
+
+USI_OVF_routine:
+NOP
+//not implemented yet
+RETI
+
+EE_RDY_routine:
+NOP
+RETI
+
+ANA_COMP_routine:
+NOP
+RETI
+
+ADC_routine:					;read ADC conversion result, interrupt driven, executed right after timer0 overflow
+NOP
+IN R20, ADCL					;copy lowest 2 bits, not used
+IN R21, ADCH					;copy higher 8 bits
+MOV R23, R16					;copy next readings MUX register
+SUBI R23, 1						;subtract one to get current MUX reading
+ANDI R23, 0b11011111			;clear ADLAR bit
+
+CPI R23, 0x00					;ADC0, if read ADC0
+BREQ adc_0
+
+CPI R23, 0x01					;ADC1, if read ADC1
+BREQ adc_1
+
+CPI R23, 0x02					;ADC2, if read ADC2
+BREQ adc_2
+
+CPI R23, 0x03					;ADC3, if read ADC3
+BREQ adc_3
+
+CPI R23, 0x04					;ADC4, if read ADC4
+BREQ adc_4
+
+CPI R23, 0x05					;ADC5, if read ADC5
+BREQ adc_5
+
+CPI R23, 0x06					;ADC6, if read ADC6
+BREQ adc_6
+
+CPI R23, 0x07					;ADC7, if read ADC7
+BREQ adc_7
+
+NOP
+RETI
+
+//ADC readings stored at SRAMs 0x60 to 0x67
+adc_0:
+NOP
+OUT OCR1A, R21
+STS 0x60, R21
+NOP
+RETI
+
+adc_1:
+NOP
+OUT OCR1B, R21
+STS 0x61, R21
+NOP
+RETI
+
+adc_2:
+NOP
+OUT OCR1D, R21
+STS 0x62, R21
+NOP
+RETI
+
+adc_3:
+NOP
+STS 0x63, R21
+NOP
+RETI
+
+adc_4:
+NOP
+STS 0x64, R21
+NOP
+RETI
+
+adc_5:
+NOP
+STS 0x65, R21
+NOP
+RETI
+
+adc_6:
+NOP
+STS 0x66, R21
+NOP
+RETI
+
+adc_7:
+NOP
+STS 0x67, R21
+NOP
+RETI
+
+WDT_routine:
+NOP
+RETI
+
+EXT_INT1_routine:
+NOP
+RETI
+
+TIM0_COMPA_routine:
+NOP
+RETI
+
+TIM0_COMPB_routine:
+NOP
+RETI
+
+TIM0_CAPT_routine:
+NOP
+RETI
+
+TIM1_COMPD_routine:
+NOP
+RETI
+
+FAULT_PROTECTION_routine:
+NOP
+RETI
+
+/*******************************************************************
+*Delay Routines, can go all the way to 26 clock cycles if speed is very important
+*Must be enough to give ADC enough time to do conversion
+*******************************************************************/
+wait_38us:
+CLR R22
+LDI R22, 10
+
+wait_38us_:
+DEC R22
+BRNE wait_38us_
+RET
