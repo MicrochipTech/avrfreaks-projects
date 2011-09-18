@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "C:\Users\Administrator\Desktop\Jtag twice\ASM\labels.tmp" -fI -W+ie -o "C:\Users\Administrator\Desktop\Jtag twice\ASM\asm.hex" -d "C:\Users\Administrator\Desktop\Jtag twice\ASM\asm.obj" -e "C:\Users\Administrator\Desktop\Jtag twice\ASM\asm.eep" -m "C:\Users\Administrator\Desktop\Jtag twice\ASM\asm.map" "C:\Users\Administrator\Desktop\Jtag twice\ASM\asm.asm"
