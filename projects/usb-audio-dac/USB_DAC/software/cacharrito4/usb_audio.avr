@@ -1,0 +1,558 @@
+LANG OCTASM,0.1 \..\H\ATmega16U4
+file_sym \c4.sym
+EEPROM file_out \c4.e.bin
+FLASH file_out \c4.bin
+Mhz=16
+;los registros r6-r19 se usan solo en las isr
+
+;r10=0
+;SPH no se toca,el stack esta alineado y tiene 256bytes de tamaño
+;por lo que solo cambia SPL
+define ZERO r10
+define VECTOR wr16
+define WTMP wr18
+define TMP1 r18  ;uso temporal por las interrupciones
+define TMP2 r19
+define INT()  align #1addr r11=[SREG] jmp #1
+define IRET [SREG]=r11 iret
+DEFAULT_ENDPOINT=1
+stack_size=100h
+SRAM
+#adc_bufer2
+rb 3 #ix rb 1  define KIX (-5/255/200/0.02)
+rb 1 #vx rb 1  define KVX (1/255*2.56*660/100)
+rb 1 #v5 rb 1  define KV5 (1/255*2.56*660/100)
+	       define KPX (KVX*KIX*256)
+#adc_index2 rb 1   ;posicion de lectura,escritura
+FLASH
+
+jmp start
+
+; vector table and irq routines
+
+align INT0addr iret
+align INT1addr iret
+align INT2addr iret
+align INT3addr iret
+align Reserved1addr iret
+align Reserved2addr iret
+align INT6addr iret
+align Reserved3addr iret
+align PCI0addr      iret
+INT(USB_GEN,USB_COM)
+align WDTaddr iret
+align Reserved4addr iret
+align Reserved5addr iret
+align Reserved6addr iret
+align ICP1addr iret
+align OC1Aaddr iret
+align OC1Baddr iret
+align OC1Caddr iret
+INT(OVF1)
+align OC0Aaddr iret
+align OC0Baddr iret
+align OVF0addr iret
+align SPIaddr iret
+;URXC1addr
+;UDRE1addr
+;UTXC1addr
+align ACIaddr  iret
+INT(ADCC)
+;ICP3addr
+align OC3Baddr iret
+align OC3Caddr iret
+INT(OVF3)
+;TWIaddr
+;SPMRaddr
+align OC4Aaddr iret
+align OC4Baddr iret
+align OC4Daddr iret
+INT(OVF4)
+INT(TIMER4_FPF)
+#ADCC
+#OVF4 push rz rz=VECTOR ijmp
+
+#TIMER4_FPF reset_t4()
+	TMP1=20H [leds_error]=TMP1
+	IRET
+
+#ADCVX  {
+	r31=adc_bufer2>>8 r30=[adc_index2]
+	TMP1=[rz++] [ADMUX]=TMP1
+	TMP1=[ADCH] [rz++]=TMP1
+	r30&=7 [adc_index2]=r30
+	pop rz IRET
+	}
+
+#OVF1 #OVF3
+	TMP1=[timerdata] ++TMP1 [timerdata]=TMP1 jnz >1
+	TMP1=[timerdata+1] ++TMP1 [timerdata+1]=TMP1
+      # IRET
+
+
+#audio_sampler144{ ;muestreo a 48khz inversor a 144khz cpu a 8Mhz
+	[TC4H]=r13 [OCR4A]=r12
+	[TC4H]=r15 [OCR4B]=r14
+	push wr0 TMP1=80h
+	r30=[UEINTX] sbrc r30,5 jmp >1
+	r30&=7fh [UEINTX]=r30
+	r12=0 r13=TMP1 wr14=wr12
+	r30=[UEINTX] sbrs r30,5 jmp l0
+      # r12=[UEDATX] r13=[UEDATX] ;21-27clks
+	r14=[UEDATX] r15=[UEDATX] ;25clks
+	xor r13,TMP1 xor r15,TMP1
+    #l0 TMP1=5 TMP2=26 ;29clks
+	mul TMP1,r12 r12=r1 r30=r0 r12+=TMP2
+	mul TMP1,r13 r13=0 r12+=r0 adc r13,r1
+	mul TMP1,r14 r14=r1 r31=r0 r14+=TMP2
+	mul TMP1,r15 r15=0 r14+=r0 adc r15,r1 ;47clks
+	WTMP=wr12 r8+=r30 adc TMP1,ZERO adc TMP2,ZERO
+	wr0=wr14 r9+=r31 adc r0,ZERO adc r1,ZERO ;55clks
+	[TC4H]=TMP2 [OCR4A]=TMP1
+	[TC4H]=r1 [OCR4B]=r0
+	TMP1=4 [TIFR4]=TMP1
+	WTMP=wr12 r8+=r30 adc TMP1,ZERO adc TMP2,ZERO
+	r8+=r30 adc r12,ZERO adc r13,ZERO
+	wr6=wr14 r9+=r31 adc r6,ZERO adc r7,ZERO
+	r9+=r31 adc r14,ZERO adc r15,ZERO ;79clks
+	r31=[UDINT] sbrs r31,2 jmp l1
+;sof_int
+	r31-=4 [UDINT]=r31
+	r30=[timerdata] r31=[timerdata+1] ++wr30
+	[timerdata]=r30 [timerdata+1]=r31
+	r31=[UEBCLX] cmp r31,0A0h jc >1
+  #exit
+	pop wr0
+ #exit2 pop rz IRET
+    #l1 r31=[ADCSRA] sbrs r31,4 jmp >1
+	[ADCSRA]=r31
+	r31=adc_bufer2>>8 r30=[adc_index2]
+	r0=[rz++] [ADMUX]=r0
+	r0=[ADCH] [rz++]=r0
+	r30&=7 [adc_index2]=r30
+      # [SREG]=r11
+	pop wr0,rz
+      # r11=[TIFR4] sbrs r11,2 jmp <1
+	[TIFR4]=r11
+	[TC4H]=TMP2 [OCR4A]=TMP1
+	[TC4H]=r7 [OCR4B]=r6
+	iret
+	}
+
+;mcu initialization
+#start
+ZERO=0
+;mem_init
+	ry=100h wr24=RAMEND-stack_size r0=0
+      # memset() cmp r29,r25 jc <1
+	wr28=heap
+	wr30=heap+2 [wr28++]=r30 [wr28++]=r31
+	wr28+=2
+	wr30=RAMEND+1-heap-stack_size-2
+	[wr28++]=r30 [wr28++]=r31
+	wr30=e_mode eeprom_r() [mode]=r24
+	wr30=e_volume eeprom_r()
+	[master_controls+1]=r24 r24=39
+	[master_controls+5]=r24 r24=1
+	[master_controls+6]=r24
+
+#start2
+cli
+wr28=RAMEND [SPL]=r28 [SPH]=r29
+
+r20=[MCUCR]
+r20|=80h  ;disable jtag
+[MCUCR]=r20 [MCUCR]=r20
+
+;disable_watchdog
+r20&=!(1<<WDRF) [MCUSR]=r20
+rx=WDTCSR r20=[rx] r20|=(1<<WDCE)+(1<<WDE)
+[rx]=r20 r20=0 [rx]=r20
+;power save,disable twi,spi,usart,timers
+[PRR0]=ZERO
+r21=-1 [DIDR0]=r21 [DIDR1]=r21 r20=0f7h [DIDR2]=r20
+r20=0ach [PRR0]=r20 r20=1 [PRR1]=r20 ;t3,t4,adc on
+
+;setup ports
+	[PORTB]=ZERO r20=6Eh [DDRB]=r20
+	[PORTC]=ZERO [DDRC]=r21
+	[PORTE]=ZERO [DDRE]=ZERO
+	[PORTD]=ZERO r20=0c0h [DDRD]=r20
+	[PORTF]=ZERO [DDRF]=ZERO
+r20=1 [SMCR]=r20
+adc_start()
+;T3
+r20=18h [TCCR3B]=r20
+r20=3 [TCCR3A]=r20
+wr20=1999 [OCR3AH]=r21 [OCR3AL]=r20
+r20=1 [TIMSK3]=r20 [TIFR3]=r20
+r20=19h [TCCR3B]=r20 ;T3 on
+sti
+r21=-1 [teclado_leds]=r21
+r21=10 [keyb_timeout+1]=r21
+rz=leds>>1 tl()
+rz=teclado>>1 tl()
+rz=main>>1 tl()
+rz=stream_control>>1 tl()
+jmp task\l1 ;empieza la multitarea
+
+#tl r21=2 task\load(r21,r31,r30) ret
+
+#wait_ms
+	r0=[timerdata] r1=[timerdata+1]
+	r30+=r0 adc r31,r1
+#wait_ms2
+	push wr30 task\salva()
+	pop wr30
+	r0=[timerdata] r1=[timerdata+1]
+	r0-=r30 sbb r1,r31 js wait_ms2
+	ret
+
+#main{
+	wr30=10 wait_ms()
+	r30=[v5] cmp r30,4/KV5 jc main
+	;PLL
+	r20=Mhz&10h [PLLCSR]=r20
+	r21=1011010b [PLLFRQ]=r21      ;usb+t4 96Mhz
+	r20+=2 [PLLCSR]=r20
+      # r20=[PLLCSR] sbrs r20,0 jmp <1 ;wait for pll ready
+	usb_off()
+	usb_on()
+	r20=8 [UDIEN]=r20
+
+  #off2
+	cli
+	reset_t4()
+	sti
+#power2
+	wr30=9 wait_ms()
+	r30=[v5] cmp r30,4.5/KV5 jc power2
+	r31=[vx] cmp r31,14/KVX jnc power2
+	r20=[leds_error] r20|=r20 jnz power2
+	r20=[status]
+	sbrc r20,7 jmp on
+	sbrs r20,4 jmp on
+	r29=[vx2] cmp r31,r29 jc on
+	r29=[volume_control2]
+	r30=[volume_control3]
+	cmp r29,r30 je power2
+    #on
+	calc_vol() [volume]=r24 [volume+1]=r25
+	cli [TC4H]=r25 [OCR4D]=r24
+	r20=1 [TCCR4B]=r20   ;start t4
+	r20=05h [TCCR4C]=r20 ;enable pwm D
+	r24=53h [TCCR4A]=r24 ;enable pwm B-A
+	r20=[status] r20|=8 [status]=r20
+	sti
+	jmp l1
+    #error cli
+    [leds_error]=r23
+    [debug+3]=r20
+    r20=[v5] [debug]=r20
+    r20=[vx] [debug+1]=r20
+    r20=[ix] [debug+2]=r20
+    r20=[status] ;[debug+3]=r20
+    r20=[status] r20|=20h [status]=r20 sti jmp off2
+
+  #v_ok cli r20=[status] r20|=10h [status]=r20 sti
+	r21=220 mul r21,r22 [vx2]=r1
+
+	sbrs r20,7 jmp off2
+    #l1 task\salva()
+	r20=[status] sbrs r20,3 jmp power2
+	sbrc r20,5
+  #off3 jmp off2
+	r20&=90h cmp r20,1 je off3
+	r22=[volume_control2] [volume_control3]=r22
+	get_vol2()
+	r20=[ix] r21=[v5] r22=[vx]
+	r22+=1/KVX mulsu r20,r22 r20=r1
+	r26=[volume] r27=[volume+1] r22=[vx]
+	r23=1
+	cmp r21,4/KV5 jc jerror
+	r23=2
+	cmp r21,6/KV5 jnc jerror
+	r23=3
+	cmp r22,14/KVX jnc jerror
+	r23=4
+	cmp r20,-2/KPX jnl jerror
+	r23=5
+	cmp r20,2.5/KPX jnl >1
+#jerror jmp error
+      # r28=[timerdata] r29=[td2] cmp r28,r29 je l1
+	[td2]=r28
+	cli r28=[status] r28&=!10h [status]=r28 sti
+    ;    cmp r20,-0.3/KPX jnl ajuste
+    ;    cmp r20,1.5/KPX jl ajuste
+	cmp r21,4.5/KV5 jc bajar
+	cmp r21,5.5/KV5 jnc subir
+	cmp r22,13/KVX jnc bajar
+	cmp r26,r24 cmpc r27,r25 jc subir jne bajar jmp v_ok
+    #l1b jmp l1
+    #bajar --wr26 cmp r21,5.3/KV5 jnc l1b
+	cmp r20,-0.2/KPX jnl l1b jmp l2
+    #subir ++wr26 cmp r21,4.7/KV5 jc l1b
+	cmp r20,1/KPX jl l1b
+    #l2 r28=3 cmp r26,0abh cmpc r27,r28 jnc l1b
+	[volume]=r26 [volume+1]=r27
+	cli [TC4H]=r27 [OCR4D]=r26 sti
+	jmp l1
+    ;  #ajuste
+    ;    calc_vol()
+    ;    r26=[volume] r27=[volume+1]
+    ;    r26+=r24 adc r27,r25
+    ;    rcr r27 rcr r26
+    ;    jmp l2
+
+SRAM
+#td2 db 0
+#vx2 db 0
+#volume_control3 db 0
+FLASH
+
+#calc_vol ;retorna wr24
+	r30=[vx]
+	cmp r30,2 jnc >1
+	r30=2
+      # ;set_vol (v1+vx)*t1=vx*tt
+	r21=0 r20=[v5]
+	r20+=r30 adc r21,ZERO
+	wr24=1332
+	mul r25,r30 wr4=wr0
+	mul r24,r30 r3=r0 r4+=r1 adc r5,ZERO
+	wr24=0
+      # ++wr24 r3-=r20 sbb r4,r21 sbb r5,ZERO jns <1
+	ret
+
+#get_vol2
+	rz=volume_t r22+=r22 r30+=r22 adc r31,ZERO
+	r24=[cs+rz++] r25=[cs+rz] ret
+	}
+
+#reset_t4
+	[TCCR4A]=ZERO
+	[TCCR4C]=ZERO
+	[TCCR4B]=ZERO
+	TMP1=0F4h [TCCR4D]=TMP1 ;enable fault protection on rising edge PD0
+	TMP1=40h [TCCR4E]=TMP1
+	TMP1=20h [DT4]=TMP1
+	[TC4H]=ZERO [volume+1]=ZERO
+	TMP1=60h [OCR4D]=TMP1 [volume]=TMP1
+	TMP2=2 [TC4H]=TMP2
+	TMP1=09ah [OCR4C]=TMP1
+	TMP1=[status] TMP1&=!8 [status]=TMP1
+#mute_t4
+	[TIMSK4]=ZERO
+	TMP1=09ah
+	TMP2=2 [TC4H]=TMP2
+	[OCR4A]=TMP1 [OCR4B]=TMP1
+	wr12=WTMP wr14=wr12
+	TMP1=19h [TCCR3B]=TMP1 ;T3 on
+	TMP1=80h TMP2=3 [CLKPR]=TMP1 [CLKPR]=TMP2 ;set clock to 2Mhz
+	VECTOR=ADCVX>>1
+	TMP1=[ADCSRA] TMP1&=!10H TMP1|=8 [ADCSRA]=TMP1  ;adc int on
+	TMP1=[status] TMP1|=4 [status]=TMP1
+	ret
+
+#adc_start
+	[ADCSRA]=ZERO [adc_index2]=ZERO
+	VECTOR=ADCVX>>1
+	rz=adc_bufer2
+	r20=0e6h [rz++]=r20 ++rz ;vx
+	r20=0e7h [rz++]=r20 ++rz ;v5
+	r20=0ebh [rz++]=r20 ++rz ;Ix
+		 [rz++]=r20 ++rz
+	[ADMUX]=r20 [ADCSRB]=ZERO
+	r20=0ffh [ADCSRA]=r20
+	ret
+
+#interface {
+	cmp r25,11 je set_interface
+	sbrs r24,5 jmp USB_COM\stall
+	cmp r26,0 jne error
+	r25+=80h jns >1
+	cmp r25,81h jne error
+	r25=1
+      # --r25
+	cmp r25,4 jnc error
+	r25+=r25
+	wr28=master_controls
+	r28+=r25 adc r29,ZERO
+	r25=0 ;r/w sram
+	jmp USB_COM\vendor
+
+	#error jmp USB_COM\stall
+
+#set_interface
+	r25=!80h
+	cmp r24,1 jne error
+      # r24=[status] r24&=r25 not r25
+	cmp r26,1 jne >1
+	;on
+	r24+=r25
+      # [status]=r24
+	jmp USB_COM\set_config
+      }
+
+#stream_control{
+	task\salva()
+	cli r20=[status] r20&=!6 [status]=r20 sti
+	sbrs r20,7 jmp stream_control
+	cli r20=[status] r20|=6 [status]=r20 sti ;mute+stream out
+      # r30=[UEINTX] r30&=7fh [UEINTX]=r30 ;clear usb bufers
+	r20=[volume_control] cmp r20,40 jnc stream_control
+	r20=[status]
+	sbrs r20,7 jmp stream_control
+	sbrs r20,3 jmp stream_control
+    #on cli
+	r24=80h r25=1 [CLKPR]=r24 [CLKPR]=r25 sti ;set clock to 8Mhz
+	[TCCR3B]=ZERO ;T3 int off
+	r30=[ADCSRA] r30&=0e7h [ADCSRA]=r30 ;ADC int off
+	VECTOR=audio_sampler144>>1
+	r24=4 [TIMSK4]=r24 r24=-1 [TIFR4]=r24 ;enable t4 int
+	r20=[status] r20&=!4 [status]=r20
+	sti
+    #l2 task\salva()
+	r20=[status]
+	sbrs r20,3 jmp stream_control
+	sbrs r20,7 jmp off
+	r20=[volume_control] cmp r20,40 jc l2
+   #off cli
+	mute_t4()
+	sti
+	jmp stream_control
+	}
+
+#leds   ;pd0 pd1 pd4
+	SRAM #leds_status db 0
+	     #leds_error db 0
+	FLASH
+	r20=[leds_error] r20|=r20 jz >1
+	r20+=40h [leds_error]=r20 js >2
+	r20=0 jmp >2
+      # r20=[teclado_leds] r20|=r20 jnz >1
+	r20=[status]
+      # [leds_status]=r20
+	wait1() cbi DDRD,1 sbrc r20,0 sbi PORTD,4
+	wait1() cbi DDRD,1 sbrc r20,1 sbi PORTE,6
+	wait1() cbi DDRD,4 sbrc r20,2 sbi PORTD,1
+	wait1() cbi DDRD,4 sbrc r20,3 sbi PORTE,6
+	wait1() cbi DDRE,6 sbrc r20,4 sbi PORTD,1
+	wait1() cbi DDRE,6 sbrc r20,5 sbi PORTD,4
+	jmp leds
+
+       #wait1
+	 wr30=4 wait_ms();task\salva()
+	 cbi PORTE,6 cbi PORTD,4 cbi PORTD,1
+	 sbi DDRE,6 sbi DDRD,4 sbi DDRD,1
+	 r20=[leds_status] ret
+
+#teclado_f1
+	push r21 task\salva()
+	pop r21
+	r20=[PINE] sbrs r20,2 ++r21
+	r20=[PINB] sbrs r20,4 r21+=4
+		   sbrs r20,7 r21+=10h
+	ret
+
+#teclado ;pe2 pb4 pb7
+	SRAM #teclado_status db 0
+	#teclado_leds db 0
+	#key db 0
+	#keyb_timeout db 0 ;tiempo para la autorepetición
+	db 0 ;tiempo para poner teclado_leds a 0
+	#status2 db 0
+	FLASH
+	r20=[volume_control] cmp r20,40 jnc >1
+	[volume_control2]=r20
+      # r21=0
+	teclado_f1() sbi PORTE,2 sbi PORTB,4
+	teclado_f1() cbi PORTE,2 cbi PORTB,4
+	r20=[teclado_status] [teclado_status]=r21
+	cmp r20,r21 jne teclado ;ignorar si no hay dos lecturas identicas
+	r21=[key] [key]=r20
+	r22=[timerdata] r23=[timerdata+1]
+	swap r22 swap r23 r22&=0fh r23&=0f0h r22|=r23
+	r23=[keyb_timeout] r24=64
+	cmp r20,r21 jne >1
+	r23-=r22 jns teclado
+	r24=8
+      # r22+=r24 [keyb_timeout]=r22
+	r20&=0fh jnz >1
+	r20=[keyb_timeout+1] --r20 js teclado
+	[keyb_timeout+1]=r20 jnz teclado
+	[teclado_leds]=r20 jmp teclado
+      # r21=20 [keyb_timeout+1]=r21
+	;cmp r20,2 je menu_raiz
+	r21=[status2]
+	cmp r21,0 je set_vol_a
+	;cmp r21,1 je set_vol_d
+	;set mode
+	jmp teclado
+;;     #menu_raiz
+	r21=2 [status2]=r21
+	[teclado_leds]=r21
+	jmp teclado
+;;
+      #set_vol_a
+	r21=[volume_control2]
+	cmp r20,1 jne >1
+	--r21 jmp >2
+      # cmp r20,8 jne set_vol_a_exit
+	++r21
+      # r21&=r21 jns >1
+	r21=0
+      # cmp r21,40 jc >1
+	r21=39
+      # r20=7fh [volume_control2]=r21
+	r22=[volume_control] cmp r22,40 jnc >1
+	[volume_control]=r21
+      # r20>>=1
+	r21-=6 jns <1
+	not r20
+	[teclado_leds]=r20
+      #set_vol_a_exit
+	jmp teclado
+
+FLASH
+\..\avr_lib.asm
+\..\usb_audio_desc.asm
+
+version=4
+#firmware dd version
+EEPROM
+#endpoints_config
+n_endpoints=2
+mps_e0=64  ;max packet size for endpoint 0
+db 0,32h,0ch ;endp 0
+db 40h,56h,0 ;isocronous out,256*2
+#e_volume db 0
+#e_mode db 0
+SRAM
+#debug rb 4
+#volume rb 2
+#status rb 1
+	;bit 0  ;stream in
+	;bit 1  stream out
+	;bit 2  mute
+	;bit 3  transfo on
+	;bit 4  power ok
+	;bit 5
+	;bit 6  ;request stream in
+	;bit 7  request stream out
+#mode rb 1  ;usb audio,ampli
+#timerdata rb 2
+#master_controls rb 1 #volume_control rb 7
+#volume_control2 rb 1
+align 2
+#heap
+FLASH
+#volume_t
+;X=0->39 RANGO=39 V1=5*11.11 MAX2=12*12 fld t[>1] dl=1 escribenumf() ret # dt(((MAX2 * ((1/(10 pow (1/10))) pow (RANGO-X))) pow 0.5)/0.09)*1332/((V1+(((MAX2 * ((1/(10 pow (1/10))) pow (RANGO-X))) pow 0.5)/0.09)))
+dw 35,39,43,48,54,60,67,75
+dw 84,93,104,115,128,142,157,174
+dw 192,212,233,256,281,307,335,365
+dw 396,429,463,498,535,572,610,648
+dw 686,725,762,800,836,871,905,938
+
+
