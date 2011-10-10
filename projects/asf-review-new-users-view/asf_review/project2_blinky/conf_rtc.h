@@ -1,0 +1,7 @@
+#ifndef CONF_RTC_H
+#define CONF_RTC_H
+
+#define CONFIG_RTC_PRESCALER          RTC_PRESCALER_DIV1024_gc
+#define CONFIG_RTC_CLOCK_SOURCE       CLK_RTCSRC_ULP_gc
+
+#endif

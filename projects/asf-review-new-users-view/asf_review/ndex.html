@@ -1,0 +1,379 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="css/reset.css">
+<link rel="stylesheet" type="text/css" href="css/fonts.css">
+<link rel="stylesheet" type="text/css" href="css/grids.css">
+<link rel="stylesheet" type="text/css" href="css/base.css">
+<style type="text/css">
+
+body {
+	padding: 2px;
+	margin: 2px;
+}
+
+.content {
+	padding-right: 5%;
+	padding-left: 5%;
+	margin: 4px;
+	max-width: 1200px;
+	min-width: 400px;
+	width: 90%;
+}
+
+h1 {
+	text-align: center;
+}
+
+thead td, .byline {
+	font-weight: bold;
+}
+
+.inset {
+  padding-left: 5%;
+  padding-right: 5%;
+}
+
+.mono {
+	font-family: monospace;
+}
+
+.mono, pre {
+  color: navy;
+}
+</style>
+<title>AVR Software Framework (ASF) - A new user's perspective from the command line</title>
+</head>
+<body>
+<div class="content">
+  <h1>AVR Software Framework (ASF) - A new user's perspective from the command line</h1>
+  <p class="byline">by Bruce Fletcher, September 2011</p>
+
+  <p>This is a review of the AVR Software Framework (ASF) for the
+  <a href="http://www.avrfreaks.net/modules.php?op=modload&name=News&file=article&sid=945">contest</a>
+  Atmel recently began running on <a href="http://www.avrfreaks.net">AVR Freaks</a>.
+  I am examining the viability and utility of ASF for command line development in a UNIX
+  environment, specifically Mac OS X 10.7 (Lion), and I primarily address AVR XMEGA development.
+  Also, I am writing toward someone like myself who considers themselves to be proficient at programming
+  but who may be new to ASF and AVR development in general, so it includes details that are perhaps
+  obvious to experienced AVR developers but that new users may appreciate.</p>
+  
+  <h2>Distribution and licensing</h2>  
+  <p>ASF can be downloaded from <a href="http://asf.atmel.com/">asf.atmel.com</a>, and the download
+  <a href="http://www.avrfreaks.net/index.php?name=PNphpBB2&file=viewtopic&p=861047#861047">ostensibly requires registration</a>
+   but does not require agreeing to any EULA.  There are third party components with their own licenses,
+   but the Atmel code appears to all be covered (through the documentation header in each source code file)
+   by what looks to me like <a href="license.txt">a fairly typical MIT/BSD-type license</a> with one
+   interesting additional clause:</p>
+
+  <pre>
+  4. This software may only be redistributed and used in connection with an
+  Atmel AVR product.
+  </pre>
+
+  <p>I find that all to be acceptable, but I think Atmel is missing an opportunity here.
+  I will argue for changes to ASF's distribution and licensing after playing with the
+  code itself.
+  </p>
+  
+
+  <h2>ASF - What is it?</h2>
+  <p>I think the first thing you need to understand about the ASF is that it
+  is not a framework as you might be used to if you have a background with Microsoft's
+  <a href="http://en.wikipedia.org/wiki/Microsoft_Foundation_Class_Library">MFC</a> or
+  Apple's <a href="http://developer.apple.com/technologies/mac/cocoa.html">Cocoa</a>.
+  Rather, it is mostly a relatively loose collection of drivers, services, utilities and examples for working with the
+  specific hardware features of a range of Atmel's
+  <a href="http://www.atmel.com/dyn/products/devices.asp?category_id=163&family_id=607&subfamily_id=2138">AVR32</a>,
+  <a href="http://www.atmel.com/dyn/products/devices.asp?category_id=163&family_id=607&subfamily_id=760">megaAVR</a>
+  and <a href="http://www.atmel.com/dyn/products/devices.asp?category_id=163&family_id=607&subfamily_id=1965">AVR XMEGA</a>
+  MCUs.  Since these processors have widely divergent capabilities and limited memory resources,
+  a single cohesive framework wouldn't make much sense.</p>
+
+  <p>So then what exactly does ASF contain?  The
+  <a href="http://atmel.com/dyn/products/tools_card.asp?tool_id=4192&category_id=163&family_id=607&subfamily_id=2138">current
+  stand-alone download</a> (version 2.6.1 as of this writing) unpacks to a whopping 270MB on disk,
+  including 3889 directories and 9210 files.  That's pretty intimidating at first blush, but it
+  becomes more manageable if you make a little effort to break things down and understand the
+  underlying structure.</p>
+
+  <p>At the top level, there are 5 directories like so:</p>
+  <pre>
+  avr32/        - code specific to AVR32 &mu;Cs
+  common/       - code common to multiple architectures
+  mega/         - code specific to megaAVR &mu;Cs
+  thirdparty/   - third party code for multiple architectures
+  xmega/        - code specific to AVR XMEGA &mu;Cs
+  </pre>
+
+  <p>The third party code is broken down by project, but the other folders tend to be organized like so:</p>
+
+  <pre>
+  applications/ - example applications using drivers etc.
+  components/   - interfaces for various hardware components
+  drivers/      - drivers for various hardware components
+  services/     - non-driver software libraries
+  boards/       - definitions of Atmel's various development boards
+  utils/        - build scripts & related files
+  </pre>
+
+  <p>More details on the above are available in the <a href="readme.txt">readme.txt</a> file included at the
+  root of the distribution.</p>
+  
+  <p>Fortunately, the various types of folders in the above list tend to be regularly organized.
+  If you drill down into a specific
+  driver directory for example, you will commonly see files laid out like this:</p>
+
+  <pre>
+  drivers/
+    gpio/
+      doxygen/  - documentation
+      gpio.c    - the actual driver code is here
+      gpio.h    - ... and here
+      local_bus_example/
+        gpio_local_bus_example.c    - an example of using this driver
+        at32uc3l064_stk600-rcuc3l0/ - and some board-specific build directories
+          doxygen/
+          gcc/
+          iar/
+        at32uc3l064_uc3l_ek/
+        (other boards...)
+      peripheral_bus_example/
+      simulator_example/
+  </pre>
+
+  <p>Each driver will have its code and doxygen documentation folder in the specific
+  driver's root folder, for instance, along with clearly marked example sub-folders which again all
+  have similar layouts.  Once you recognize the pattern, navigating the code base is quick and
+  efficient.</p>
+  
+  <p>Using avr-gcc on the command line, the place to actually build any of these examples
+  is in those gcc directories, and you can ignore the iar ones.  Of course you generally don't want
+  to start doing your development in the ASF directory tree, and I will discuss more about that later.</p>
+
+  <p>With all of this structure in mind,
+  we can now begin to find meaning in otherwise mind numbing file and folder counts:</p>
+
+  <div class="inset">
+  <h3>Table 1: Folder counts in ASF directories</h3>
+  <table>
+  <thead>
+    <td>subtree</td>
+    <td></td>
+    <td>total</td>
+    <td></td>
+    <td>gcc builds</td>
+    <td>iar builds</td>
+    <td></td>
+    <td>drivers</td>
+    <td>components</td>
+    <td>services</td>
+    <td></td>
+    <td>examples</td>
+  </thead>
+  <tr>
+    <td>avr32/</td><td></td><td>2264</td><td></td><td>388</td><td>379</td><td></td><td>43</td><td>8</td><td>8</td><td></td><td>91</td>
+  </tr>
+  <tr>
+    <td>common/</td><td></td><td>822</td><td></td><td>132</td><td>113</td><td></td><td>0</td><td>2</td><td>15</td><td></td><td>26</td>
+  </tr>
+  <tr>
+    <td>mega/</td><td></td><td>204</td><td></td><td>61</td><td>0</td><td></td><td>1</td><td>0</td><td>0</td><td></td><td>9</td>
+  </tr>
+  <tr>
+    <td>xmega/</td><td></td><td>293</td><td></td><td>43</td><td>41</td><td></td><td>20</td><td>0</td><td>0</td><td></td><td>27</td>
+  </tr>
+  </table>
+  </div>
+
+  <p>You can draw your own conclusions from the above table, but personally I think I might be more likely to
+  rely on ASF for XMEGA or AVR32 development than for megaAVR projects.</p>
+
+  <p>At any rate, I feel like Atmel should be making an effort to provide overview information like this
+  rather than leaving it to potential ASF users to muck around figuring it out by themselves.</p>
+
+  <h2>Documentation</h2>
+
+  <p>Atmel is keen to point out that ASF code is extensively documented via <a href="http://www.doxygen.org/">Doxygen</a>
+  code comments, and it is true that this is better than some API documentation I've seen.
+  Generally, though, I find myself relying on the code
+  directly rather than any Doxygen output for a few reasons.  There is no comprehensive indexing of the
+  documentation, so if you want to switch from GPIO to ADC documentation, for example, you have to hunt down
+  (and possibly generate) the appropriate index.html file yourself.  Also, I find there are often things
+  like #define constants I want
+  to look at more closely that aren't always linked in the documentation.  And finally, the code tends to
+  be well enough and consistently enough written that I just
+  don't find I need to refer to anything else.  Good IDEs are definitely nice to have for quickly navigating
+  through source code, but using grep is
+  a pretty painless experience if you create scripts to drive searches like this:</p>
+
+  <pre>
+  ella:asf $ time grep -R "define IOPORT_CREATE_PIN" .
+  ./xmega/drivers/ioport/ioport.h:#define IOPORT_CREATE_PIN(port, pin) ((PORT_##port) + (pin))
+
+  real  0m0.730s
+  user  0m0.362s
+  sys   0m0.365s
+  ella:asf $ _
+  </pre>
+
+  <p>What Atmel doesn't say about the ASF is that
+  <a href="http://www.avrfreaks.net/index.php?name=PNphpBB2&file=viewtopic&p=867798#867798">you'll want to
+  also read through their Application Notes</a> before you go in too deep, at least for the XMEGA.  I can
+  attest that some of them are highly relevant to XMEGA ASF development.  I think there should be prominent
+  links to them in the documentation, but if there is even a single mention of App Notes in the ASF download
+  I've been unsuccessful at finding it.</p>
+
+  <h2>Using ASF for AVR XMEGA development</h2>
+
+  <p>Now that we know what we actually have in the ASF, it's time to try some development.
+  I'm working with quite a 
+  <a href="http://www.mikroe.com/eng/products/view/580/mikroxmega-board/">nice little board from MikroElektronika</a>,
+  and therefore I'll be targeting the ATxmega128A1 with external peripherals of my choice on a breadboard.</p>
+
+  <h3>Project 1: Out-of-tree development</h3>
+  <p>If the ASF is going to be at all useful to me, I want to be able to do all my development outside
+  of the ASF folder tree so I can easily swap in a new version when it is released.  My preferred
+  directory structure would be something like this:</p>
+
+  <pre>
+  $HOME/Projects/
+    asf -> asf-2.6.1
+    asf-2.6.1/
+    x128/
+      project1/
+      project2/
+      ...
+  </pre>
+
+  <p>The 'asf' entry is a symbolic link, so I can swap out ASF versions at will.  So the first question
+  is, can I make this work?  Lets just try to build an existing, untouched example in-tree and out-of-tree
+  and see how much work is required.</p>
+
+  <p>I'll start with a simple example, the XMEGA Analog Comparator driver on the
+  <a href="http://www.atmel.com/dyn/products/tools_card.asp?tool_id=17168&category_id=163&family_id=607&subfamily_id=1965">XMEGA-A1 Xplained</a> board.
+  To begin, create a project folder in your own tree and copy the following files from the 
+  <span class="mono">asf/xmega/drivers/ac/example</span> folder:</p>
+  
+  <pre>
+  atxmega128a1_xplain/gcc/Makefile   =>    Makefile
+  atxmega128a1_xplain/gcc/config.mk  =>    config.mk
+  ac_example.c                       =>    ac_example.c
+  </pre>
+
+  <p>Now make the following changes:</p>
+
+  <ol>
+  <li>In the Makefile, change the include path
+  <pre>
+  from: <span class="mono">../../../../../../common/utils/make/Makefile.avr.in</span>
+  to:   <span class="mono">../../asf/common/utils/make/Makefile.avr.in</span>
+  </pre></li>
+  <li>In config.mk, change <span class="mono">PRJ_PATH</span> to <span class="mono">../../asf</span>, and remove the
+  path information before <span class="mono">ac_example.c</span>.
+  </li>
+  </ol>
+
+  <p>That's it, there is no step 3!  A handful of tweaks to two build files was all it took.  You can now run
+  <span class="mono">make</span> in the ASF's gcc folder and in your own separate
+  new project folder and you will generate identical .hex files to download to your AVR.  I found that to
+  be surprising and quite encouraging, so now lets try building something new.</p>
+
+  <h3>Project 2: "Hello, world" on a new board</h3>
+
+  <p>Let's face it, very few projects are going to live their lives on something like an Xplained board.
+  You have to be able to build your own board and still easily use an untouched ASF tree or ASF just isn't
+  that useful.  So the goal of this project is the "hello world" of MCU projects, the blinky light.</p>
+
+  <p>The first step is to grab a suitable example to build from.  I picked the XMEGA RTC driver
+  as my base for this project so I could see how to set up RTC driver as quickly as possible.  Don't
+  forget to perform the same build customizations as in project 1 above.</p>
+
+  <p>The next step is to define the board.  A board definition is an include file that provides #define
+  statements saying what external peripherals you have hooked to what pins etc., and also a .c file that
+  will initialize the board after a reset.
+  At the bottom of <a href="project2_blinky/config.mk.txt">config.mk</a>
+  is a board reference like <span class="mono">CPP_FLAGS = -D BOARD=(foo)</span>.  The actual board name
+  depends on what build dir you copy your code from, but it doesn't matter what it is.  If you change it
+  to <span class="mono">USER_BOARD</span>, ASF will look for a header called
+  <span class="mono"><a href="project2_blinky/user_board.h.txt">user_board.h</a></span>.
+  I put my initialization code in
+  <span class="mono"><a href="project2_blinky/user_board.c.txt">user_board.c</a></span> for consistency.
+  You'll need to add "<span class="mono">CFLAGS = -I .</span>" to have the compiler find your user_board.h
+  file in your project directory.</p>
+  
+  <p>Finally, code up your <a href="project2_blinky/blinky.c.txt">main file</a>, include it in config.mk
+  in place of the original example.c file
+  and you're done!  Compile, download and enjoy the hypnotic 0.5 Hz blinks.  Unless you're
+  an experienced AVR developer with your own well developed code fragments and project templates, I
+  really can't imagine a faster way of getting projects off the ground.</p>
+
+  <h3>Project 3: not *quite* ready yet...</h3>
+
+  <h2>Conclusions and recommendations</h2>
+  <h3>General comments</h3>
+
+  <p>My first impression of ASF was that it was too difficult to get, too large and unwieldy to use, and only had
+  disorganized documentation of the most trivial kind; the "function frooze_bizzle() froozes the bizzle -
+  any questions?" variety.  Some of my initial criticisms still stand; Atmel does need to get someone
+  to provide more comprehensive introductory and overview documentation, for example, and they really need
+  to include references to relevant Application Notes into the Doxygen content, but the API documentation
+  is decent for what it is intended to cover.</p>
+
+  <p>More importantly the code itself is very useful, and the build tools and general structure look like
+  they were designed for the command line first, which is surprising and impressive with Atmel focusing so
+  much energy on AVR Studio 5.  At this point, I can't imagine developing anything for the XMEGA without
+  using ASF, and I absolutely did not expect to reach that conclusion when I first downloaded it.</p>
+
+  <p>As I mentioned earlier, highly experienced greybeard AVR developers probably have all the battle
+  tested code they need to target XMEGAs, so I expect that they're less likely to lead the charge
+  on adopting ASF.  For hobbyists and educational users, the kind of people who will be designing and
+  developing the microcontroller-based products of the future, ASF appears to encapsulate a large amount
+  of important datasheet detail and best practices - helping us to get useful results quickly
+  and thereby encouraging further exploration and use of AVR hardware.  The ASF looks to me like a
+  strategic asset that Atmel should exploit to the fullest.  Which leads us back at the end to where
+  we started...</p>
+
+  <h3>Distribution and licensing</h3>
+
+  <p>I have argued above that ASF provides a significant value-add to Atmel's AVR products for
+  important classes of users.
+  The problem is that these users are increasingly conditioned to expect instant online access
+  to any sort of 'free' code, and I believe there's a perception that free
+  code that is locked away is probably not something its developers are very proud of.  If you're
+  not proud of your own code enough to really get it out there,
+  why should your average user make the effort to "dig it out of the trash?"</p>
+  
+  <p>A related issue is that many educational and hobby
+  users are concerned with free or open source licensing terms, so using code that is only
+  licensed for use "in connection with an Atmel AVR product" will almost certainly cause some amount
+  of negative heat and light in 'PIC vs AVR' debates and the like, and should be changed if possible.
+  </p>
+  
+  <p>Atmel has an
+  <a href="http://dangerousprototypes.com/2011/08/30/editorial-our-friend-microchip-and-open-source/">enviable
+  position</a> with open source hardware enthusiasts, (seriously, read through the comments on that blog post)
+  largely thanks to its free and libre
+  development tools and things like Arduino that have gravitated to the AVR architecture
+  <a href="http://www.arduino.cc/en/Guide/Introduction">as a result of this freedom</a>.
+  I think this gives Atmel a competitive advantage with educational users and hobbyists,
+  and since these people expand the pool of pre-trained AVR developers it should in
+  the long run increase Atmel's number of AVR design wins down the road.</p>
+
+  <p>So how can Atmel maximize the impact of ASF?  I would recommend two things: put it up on
+  <a href="https://github.com/">Github</a>, for starters, which would make the code available
+  with minimal friction to a wide base of users.  Secondly I would recommend that Atmel consider
+  dual-licensing the ASF with its current commercial-friendly license and the GPL.</p>
+  
+  <p><a href="http://lwn.net/2001/features/LarryWall/">Larry Wall dual-licensed Perl</a> for
+  similar reasons; the GPL made the code more acceptable in non-commercial circles, and the
+  Artistic license made Perl more palatable to commercial users.  The difference in this case
+  is the addition of 'clause 4' of the current license, which should give the more nervous
+  decision makers in Atmel the assurance that competitors aren't going to just walk in and
+  port the ASF to other platforms, effectively free riding on Atmel's expensive software
+  development work.</p>
+
+  <p>Overall, I'm glad I dug into the ASF, and I look forward to using it more extensively in the near
+  future.  Thanks for reading, and I hope you found something here worth your while.</p>
+</div>
+</body>
+</html>
