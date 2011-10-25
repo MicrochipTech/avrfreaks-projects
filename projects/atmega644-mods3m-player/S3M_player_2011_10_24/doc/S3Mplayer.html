@@ -1,0 +1,686 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=windows-1250">
+  <meta name="keywords" content="ATMEL,assembler,program,MOD,S3M,scream,screamtracker3,player,prehravac,MODplayer,ATmega,ATmega644,AVR,CompactFlash,CF,HDD,ProTracker">
+  <meta name="Distribution" content="Global">
+  <meta name="Rating" content="General">
+  <meta name="Author" content="Maslan Stanislav">
+  <meta name="Copyright" content="(c) 2011">
+  <link rel="stylesheet" type="text/css" href="hmenu.css">
+<title>S3M-player</title>
+</head>                             
+
+<body>
+  <script type='text/javascript'>function Go() {return} </script>
+  <script type='text/javascript' src='/mojemenu.js'></script>
+  <script type='text/javascript' src='/menu10_compact.js'></script>
+  <noscript>Vas prohlizec nepodporuje scripty</noscript>
+  <p style="margin-top: 50px">
+<table width="750" align="center"><tr><td>
+<div class="n1">S3M-player</div><br>
+<img src="obr/bline.gif" alt="" align="middle">
+<p align="center">
+ <a href="S3Mplayer_eng.html">[eng]</a>
+</p>
+
+<p align="justify">
+&nbsp;&nbsp; Po celkem úspěšném přepracování původního MOD-playeru je sice možné bez problému přehrávat vícekanálové trackery, 
+ale těch kvalitních ve formátu MOD bohužel zrovna moc k dispozici není a převést do tohoto formátu novější formáty lze jen zřídka. 
+Z toho důvodu jsem si řekl, že by nebylo od věci 
+přepracovat loader přehrávače tak, aby byl schopen přehrát i S3M, které mají velmi podobnou strukturu. 
+Bohužel si pánové od Future Crew (autoři formátu ScreamTracker 3) řekli, 
+že je dobrý nápad uložit vzorky ve neznaménkovém formátu, což je přesně naopak, než u ProTrackeru. 
+Převádět vzorky v reálném čase znamená instrukci navíc (a k tomu nějaké rozhodování MOD/S3M), takže do toho se mi moc nechtělo a 
+převést vzorky dopředu by spolklo přes 1s/1MB a to se mi rovněž nelíbí (nesnáším přístroje s odezvou delší, než tak 100ms). 
+Navíc je původní hlavička poměrně dost HW specifická, takže jsem se rozhodl pro možnost třetí 
+a sice napsat prográmek, který samply konvertuje do potřebného formátu a zároveň, když 
+už to musí být, přežvýká poněkud nestravitelnou S3M hlavičku do něčeho velmi podobného MODům. 
+To mi velmi usnadnilo jejich načítání, protože jsem nemusel nijak extra zasahovat do původního loaderu. 
+Vysledný formát, který jsem pracovně nazval MD3 (ModTracker 3) kombinuje jednoduchost ProTrackeru s výhodami ScreamTrackeru 3 
+(stereováha, komprese "notového zápisu", delší vzorky, ...). 
+</p>
+
+
+<table align="center">
+ <tr>
+  <td>
+   <a href="obr/foto_1.jpg">
+    <img src="obr/nahled/foto_1.jpg"
+     title="Takhle nějak vypadá S3M-player. Dole MCU, uprostřed SRAM a USB-COM, nahoře zdroj a audio výstup a nad tím vším kabely LCD a IDE rozhraní."
+     alt="Takhle nějak vypadá S3M-player. Dole MCU, uprostřed SRAM a USB-COM, nahoře zdroj a audio výstup a nad tím vším kabely LCD a IDE rozhraní.">
+   </a>
+  </td>
+  <td>
+   <a href="obr/foto_2.jpg">
+    <img src="obr/nahled/foto_2.jpg"
+     title="Takhle nějak vypadá S3M-player. Dole MCU, uprostřed SRAM a USB-COM, nahoře zdroj a audio výstup a nad tím vším kabely LCD a IDE rozhraní."
+     alt="Takhle nějak vypadá S3M-player. Dole MCU, uprostřed SRAM a USB-COM, nahoře zdroj a audio výstup a nad tím vším kabely LCD a IDE rozhraní.">
+   </a>
+  </td>
+  <td>
+   <a href="obr/foto_LCD_1.jpg">
+    <img src="obr/nahled/foto_LCD_1.jpg"
+     title="S3M-player s fešným LCD."
+     alt="S3M-player s fešným LCD.">
+   </a>
+  </td>
+ </tr>
+</table> 
+<br>
+
+<div class="n2">1. Základní vlastnosti</div>
+<br>
+
+<table align="justify">
+ <tr>
+  <td width=120><i><b>Mixing:</b></i></td>
+  <td>16-bit mono/stereo</td>
+ </tr>
+ <tr>
+  <td><i><b>Vzorkování:</b></i></td>
+  <td><i>4 - 48kHz</i> (teoreticky i víc)</td>
+ </tr>
+ <tr>
+  <td><i><b>Resampling:</b></i></td>
+  <td>žádný nebo lineární interpolace</td>
+ </tr>
+ <tr>
+  <td><i><b>Max. kanálů:</b></i></td>
+  <td>4 při <i>35kHz</i> vzorkování</td>
+ </tr>
+ <tr>
+  <td></td>
+  <td>8 při <i>21kHz</i> vzorkování</td>
+ </tr>
+ <tr>
+  <td></td>
+  <td>10 při <i>17kHz</i> vzorkování</td>
+ </tr>
+ <tr>
+  <td><i><b>Zdroj dat:</b></i></td>
+  <td>HDD nebo CF karta s FAT16 (základní podpora adresářů)</td>
+ </tr>
+ <tr>
+  <td></td>
+  <td>nebo sériový port</td>
+ </tr>
+ <tr valign="top">
+  <td><i><b>Formáty:</b></i></td>
+  <td>Nekomprimovaný ProTracker (*.MOD)<br>Upravený ScreamTracker 3 (*.S3M)</td> 
+ </tr>
+</table>
+
+<p align="justify">
+&nbsp;&nbsp; Všechny hodnoty platí pro AVR taktované na <i>20MHz</i>, nicméně použitý ATmega644 lze značně přetaktovat. 
+</p><br>
+
+
+<div class="n2">2. Popis zapojení</div><p align="justify">
+&nbsp;&nbsp; Na zapojení se oproti minulé <a href="/ATMEL/MODplayer3/MODplayer3.html">verzi</a> moc 
+nezměnilo. Jen analogový mixing kanálů pomocí rezistorů byl nahrazen digitálním (kvůli stereováze, která je u S3M dost využívána), 
+takže byly odstraněny.
+</p>
+
+<table align="center">
+ <tr>
+  <td><img src="obr/schema.png" alt="" title="Schéma S3M-playeru s 512kB SRAM"></td>
+ </tr>
+</table><br>
+
+<p align="justify">
+&nbsp;&nbsp; K vlastnímu zapojení opět jen stručně: Jádrem zapojení je celkem výkonný MCU AVR ATmega644-20PU na <i>20MHz</i>. Disponuje slušným množstvím FLASH (<i>64KB</i>) i RAM (<i>4kB</i>). Externí SRAM IC4 je kvůli kapacitě adresovaná SW, pomocí dvou rozšiřujících 8-bit bufferů IC2 a IC3. 
+Zabírá to pouze dva porty (<i>porta</i>: adresy, <i>portc</i>: data) a pár řídících signálů. Paměť by měla být svižná (v mém případě to chodí na <i>55ns</i> verzi). 
+Na těchto portech je nadrátováno také IDE rozhraní v 16-bit módu. Jeho adresace je řešena přes zbytek bufferu IC3. Zde bych upozornil, že LED D8 je občas nezbytná - některé HDD bez ní odmítají komunikovat (CF možná taky). Na stejných portech je navíc ještě HD44780 LCD a tlačítka. 
+Audio výstup je kvůli kvalitě zvuku 16-bit a to sériový přes SPI rozhraní. MCU na SPI rozhraní emuluje I<sup>2</sup>S sběrnici (nebo obdobu pro TDA1545 převodník). Více k tomuto audio výstupu 
+<a href="/ATMEL/necoteorie/tutorial/AudioTest/I2Semulation/I2S_emulation.html">zde</a>.
+</p>
+
+<div class="n3">2.1 Taktování</div><p align="justify">
+&nbsp;&nbsp; Použitý MCU samozřejmě chodí minimálně na <i>20MHz</i>, ale při experimentování jsem zkoušel trochu přitlačit. <i>24MHz</i> nebyl problém, což mě docela překvapilo. Můj prastarý ATmega32 se začal pochybně chovat už nad <i>18MHz</i>, kdy program fungoval, ale jen když byl zarovnán od sudé adresy FLASH ;-). Tak jsem zkusil <i>27MHz</i> a kupodivu stále bez problému. 
+Větší krystal jsem nenašel, tak jsem ze stolních usazenin vyhrabal <i>32MHz</i> oscilátor a po pár wait-cyklech navíc pro SRAM a IDE to kupodivu chodí bez obtíží. To se hodí zvlášť pro vícekanálové MODy. Nevím jestli je to náhoda nebo takhle chodí všechny novější ATmega644, takže pokud to někdo zkoušel a má podobnou zkušenost, případně odhalil nějakou skrytou nefunkčnost, nechť se ozve, docela by mě to zajímalo (můj kus je typ -20PU, série 0617). Jinak na <i>6V1</i> to jelo i na <i>40MHz</i>, ale to už se nelíbilo ostatním komponentám ;-).  
+</p>
+
+
+
+<div class="n2">3. Programové vybavení</div><p align="justify">
+&nbsp;&nbsp; Program je opět kompletně v ASM, ale tentokrát jsem ho 
+pečlivě dělil do několika souborů, takže už to není jedna 10k+ řádků dlouhá nudle jako jiné moje "produkty". 
+Navíc jsem hojně využíval makra a komentoval, takže by kód měl být docela čitelný.<br> 
+&nbsp;&nbsp; Skladbu lze, podobně jako u minulé verze, nahrát přes sériový port bez řízení toku 
+nebo načíst z HDD nebo CF karty se souborovým systémem FAT16. V menu je podporována 
+jedna úroveň adresářů, kterých může být maximálně 255, stejně jako skladeb. 
+Pro přehlednost jsem přidal řazení podle názvu.<br>
+<a href="fw/S3Mplay_TDA1543.zip" target="blank">Zdrojáky a překlad pro TDA1543</a>, 
+<a href="fw/S3Mplay_TDA1545.zip" target="blank">zdrojáky a překlad pro TDA1545</a>.
+</p>
+
+
+<div class="n3">3.1 Ovládání</div><p align="justify">
+&nbsp;&nbsp; Ovládání by mělo být zřejmé ze schématu. V zásadě to chodí tak, že je nejřív otestována externí SRAM. Pokud je jí alespoň <i>64KB</i>, tak je vše OK a pokud ne, tak program záměrně zatuhne. 
+Dále je testováno IDE zařízení. Pokud tam je a má správný formát (FAT16), tak přehrávač vstoupí do menu adresářů. Odtud se lze dostat buďto do menu skladeb v adresáři nebo přímo do přehrávacího módu. Pokud něco nesedí, tak přejde přehrávač do režimu, kde tahá data pouze z USARTu. 
+Načtení dat z USARTu lze také spustit tlačítkem COM. Sosání dat z USARTu je ukončeno, když <i>1,5s</i> nic nepříjde - data lze poslat libovolným terminálem, není použita parita ani řízení toku, MCU to stíhá bez problému.<br>
+&nbsp;&nbsp; Nepodporované skladby by měl přehrávač přeskočit, ale není to vždy zaručeno, protože se netestuje kompletní soubor, ale jen pár hlavních položek hlavičky. 
+</p>
+
+<div class="n3">3.2 Nastavení</div><p align="justify">
+&nbsp;&nbsp; Na začátku hlavního modulu <i>"m644_modplay.asm"</i> je většina nastavení pro celý přehrávač. Stručný popis významu položek uvádí tabulka.<br><br>
+
+<table border="1" cellspacing="1" cellpadding="1">
+ <tr>
+  <th class="zelena" width=150>Název parametru</th>
+  <th class="zelena">Význam</th>
+ </tr>
+ <tr>
+  <td>XTAL</td>
+  <td>Frekvence hodin</td>
+ </tr>
+ <tr>
+  <td>HCOC</td>
+  <td>Přidá wait-cyklus navíc do SRAM komunikace (obvykle nutné nad 24MHz)</td>
+ </tr>
+ <tr>
+  <td>USRDIV</td>
+  <td>Dělička pro USART, baud=XTAL/(16*(USRDIV+1))</td>
+ </tr>
+ <tr>
+  <td>MEMTST</td>
+  <td>Zapne kompletní test SRAM (trvá to asi 1s/1MB/20MHz), vhodné při oživování</td>
+ </tr>
+ <tr>
+  <td>STORA</td>
+  <td>Zapne IDE interface, jinak pouze načítání přes sériák</td>
+ </tr>
+ <tr>
+  <td>LCDON</td>
+  <td>Zapne LCD interface.</td>
+ </tr>
+ <tr>
+  <td>LING</td>
+  <td>Jazyk textu na LCD.</td>
+ </tr>
+ <tr>
+  <td>MAXCH</td>
+  <td>Maximální podporovaný počet kanálů, minimálně 4, maximálně až 32, ale vezme si to hodně RAM, takže bude třeba zmenšit audio FIFO buffer (defaultně 16)</td>
+ </tr>
+ <tr>
+  <td>MAXINS</td>
+  <td>Maximální podporovaný počet nástrojů trackeru, standardně 48, lze ubrat i přidat, ale vezme si to nějakou to RAM navíc</td>
+ </tr>
+ <tr>
+  <td>DAC</td>
+  <td>Typ audio sběrnice, 1543=I2S, 1545=TDA1545</td>
+ </tr>
+ <tr>
+  <td>SRATE</td>
+  <td>Požadovaná vzorkovací frekvence (od 4 do asi 48kHz, možná víc)</td>
+ </tr>
+ <tr>
+  <td>STEREO</td>
+  <td>Zapne stereo mixing, jinak jsou oba kanály shodné</td>
+ </tr>
+ <tr>
+  <td>LINRES</td>
+  <td>Zapne lineární interpolaci při resamplingu (bere nějaký ten výkon MCU navíc)</td>
+ </tr>
+ <tr>
+  <td>MAMPLD</td>
+  <td>Určuje amplitudu kanálu ve výsledném mixu, pro 4 kanály by měla být hodnota 1, pro vícekanálové 0 (snížená amplituda)</td>
+ </tr>
+ <tr>
+  <td>DRAWVU</td>
+  <td>Zapne VU-metry na LCD (bere asi 5% výkonu MCU)</td>
+ </tr>
+</table><br>
+
+&nbsp;&nbsp; Další nastavení jsou roztrušena po celém zdrojáku, ale do těch obvykle není nutné vrtat. Jediné, co stojí za zmíňku, je velikost audio FIFO. Tento buffer by měl být co největší - pokud bude přehrávač provozován s malým počtem kanálů (<i>MAXCH</i>), pak se uvolní nějaká ta RAM a je ho možné prodloužit. Nemůže ale být kratší než <i>1kB</i>, protože je sdílen modulem "storage.asm" jako datový buffer.
+</p>
+
+
+<div class="n3">3.3 Fuse bity</div><p align="justify">
+&nbsp;&nbsp; Vzhledem k frekvenci oscilátoru by měl být naprogramovan fuse-bit CKOPT (amplituda oscilátoru). To je občas nezbytné kvůli blízkosti pinů USARTu, který dost ruší. Dál by měl být vypnutý JTAG, protože jinak patřičná část <i>portc</i> nemá tvrdou log.1 a náběžná hrana dat je pak dlouhá - chyby při zápisu. Možná by to šlo pořešit i zvedacími rezistory, ale nezkoušel jsem.
+</p>
+
+
+
+<div class="n2">4. Podporované efekty a formáty</div><p align="justify">
+&nbsp;&nbsp; Dokáže přehrát nekomprimované MODy, teoreticky s libovolným počtem kanálů 
+(pochopitleně při adekvátně nízkém vzorkování). 
+Dále dovede přehrát upravené S3M. K tomu účelu slouží prográmek "S3M convertor". Ten by měl 
+být schopen načíst libovolnou ScreamTracker 3 skladbu a převést ji do mého vlastního formátu ModTracker 3 (MD3). 
+Samotná převodní utilitka "s3m2md3.exe" je samozřejmě konzolovka, ale pro pohodlí jsem k ní dodělal prográmek s grafickým rozhraním 
+umožňující celkem snadné převedení většího množství souborů najednou.<br><br>
+Utilitka ke stažení: <a href="prog/S3M_2_MD3_convertor.zip">S3M_2_MD3_convertor.zip (462kB).</a>
+</p><br>
+
+
+<table align="center" border="1" cellspacing="1" cellpadding="1">
+ <tr align="center">
+  <th colspan="3" class="modra">Podporované efekty MOD</th>
+ </tr>
+ <tr align="center">
+  <th class="zelena">#</th>
+  <th class="zelena">Název efektu</th>
+  <th class="zelena">Stav implementace</th>
+ </tr>
+ <tr>
+  <td align="center">0</td>
+  <td>Arpeggio</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">1</td>
+  <td>Portamento up</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">2</td>
+  <td>Portamento down</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">3</td>
+  <td>Tone-portamento</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">4</td>
+  <td>Vibrato</td>
+  <td>funkční, pouze sinus</td>
+ </tr>
+ <tr>
+  <td align="center">5</td>
+  <td>Tone-portamneto + Volume slide</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">6</td>
+  <td>Vibrato + Volume slide</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">7</td>
+  <td>Tremolo</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">8</td>
+  <td>Panning (stereováha)</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">9</td>
+  <td>Nastevení ofsetu vzorku</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">A</td>
+  <td>Volume slide</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">B</td>
+  <td>Skok na jiný list</td>
+  <td>pouze vpřed</td>
+ </tr>
+ <tr>
+  <td align="center">C</td>
+  <td>Nastav hlasitost</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">D</td>
+  <td>Skok v listu</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">E0</td>
+  <td>Nastav filtr</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">E1</td>
+  <td>Portamento up jemně</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">E2</td>
+  <td>Portamento down jemně</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">E3</td>
+  <td>Glissandro</td>
+  <td>není a nebude, nepoužívá se</td>
+ </tr>
+ <tr>
+  <td align="center">E4</td>
+  <td>Vibrato waveform</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">E5</td>
+  <td>Fine-tune</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">E6</td>
+  <td>Pattern loop</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">E7</td>
+  <td>Tremolo waveform</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">E9</td>
+  <td>Retrig note</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">EA</td>
+  <td>Volume slide up jemně</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">EB</td>
+  <td>Volume slide down jemně</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">EC</td>
+  <td>Cut note</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">ED</td>
+  <td>Note delay</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">EE</td>
+  <td>Pattern delay</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">EF</td>
+  <td>Invert loop</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">F</td>
+  <td>Set speed/tempo</td>
+  <td>funkční</td>
+ </tr>
+</table><br>
+
+
+
+
+<table align="center" border="1" cellspacing="1" cellpadding="1">
+ <tr align="center">
+  <th colspan="3" class="modra">Podporované efekty S3M</th>
+ </tr>
+ <tr align="center">
+  <th class="zelena">#</th>
+  <th class="zelena">Název efektu</th>
+  <th class="zelena">Stav implementace</th>
+ </tr>
+ <tr>
+  <td align="center">A</td>
+  <td>Set speed</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">B</td>
+  <td>Position jump</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">C</td>
+  <td>Pattern break</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">D</td>
+  <td>Volume slide/td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">E</td>
+  <td>Portamento down</td>
+  <td>funkční, extra-fine mód jen přibližně</td>
+ </tr>
+ <tr>
+  <td align="center">F</td>
+  <td>Portamento up</td>
+  <td>funkční, extra-fine mód jen přibližně</td>
+ </tr>
+ <tr>
+  <td align="center">G</td>
+  <td>Tone-portamento</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">H</td>
+  <td>Vibrato</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">I</td>
+  <td>Tremor</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">J</td>
+  <td>Arpeggio</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">K</td>
+  <td>Vibrato + volume slide</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">L</td>
+  <td>Tone-portamento + volume slide</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">M</td>
+  <td>Set channel volume</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">N</td>
+  <td>Channel volume slide</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">O</td>
+  <td>Set sample offset</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">P</td>
+  <td>Panning slide</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">Q</td>
+  <td>Retrigger</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">R</td>
+  <td>Tremolo</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">S1</td>
+  <td>Glissando</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">S2</td>
+  <td>Set fine-tune</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">S3</td>
+  <td>Set vibrato waveform</td>
+  <td>není (jen sinus)</td>
+ </tr>
+ <tr>
+  <td align="center">S4</td>
+  <td>Set tremolo waveform</td>
+  <td>není (jen sinus)</td>
+ </tr>
+ <tr>
+  <td align="center">S5</td>
+  <td>Set panbrello waveform</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">S6</td>
+  <td>Pattern delay</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">S7</td>
+  <td>Set new note action</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">S8</td>
+  <td>Panning</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">S9</td>
+  <td>Extended channel effects</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">SA</td>
+  <td>Set sample offset high</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">SB</td>
+  <td>Pattern loop</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">SC</td>
+  <td>Note cut</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">SD</td>
+  <td>Note delay</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">SE</td>
+  <td>Pattern delay</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">SF</td>
+  <td>Select active macro</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">T</td>
+  <td>Set tempo</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">U</td>
+  <td>Fine vibrato</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">V</td>
+  <td>Set global volume</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">W</td>
+  <td>Global volume slide</td>
+  <td>není</td>
+ </tr>
+ <tr>
+  <td align="center">X</td>
+  <td>Set panning</td>
+  <td>funkční</td>
+ </tr>
+ <tr>
+  <td align="center">Y</td>
+  <td>Panbrello</td>
+  <td>není</td>
+ </tr>
+</table><br>
+
+<p align="justify">
+&nbsp;&nbsp; Efekty jsem se snažil odladit tak, aby se chovaly identicky s MP trackerem takže by to mělo znít stejně. Pokud najdete nějaký MOD, který by se výrazněji lišil, tak mi ho pošlete abych mohl poladit algoritmus.
+</p> 
+
+
+
+<div class="n2">5. Formáty</div><p align="justify">
+&nbsp;&nbsp; Pár dokumentací ProTrackeru a ScreamTrackeru 3 ke stažení uvádí následující tabulka:<br><br> 
+</p>
+
+<table align="center" border="1" cellspacing="1" cellpadding="1">
+ <tr align="center">
+  <th class="zelena">Dokumentace</th>
+  <th class="zelena">Popis</th>
+ </tr>
+ <tr>
+  <td><a href="/ATMEL/MODplayer3/doc/FH-MFDL2.ZIP">FH-MFDL2.ZIP</a></td>
+  <td>Původní dokumentace, hrubý popis většiny formátů</td>
+ </tr>
+ <tr>
+  <td><a href="/ATMEL/MODplayer3/doc/MOD-FORM.TXT">MOD-FORM.TXT</a></td>
+  <td>Kvalitní dokumentace z nějaké mid2mod utilitky</td>
+ </tr>
+ <tr>
+  <td><a href="/ATMEL/MODplayer3/doc/MODFILXX.TXT">MODFILXX.TXT</a></td>
+  <td>Rovněž kvalitní dokumentace z MOD playeru TNT MP11</td>
+ </tr>
+</table>
+
+<p align="justify">
+&nbsp;&nbsp; Nejlepší "dokumentace" jsou ale zdrojáky programu MP tracker. Vlastní dekodér je sice napsán naprosto příšerně, 
+navíc je to převzat z nějakých prehistorických přehrávačů (a upraven do C++), ale stále je to nejsnažší cesta, jak 
+pochopit funkci a chování efektů.
+</p>
+
+
+
+<div class="n2">6. Několik nahrávek z MOD-playeru</div>
+<p align="justify">
+&nbsp;&nbsp; V následujícím videu je přehráno pár vícekanálových S3M:
+</p>
+
+<table align="center">
+ <tr>
+  <td><iframe title="YouTube video player" width="425" height="349" src="http://www.youtube.com/embed/j6ijbexoq-M" frameborder="0" allowfullscreen></iframe></td>
+ </tr>
+</table><br><br>
+
+
+
+<div class="rights">(c) 2011, Stanislav Mašláň - Všechna práva vyhrazena.</div><br>
+
+<table align="left"><tr>
+<td width="365">Last update: 22.10.2011</td>
+<td><a href="#top"><img class="neram" src="obr/up.gif" alt="Up" title="Up"></a></td>
+</table>
+
+</td></tr></table>
+</body>
+</html>

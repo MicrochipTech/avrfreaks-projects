@@ -1,0 +1,709 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=windows-1250">
+  <meta name="keywords" content="ATMEL,assembler,program,MOD,S3M,scream,screamtracker3,player,prehravac,MODplayer,ATmega,ATmega644,AVR,CompactFlash,CF,HDD,ProTracker">
+  <meta name="Distribution" content="Global">
+  <meta name="Rating" content="General">
+  <meta name="Author" content="Maslan Stanislav">
+  <meta name="Copyright" content="(c) 2011">
+  <link rel="stylesheet" type="text/css" href="hmenu.css">
+<title>S3M-player</title>
+</head>                             
+
+<body>
+  <script type='text/javascript'>function Go() {return} </script>
+  <script type='text/javascript' src='/mojemenu.js'></script>
+  <script type='text/javascript' src='/menu10_compact.js'></script>
+  <noscript>Vas prohlizec nepodporuje scripty</noscript>
+  <p style="margin-top: 50px">
+<table width="750" align="center"><tr><td>
+<div class="n1">S3M-player</div><br>
+<img src="obr/bline.gif" alt="" align="middle">
+<p align="center">
+ <a href="S3Mplayer.html">[cze]</a>
+</p>
+
+<div class="engwarning">&gt&gt&gt&gt WARNING: very poor translation!!! &lt&lt&lt&lt</div>
+
+<p align="justify">
+&nbsp;&nbsp; With new, well optimized 
+<a href="/ATMEL/MODplayer3/MODplayer3_eng.html">MOD-player 3</a> 
+it is possible to play multichannel trackers at reasonable sampling rates however there is one small problem. 
+There are almost no multichannel trackers in ProTracker format (MOD). Conversion of S3M into MOD is very complicated 
+and not always possible so I've decided to implement S3M loader for my player. ScreamTracker 3 is very similar to ProTracker 
+so it wasn't to complicated but it has several problems. First one is that S3M uses unsigned samples while 
+MOD uses signed. Coversion in realtime needs several more clock cycles in mix loop (some XOR and decision whether signed/unsigned) so 
+this seems to be a bad solution. Preconversion to signed whould take at least 1s/1MB at 20MHz and I can't stand 
+devices that hes response time longer than some 100ms so this is also wrong solution for me. :-) 
+Therefore there left only last possibility: To make some program for PC that will preconvert S3M sample format. Since 
+I had to make it this way it also converts S3M header into something between MOD and S3M. Resulting format is simple 
+as MOD but has all advantages of S3M like compressed patterns, default panning, volume commands, etc.
+</p>
+
+
+<table align="center">
+ <tr>
+  <td>
+   <a href="obr/foto_1.jpg">
+    <img src="obr/nahled/foto_1.jpg"
+     title="This is how S3M-player looks like. MCU (lower row), SRAM and USB-COM (middle row), audio output in top row and IDE interface and LCD cables over it."
+     alt="This is how S3M-player looks like. MCU (lower row), SRAM and USB-COM (middle row), audio output in top row and IDE interface and LCD cables over it."
+   </a>
+  </td>
+  <td>
+   <a href="obr/foto_2.jpg">
+    <img src="obr/nahled/foto_2.jpg"
+     title="This is how S3M-player looks like. MCU (lower row), SRAM and USB-COM (middle row), audio output in top row and IDE interface and LCD cables over it."
+     alt="This is how S3M-player looks like. MCU (lower row), SRAM and USB-COM (middle row), audio output in top row and IDE interface and LCD cables over it."
+   </a>
+  </td>
+  <td>
+   <a href="obr/foto_LCD_1.jpg">
+    <img src="obr/nahled/foto_LCD_1.jpg"
+     title="S3M-player with nice big LCD."
+     alt="S3M-player with nice big LCD.">
+   </a>
+  </td>
+ </tr>
+</table> 
+<br>
+
+<div class="n2">1. Basic features</div>
+<br>
+
+<table align="justify">
+ <tr>
+  <td width=120><i><b>Mixing:</b></i></td>
+  <td>16-bit mono/stereo</td>
+ </tr>
+ <tr>
+  <td><i><b>Sampling rate:</b></i></td>
+  <td><i>4 - 48kHz</i> (maybe more)</td>
+ </tr>
+ <tr>
+  <td><i><b>Resampling:</b></i></td>
+  <td>none or linear interpolation</td>
+ </tr>
+ <tr>
+  <td><i><b>Max. channels:</b></i></td>
+  <td>4 at <i>35kHz</i> sampling rate</td>
+ </tr>
+ <tr>
+  <td></td>
+  <td>8 at <i>21kHz</i> sampling rate</td>
+ </tr>
+ <tr>
+  <td></td>
+  <td>10 at <i>17kHz</i> sampling rate</td>
+ </tr>
+ <tr>
+  <td><i><b>Data source:</b></i></td>
+  <td>HDD or CF card with FAT16 (basic folder support)</td>
+ </tr>
+ <tr>
+  <td></td>
+  <td>or serial port</td>
+ </tr>
+ <tr valign="top">
+  <td><i><b>Formats:</b></i></td>
+  <td>Uncompressed ProTracker (*.MOD)<br>Preconverted ScreamTracker 3 (*.S3M)</td>  
+ </tr>
+</table>
+
+<p align="justify">
+&nbsp;&nbsp; All values are for AVR at <i>20MHz</i> but it's of course possible to overclock.
+</p><br>
+
+
+<div class="n2">2. Hardware</div><p align="justify">
+&nbsp;&nbsp; It's almos identical to previous 
+<a href="/ATMEL/MODplayer3/MODplayer3_eng.html">MOD-player 3</a>. 
+Only difference is that I had to make digital stereo mix instead of analog (because of panning effect) so 
+I've removed mixing resistors from OPAMP outputs.
+</p>
+
+<table align="center">
+ <tr>
+  <td><img src="obr/schema.png" alt="" title="Circuit diagram for MOD-player 3 with 512kiB SRAM"></td>
+ </tr>
+</table><br>
+
+<p align="justify">
+&nbsp;&nbsp; Core of this player is relatively powerfull MCU AVR ATmega644-PU at <i>20MHz</i>. 
+It has <i>64kiB</i> of FLASH and <i>4kiB</i> of RAM which is quite enough for all structures and some audio FIFO. 
+External SRAM is addressed in SW mode using two address buffers IC2 and IC3. It's using only two ports and 
+few control signals. SRAM should be at least <i>55ns</i> version. 
+Same ports are shared with IDE interface in 16-bit mode, with HD44780 LCD in 8-bit mode and with buttons interface.<br>
+&nbsp;&nbsp; Audio output is same as in last version with I<sup>2</sup>S-like serial DAC connected at SPI interface. 
+More information how to handle it with AVR can be found 
+<a href="/ATMEL/necoteorie/tutorial/AudioTest/I2Semulation/I2S_emulation.html">here</a> 
+(but only in czech right now).<br> 
+</p>
+
+<div class="n3">2.1 Overclocking</div><p align="justify">
+&nbsp;&nbsp; Used MCU should work at least at <i>20MHz</i> but while experimenting with mutlichannel trackers 
+I've tried to push it up a bit. At first only for <i>24MHz</i> but since it seemed to work I've tried <i>27MHz</i> 
+and still no problem. This is quite interesting because my old ATmega32 had problems even at <i>18MHz</i> 
+(code worked only if it was aligned from even address :D). Because I haven't found any faster crystal I've 
+tried to use some <i>32MHz</i> oscillator from table sediments and after few aditional wait cycles for SRAM 
+and IDE interface it works with no problems! It actually worked at <i>40MHz</i> @ <i>6V1</i> but that was 
+a bit much for other components. ;-) 
+</p>
+
+
+<div class="n2">3. Software</div><p align="justify">
+&nbsp;&nbsp; Code it written in pure ASM but this time I've used louds of macros and I've 
+tried to make comments everywhere. I've also split the code from 7k+ lines long "noodle" into 
+several modules so it should be easier to undestand it.<br>
+&nbsp;&nbsp; Song can be loaded via serial interface without flow control of from FAT16 
+formated HDD or CF card with one level of folders (short file names only supported). 
+Only first 255 folders and 255 files from each folder can be selected but 
+I think it's more than enough.<br>
+<a href="fw/S3Mplay_TDA1543.zip" target="blank">Source and binary for TDA1543</a>, 
+<a href="fw/S3Mplay_TDA1545.zip" target="blank">source and binary for TDA1545</a>.
+</p>
+
+
+<div class="n3">3.1 Control</div><p align="justify">
+&nbsp;&nbsp; At first external SRAM is tested. If there is at least <i>64kiB</i> program should continue. 
+If no SRAM is found or there is error detected program should stop. 
+Next step is detection of IDE device. If something is found and first partition is formated as FAT16 
+player should enter into folder menu. 
+If no IDE device is detected or IDE interface is disabled and player should enter into serial port loading mode. 
+In this mode player waits for MOD data that can be send by any terminal without flow control 
+(MCU is fast enough). End of file is detected automatically - file loading is finished if there 
+is no recieved byte for more than <i>1.5sec</i>. Serial load can be also activated manually with "COM" button.<br>
+&nbsp;&nbsp Other button functions in different modes should be obvious from the scheme. 
+</p>
+
+<div class="n3">3.2 Options</div><p align="justify">
+&nbsp;&nbsp; Most of usefull options are present at beggining of <i>"m644_modplay.asm"</i> module. 
+Parameters are described in following table.<br><br>
+
+
+<table border="1" cellspacing="1" cellpadding="1">
+ <tr>
+  <th class="zelena" width=150>Parameter</th>
+  <th class="zelena">Meaning</th>
+ </tr>
+ <tr>
+  <td>XTAL</td>
+  <td>Crystal frequency [Hz]</td>
+ </tr>
+ <tr>
+  <td>HCOC</td>
+  <td>Adds aditional wait-cycle for external SRAM routines (usually necessary for <i>XTAL&gt;24MHz</i>)</td>
+ </tr>
+ <tr>
+  <td>USRDIV</td>
+  <td>Clock divider for USART, baud=XTAL/(16*(USRDIV+1))</td>
+ </tr>
+ <tr>
+  <td>MEMTST</td>
+  <td>Enables full SRAM test (it will take 1s/1MB/20MHz), usefull for easy SRAM functionality test</td>
+ </tr>
+ <tr>
+  <td>STORA</td>
+  <td>Enables IDE interface</td>
+ </tr>
+ <tr>
+  <td>LCDON</td>
+  <td>Enables LCD interface</td>
+ </tr>
+ <tr>
+  <td>LING</td>
+  <td>LCD texts language.</td>
+ </tr>
+ <tr>
+  <td>MAXCH</td>
+  <td>Max supported tracker channels count from 4 to 32 (default 16), it will take lot of aditional RAM if you set higher value</td>
+ </tr>
+ <tr>
+  <td>MAXINS</td>
+  <td>Max supported tracker instruments count, usually 48 but can be changed to both lower and higher value</td>
+ </tr>
+
+ <tr>
+  <td>DAC</td>
+  <td>DAC interface type, 1543=I2S, 1545=TDA1545</td>
+ </tr>
+ <tr>
+  <td>SRATE</td>
+  <td>Desired sampling rate (from 4 up to 48kHz, maybe more)</td>
+ </tr>
+ <tr>
+  <td>STEREO</td>
+  <td>Enables stereo mixing</td>
+ </tr>
+ <tr>
+  <td>LINRES</td>
+  <td>Enables linear interpolation mixing (needs some more MCU power)</td>
+ </tr>
+ <tr>
+  <td>MAMPLD</td>
+  <td>Sets channel mix amplitude to max (only 4 channels) or half for multichannel trackers</td>
+ </tr>
+ <tr>
+  <td>DRAWVU</td>
+  <td>Enables VU-meters (needs some 5% MCU power)</td>
+ </tr>
+</table><br>
+
+&nbsp;&nbsp; There are some more parameters in this module but it's usually not neccessary to change them. 
+Only important parameter is audio FIFO size which should be always maximal (it should use entire unused RAM) but it can't be 
+shorter than <i>1kiB</i> because it's shared with another module as data buffer (<i>"storage.asm"</i>).
+</p>
+
+
+<div class="n3">3.3 Fuse bits</div><p align="justify">
+&nbsp;&nbsp; If player is used with crystal CKOPT fuse should be programmed (full swing oscilator amplitude). 
+JTAG should be disabled because it's located at data pins which are therefore in weak-high level mode. This is 
+a bit problematic for fast data transfers. Another solution could be use of external pull-ups but I've didn't 
+tried that.
+</p>
+
+
+<div class="n2">4. Supported formats and effects</div><p align="justify">
+&nbsp;&nbsp; Player should be able to play uncompressed ProTracker files (*.MOD) theoretically with 
+any channel count but of course with adequate sampling rate.<br>
+&nbsp;&nbsp; It is also able to play preconverted ScreamTracker 3 (S3M). For this conversion I've made simple program 
+called "S3M_2_MD3_convertor". It should be able to open any S3M and if it has supported format it should write 
+resulting file in my own format called ModTracker3 (MD3). Main covnersion utility is console application of course 
+but I've made simple GUI for it that allows simple conversion of multiple files at once.<br><br>
+Conversion utility download: <a href="prog/S3M_2_MD3_convertor.zip">S3M_2_MD3_convertor.zip (462kB).</a>
+</p><br>
+
+<table align="center" border="1" cellspacing="1" cellpadding="1">
+ <tr align="center">
+  <th colspan="3" class="modra">Supported MOD effects</th>
+ </tr>
+ <tr align="center">
+  <th class="zelena">#</th>
+  <th class="zelena">Effect name</th>
+  <th class="zelena">Implementation</th>
+ </tr>
+ <tr>
+  <td align="center">0</td>
+  <td>Arpeggio</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">1</td>
+  <td>Portamento up</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">2</td>
+  <td>Portamento down</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">3</td>
+  <td>Tone-portamento</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">4</td>
+  <td>Vibrato</td>
+  <td>supported, only sine waveform</td>
+ </tr>
+ <tr>
+  <td align="center">5</td>
+  <td>Tone-portamneto + Volume slide</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">6</td>
+  <td>Vibrato + Volume slide</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">7</td>
+  <td>Tremolo</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">8</td>
+  <td>Panning (stereováha)</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">9</td>
+  <td>Nastevení ofsetu vzorku</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">A</td>
+  <td>Volume slide</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">B</td>
+  <td>Skok na jiný list</td>
+  <td>only forward</td>
+ </tr>
+ <tr>
+  <td align="center">C</td>
+  <td>Nastav hlasitost</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">D</td>
+  <td>Skok v listu</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">E0</td>
+  <td>Nastav filtr</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">E1</td>
+  <td>Portamento up jemně</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">E2</td>
+  <td>Portamento down jemně</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">E3</td>
+  <td>Glissandro</td>
+  <td>no - it's not used anywhere</td>
+ </tr>
+ <tr>
+  <td align="center">E4</td>
+  <td>Vibrato waveform</td>
+  <td>no - always sine</td>
+ </tr>
+ <tr>
+  <td align="center">E5</td>
+  <td>Fine-tune</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">E6</td>
+  <td>Pattern loop</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">E7</td>
+  <td>Tremolo waveform</td>
+  <td>no - always sine</td>
+ </tr>
+ <tr>
+  <td align="center">E9</td>
+  <td>Retrig note</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">EA</td>
+  <td>Volume slide up jemně</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">EB</td>
+  <td>Volume slide down jemně</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">EC</td>
+  <td>Cut note</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">ED</td>
+  <td>Note delay</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">EE</td>
+  <td>Pattern delay</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">EF</td>
+  <td>Invert loop</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">F</td>
+  <td>Set speed/tempo</td>
+  <td>full support</td>
+ </tr>
+</table><br>
+
+
+
+
+<table align="center" border="1" cellspacing="1" cellpadding="1">
+ <tr align="center">
+  <th colspan="3" class="modra">Supported S3M effects</th>
+ </tr>
+ <tr align="center">
+  <th class="zelena">#</th>
+  <th class="zelena">Effect name</th>
+  <th class="zelena">Implementation</th>
+ </tr>
+ <tr>
+  <td align="center">A</td>
+  <td>Set speed</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">B</td>
+  <td>Position jump</td>
+  <td>only forward</td>
+ </tr>
+ <tr>
+  <td align="center">C</td>
+  <td>Pattern break</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">D</td>
+  <td>Volume slide/td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">E</td>
+  <td>Portamento down</td>
+  <td>supported, extra-fine just partially</td>
+ </tr>
+ <tr>
+  <td align="center">F</td>
+  <td>Portamento up</td>
+  <td>supported, extra-fine just partially</td>
+ </tr>
+ <tr>
+  <td align="center">G</td>
+  <td>Tone-portamento</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">H</td>
+  <td>Vibrato</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">I</td>
+  <td>Tremor</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">J</td>
+  <td>Arpeggio</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">K</td>
+  <td>Vibrato + volume slide</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">L</td>
+  <td>Tone-portamento + volume slide</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">M</td>
+  <td>Set channel volume</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">N</td>
+  <td>Channel volume slide</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">O</td>
+  <td>Set sample offset</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">P</td>
+  <td>Panning slide</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">Q</td>
+  <td>Retrigger</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">R</td>
+  <td>Tremolo</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">S1</td>
+  <td>Glissando</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">S2</td>
+  <td>Set fine-tune</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">S3</td>
+  <td>Set vibrato waveform</td>
+  <td>no (only sine)</td>
+ </tr>
+ <tr>
+  <td align="center">S4</td>
+  <td>Set tremolo waveform</td>
+  <td>no (only sine)</td>
+ </tr>
+ <tr>
+  <td align="center">S5</td>
+  <td>Set panbrello waveform</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">S6</td>
+  <td>Pattern delay</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">S7</td>
+  <td>Set new note action</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">S8</td>
+  <td>Panning</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">S9</td>
+  <td>Extended channel effects</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">SA</td>
+  <td>Set sample offset high</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">SB</td>
+  <td>Pattern loop</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">SC</td>
+  <td>Note cut</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">SD</td>
+  <td>Note delay</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">SE</td>
+  <td>Pattern delay</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">SF</td>
+  <td>Select active macro</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">T</td>
+  <td>Set tempo</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">U</td>
+  <td>Fine vibrato</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">V</td>
+  <td>Set global volume</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">W</td>
+  <td>Global volume slide</td>
+  <td>no</td>
+ </tr>
+ <tr>
+  <td align="center">X</td>
+  <td>Set panning</td>
+  <td>full support</td>
+ </tr>
+ <tr>
+  <td align="center">Y</td>
+  <td>Panbrello</td>
+  <td>no</td>
+ </tr>
+</table><br>
+
+
+<p align="justify">
+&nbsp;&nbsp; Implemented effects should sound exactly as in Modplug tracker - I've used it and its sources almost 
+as a standard. ;-)<br>
+&nbsp;&nbsp; If you'll find any MOD that sounds differently than it should send it to me - I'll try to fix my code.
+</p> 
+
+
+<div class="n2">5. ProTracker format</div><p align="justify">
+&nbsp;&nbsp; Last version of my MOD player was designed without detailed documentation so result was terrible 
+but this time I've fortunately found some good specifications:<br><br> 
+
+<table align="center" border="1" cellspacing="1" cellpadding="1">
+ <tr align="center">
+  <th class="zelena">File</th>
+  <th class="zelena">Description</th>
+ </tr>
+ <tr>
+  <td><a href="doc/FH-MFDL2.ZIP">FH-MFDL2.ZIP</a></td>
+  <td>Original documentation, simple description for most of tracker formats</td>
+ </tr>
+ <tr>
+  <td><a href="doc/MOD-FORM.TXT">MOD-FORM.TXT</a></td>
+  <td>Detailed specification from some mid2mod utility</td>
+ </tr>
+ <tr>
+  <td><a href="doc/MODFILXX.TXT">MODFILXX.TXT</a></td>
+  <td>Detailed specification from MOD player TNT MP11</td>
+ </tr>
+</table>
+</p>
+
+<p align="justify">
+&nbsp;&nbsp; The best "documentation" of all is Modplug tracker source code. Main decoder is taken from some 
+ancient player (and converted into C++) so it actually verty nasty but still it's the best way how to understand 
+how effects works.
+</p>
+
+
+<div class="n2">6. Some recordings from MOD-player</div>
+<p align="justify">
+&nbsp;&nbsp; In this video there are some S3M trackers played (it's mostly from Jazz Jack Rabbit 2 game):
+</p>
+
+<table align="center">
+ <tr>
+  <td><iframe title="YouTube video player" width="425" height="349" src="http://www.youtube.com/embed/j6ijbexoq-M" frameborder="0" allowfullscreen></iframe></td>
+ </tr>
+</table><br><br>
+
+
+
+
+<div class="rights">(c) 2011, Stanislav Mašláň - All rights reserved.</div><br>
+
+<table align="left"><tr>
+<td width="365">Last update: 23.10.2011</td>
+<td><a href="#top"><img class="neram" src="obr/up.gif" alt="Up" title="Up"></a></td>
+</table>
+
+</td></tr></table>
+</body>
+</html>
