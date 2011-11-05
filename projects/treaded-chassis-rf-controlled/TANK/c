@@ -1,0 +1,435 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <stdlib.h>
+#include <util/delay.h>
+
+ 
+ volatile uint8_t p0; // PORTD pin 0
+ volatile uint8_t p1;
+ volatile uint8_t p3;
+ volatile uint8_t p5;
+ volatile uint8_t p7; // PORTD pin 7 
+ volatile uint8_t n;
+ volatile uint8_t i;
+ volatile uint8_t k;
+  
+ void HandIni(void);// initializarea mainii robotului
+ void DCMotors(void);// initializarea DC motoarelor
+
+int main(void)
+{
+  //initiere USART
+  /*
+  CLKPR = (1<<CLKPCE);//activeaza clk prescaler-ul(ceasu poate fi modificat)
+  CLKPR = (1<<CLKPS1);// seteaza prescalerul la Fcpu/4 8MHz/4=2MHz
+  */
+  UCSRB = (1<<RXEN)|(1<<TXEN);  // activeaza reciever-ul si transmiter-ul
+  UCSRC = (0<<UMSEL); // asinchron
+  UCSRC = (0<<USBS)|(1<<UCSZ0)|(1<<UCSZ1); //seteaza USART asinhron 8 bit fara paritate si 2 bit de stop
+  UBRRL= 51;
+  UBRRH=(51>>8);// 4800 baud
+   
+   
+   p0=8;
+   p1=7;
+   p3=8;
+   p5=8;
+   p7=8;  
+   i=0;
+   char ReceivedByte = 'p';
+	
+  for(;;)
+  {
+   if(ReceivedByte != 'h')
+   {
+     while ((UCSRA & (1 << RXC)) == 0) {}; // Do nothing until data have been received and is ready to be read from UDR 
+     ReceivedByte = UDR; // Fetch the received byte value into the variable "ByteReceived"
+   }
+   if (ReceivedByte == 'h')// h pt maina
+   {
+     
+     HandIni();
+	 n=1;
+        
+     while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'A'; // Echo back the received byte back to the computer
+     while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'r'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'm'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = ' '; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'A'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'c'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 't'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'i'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'v'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'e'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 0x0D; // Echo back the received byte back to the computer
+	 
+     while(ReceivedByte != 'l')
+	 {
+	 
+     while ((UCSRA & (1 << RXC)) == 0) {}; // Do nothing until data have been received and is ready to be read from UDR 
+     ReceivedByte = UDR; // Fetch the received byte value into the variable "ByteReceived" 
+      
+     if (ReceivedByte == 'q') p1=p1+1;
+     if (ReceivedByte == 'a') p1=p1-1;
+     if (ReceivedByte == 'w') p3=p3+1;
+     if (ReceivedByte == 's') p3=p3-1;
+     if (ReceivedByte == 'e') p5=p5-1;
+     if (ReceivedByte == 'd') p5=p5+1;
+     if (ReceivedByte == 'r') p7=p7+1;
+     if (ReceivedByte == 'f') p7=p7-1;
+     if (ReceivedByte == 't') // auto test
+       {
+      
+	     while(p1!=5) // aducerea lina a motoarelor; mana comprimata
+	      {
+	         if (p1>5)
+		         {
+		          p1--;
+			      _delay_loop_2(40000);
+		         }
+		     else
+		         {
+		             p1++;
+			         _delay_loop_2(40000);
+		         }
+	      }
+	     
+	     while(p5!=4)
+	     {
+	         if (p5>4)
+		     {
+		         p5--;
+			     _delay_loop_2(35000);
+		     }
+		     else
+		     {
+		         p5++;
+			     _delay_loop_2(35000);
+		     }
+	     }
+	     
+	     while(p3!=6)
+	     {
+	         if (p3>6)
+		     {
+		         p3--;
+			     _delay_loop_2(35000);
+		     }
+		     else
+		     {
+		         p3++;
+			     _delay_loop_2(35000);
+		     }
+	     }           
+	           
+	     while(p7!=5)
+	     {
+	         if (p7>5)
+		     {
+		         p7--;
+			     _delay_loop_2(35000);
+		     }
+		     else
+		     {
+		         p7++;
+			     _delay_loop_2(35000);
+		     }
+	     }
+		 while(p3 != 13)
+	     {
+	         if (p3 > 13)
+		     {
+		         p3--;
+			     _delay_loop_2(35000);
+		     }
+		     else
+		     {
+		         p3++;
+			     _delay_loop_2(35000);
+		     }
+	     }
+		 while(p3!=6)
+	     {
+	         if (p3>6)
+		     {
+		         p3--;
+			     _delay_loop_2(35000);
+		     }
+		     else
+		     {
+		         p3++;
+			     _delay_loop_2(35000);
+		     }
+	     }
+	            
+	     for (p1=5; p1<=10; p1++)
+         { 	     
+	         _delay_loop_2(40000);
+		     if(p1>=8)
+		     {    
+		         p3++;
+			     _delay_loop_2(40000);
+		     }
+	     } // se termina cu p1=10 si p3=7
+	      
+	     for(p3; p3<=14; p3++) _delay_loop_2(35000);
+	     for(p3; p3>=8; p3--) _delay_loop_2(35000); // se termina cu p3 = 8
+	      
+	     for(p5; p5<=12; p5++) _delay_loop_2(35000);
+	     for(p5; p5>=8; p5--) _delay_loop_2(35000);
+	      
+	      
+	      
+	     for (p7; p7<=12; p7++) _delay_loop_2(35000);
+	     for (p7; p7>=5; p7--) _delay_loop_2(35000);
+		 for (p7; p7<=12; p7++) _delay_loop_2(35000);
+	     for (p7; p7>=5; p7--) _delay_loop_2(35000);
+	      
+	     while(p5!=4)
+	     {
+	         if (p5>4)
+		     {
+		         p5--;
+			     _delay_loop_2(35000);
+		     }
+		     else
+		     {
+		         p5++;
+			     _delay_loop_2(35000);
+		     }
+	     }
+	     
+	     while(p3!=7)
+	     {
+	         if (p3>7)
+		     {
+		         p3--;
+			     _delay_loop_2(35000);
+		     }
+		     else
+		     {
+		         p3++;
+			     _delay_loop_2(35000);
+		     }
+	     }
+	     
+	      while(p1!=4)
+	     {
+	         if (p1>4)
+		     {
+		         p1--;
+			     _delay_loop_2(40000);
+		     }  
+		     else
+		     {
+		         p1++;
+			     _delay_loop_2(40000);
+		     }
+	     }
+		 while(p5 != 14)
+		 {
+		     if(p5>13)
+			 {
+			     p5--;
+				 _delay_loop_2(35000);
+			 }
+			 else
+			 {
+			     p5++;
+				 _delay_loop_2(35000);
+			 }
+		 }
+	     p3=6;
+	   }
+      
+     
+     if (ReceivedByte == 'c') // calibrarea
+         {
+	         p0= 8;
+		     p1= 8;
+		     p3= 8;
+		     p5= 8;
+		     p7= 8;
+	     }
+     if (ReceivedByte=='v')
+         {
+	         p0= 0;
+		     p1= 0;
+		     p3= 0;
+		     p5= 0;
+		     p7= 0;
+         }   
+     while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = ' '; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'T'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 's'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 't'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = ' '; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'O'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'K'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 0x0D; // Echo back the received byte back to the computer
+	 }
+	 
+   }
+   
+   
+   if (ReceivedByte == 'l')
+   {     
+	 DCMotors();
+	 n=0;
+	 
+        
+     while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'M'; // Echo back the received byte back to the computer
+     while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 't'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'r'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 's'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = ' '; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'a'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'c'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 't'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'i'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'v'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 'e'; // Echo back the received byte back to the computer
+	 while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+     UDR = 0x0D; // Echo back the received byte back to the computer
+	 
+	 while(ReceivedByte != 'h')
+	 {
+	      while ((UCSRA & (1 << RXC)) == 0) {}; // Do nothing until data have been received and is ready to be read from UDR 
+          ReceivedByte = UDR; // Fetch the received byte value into the variable "ByteReceived" 
+         
+	     if (ReceivedByte == 'w')// marirea vitezei motoarelor
+	     {
+	         PORTB = PORTB | _BV(1);
+		     PORTB = PORTB | _BV(5);
+             PORTB &= ~(_BV(3));
+             PORTB &= ~(_BV(7));
+             PORTB = PORTB | _BV(2);
+	     }
+	     
+	     if (ReceivedByte == 's') // micsorarea vitezei motoarelor
+	     {
+	         PORTB = PORTB | _BV(3);
+		     PORTB = PORTB | _BV(7);
+             PORTB &= ~(_BV(1));
+		     PORTB &= ~(_BV(5));
+		     PORTB = PORTB | _BV(2);
+	     }
+	     if (ReceivedByte=='q')
+	     {	         
+		     PORTB &= ~(_BV(1));
+		     PORTB &= ~(_BV(5));
+		     PORTB &= ~(_BV(3));
+		     PORTB &= ~(_BV(7));
+			 PORTB &= ~(_BV(2));
+	     }
+	     if (ReceivedByte=='d')
+	     {
+	         PORTB = PORTB | _BV(1);
+		     PORTB = PORTB | _BV(7);
+		     PORTB &= ~(_BV(3));
+		     PORTB &= ~(_BV(5));
+		     PORTB = PORTB | _BV(2);
+	     }
+	     if (ReceivedByte == 'a')
+	     {
+	         PORTB = PORTB | _BV(3);
+		     PORTB = PORTB | _BV(5);
+		     PORTB &= ~(_BV(1));
+		     PORTB &= ~(_BV(7));
+		     PORTB = PORTB | _BV(2);
+	     }
+	     if (ReceivedByte == '+') k++;         	      	
+		 if (ReceivedByte == '-') k=k-1;		
+	     
+         while ((UCSRA & (1 << UDRE)) == 0) {}; // Do nothing until UDR is ready for more data to be written to it 
+         UDR = ReceivedByte; // Echo back the received byte back to the computer
+	 }
+	 
+	 
+   }    
+  }
+}
+
+void HandIni(void)// initierea taimerilor pt controlul servomotoarelor
+{
+      TCCR0A |= ((1 << CS10) | (1 << CS11)); // SET PRESCALER TO Fcpu/64
+	 TIMSK0 |=(1<<TOIE0); // activeaza intreruperile legate de overflow al timerului
+	 TCNT0=252; // counterul initializat la 246 din 255(FF) numara numai de 9 ori
+	 DDRD |=0xFF; // Data Direction Register B ca iesire pe pinii 0 si5 0b00100001
+	 PORTD |=0xFF;// seteaza 1 logic pe pinii 0 si 5 a portului B
+	 sei();
+}
+
+void DCMotors(void)
+{
+     DDRB = 0xFF;
+     PORTB=0xFF;
+	 TCCR0A |= (1 << CS01); // SET PRESCALER TO Fcpu/8
+	 TIMSK0 |=(1<<TOIE0); // activeaza intreruperile legate de overflow al timerului
+	 TCNT0=253; // counterul initializat la 246 din 255(FF) numara numai de 9 ori
+	 sei();
+  i= 0;
+  k= 7;
+}
+
+ISR(TIMER0_OVF_vect)
+{
+   
+    if(n==1)
+	{
+     if(i>=125) i=0;// n alegerea secventei de servo sau DC
+      
+      if (i< p0) PORTD = PORTD | _BV(0);
+	  else PORTD &= ~(_BV(0)); 
+      if (i< p1) PORTD = PORTD | _BV(1);
+	  else PORTD &= ~(_BV(1));
+      if (i< p3) PORTD = PORTD | _BV(3);
+	  else PORTD &= ~(_BV(3));
+      if (i< p5) PORTD = PORTD | _BV(5);
+	  else PORTD &= ~(_BV(5));
+      if (i< p7) PORTD = PORTD | _BV(7);
+	  else PORTD &= ~(_BV(7));     
+      i++;
+      TCNT0=252;//reseteaza counterul
+	}
+	if(n==0)
+	{
+	 if (i>=13) i=0;
+	 
+     if (i<k) PORTB = PORTB | _BV(2);
+     else PORTB &= ~(_BV(2));
+     i++;
+	 TCNT0 = 253;
+	}
+}
+
