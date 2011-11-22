@@ -1,0 +1,407 @@
+##############################################################################
+#                                                                            #
+# IAR Atmel AVR C/C++ Compiler V4.20A/W32              27/Jul/2007  17:05:14 #
+# Copyright 1996-2006 IAR Systems. All rights reserved.                      #
+#                                                                            #
+#    Source file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\bootloader.c     #
+#    Command line =  "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\bootloader.c"    #
+#                    --cpu=can128 -ms -o "C:\Documents and Settings\User\My  #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\" -lc  #
+#                    "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\" -y  #
+#                    -z6 --no_inline --no_cross_call --no_tbaa --debug       #
+#                    -DENABLE_BIT_DEFINITIONS -e -I "C:\Program Files\IAR    #
+#                    Systems\Embedded Workbench 4.0\avr\INC\" -I             #
+#                    "C:\Program Files\IAR Systems\Embedded Workbench        #
+#                    4.0\avr\INC\CLIB\" --eeprom_size 4096                   #
+#    List file    =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\bootl #
+#                    oader.lst                                               #
+#    Object file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\bootlo #
+#                    ader.r90                                                #
+#                                                                            #
+#                                                                            #
+##############################################################################
+
+C:\Documents and Settings\User\My Documents\Stefan\Bootloader\Bootloader\bootloader.c
+      1          #include <ioavr.h>
+      2          #include <stdbool.h>
+      3          #include <stdlib.h>
+      4          #include <intrinsics.h>
+      5          #include "common.h"
+      6          #include "queue.h"
+      7          #include "mem_settings.h"
+      8          #include "bootloader.h"
+      9          #include "usart.h"
+     10          #include "leds.h"
+     11          #include "bl_can.h"
+     12          #include "move_iv.h"
+     13          #include "intel_hex.h"
+     14          #include "protocol.h"
+     15          
+     16          /**
+     17           * TODO:
+     18           * Stöd för programmering av EEPROM
+     19           * Dokumentera/kommentera
+     20           * Optimera intel_hex-parsningen för att kunna öka baud rate
+     21           * Optimera köerna så de använder pekare istället
+     22             * ex. tail_ptr == &(buf[SIZE-1])
+     23           * Funktionspekare för att minska koden, eeprom_func och code_func...
+     24           */
+     25          
+     26          #ifdef DEBUG_FLASH_WRITE
+     27          unsigned int debug_page[SPM_PAGESIZE];
+     28          static inline void debug_flash_write_page(unsigned int data, unsigned int page_addr) {
+     29            debug_page[page_addr%SPM_PAGESIZE] = data;
+     30          }
+     31          #endif
+     32          
+     33          volatile unsigned long app_page_addr;
+     34          volatile bl_state_t state;
+     35          volatile unsigned long rx_counter;
+     36          bool transfer_init = true;
+     37          //volatile unsigned int crc16_sum;
+     38          //void (*application_pointer)(void) = 0x0000;
+     39          bool (*mem_write_ptr)(void);
+     40          
+     41          void reset() {
+     42            WDTCR |= 1<<WDE;
+     43            while(1);
+     44          }
+     45          
+     46          /*
+     47           * Clears all registers which might have interrupts enabled.
+     48           * This prevents interrupts set by the previous app to interfere with the
+     49           * bootloader.
+     50           */
+     51          void clear() {
+     52            EIMSK = 0;
+     53            TIMSK0 = 0;
+     54            TIMSK1 = 0;
+     55            TIMSK2 = 0;
+     56            TCCR0A = 0;
+     57            TCCR1A = 0;
+     58            TCCR1B = 0;
+     59            TCCR1C = 0;
+     60            TCCR2A = 0;
+     61            TCCR3A = 0;
+     62            TCCR3B = 0;
+     63            TCCR3C = 0;
+     64            SPCR = 0;
+     65            UCSR0B = 0;
+     66            UCSR1B = 0;
+     67            TWCR = 0;
+     68            ACSR = 0;
+     69            ADCSRA = 0;
+     70          }
+     71          
+     72          // Erases the application part of the flash memory
+     73          static inline void erase_app_flash() {
+     74          #if APP_END > 0
+     75            unsigned long nb_page;
+     76          
+     77            nb_page=0;
+     78            do {
+     79              _SPM_24_ERASE(nb_page);
+     80              nb_page += SPM_PAGESIZE;
+     81            } while (nb_page<APP_END);
+     82            _ENABLE_RWW_SECTION();
+     83          #endif
+     84          }
+     85          
+     86          // Writes a page of data to the specified address of the flash memory
+     87          static inline void write_page_app_flash(page_data_t *page, unsigned int page_addr) {
+     88            unsigned int data = 0;
+     89            for (page->page_ptr=0; page->page_ptr < SPM_PAGESIZE; page->page_ptr+=2) {
+     90              data = page->data[page->page_ptr];
+     91              data |= page->data[page->page_ptr+1]<<8;
+     92              _SPM_24_FILLTEMP(page_addr + page->page_ptr, data);
+     93          #ifdef DEBUG_FLASH_WRITE
+     94              debug_flash_write_page(data, page_addr+page->page_ptr);
+     95          #endif
+     96            }
+     97            _SPM_24_PAGEWRITE(page_addr);
+     98            _WAIT_FOR_SPM();
+     99            _ENABLE_RWW_SECTION();
+    100          }
+    101          
+    102          // Adds a byte to the crc16 sum
+    103          /*void add_to_crc16(unsigned char byte) {
+    104            int i;
+    105            for (i = 0; i < 8; ++i) {
+    106                unsigned long osum = crc16_sum;
+    107                crc16_sum <<= 1;
+    108                if (byte & 0x80)
+    109                  crc16_sum |= 1 ;
+    110                if (osum & 0x8000)
+    111                  crc16_sum ^= 0x1021;
+    112                byte <<= 1;
+    113            }
+    114          }*/
+    115          
+    116          // Initializes the leds
+    117          static inline void leds_init() {
+    118            bit_set(LED_DDR1, LED1);
+    119            bit_set(LED_DDR2, LED2);
+    120            bit_set(LED_DDR3, LED3);
+    121            bit_set(LED_PORT1, LED1);
+    122            bit_set(LED_PORT2, LED2);
+    123            bit_set(LED_PORT3, LED3);
+    124          }
+    125          
+    126          // Writes one page from the page buffer to the flash memory
+    127          bool write_flash_page() {
+    128            if (flash_page_written)
+    129              return false;
+    130          #ifdef ENABLE_FLASH_WRITE
+    131            write_page_app_flash(&flash_complete_page, app_page_addr);
+    132          #endif
+    133            flash_page_written = true;
+    134            app_page_addr += SPM_PAGESIZE;
+    135            return true;
+    136          }
+    137          
+    138          bool write_eeprom_page() {
+    139            page_eeprom_t page;
+    140            unsigned int i;
+    141            if (eeprom_queue_is_empty(&eeprom_page_buf))
+    142              return false;
+    143            eeprom_queue_dequeue(&eeprom_page_buf, &page);
+    144          #ifdef ENABLE_EEPROM_WRITE
+    145            for (i=0; i < page.page_ptr; i++) {
+    146              __EEPUT(page.address + i, page.data[i]);
+    147            }
+    148          #endif
+    149            return true;
+    150          }
+    151          
+    152          // Main function
+    153          int main() {
+    154            app_page_addr = 0;
+    155            state = NORMAL;
+    156            rx_counter = 0;
+    157            incoming_tmp = 0;
+    158          //  crc16_sum = 0;
+    159            app_no = 1;
+    160            unsigned int flip_counter = 0;
+    161            clear();
+    162            init_ihex();
+    163          #ifdef USART
+    164            //usart0_init(103); //9600 bps
+    165            usart0_init(51); // 19200 bps
+    166            //usart0_init(8); // 115.2 kbps
+    167          #endif
+    168            init_can();
+    169            set_rx_mbs();
+    170            leds_init();
+    171          //  static_queue_init(&page_data_buf);
+    172            eeprom_queue_init(&eeprom_page_buf);
+    173            can_queue_init(&can_rx_queue);
+    174            can_queue_init(&can_tx_queue);
+    175          #ifdef USART
+    176            __delay_cycles(8000000); // delay 0.5 s to give the other MCUs a chance to setup CAN
+    177            broadcast_jump_bootloader();
+    178            byte_queue_init(&usart_rx_queue);
+    179          #endif
+    180            // Move interrupt vectors to boot section
+    181            move_iv_to_bls();
+    182            __enable_interrupt();
+    183            while (true) {
+    184              if (flip_counter++ == 0xffff)
+    185                bit_flip(LED_PORT1, LED1);
+    186              process_can_queue();
+    187          #ifdef USART
+    188              process_usart_queue();
+    189          #endif
+    190              switch (state) {
+    191          #ifdef USART
+    192              case WAIT_APP_INFO:
+    193                if (app_no == no_of_mcus_found) {
+                                                     ^
+Warning[Pa082]: undefined behavior: the order of volatile accesses is
+          undefined in this statement
+    194                  __disable_interrupt();
+    195                  usart0_tx_app_info();
+    196                  __enable_interrupt();
+    197                  app_no = 1;
+    198                  state = NORMAL;
+    199                }
+    200                break;
+    201          #endif
+    202                
+    203              case TRANSFER_CODE_STATE:
+    204              case TRANSFER_EEPROM_STATE:
+    205                if (transfer_init) {
+    206          #ifdef ENABLE_FLASH_ERASE
+    207                  if (state == TRANSFER_CODE_STATE)
+    208                    erase_app_flash();
+    209          #endif
+    210          #ifdef USART
+    211                  usart0_tx_byte(ACK);
+    212          #elif defined CAN
+    213                  ident_out_high = FWD_MBOX_HIGH;
+    214                  ident_out_low = FWD_MBOX_LOW;
+    215                  can_tx_byte(ACK);
+    216          #endif
+    217                  transfer_init = false;
+    218                }
+    219                //if (!static_queue_is_empty(&page_data_buf)) // process page and write to app flash
+    220                mem_write_ptr();
+    221                break;
+    222          
+    223              case RUN_APP:
+    224          //      if (!static_queue_is_empty(&page_data_buf))
+    225                if (!mem_write_ptr()) {
+    226                  store_app_info(&incoming_app_info);
+    227                  //usart0_tx_int(crc16_sum);
+    228                  // Move interrupt vectors to application section
+    229                  move_iv_to_app();
+    230                  // Transfer complete and application loaded, run application
+    231                  //application_pointer();
+    232                  reset();
+    233                  while(1);
+    234                }
+    235              }
+    236            }
+    237          }
+    238          
+    239          
+    240          // Stores an app_info_t in eeprom at address APP_INFO_ADDR
+    241          void store_app_info(app_info_t *app_info) {
+    242            unsigned char i;
+    243            unsigned long date;
+    244            __EEPUT(APP_INFO_ADDR, (unsigned char)app_info->address);
+    245            __EEPUT(APP_INFO_ADDR+1, (unsigned char)(app_info->address>>8));
+    246            __EEPUT(APP_INFO_ADDR+2, (unsigned char)app_info->version);
+    247            __EEPUT(APP_INFO_ADDR+3, (unsigned char)(app_info->version>>8));
+    248            for (i=0; i < 8; i++) {
+    249              __EEPUT(APP_INFO_ADDR+4+i, (unsigned char)app_info->name[i]);
+    250            }
+    251            date = app_info->date;
+    252            for (i=0; i < 4; i++) {
+    253              __EEPUT(APP_INFO_ADDR+12+i, (unsigned char)date);
+    254              date >>= 8;
+    255            }
+    256          }
+    257          
+    258          // Reads an app_info_t from address APP_INFO_ADDR in eeprom
+    259          void read_app_info(app_info_t *app_info) {
+    260            unsigned char temp, i;
+    261            __EEGET(temp, APP_INFO_ADDR);
+    262            app_info->address = temp;
+    263            __EEGET(temp, APP_INFO_ADDR+1);
+    264            app_info->address |= (((unsigned int)temp)<<8);
+    265            
+    266            __EEGET(temp, APP_INFO_ADDR+2);
+    267            app_info->version = temp;
+    268            __EEGET(temp, APP_INFO_ADDR+3);
+    269            app_info->version |= (((unsigned int)temp)<<8);
+    270            
+    271            for (i=0; i < 8; i++) {
+    272              __EEGET(temp, APP_INFO_ADDR+4+i);
+    273              app_info->name[i] = temp;
+    274            }
+    275            app_info->date = 0;
+    276            for (i=0; i < 4; i++) {
+    277              __EEGET(temp, APP_INFO_ADDR+12+i);
+    278              app_info->date |= (((unsigned long)temp)<<(i*8));
+    279            }
+    280          }
+
+   Maximum stack usage in bytes:
+
+     Function                       CSTACK RSTACK
+     --------                       ------ ------
+     clear                              0      2
+     erase_app_flash                    0      2
+     leds_init                          0      2
+     main                               4      2
+       -> clear                         4      2
+       -> init_ihex                     4      2
+       -> usart0_init                   4      2
+       -> init_can                      4      2
+       -> set_rx_mbs                    4      2
+       -> leds_init                     4      2
+       -> eeprom_queue_init             4      2
+       -> can_queue_init                4      2
+       -> can_queue_init                4      2
+       -> broadcast_jump_bootloader     4      2
+       -> byte_queue_init               4      2
+       -> move_iv_to_bls                4      2
+       -> erase_app_flash               4      2
+       -> usart0_tx_byte                4      2
+       ->   Indirect call               4      2
+       -> process_can_queue             4      2
+       -> process_usart_queue           4      2
+       -> usart0_tx_app_info            4      2
+       ->   Indirect call               4      2
+       -> store_app_info                4      2
+       -> move_iv_to_app                4      2
+       -> reset                         4      2
+     read_app_info                      2      4
+     reset                              0      2
+     store_app_info                     4      4
+     write_eeprom_page                 22      4
+       -> eeprom_queue_is_empty        22      2
+       -> eeprom_queue_dequeue         22      2
+     write_flash_page                   0      2
+       -> write_page_app_flash          0      2
+     write_page_app_flash               2      2
+
+
+   Segment part sizes:
+
+     Function/Label                 Bytes
+     --------------                 -----
+     _A_UCSR1B                         1
+     _A_UCSR0B                         1
+     _A_TWCR                           1
+     _A_TCCR2A                         1
+     _A_TCCR3C                         1
+     _A_TCCR3B                         1
+     _A_TCCR3A                         1
+     _A_TCCR1C                         1
+     _A_TCCR1B                         1
+     _A_TCCR1A                         1
+     _A_ADCSRA                         1
+     _A_TIMSK2                         1
+     _A_TIMSK1                         1
+     _A_TIMSK0                         1
+     _A_WDTCR                          1
+     _A_SPMCSR                         1
+     _A_ACSR                           1
+     _A_SPCR                           1
+     _A_TCCR0A                         1
+     _A_EIMSK                          1
+     _A_PORTA                          1
+     _A_DDRA                           1
+     app_page_addr                    12
+     reset                            12
+     clear                            68
+     erase_app_flash                  52
+     write_page_app_flash            152
+     leds_init                        14
+     write_flash_page                 70
+     write_eeprom_page                80
+     main                            280
+     store_app_info                  132
+     read_app_info                   190
+     ?<Initializer for app_page_addr>
+                                      12
+      Others                           7
+
+ 
+    22 bytes in segment ABSOLUTE
+ 1 050 bytes in segment CODE
+     7 bytes in segment INITTAB
+    12 bytes in segment NEAR_I
+    12 bytes in segment NEAR_ID
+ 
+ 1 062 bytes of CODE memory (+  7 bytes shared)
+    12 bytes of DATA memory (+ 22 bytes shared)
+
+Errors: none
+Warnings: 1

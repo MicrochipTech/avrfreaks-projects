@@ -1,0 +1,316 @@
+##############################################################################
+#                                                                            #
+# IAR Atmel AVR C/C++ Compiler V4.20A/W32              27/Jul/2007  17:05:16 #
+# Copyright 1996-2006 IAR Systems. All rights reserved.                      #
+#                                                                            #
+#    Source file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\intel_hex.c      #
+#    Command line =  "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\intel_hex.c"     #
+#                    --cpu=can128 -ms -o "C:\Documents and Settings\User\My  #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\" -lc  #
+#                    "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\" -y  #
+#                    -z6 --no_inline --no_cross_call --no_tbaa --debug       #
+#                    -DENABLE_BIT_DEFINITIONS -e -I "C:\Program Files\IAR    #
+#                    Systems\Embedded Workbench 4.0\avr\INC\" -I             #
+#                    "C:\Program Files\IAR Systems\Embedded Workbench        #
+#                    4.0\avr\INC\CLIB\" --eeprom_size 4096                   #
+#    List file    =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\intel #
+#                    _hex.lst                                                #
+#    Object file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\intel_ #
+#                    hex.r90                                                 #
+#                                                                            #
+#                                                                            #
+##############################################################################
+
+C:\Documents and Settings\User\My Documents\Stefan\Bootloader\Bootloader\intel_hex.c
+      1          #include "intel_hex.h"
+      2          #include "bootloader.h"
+      3          #include "usart.h"
+      4          #include "queue.h"
+      5          #include "protocol.h"
+      6          #include "bl_can.h"
+      7          
+      8          unsigned char hex_index;
+      9          unsigned char hex_data_size;
+     10          int hex_checksum;
+     11          unsigned char hex_in_byte;
+     12          unsigned char hex_odd;
+     13          unsigned char hex_type;
+     14          unsigned int hex_address_ext;
+     15          unsigned int hex_address;
+     16          
+     17          void (*enqueue_page)(void);
+     18          void (*data_record)(void);
+     19          
+     20          page_data_t incoming_page;
+     21          page_data_t flash_complete_page;
+     22          bool flash_page_written=true;
+     23          page_eeprom_t incoming_eeprom_page;
+     24          
+     25          #ifdef USART
+     26          
+     27          static inline void reply_byte(unsigned char byte) {
+     28            usart0_tx_byte(byte);
+     29          }
+     30          
+     31          #elif defined CAN
+     32          
+     33          static inline void reply_byte(unsigned char byte) {
+     34            ident_out_high = FWD_MBOX_HIGH;
+     35            ident_out_low = FWD_MBOX_LOW;
+     36            can_tx_byte(byte);
+     37          }
+     38          
+     39          static inline void reply_bytes(unsigned char bytes[], unsigned char len) {
+     40            ident_out_high = FWD_MBOX_HIGH;
+     41            ident_out_low = FWD_MBOX_LOW;
+     42            can_forward_bytes(bytes, len);
+     43          }
+     44          
+     45          #endif
+     46          
+     47          void flash_enqueue_page() {
+     48            /*if (!static_queue_enqueue(&page_data_buf, &incoming_page)) { // Queue full
+     49              reply_byte(ERROR);
+     50              reply_byte(BUF_FULL);
+     51            }*/
+     52            unsigned int i;
+     53            if (!flash_page_written) {
+     54              reply_byte(ERROR);
+     55              reply_byte(BUF_FULL);
+     56            }
+     57            flash_complete_page.page_ptr = incoming_page.page_ptr;
+     58            for (i=0; i < SPM_PAGESIZE; i++)
+     59              flash_complete_page.data[i] = incoming_page.data[i];
+     60            flash_page_written = false;
+     61          }
+     62          
+     63          void flash_fill_end() {
+     64            for (;incoming_page.page_ptr < SPM_PAGESIZE; incoming_page.page_ptr++) // if last page, fill the rest with 0xFF
+     65              incoming_page.data[incoming_page.page_ptr] = 0xFF; 
+     66          }
+     67          
+     68          void flash_data_record() {
+     69            incoming_page.data[incoming_page.page_ptr++] = hex_in_byte;
+     70            if (incoming_page.page_ptr == SPM_PAGESIZE || hex_type == EOF_RECORD) { // page done
+     71              if (hex_type == EOF_RECORD) {
+     72                flash_fill_end();
+     73              }
+     74              enqueue_page();
+     75              incoming_page.page_ptr = 0;
+     76            }
+     77          }
+     78          
+     79          void eeprom_enqueue_page() {
+     80            incoming_eeprom_page.address = hex_address;
+     81            if (!eeprom_queue_enqueue(&eeprom_page_buf, &incoming_eeprom_page)) { // Queue full
+     82              reply_byte(ERROR);
+     83              reply_byte(BUF_FULL);
+     84            }
+     85          }
+     86          
+     87          void eeprom_data_record() {
+     88            incoming_eeprom_page.data[incoming_eeprom_page.page_ptr++] = hex_in_byte;
+     89            if (incoming_eeprom_page.page_ptr == EEPROM_PAGE_SIZE || hex_type == EOF_RECORD) {
+     90              enqueue_page();
+     91              incoming_eeprom_page.page_ptr = 0;
+     92            }
+     93          }
+     94          
+     95          // Initializes the globals used for parsing the intel-hex stream.
+     96          void init_ihex() {
+     97            hex_index = 0;
+     98            hex_data_size = 0;
+     99            hex_checksum = 0;
+    100            hex_in_byte = 0;
+    101            hex_odd = 0;
+    102            hex_type = 0;
+    103          }
+    104          
+    105          // Parses an incoming byte as a part of an intel-hex stream.
+    106          void parse_ihex(unsigned char in_byte) {
+    107            static bool transfer_complete = false;
+    108            if (in_byte == ':') {
+    109              hex_index = 0;
+    110              hex_data_size = 0;
+    111              hex_checksum = 0;
+    112              hex_in_byte = 0;
+    113              hex_odd = 0;
+    114              hex_type = 0;
+    115              hex_address = 0;
+    116              hex_address_ext = 0;
+    117              return;
+    118            }
+    119            else if (in_byte == '\0') {
+    120              reply_byte(ACK);
+    121              if (transfer_complete) {
+    122                if (state == TRANSFER_CODE_STATE)
+    123                  state = RUN_APP;
+    124                else
+    125                  state = NORMAL;
+    126          #ifdef CAN
+    127                can_tx_forward_complete();
+    128          #endif
+    129                transfer_complete = false;
+    130              }
+    131              return;
+    132            }
+    133            in_byte = ascii_to_bin(in_byte);
+    134            if (hex_odd == 0) {
+    135              hex_in_byte = in_byte<<4;
+    136              hex_odd++;
+    137              return;
+    138            }
+    139            else {
+    140              hex_in_byte |= in_byte;
+    141              hex_odd = 0;
+    142            }
+    143            
+    144            switch (hex_index) {
+    145              case IHEX_DATA_SIZE_INDEX: // data size
+    146                hex_data_size = hex_in_byte;
+    147                break;
+    148                
+    149              case IHEX_DATA_ADDR_INDEX:
+    150                hex_address = ((unsigned int)hex_in_byte)<<8;
+    151                break;
+    152                
+    153              case IHEX_DATA_ADDR_INDEX+1:
+    154                hex_address |= hex_in_byte;
+    155                break;
+    156                
+    157              case IHEX_DATA_TYPE_INDEX: // data type
+    158                hex_type = hex_in_byte;
+    159                break;
+    160                
+    161              default:
+    162                if (hex_index == (hex_data_size+4)) { // Checksum
+    163                  if (((char)(hex_checksum + hex_in_byte)) != 0) { // Checksum error
+    164                    if (hex_type == EOF_RECORD) { // Not a checksum error, just EOF
+    165                      reply_byte(ACK);
+    166                      return;
+    167                    }
+    168          #ifdef CAN
+    169                    unsigned char reply[4] = {ERROR, CHECKSUM, hex_checksum, hex_in_byte};
+    170                    reply_bytes(reply, 4);
+    171          #elif defined USART
+    172                    reply_byte(ERROR);
+    173                    reply_byte(CHECKSUM);
+    174                    reply_byte(hex_checksum);
+    175                    reply_byte(hex_in_byte);
+    176          #endif
+    177                  }
+    178                  else { // Checksum correct
+    179                    if (hex_type == EOF_RECORD) {
+    180                      if (state == TRANSFER_CODE_STATE) // EEPROM page doesn't need to be full
+    181                        flash_fill_end();
+    182                      enqueue_page();
+    183                      transfer_complete = true;  // EOF found, now the complete app has been downloaded
+    184                    }
+    185                    hex_checksum=0;
+    186                    reply_byte(ACK);
+    187                  }
+    188                  return;
+    189                }
+    190                else if (hex_index >= IHEX_DATA_START_INDEX) { // Data
+    191                  switch (hex_type) {
+    192                    case DATA_RECORD:
+    193                    case EOF_RECORD:
+    194                      data_record();
+    195                    break;
+    196                    case EXT_SEG_ADDR_REC:
+    197                      {
+    198                        unsigned char data_index = hex_index - IHEX_DATA_START_INDEX;
+    199                        hex_address_ext |= (((unsigned int)hex_in_byte)<<((2-data_index)*8));
+    200                      }
+    201                    break;
+    202                    case START_SEG_ADDR_REC:
+    203                    break;
+    204                  }
+    205                }
+    206            }
+    207            hex_index++;
+    208            hex_checksum += (char)hex_in_byte;
+    209          }
+    210          
+    211          // Converts ascii data to binary data
+    212          unsigned char ascii_to_bin(unsigned char data) {
+    213              if( data < 'A' ) {
+    214          	return( data - '0' );
+    215              }
+    216              else {
+    217          	return( data - 55 );
+    218              }
+    219          }
+
+   Maximum stack usage in bytes:
+
+     Function                  CSTACK RSTACK
+     --------                  ------ ------
+     ascii_to_bin                  0      2
+     eeprom_data_record            2      2
+       ->   Indirect call          2      2
+     eeprom_enqueue_page           0      2
+       -> eeprom_queue_enqueue     0      2
+       -> reply_byte               0      2
+       -> reply_byte               0      2
+     flash_data_record             2      2
+       -> flash_fill_end           2      2
+       ->   Indirect call          2      2
+     flash_enqueue_page            2      2
+       -> reply_byte               2      2
+       -> reply_byte               2      2
+     flash_fill_end                0      2
+     init_ihex                     0      2
+     parse_ihex                    4      4
+       -> reply_byte               4      2
+       -> ascii_to_bin             4      2
+       -> reply_byte               4      2
+       -> reply_byte               4      2
+       -> reply_byte               4      2
+       -> reply_byte               4      2
+       -> reply_byte               4      2
+       -> flash_fill_end           4      2
+       ->   Indirect call          4      2
+       ->   Indirect call          4      2
+     reply_byte                    0      2
+       -> usart0_tx_byte           0      2
+
+
+   Segment part sizes:
+
+     Function/Label                 Bytes
+     --------------                 -----
+     flash_page_written                1
+     reply_byte                        6
+     flash_enqueue_page               80
+     flash_fill_end                   46
+     flash_data_record                98
+     eeprom_enqueue_page              36
+     eeprom_data_record               78
+     init_ihex                        22
+     parse_ihex                      354
+     incoming_eeprom_page             36
+     incoming_page                   258
+     flash_complete_page             258
+     ascii_to_bin                     12
+     ?<Initializer for flash_page_written>
+                                       1
+      Others                          14
+
+ 
+ 732 bytes in segment CODE
+  14 bytes in segment INITTAB
+   1 byte  in segment NEAR_I
+   1 byte  in segment NEAR_ID
+ 552 bytes in segment NEAR_Z
+ 
+ 733 bytes of CODE memory (+ 14 bytes shared)
+ 553 bytes of DATA memory
+
+Errors: none
+Warnings: none

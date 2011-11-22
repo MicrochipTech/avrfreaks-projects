@@ -1,0 +1,289 @@
+##############################################################################
+#                                                                            #
+# IAR Atmel AVR C/C++ Compiler V4.20A/W32              27/Jul/2007  17:05:14 #
+# Copyright 1996-2006 IAR Systems. All rights reserved.                      #
+#                                                                            #
+#    Source file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\queue.c          #
+#    Command line =  "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\queue.c"         #
+#                    --cpu=can128 -ms -o "C:\Documents and Settings\User\My  #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\" -lc  #
+#                    "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\" -y  #
+#                    -z6 --no_inline --no_cross_call --no_tbaa --debug       #
+#                    -DENABLE_BIT_DEFINITIONS -e -I "C:\Program Files\IAR    #
+#                    Systems\Embedded Workbench 4.0\avr\INC\" -I             #
+#                    "C:\Program Files\IAR Systems\Embedded Workbench        #
+#                    4.0\avr\INC\CLIB\" --eeprom_size 4096                   #
+#    List file    =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\queue #
+#                    .lst                                                    #
+#    Object file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\queue. #
+#                    r90                                                     #
+#                                                                            #
+#                                                                            #
+##############################################################################
+
+C:\Documents and Settings\User\My Documents\Stefan\Bootloader\Bootloader\queue.c
+      1          #include <stdlib.h>
+      2          #include <ioavr.h>
+      3          #include <intrinsics.h>
+      4          #include "queue.h"
+      5          #include "bootloader.h"
+      6          
+      7          page_eeprom_queue_t eeprom_page_buf;
+      8          can_queue_t can_rx_queue;
+      9          can_queue_t can_tx_queue;
+     10          #ifdef USART
+     11          byte_queue_t usart_rx_queue;
+     12          #endif
+     13          
+     14          //STATIC_QUEUE_TYPE static_queue_peek(struct static_queue *q) {
+     15          //  STATIC_QUEUE_TYPE ret;
+     16          //  __disable_interrupt();
+     17          //  ret = q->buffer[q->head];
+     18          //  __enable_interrupt();
+     19          //  return ret;
+     20          //}
+     21          
+     22          //
+     23          //bool static_queue_is_full(struct static_queue *q) {
+     24          //  return q->full;
+     25          //}
+     26          
+     27          //void static_queue_clear(struct static_queue *q) {
+     28          //  __disable_interrupt();
+     29          //  q->tail = q->head = 0;
+     30          //  q->full = 0;
+     31          //  __enable_interrupt();
+     32          //}
+     33          
+     34          /**************
+     35           * EEPROM queue
+     36           */
+     37          
+     38          void eeprom_queue_init(struct eeprom_queue *q) {
+     39            q->tail = q->head = q->full = 0;
+     40          }
+     41          
+     42          bool eeprom_queue_enqueue(struct eeprom_queue *q, EEPROM_QUEUE_TYPE *obj) {
+     43            unsigned char old_int = __save_interrupt();
+     44            __disable_interrupt();
+     45            unsigned int i;
+     46            if (q->full) {
+     47              __restore_interrupt(old_int);
+     48              return false;
+     49            }
+     50            q->buffer[q->tail].page_ptr = obj->page_ptr;
+     51            q->buffer[q->tail].address = obj->address;
+     52            for (i=0; i < EEPROM_PAGE_SIZE; i++)
+     53              q->buffer[q->tail].data[i] = obj->data[i];
+     54            if (q->tail == (EEPROM_QUEUE_SIZE-1))
+     55              q->tail = 0;
+     56            else
+     57              q->tail++;
+     58            if (q->head == q->tail)
+                                         ^
+Warning[Pa082]: undefined behavior: the order of volatile accesses is
+          undefined in this statement
+     59              q->full = 1;
+     60            __restore_interrupt(old_int);
+     61            return true;
+     62          }
+     63          
+     64          void eeprom_queue_dequeue(struct eeprom_queue *q, EEPROM_QUEUE_TYPE *obj) {
+     65            unsigned int i;
+     66            unsigned char old_int = __save_interrupt();
+     67            __disable_interrupt();
+     68            obj->page_ptr = q->buffer[q->head].page_ptr;
+     69            obj->address = q->buffer[q->head].address;
+     70            for (i=0; i < EEPROM_PAGE_SIZE; i++)
+     71              obj->data[i] = q->buffer[q->head].data[i];
+     72            if (q->head == (EEPROM_QUEUE_SIZE-1))
+     73              q->head = 0;
+     74            else
+     75              q->head++;
+     76            q->full = 0;
+     77            __restore_interrupt(old_int);
+     78          }
+     79          
+     80          bool eeprom_queue_is_empty(struct eeprom_queue *q) {
+     81            bool ret;
+     82            unsigned char old_int = __save_interrupt();
+     83            __disable_interrupt();
+     84            ret = !q->full && (q->head == q->tail);
+                                                         ^
+Warning[Pa082]: undefined behavior: the order of volatile accesses is
+          undefined in this statement
+     85            __restore_interrupt(old_int);
+     86            return ret;
+     87          }
+     88          
+     89          /***********
+     90           * CAN queue
+     91           */
+     92          
+     93          void can_queue_init(can_queue_t *q) {
+     94            q->tail = q->head = q->full = 0;
+     95          }
+     96          bool can_queue_enqueue(can_queue_t *q, CAN_QUEUE_TYPE *obj) {
+     97            unsigned char old_int = __save_interrupt();
+     98            __disable_interrupt();
+     99            unsigned int i;
+    100            if (q->full) {
+    101              __restore_interrupt(old_int);
+    102              return false;
+    103            }
+    104            q->buffer[q->tail].count = obj->count;
+    105            q->buffer[q->tail].mob_no = obj->mob_no;
+    106            q->buffer[q->tail].id_high = obj->id_high;
+    107            q->buffer[q->tail].id_low = obj->id_low;
+    108            for (i=0; i < 8; i++)
+    109              q->buffer[q->tail].data[i] = obj->data[i];
+    110            if (q->tail == (CAN_QUEUE_SIZE-1))
+    111              q->tail = 0;
+    112            else
+    113              q->tail++;
+    114            if (q->head == q->tail)
+                                         ^
+Warning[Pa082]: undefined behavior: the order of volatile accesses is
+          undefined in this statement
+    115              q->full = 1;
+    116            __restore_interrupt(old_int);
+    117            return true;
+    118          }
+    119          void can_queue_dequeue(can_queue_t *q, CAN_QUEUE_TYPE *obj) {
+    120            unsigned int i;
+    121            unsigned char old_int = __save_interrupt();
+    122            __disable_interrupt();
+    123            obj->count = q->buffer[q->head].count;
+    124            obj->mob_no = q->buffer[q->head].mob_no;
+    125            obj->id_high = q->buffer[q->head].id_high;
+    126            obj->id_low = q->buffer[q->head].id_low;
+    127            for (i=0; i < 8; i++)
+    128              obj->data[i] = q->buffer[q->head].data[i];
+    129            if (q->head == (CAN_QUEUE_SIZE-1))
+    130              q->head = 0;
+    131            else
+    132              q->head++;
+    133            q->full = 0;
+    134            __restore_interrupt(old_int);
+    135          }
+    136          
+    137          bool can_queue_is_empty(can_queue_t *q) {
+    138            bool ret;
+    139            unsigned char old_int = __save_interrupt();
+    140            __disable_interrupt();
+    141            ret = !q->full && (q->head == q->tail);
+                                                         ^
+Warning[Pa082]: undefined behavior: the order of volatile accesses is
+          undefined in this statement
+    142            __restore_interrupt(old_int);
+    143            return ret;
+    144          }
+    145          
+    146          /************
+    147           * Byte queue
+    148           */
+    149          
+    150          void byte_queue_init(byte_queue_t *q) {
+    151            q->tail = q->head = q->full = 0;
+    152          }
+    153          
+    154          bool byte_queue_enqueue(byte_queue_t *q, BYTE_QUEUE_TYPE *obj) {
+    155            unsigned char old_int = __save_interrupt();
+    156            __disable_interrupt();
+    157            if (q->full) {
+    158              __restore_interrupt(old_int);
+    159              return false;
+    160            }
+    161            q->buffer[q->tail] = *obj;
+    162            if (q->tail == (BYTE_QUEUE_SIZE-1))
+    163              q->tail = 0;
+    164            else
+    165              q->tail++;
+    166            if (q->head == q->tail)
+                                         ^
+Warning[Pa082]: undefined behavior: the order of volatile accesses is
+          undefined in this statement
+    167              q->full = 1;
+    168            __restore_interrupt(old_int);
+    169            return true;
+    170          }
+    171          
+    172          void byte_queue_dequeue(byte_queue_t *q, BYTE_QUEUE_TYPE *obj) {
+    173            unsigned char old_int = __save_interrupt();
+    174            __disable_interrupt();
+    175            *obj = q->buffer[q->head];
+    176            if (q->head == (BYTE_QUEUE_SIZE-1))
+    177              q->head = 0;
+    178            else
+    179              q->head++;
+    180            q->full = 0;
+    181            __restore_interrupt(old_int);
+    182          }
+    183          
+    184          bool byte_queue_is_empty(byte_queue_t *q) {
+    185            bool ret;
+    186            unsigned char old_int = __save_interrupt();
+    187            __disable_interrupt();
+    188            ret = !q->full && (q->head == q->tail);
+                                                         ^
+Warning[Pa082]: undefined behavior: the order of volatile accesses is
+          undefined in this statement
+    189            __restore_interrupt(old_int);
+    190            return ret;
+    191          }
+
+   Maximum stack usage in bytes:
+
+     Function              CSTACK RSTACK
+     --------              ------ ------
+     byte_queue_dequeue        0      2
+     byte_queue_enqueue        0      2
+     byte_queue_init           0      2
+     byte_queue_is_empty       0      2
+     can_queue_dequeue         7      4
+     can_queue_enqueue         8      4
+     can_queue_init            0      2
+     can_queue_is_empty        0      2
+     eeprom_queue_dequeue      7      4
+     eeprom_queue_enqueue      8      4
+     eeprom_queue_init         0      2
+     eeprom_queue_is_empty     0      2
+
+
+   Segment part sizes:
+
+     Function/Label        Bytes
+     --------------        -----
+     eeprom_page_buf        105
+     can_rx_queue            65
+     can_tx_queue            65
+     usart_rx_queue          23
+     eeprom_queue_init       16
+     eeprom_queue_enqueue   202
+     eeprom_queue_dequeue   176
+     eeprom_queue_is_empty   36
+     can_queue_init          16
+     can_queue_enqueue      242
+     can_queue_dequeue      220
+     can_queue_is_empty      36
+     byte_queue_init         16
+     byte_queue_enqueue      98
+     byte_queue_dequeue      74
+     byte_queue_is_empty     36
+      Others                  7
+
+ 
+ 1 168 bytes in segment CODE
+     7 bytes in segment INITTAB
+   258 bytes in segment NEAR_Z
+ 
+ 1 168 bytes of CODE memory (+ 7 bytes shared)
+   258 bytes of DATA memory
+
+Errors: none
+Warnings: 6

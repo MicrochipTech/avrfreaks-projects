@@ -1,0 +1,189 @@
+##############################################################################
+#                                                                            #
+# IAR Atmel AVR C/C++ Compiler V4.20A/W32              27/Jul/2007  17:05:17 #
+# Copyright 1996-2006 IAR Systems. All rights reserved.                      #
+#                                                                            #
+#    Source file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\usart.c          #
+#    Command line =  "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\usart.c"         #
+#                    --cpu=can128 -ms -o "C:\Documents and Settings\User\My  #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\" -lc  #
+#                    "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\" -y  #
+#                    -z6 --no_inline --no_cross_call --no_tbaa --debug       #
+#                    -DENABLE_BIT_DEFINITIONS -e -I "C:\Program Files\IAR    #
+#                    Systems\Embedded Workbench 4.0\avr\INC\" -I             #
+#                    "C:\Program Files\IAR Systems\Embedded Workbench        #
+#                    4.0\avr\INC\CLIB\" --eeprom_size 4096                   #
+#    List file    =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\usart #
+#                    .lst                                                    #
+#    Object file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\usart. #
+#                    r90                                                     #
+#                                                                            #
+#                                                                            #
+##############################################################################
+
+C:\Documents and Settings\User\My Documents\Stefan\Bootloader\Bootloader\usart.c
+      1          #include <ioavr.h>
+      2          #include "usart.h"
+      3          #include "common.h"
+      4          #include "bl_can.h"
+      5          #include "bootloader.h"
+      6          #include "queue.h"
+      7          #include "leds.h"
+      8          #include "intel_hex.h"
+      9          #include "protocol.h"
+     10          
+     11          #ifdef USART
+     12          
+     13          #pragma vector = USART0_RX_vect
+     14          __interrupt void usart0_rx(void);
+     15          
+     16          void usart0_init(unsigned char baud){
+     17            UBRR0H = (unsigned char)(baud>>8);
+     18            UBRR0L = (unsigned char)baud;
+     19            
+     20            // enable for double speed
+     21            //UCSRA = (1<<U2X);
+     22            // enable receiver, transmitter and receiver interrupts
+     23            UCSR0B = (1<<RXEN0) | (1<<TXEN0) | (1<<RXCIE0);
+     24            // set frame format 8 data bits, 1 stop bit
+     25            UCSR0C = (1<<UCSZ01) | (1<<UCSZ00);// | (1<<UPM01);
+     26          }
+     27          
+     28          // Receives a byte from USART0
+     29          unsigned char usart0_rx_byte() {
+     30            while (!bit_get(UCSR0A, 1<<RXC0));
+     31            return UDR0;
+     32          }
+     33          
+     34          // Transmits a byte to USART0
+     35          void usart0_tx_byte(unsigned char byte) {
+     36            while(!(UCSR0A & (1<<UDRE0)));
+     37            UDR0 = byte;
+     38          }
+     39          
+     40          // Transmits all app_info_t:s to USART0
+     41          void usart0_tx_app_info() {
+     42            unsigned char i;
+     43            usart0_tx_byte(no_of_mcus_found);
+     44            for (i=0; i < no_of_mcus_found; i++) {
+     45              /*
+     46              usart0_tx_int(remote_apps[i].app_info.address);
+     47              usart0_tx_int(remote_apps[i].app_info.version);
+     48              usart0_tx_str(remote_apps[i].app_info.name, 8);
+     49              usart0_tx_long(remote_apps[i].app_info.date);
+     50              */
+     51              usart0_tx_block((void *)&(remote_apps[i].app_info), sizeof(app_info_t));
+     52            }
+     53          }
+     54          
+     55          // Transmits an int to USART0
+     56          void usart0_tx_int(unsigned int data) {
+     57            usart0_tx_byte((unsigned char)data);
+     58            data = data >> 8;
+     59            usart0_tx_byte((unsigned char)data);  
+     60          }
+     61          
+     62          // Transmits a string of length len to USART0
+     63          void usart0_tx_str(char *data, unsigned char len) {
+     64            usart0_tx_block((void *)data, len);
+     65          }
+     66          
+     67          // Transmits a long (4 bytes) to USART0
+     68          void usart0_tx_long(unsigned long data) {
+     69            usart0_tx_byte((unsigned char)data);
+     70            data = data >> 8;
+     71            usart0_tx_byte((unsigned char)data);
+     72            data = data >> 8;
+     73            usart0_tx_byte((unsigned char)data);
+     74            data = data >> 8;
+     75            usart0_tx_byte((unsigned char)data);
+     76          }
+     77          
+     78          void usart0_tx_block(void *block, unsigned int size) {
+     79            unsigned char *bytes = (unsigned char *)block;
+     80            unsigned int i;
+     81            for (i=0; i < size; i++)
+     82              usart0_tx_byte(bytes[i]);
+     83          }
+     84          
+     85          void process_usart_queue() {
+     86            while (!byte_queue_is_empty(&usart_rx_queue))
+     87              handle_in_byte();
+     88          }
+     89          
+     90          // Handles USART receive interrupt
+     91          __interrupt void usart0_rx(void) {
+     92            bit_flip(PORTA, LED2);
+     93            unsigned char rx_data;
+     94            rx_data = usart0_rx_byte();
+     95            byte_queue_enqueue(&usart_rx_queue, &rx_data);
+     96          }
+     97          #endif
+
+   Maximum stack usage in bytes:
+
+     Function                 CSTACK RSTACK
+     --------                 ------ ------
+     process_usart_queue          0      2
+       -> handle_in_byte          0      2
+       -> byte_queue_is_empty     0      2
+     usart0_init                  0      2
+     usart0_rx                   17      2
+       -> usart0_rx_byte         17      2
+       -> byte_queue_enqueue     17      2
+     usart0_rx_byte               0      2
+     usart0_tx_app_info           5      4
+       -> usart0_tx_byte          5      2
+       -> usart0_tx_block         5      2
+     usart0_tx_block              6      2
+       -> usart0_tx_byte          6      2
+     usart0_tx_byte               0      2
+     usart0_tx_int                2      2
+       -> usart0_tx_byte          2      2
+       -> usart0_tx_byte          2      2
+     usart0_tx_long               4      2
+       -> usart0_tx_byte          4      2
+       -> usart0_tx_byte          4      2
+       -> usart0_tx_byte          4      2
+       -> usart0_tx_byte          4      2
+     usart0_tx_str                0      2
+       -> usart0_tx_block         0      2
+
+
+   Segment part sizes:
+
+     Function/Label         Bytes
+     --------------         -----
+     _A_UDR0                   1
+     _A_UBRR0                  2
+     _A_UCSR0C                 1
+     _A_UCSR0B                 1
+     _A_UCSR0A                 1
+     _A_PORTA                  1
+     usart0_init              24
+     ??usart0_rx_byte_0       16
+     ??usart0_tx_byte_0       16
+     usart0_tx_app_info       58
+     usart0_tx_int            20
+     usart0_tx_str             6
+     usart0_tx_long           40
+     usart0_tx_block          38
+     process_usart_queue      20
+     usart0_rx               100
+     ??usart0_rx??INTVEC 84    4
+
+ 
+   7 bytes in segment ABSOLUTE
+ 338 bytes in segment CODE
+   4 bytes in segment INTVEC
+ 
+ 338 bytes of CODE memory (+ 4 bytes shared)
+   0 bytes of DATA memory (+ 7 bytes shared)
+
+Errors: none
+Warnings: none

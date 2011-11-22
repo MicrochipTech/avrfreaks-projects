@@ -1,0 +1,304 @@
+##############################################################################
+#                                                                            #
+# IAR Atmel AVR C/C++ Compiler V4.20A/W32              27/Jul/2007  17:05:16 #
+# Copyright 1996-2006 IAR Systems. All rights reserved.                      #
+#                                                                            #
+#    Source file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\protocol.c       #
+#    Command line =  "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\protocol.c"      #
+#                    --cpu=can128 -ms -o "C:\Documents and Settings\User\My  #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\" -lc  #
+#                    "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\" -y  #
+#                    -z6 --no_inline --no_cross_call --no_tbaa --debug       #
+#                    -DENABLE_BIT_DEFINITIONS -e -I "C:\Program Files\IAR    #
+#                    Systems\Embedded Workbench 4.0\avr\INC\" -I             #
+#                    "C:\Program Files\IAR Systems\Embedded Workbench        #
+#                    4.0\avr\INC\CLIB\" --eeprom_size 4096                   #
+#    List file    =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\proto #
+#                    col.lst                                                 #
+#    Object file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\protoc #
+#                    ol.r90                                                  #
+#                                                                            #
+#                                                                            #
+##############################################################################
+
+C:\Documents and Settings\User\My Documents\Stefan\Bootloader\Bootloader\protocol.c
+      1          #include "protocol.h"
+      2          #include "bootloader.h"
+      3          #include "usart.h"
+      4          #include "bl_can.h"
+      5          #include "intel_hex.h"
+      6          #include "leds.h"
+      7          #include "common.h"
+      8          #include "queue.h"
+      9          
+     10          volatile unsigned long incoming_tmp;
+     11          app_info_t incoming_app_info;
+     12          
+     13          /*
+     14            Define wrapper functions
+     15          */
+     16          #ifdef USART
+     17          
+     18          static inline void tx_byte(unsigned char byte) {
+     19            usart0_tx_byte(byte);
+     20          }
+     21          
+     22          static inline void tx_int(unsigned int data) {
+     23            usart0_tx_int(data);
+     24          }
+     25          
+     26          static inline unsigned char rx_byte() {
+     27            //return usart0_rx_byte();
+     28            unsigned char rx_data;
+     29            byte_queue_dequeue(&usart_rx_queue, &rx_data);
+     30            return rx_data;
+     31          }
+     32          
+     33          void broadcast_jump_bootloader() {
+     34            ident_out_high = BROADCAST_HIGH;
+     35            ident_out_low = BROADCAST_LOW;
+     36            can_tx_byte(JUMP_BOOTLOADER);
+     37          }
+     38          
+     39          #elif defined CAN
+     40          
+     41          static inline void tx_byte(unsigned char byte) {
+     42            can_tx_byte(byte);
+     43          }
+     44          
+     45          static inline void tx_int(unsigned int data) {
+     46            can_tx_int(data);
+     47          }
+     48          
+     49          static inline unsigned char rx_byte() {
+     50            return can_rx_byte(1);
+     51          }
+     52          
+     53          #endif
+     54          
+     55          void handle_in_byte() {
+     56            switch (state) {
+     57              case NORMAL:
+     58              {
+     59                cl_cmds_t in_byte = (cl_cmds_t)rx_byte();
+     60                switch (in_byte) {
+     61                  case GET_BL_VER:
+     62                    tx_byte(BL_VER_LOW);
+     63                    tx_byte(BL_VER_HIGH);
+     64                    tx_byte(ACK);
+     65                  break;
+     66                  case GET_APP_VER:
+     67                  {
+     68                    app_info_t app_info;
+     69                    read_app_info(&app_info);
+     70                    tx_int(app_info.version);
+     71                  }
+     72                  break;
+     73                  case GET_CARD_INFO:
+     74          #ifdef USART
+     75                    state = WAIT_APP_INFO;
+     76                    can_get_app_info();
+     77          #elif defined CAN
+     78                    {
+     79                      app_info_t app_info;
+     80                      read_app_info(&app_info);
+     81                      ident_out_high = APP_INFO_MBOX_HIGH;
+     82                      ident_out_low = APP_INFO_MBOX_LOW;
+     83                      can_tx_app_info_with_sender(&app_info, MBOX_HIGH);
+     84                    }
+     85          #endif
+     86                  break;
+     87                  
+     88                  case TRANSFER_EEPROM:
+     89          #ifdef CAN
+     90                    ident_out_high = FWD_MBOX_HIGH;
+     91                    ident_out_low = FWD_MBOX_LOW;
+     92          #endif
+     93                    transfer_init = true;
+     94                    mem_write_ptr = &write_eeprom_page;
+     95                    enqueue_page = &eeprom_enqueue_page;
+     96                    data_record = &eeprom_data_record;
+     97                    state = TRANSFER_EEPROM_HEADER;
+     98                  break;
+     99                  
+    100                  case TRANSFER_CODE:
+    101          #ifdef CAN
+    102                    ident_out_high = FWD_MBOX_HIGH;
+    103                    ident_out_low = FWD_MBOX_LOW;
+    104          #endif
+    105                    transfer_init = true;
+    106                    mem_write_ptr = &write_flash_page;
+    107                    enqueue_page = &flash_enqueue_page;
+    108                    data_record = &flash_data_record;
+    109                    state = TRANSFER_CODE_HEADER;
+    110                  break;
+    111                  
+    112                  case JUMP_BOOTLOADER:
+    113          #ifdef USART
+    114                    broadcast_jump_bootloader();
+    115                    tx_byte(ACK);
+    116          #endif
+    117                  break;
+    118                }
+    119              }
+    120              break;
+    121              
+    122              case TRANSFER_EEPROM_HEADER:
+    123              {
+    124                unsigned char in_byte = rx_byte();
+    125                rx_counter++;
+    126                parse_header(in_byte, TRANSFER_EEPROM_STATE);
+    127              }
+    128              break;
+    129              
+    130              case TRANSFER_CODE_STATE:    
+    131              case TRANSFER_EEPROM_STATE:
+    132              {
+    133                unsigned char in_byte = rx_byte();
+    134                //add_to_crc16(in_byte);
+    135                parse_ihex(in_byte);
+    136                rx_counter++;
+    137              }
+    138              break;
+    139          
+    140              case TRANSFER_CODE_HEADER:
+    141              {
+    142                unsigned char in_byte = rx_byte();
+    143                rx_counter++;
+    144                parse_header(in_byte, TRANSFER_CODE_STATE);
+    145              }
+    146              break;
+    147              
+    148              case FORWARD:
+    149              {
+    150          #ifdef USART
+    151                can_pkg_add_byte(rx_byte());
+    152          #endif
+    153              }
+    154              break;
+    155              
+    156              case RUN_APP: 
+    157              {
+    158                unsigned char in_byte = rx_byte();
+    159                //add_to_crc16(in_byte);
+    160              }
+    161              break;
+    162            }
+    163          }
+    164          
+    165          // Parses the incoming byte as a part of an incoming header
+    166          void parse_header(unsigned char in_byte, bl_state_t next_state) {
+    167            if (rx_counter == 1) // Receive CAN destination (2 bytes)
+    168              incoming_tmp = (unsigned long)in_byte;
+    169            else if (rx_counter == 2) {
+    170              incoming_tmp |= (((unsigned long)in_byte)<<8);
+    171              incoming_app_info.address = (unsigned int)incoming_tmp;
+    172            }
+    173            else if (rx_counter == 3) // Receive app version (2 bytes)
+    174              incoming_tmp = (unsigned long)in_byte;
+    175            else if (rx_counter == 4) {
+    176              incoming_tmp |= (((unsigned long)in_byte)<<8);
+    177              incoming_app_info.version = (unsigned int)incoming_tmp;
+    178            }
+    179            else if (rx_counter >= 5 && rx_counter <= 12) { // Receive name (8 bytes)
+    180              incoming_app_info.name[rx_counter-5] = in_byte;
+    181            }
+    182            else if (rx_counter == 13) { // Receive date (4 bytes)
+    183              incoming_tmp = (unsigned long)in_byte;
+    184            }
+    185            else if (rx_counter == 14) {
+    186              incoming_tmp |= (((unsigned long)in_byte)<<8);
+    187            }
+    188            else if (rx_counter == 15) {
+    189              incoming_tmp |= (((unsigned long)in_byte)<<16);
+    190            }
+    191            else if (rx_counter == 16) {
+    192              incoming_tmp |= (((unsigned long)in_byte)<<24);
+    193              incoming_app_info.date = incoming_tmp;
+    194              rx_counter = 0;
+    195          #ifdef CAN
+    196              tx_byte(ACK);
+    197              if (incoming_app_info.address == MBOX_IDENT)
+    198                state = next_state;
+    199          #elif defined USART
+    200              if (incoming_app_info.address == 0) {
+    201                state = next_state;
+    202                tx_byte(ACK);
+    203              }
+    204              else {
+    205                ident_out_high = (unsigned char)(incoming_app_info.address>>8);
+    206                ident_out_low = (unsigned char)(incoming_app_info.address);
+    207                can_tx_byte(next_state);
+    208                can_tx_app_info(&incoming_app_info);
+    209                state = FORWARD;
+    210              }
+    211          #endif
+    212            } 
+    213          }
+    214          
+
+   Maximum stack usage in bytes:
+
+     Function                       CSTACK RSTACK
+     --------                       ------ ------
+     broadcast_jump_bootloader          0      2
+       -> can_tx_byte                   0      2
+     handle_in_byte                    16      2
+       -> rx_byte                      16      2
+       -> tx_byte                      16      2
+       -> tx_byte                      16      2
+       -> tx_byte                      16      2
+       -> read_app_info                16      2
+       -> tx_int                       16      2
+       -> can_get_app_info             16      2
+       -> broadcast_jump_bootloader    16      2
+       -> tx_byte                      16      2
+       -> rx_byte                      16      2
+       -> parse_header                 16      2
+       -> rx_byte                      16      2
+       -> parse_ihex                   16      2
+       -> rx_byte                      16      2
+       -> parse_header                 16      2
+       -> rx_byte                      16      2
+       -> can_pkg_add_byte             16      2
+       -> rx_byte                      16      2
+     parse_header                       8      2
+       -> tx_byte                       8      2
+       -> can_tx_byte                   8      2
+       -> can_tx_app_info               8      2
+     rx_byte                            1      2
+       -> byte_queue_dequeue            1      2
+     tx_byte                            0      2
+       -> usart0_tx_byte                0      2
+     tx_int                             0      2
+       -> usart0_tx_int                 0      2
+
+
+   Segment part sizes:
+
+     Function/Label            Bytes
+     --------------            -----
+     incoming_app_info           20
+     tx_byte                      6
+     tx_int                       6
+     rx_byte                     18
+     broadcast_jump_bootloader   20
+     handle_in_byte             338
+     parse_header               484
+      Others                      7
+
+ 
+ 872 bytes in segment CODE
+   7 bytes in segment INITTAB
+  20 bytes in segment NEAR_Z
+ 
+ 872 bytes of CODE memory (+ 7 bytes shared)
+  20 bytes of DATA memory
+
+Errors: none
+Warnings: none

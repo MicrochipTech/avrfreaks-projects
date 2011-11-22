@@ -1,0 +1,311 @@
+##############################################################################
+#                                                                            #
+# IAR Atmel AVR C/C++ Compiler V4.20A/W32              27/Jul/2007  16:42:12 #
+# Copyright 1996-2006 IAR Systems. All rights reserved.                      #
+#                                                                            #
+#    Source file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Can128.c         #
+#    Command line =  "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\Can128.c"        #
+#                    --cpu=can128 -ms -o "C:\Documents and Settings\User\My  #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\" -lc  #
+#                    "C:\Documents and Settings\User\My                      #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\" -y  #
+#                    -z6 --no_inline --no_cross_call --no_tbaa --debug       #
+#                    -DENABLE_BIT_DEFINITIONS -e -I "C:\Program Files\IAR    #
+#                    Systems\Embedded Workbench 4.0\avr\INC\" -I             #
+#                    "C:\Program Files\IAR Systems\Embedded Workbench        #
+#                    4.0\avr\INC\CLIB\" --eeprom_size 4096                   #
+#    List file    =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\List\Can12 #
+#                    8.lst                                                   #
+#    Object file  =  C:\Documents and Settings\User\My                       #
+#                    Documents\Stefan\Bootloader\Bootloader\Debug\Obj\Can128 #
+#                    .r90                                                    #
+#                                                                            #
+#                                                                            #
+##############################################################################
+
+C:\Documents and Settings\User\My Documents\Stefan\Bootloader\Bootloader\Can128.c
+      1          #include <iocan128.h>
+      2          #include "common.h"
+      3          
+      4          
+      5          /* some data buffers (declared in main ) */
+      6          extern unsigned char ident_in_high ;  /* CAN RX buffer */
+      7          extern unsigned char ident_in_low ;
+      8          extern unsigned char data_in_count;
+      9          extern unsigned char data_in[8];
+     10          
+     11          extern unsigned char ident_out_high ;  /* CAN TX buffer */
+     12          extern unsigned char ident_out_low ;
+     13          extern unsigned char data_out_count;
+     14          extern unsigned char data_out[8];
+     15          extern unsigned char out_ready;
+     16          
+     17          
+     18          /* initialise the CAN interface */
+     19          void init_can()
+     20          {
+     21          CANPAGE = 0x00;   //Just to have all cdmobs in disabled mode before enabling CAN
+     22          CANCDMOB = 0;
+     23          CANPAGE = 0x10;
+     24          CANCDMOB = 0;
+     25          CANPAGE = 0x20;
+     26          CANCDMOB = 0;
+     27          CANPAGE = 0x30;
+     28          CANCDMOB = 0;
+     29          CANPAGE = 0x40;
+     30          CANCDMOB = 0;
+     31          CANPAGE = 0x50;
+     32          CANCDMOB = 0;
+     33          CANPAGE = 0x60;
+     34          CANCDMOB = 0;
+     35          CANPAGE = 0x70;
+     36          CANCDMOB = 0;
+     37          CANPAGE = 0x80;
+     38          CANCDMOB = 0;
+     39          CANPAGE = 0x90;
+     40          CANCDMOB = 0;
+     41          CANPAGE = 0xA0;
+     42          CANCDMOB = 0;
+     43          CANPAGE = 0xB0;
+     44          CANCDMOB = 0;
+     45          CANPAGE = 0xC0;
+     46          CANCDMOB = 0;
+     47          CANPAGE = 0xD0;
+     48          CANCDMOB = 0;
+     49          CANPAGE = 0xE0;
+     50          CANCDMOB = 0;
+     51          // CAN Controller initialization (Wizard Generated)
+     52          // CAN: On
+     53          CANGCON=0x02;
+     54          // CAN Interrupts:
+     55          // Timer Overrun: Off
+     56          // General Errors: Off
+     57          // Frame Buffer: Off
+     58          // MOb Errors: Off
+     59          // Transmit: Off
+     60          // Receive: On
+     61          // Bus Off: Off
+     62          // All, except Timer Overrun: Off
+     63          CANGIE=0xA0;
+     64          // MOb0: Disabled, MOb1: Disabled, MOb2: Disabled, MOb3: Disabled, MOb4: Disabled, MOb5: Disabled, MOb6: Disabled, MOb7: Disabled
+     65          //CANEN2=0x00; Only READ
+     66          // MOb8: Disabled, MOb9: Disabled, MOb10: Disabled, MOb11: Disabled, MOb12: Disabled, MOb13: Disabled, MOb14: Disabled
+     67          //CANEN1=0x00;  Only READ
+     68          // MOb0..7 Interrupts: MOb0: On, MOb1: On, MOb2: On, MOb3: On, MOb4: On, MOb5: On, MOb6: On, MOb7: On
+     69          CANIE2=0xFE; //Enable mailbox interrupt 7..0
+     70          // MOb8..14 Interrupts: MOb8: On, MOb9: On, MOb10: Off, MOb11: Off, MOb12: Off, MOb13: Off, MOb14: Off
+     71          CANIE1=0x03; //Enable mailbox interrupt 14..8  
+     72          // CAN Baud Rate: 250.0 kHz
+     73          CANBT1=0x26;            //0E
+     74          // Propagation Time Segement: 1.500 us
+     75          // Re-Sync Jump Width: 0.500 us
+     76          CANBT2=0x0C;      //0C
+     77          // Sample Point(s): 3
+     78          // Phase Segment 1: 1.000 us
+     79          // Phase Segment 2: 1.000 us
+     80          CANBT3=0x37;    //37
+     81          // CAN Timer Clock Period: 1.000 us
+     82          CANTCON=0x00;
+     83          
+     84          }
+     85          
+     86          /* set mailbox up for a transmission */
+     87          /* data in gobal registers */
+     88          /* uses mailbox 8 to 15 in  */
+     89          unsigned char tx_mob = 12;
+     90          
+     91          void can_tx(void)
+     92          {
+     93                  /* wait for tx not busy */
+     94                  while (bit_get(CANGSTA, 1<<TXBSY));
+     95                  /* use transmit mailboxs in rotation */
+     96          
+     97                /* select correct mbox */
+     98          	CANPAGE = (unsigned char)(tx_mob<< 4);
+     99          	tx_mob++;
+    100          	if((tx_mob > 14)  | (tx_mob < 12))
+    101          	        tx_mob = 12;
+    102          	/* load the id 11 bit */
+    103          	CANIDT1 = ident_out_high;
+    104          	CANIDT2 = ident_out_low;
+    105          	CANIDT3 = 0;
+    106          	CANIDT4 = 0;
+    107          	CANIDM1 = 0xff;
+    108          	CANIDM2 = 0xe0;
+    109          	CANIDM3 = 0;
+    110          	CANIDM4 = 0x5;
+    111          	/* load the data */
+    112          	CANMSG = data_out[0];
+    113          	CANMSG = data_out[1];
+    114          	CANMSG = data_out[2];
+    115          	CANMSG = data_out[3];
+    116          	CANMSG = data_out[4];
+    117          	CANMSG = data_out[5];
+    118          	CANMSG = data_out[6];
+    119          	CANMSG = data_out[7];
+    120          	CANSTMOB = 0; /* clear status */
+    121          	CANCDMOB = 0x40 + data_out_count; /* enable tx */
+    122          }
+    123          
+    124          /* set up a mailbox to receive */
+    125          /* address and mask in global registers */
+    126          void can_rx_set(int mbox)
+    127          {
+    128          	unsigned char x;
+    129                /* select correct mbox */
+    130          	CANPAGE = (unsigned char)(mbox<< 4);
+    131          	/* load the id 11 bit */
+    132          	CANIDT1 = ident_in_high;
+    133          	CANIDT2 = ident_in_low;
+    134          	CANIDT3 = 0;
+    135          	CANIDT4 = 0;
+    136          	CANIDM1 = 0xFF;
+    137          	CANIDM2 = 0x80;  /* temp */
+    138          	CANIDM3 = 0;
+    139          	CANIDM4 = 5;    /* was 5 */
+    140          	/* clear out the data buffer */
+    141          	/* write to message auto inc */
+    142          	for(x = 0; x < 8; x++)
+    143          	{
+    144          		CANMSG = 0;
+    145          		
+    146          	}
+    147          	CANSTMOB = 0; /* clear status */
+    148          	CANCDMOB = 0x80 + data_in_count; /* enable rx */
+    149          	
+    150          }
+    151          
+    152          /* set up a mailbox to receive */
+    153          /* address and mask in global registers */
+    154          void can_rx_set_adaptor(int mbox)
+    155          {
+    156          	unsigned char x;
+    157                /* select correct mbox */
+    158          	CANPAGE = (unsigned char)(mbox<< 4);
+    159          	/* load the id 11 bit */
+    160          	CANIDT1 = ident_in_high;
+    161          	CANIDT2 = ident_in_low;
+    162          	CANIDT3 = 0;
+    163          	CANIDT4 = 0;
+    164          	CANIDM1 = 0x00;
+    165          	CANIDM2 = 0x80;  //To receive all messages to delay up/down fiber
+    166          	CANIDM3 = 0;
+    167          	CANIDM4 = 5;    /* was 5 */
+    168          	/* clear out the data buffer */
+    169          	/* write to message auto inc */
+    170          	for(x = 0; x < 8; x++)
+    171          	{
+    172          		CANMSG = 0;
+    173          		
+    174          	}
+    175                  x = CANSTMOB; //Read modify write
+    176          	CANSTMOB = 0; /* clear status */
+    177          	CANCDMOB = 0x80 + data_in_count; /* enable rx */
+    178          	
+    179          }
+    180          
+    181          /* read a mailbox and re-enable it */
+    182          /* transfer message to gobal registers */
+    183          int can_rx(int mbox)
+    184          {
+    185          	unsigned char x;
+    186          	int retval;
+    187          	
+    188          	retval = 0;
+    189          	/* check if mailbox enabled */
+    190          	if(mbox < 8)
+    191          	{
+    192          		x = CANEN2 >> mbox;
+    193          	}
+    194          	else
+    195          	{
+    196          		x = CANEN1 >> (mbox - 8);
+    197          	}
+    198          	if(x & 1) /* still enabled ? */
+    199          	{
+    200          		return retval;
+    201          	}
+    202                 /* select correct mbox */
+    203          	CANPAGE = (unsigned char)(mbox<< 4);
+    204          	x = CANSTMOB ; /* read status */
+    205          	CANSTMOB = 0;
+    206                  ident_in_high = CANIDT1;
+    207          	data_in_count =  CANCDMOB & 0xf;
+    208          	if(x & 0x20)
+    209          	{
+    210          		data_in[0] = CANMSG;
+    211          		data_in[1] = CANMSG;
+    212          		data_in[2] = CANMSG;
+    213          		data_in[3] = CANMSG;
+    214          		data_in[4] = CANMSG;
+    215          		data_in[5] = CANMSG;
+    216          		data_in[6] = CANMSG;
+    217          		data_in[7] = CANMSG;
+    218          		retval = 1;
+    219          	}
+    220                  CANCDMOB = 0x80;
+    221          	return retval;
+    222          }
+
+   Maximum stack usage in bytes:
+
+     Function           CSTACK RSTACK
+     --------           ------ ------
+     can_rx                 0      4
+     can_rx_set             0      2
+     can_rx_set_adaptor     0      2
+     can_tx                 0      2
+     init_can               0      2
+
+
+   Segment part sizes:
+
+     Function/Label            Bytes
+     --------------            -----
+     _A_CANMSG                    1
+     _A_CANIDM1                   1
+     _A_CANIDM2                   1
+     _A_CANIDM3                   1
+     _A_CANIDM4                   1
+     _A_CANIDT1                   1
+     _A_CANIDT2                   1
+     _A_CANIDT3                   1
+     _A_CANIDT4                   1
+     _A_CANCDMOB                  1
+     _A_CANSTMOB                  1
+     _A_CANPAGE                   1
+     _A_CANTCON                   1
+     _A_CANBT3                    1
+     _A_CANBT2                    1
+     _A_CANBT1                    1
+     _A_CANIE1                    1
+     _A_CANIE2                    1
+     _A_CANEN1                    1
+     _A_CANEN2                    1
+     _A_CANGIE                    1
+     _A_CANGSTA                   1
+     _A_CANGCON                   1
+     init_can                   228
+     tx_mob                       1
+     ??can_tx_0                 174
+     can_rx_set                  92
+     can_rx_set_adaptor          94
+     can_rx                     150
+     ?<Initializer for tx_mob>    1
+      Others                      7
+
+ 
+  23 bytes in segment ABSOLUTE
+ 738 bytes in segment CODE
+   7 bytes in segment INITTAB
+   1 byte  in segment NEAR_I
+   1 byte  in segment NEAR_ID
+ 
+ 739 bytes of CODE memory (+  7 bytes shared)
+   1 byte  of DATA memory (+ 23 bytes shared)
+
+Errors: none
+Warnings: none
