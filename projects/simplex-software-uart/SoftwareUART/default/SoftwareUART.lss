@@ -1,0 +1,550 @@
+
+SoftwareUART.elf:     file format elf32-avr
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         0000022e  00000000  00000000  00000094  2**1
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 .data         0000002a  00800060  0000022e  000002c2  2**0
+                  CONTENTS, ALLOC, LOAD, DATA
+  2 .bss          00000002  0080008a  0080008a  000002ec  2**0
+                  ALLOC
+  3 .debug_aranges 00000040  00000000  00000000  000002ec  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  4 .debug_pubnames 000000d5  00000000  00000000  0000032c  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  5 .debug_info   000002b2  00000000  00000000  00000401  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  6 .debug_abbrev 0000016b  00000000  00000000  000006b3  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  7 .debug_line   00000339  00000000  00000000  0000081e  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  8 .debug_frame  000000a0  00000000  00000000  00000b58  2**2
+                  CONTENTS, READONLY, DEBUGGING
+  9 .debug_str    00000140  00000000  00000000  00000bf8  2**0
+                  CONTENTS, READONLY, DEBUGGING
+ 10 .debug_loc    000000b4  00000000  00000000  00000d38  2**0
+                  CONTENTS, READONLY, DEBUGGING
+ 11 .debug_ranges 00000048  00000000  00000000  00000dec  2**0
+                  CONTENTS, READONLY, DEBUGGING
+
+Disassembly of section .text:
+
+00000000 <__vectors>:
+   0:	09 c0       	rjmp	.+18     	; 0x14 <__ctors_end>
+   2:	21 c0       	rjmp	.+66     	; 0x46 <__bad_interrupt>
+   4:	20 c0       	rjmp	.+64     	; 0x46 <__bad_interrupt>
+   6:	1f c0       	rjmp	.+62     	; 0x46 <__bad_interrupt>
+   8:	1e c0       	rjmp	.+60     	; 0x46 <__bad_interrupt>
+   a:	1d c0       	rjmp	.+58     	; 0x46 <__bad_interrupt>
+   c:	28 c0       	rjmp	.+80     	; 0x5e <__vector_6>
+   e:	1b c0       	rjmp	.+54     	; 0x46 <__bad_interrupt>
+  10:	1a c0       	rjmp	.+52     	; 0x46 <__bad_interrupt>
+  12:	19 c0       	rjmp	.+50     	; 0x46 <__bad_interrupt>
+
+00000014 <__ctors_end>:
+  14:	11 24       	eor	r1, r1
+  16:	1f be       	out	0x3f, r1	; 63
+  18:	cf e9       	ldi	r28, 0x9F	; 159
+  1a:	cd bf       	out	0x3d, r28	; 61
+
+0000001c <__do_copy_data>:
+  1c:	10 e0       	ldi	r17, 0x00	; 0
+  1e:	a0 e6       	ldi	r26, 0x60	; 96
+  20:	b0 e0       	ldi	r27, 0x00	; 0
+  22:	ee e2       	ldi	r30, 0x2E	; 46
+  24:	f2 e0       	ldi	r31, 0x02	; 2
+  26:	02 c0       	rjmp	.+4      	; 0x2c <.do_copy_data_start>
+
+00000028 <.do_copy_data_loop>:
+  28:	05 90       	lpm	r0, Z+
+  2a:	0d 92       	st	X+, r0
+
+0000002c <.do_copy_data_start>:
+  2c:	aa 38       	cpi	r26, 0x8A	; 138
+  2e:	b1 07       	cpc	r27, r17
+  30:	d9 f7       	brne	.-10     	; 0x28 <.do_copy_data_loop>
+
+00000032 <__do_clear_bss>:
+  32:	10 e0       	ldi	r17, 0x00	; 0
+  34:	aa e8       	ldi	r26, 0x8A	; 138
+  36:	b0 e0       	ldi	r27, 0x00	; 0
+  38:	01 c0       	rjmp	.+2      	; 0x3c <.do_clear_bss_start>
+
+0000003a <.do_clear_bss_loop>:
+  3a:	1d 92       	st	X+, r1
+
+0000003c <.do_clear_bss_start>:
+  3c:	ac 38       	cpi	r26, 0x8C	; 140
+  3e:	b1 07       	cpc	r27, r17
+  40:	e1 f7       	brne	.-8      	; 0x3a <.do_clear_bss_loop>
+  42:	da d0       	rcall	.+436    	; 0x1f8 <main>
+  44:	f2 c0       	rjmp	.+484    	; 0x22a <_exit>
+
+00000046 <__bad_interrupt>:
+  46:	dc cf       	rjmp	.-72     	; 0x0 <__vectors>
+
+00000048 <init_suart>:
+
+//Functions:
+
+void init_suart(void){
+	/* PORT is set here */	
+	DIRREG	|=	(1<<TXport);	//As output
+  48:	ba 9a       	sbi	0x17, 2	; 23
+	PORTREG	|=	(1<<TXport);	//With pullup
+  4a:	c2 9a       	sbi	0x18, 2	; 24
+
+	/* Timer is set here, CTC mode, and your prescaler 8*/
+	//Timer 0
+	TCCR0A = (1<<WGM01);	//CTC mode
+  4c:	82 e0       	ldi	r24, 0x02	; 2
+  4e:	8f bd       	out	0x2f, r24	; 47
+	TCCR0B = (1<<CS01);		//Prescaler 8
+  50:	83 bf       	out	0x33, r24	; 51
+ 	OCR0A  = TIMERVALUE; 	//Set Output Compare A 		(See header file)
+  52:	8e e3       	ldi	r24, 0x3E	; 62
+  54:	86 bf       	out	0x36, r24	; 54
+ 	TIMSK0 = (1<<OCIE0A);	//Enable Output Compare A interrupt
+  56:	84 e0       	ldi	r24, 0x04	; 4
+  58:	89 bf       	out	0x39, r24	; 57
+	sei();					//Enable interrupt
+  5a:	78 94       	sei
+}
+  5c:	08 95       	ret
+
+0000005e <__vector_6>:
+
+ISR(TIM0_COMPA_vect){		//Output Compare A interrupt
+  5e:	1f 92       	push	r1
+  60:	0f 92       	push	r0
+  62:	0f b6       	in	r0, 0x3f	; 63
+  64:	0f 92       	push	r0
+  66:	11 24       	eor	r1, r1
+  68:	8f 93       	push	r24
+	switch(sTX_state){
+  6a:	80 91 8a 00 	lds	r24, 0x008A
+  6e:	81 30       	cpi	r24, 0x01	; 1
+  70:	59 f0       	breq	.+22     	; 0x88 <__vector_6+0x2a>
+  72:	81 30       	cpi	r24, 0x01	; 1
+  74:	28 f0       	brcs	.+10     	; 0x80 <__vector_6+0x22>
+  76:	82 30       	cpi	r24, 0x02	; 2
+  78:	49 f0       	breq	.+18     	; 0x8c <__vector_6+0x2e>
+  7a:	83 30       	cpi	r24, 0x03	; 3
+  7c:	21 f5       	brne	.+72     	; 0xc6 <__stack+0x27>
+  7e:	1d c0       	rjmp	.+58     	; 0xba <__stack+0x1b>
+		//##########
+		case IDLE:											//IDLE mode, wait for startbit
+			TIMSK0 &= ~(1<<OCIE0A);							//Disable interrupt, waste of time when nothing has to be send
+  80:	89 b7       	in	r24, 0x39	; 57
+  82:	8b 7f       	andi	r24, 0xFB	; 251
+  84:	89 bf       	out	0x39, r24	; 57
+  86:	22 c0       	rjmp	.+68     	; 0xcc <__stack+0x2d>
+	break; 	//Wait 1 bit length
+		//##########
+		case STARTBIT:										//STARTBIT MODE (1 bit)
+			PORTB  &= ~(1<<TXport);							//Pull down, low level
+  88:	c2 98       	cbi	0x18, 2	; 24
+  8a:	15 c0       	rjmp	.+42     	; 0xb6 <__stack+0x17>
+			sTX_state 	= TRANSMIT;							//Next state is transmit
+	break;	//Wait 1 bit length
+		//##########
+		case TRANSMIT:
+			//Fase 1: Shift 1 bit
+				if( (sTX_data & 0x01) == 0x01 ){			//1 in lsb sTX_data					
+  8c:	80 91 60 00 	lds	r24, 0x0060
+  90:	80 ff       	sbrs	r24, 0
+  92:	02 c0       	rjmp	.+4      	; 0x98 <__vector_6+0x3a>
+					PORTB |= (1<<TXport);					//Pull up, high level
+  94:	c2 9a       	sbi	0x18, 2	; 24
+  96:	01 c0       	rjmp	.+2      	; 0x9a <__vector_6+0x3c>
+				}else{										//0 in lsb sTX_data					
+					PORTB  &= ~(1<<TXport);					//Pull down, low level
+  98:	c2 98       	cbi	0x18, 2	; 24
+				}
+				sTX_data >>= 1;								//Shift away sent bit
+  9a:	80 91 60 00 	lds	r24, 0x0060
+  9e:	86 95       	lsr	r24
+  a0:	80 93 60 00 	sts	0x0060, r24
+			//Fase 2: Incement Bit Counter and Compare
+				sTX_bitcounter += 1;						//Increment
+  a4:	80 91 8b 00 	lds	r24, 0x008B
+  a8:	8f 5f       	subi	r24, 0xFF	; 255
+  aa:	80 93 8b 00 	sts	0x008B, r24
+				if(sTX_bitcounter < 8){						//Not done yet
+  ae:	80 91 8b 00 	lds	r24, 0x008B
+  b2:	88 30       	cpi	r24, 0x08	; 8
+  b4:	40 f4       	brcc	.+16     	; 0xc6 <__stack+0x27>
+					sTX_state = TRANSMIT;					//Repeat transmit state next bit
+  b6:	82 e0       	ldi	r24, 0x02	; 2
+  b8:	07 c0       	rjmp	.+14     	; 0xc8 <__stack+0x29>
+				}								
+	break;	//Wait 1 bit length
+		//##########
+		case STOPBIT:
+			//Fase 3: Stopbit, put line to high level again									
+			PORTB |= (1<<TXport);							//Pull up, High level
+  ba:	c2 9a       	sbi	0x18, 2	; 24
+			//Prepare for next time
+			sTX_bitcounter  = 0;							//Reset bitcounter
+  bc:	10 92 8b 00 	sts	0x008B, r1
+			sTX_state		= IDLE;							//Change mode to idle
+  c0:	10 92 8a 00 	sts	0x008A, r1
+  c4:	03 c0       	rjmp	.+6      	; 0xcc <__stack+0x2d>
+	break;
+		//##########
+		default:	//Any exceptions or whatever
+			sTX_state 	=	STOPBIT;
+  c6:	83 e0       	ldi	r24, 0x03	; 3
+  c8:	80 93 8a 00 	sts	0x008A, r24
+	break;
+	}
+	return;
+}
+  cc:	8f 91       	pop	r24
+  ce:	0f 90       	pop	r0
+  d0:	0f be       	out	0x3f, r0	; 63
+  d2:	0f 90       	pop	r0
+  d4:	1f 90       	pop	r1
+  d6:	18 95       	reti
+
+000000d8 <sTX_putchar>:
+
+void sTX_putchar(byte data){
+  d8:	98 2f       	mov	r25, r24
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+  da:	80 91 8a 00 	lds	r24, 0x008A
+  de:	88 23       	and	r24, r24
+  e0:	e1 f7       	brne	.-8      	; 0xda <sTX_putchar+0x2>
+		sTX_data   = data;							//Put data ready
+  e2:	90 93 60 00 	sts	0x0060, r25
+		sTX_state  = STARTBIT;						//Set state to startbit
+  e6:	81 e0       	ldi	r24, 0x01	; 1
+  e8:	80 93 8a 00 	sts	0x008A, r24
+		TIMSK0 	|= (1<<OCIE0A);						//Enable timer interrupt
+  ec:	89 b7       	in	r24, 0x39	; 57
+  ee:	84 60       	ori	r24, 0x04	; 4
+  f0:	89 bf       	out	0x39, r24	; 57
+}
+  f2:	08 95       	ret
+
+000000f4 <sTX_putbyte_ascii>:
+
+#ifdef putbyte_ascii 
+void sTX_putbyte_ascii(byte data){
+  f4:	1f 93       	push	r17
+  f6:	48 2f       	mov	r20, r24
+  f8:	24 e6       	ldi	r18, 0x64	; 100
+  fa:	30 e0       	ldi	r19, 0x00	; 0
+  fc:	e0 e0       	ldi	r30, 0x00	; 0
+  fe:	f0 e0       	ldi	r31, 0x00	; 0
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+		sTX_data   = data;							//Put data ready
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 100:	11 e0       	ldi	r17, 0x01	; 1
+	}
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+ 102:	80 91 8a 00 	lds	r24, 0x008A
+ 106:	88 23       	and	r24, r24
+ 108:	e1 f7       	brne	.-8      	; 0x102 <sTX_putbyte_ascii+0xe>
+
+#ifdef putbyte_ascii 
+void sTX_putbyte_ascii(byte data){
+	unsigned int i;
+    for(i=100;i>=1;i=i/10){			
+        sTX_putchar ( ((data/i)%10)+48 );			//digit = (input / divisor) Mod 10
+ 10a:	84 2f       	mov	r24, r20
+ 10c:	90 e0       	ldi	r25, 0x00	; 0
+ 10e:	b9 01       	movw	r22, r18
+ 110:	78 d0       	rcall	.+240    	; 0x202 <__udivmodhi4>
+ 112:	cb 01       	movw	r24, r22
+ 114:	6a e0       	ldi	r22, 0x0A	; 10
+ 116:	70 e0       	ldi	r23, 0x00	; 0
+ 118:	74 d0       	rcall	.+232    	; 0x202 <__udivmodhi4>
+ 11a:	80 5d       	subi	r24, 0xD0	; 208
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+		sTX_data   = data;							//Put data ready
+ 11c:	80 93 60 00 	sts	0x0060, r24
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 120:	10 93 8a 00 	sts	0x008A, r17
+		TIMSK0 	|= (1<<OCIE0A);						//Enable timer interrupt
+ 124:	89 b7       	in	r24, 0x39	; 57
+ 126:	84 60       	ori	r24, 0x04	; 4
+ 128:	89 bf       	out	0x39, r24	; 57
+}
+
+#ifdef putbyte_ascii 
+void sTX_putbyte_ascii(byte data){
+	unsigned int i;
+    for(i=100;i>=1;i=i/10){			
+ 12a:	c9 01       	movw	r24, r18
+ 12c:	6a e0       	ldi	r22, 0x0A	; 10
+ 12e:	70 e0       	ldi	r23, 0x00	; 0
+ 130:	68 d0       	rcall	.+208    	; 0x202 <__udivmodhi4>
+ 132:	9b 01       	movw	r18, r22
+ 134:	31 96       	adiw	r30, 0x01	; 1
+ 136:	e3 30       	cpi	r30, 0x03	; 3
+ 138:	f1 05       	cpc	r31, r1
+ 13a:	19 f7       	brne	.-58     	; 0x102 <sTX_putbyte_ascii+0xe>
+        sTX_putchar ( ((data/i)%10)+48 );			//digit = (input / divisor) Mod 10
+    }   
+}
+ 13c:	1f 91       	pop	r17
+ 13e:	08 95       	ret
+
+00000140 <sTX_putint>:
+#endif
+
+#ifdef putint
+void sTX_putint(int data){
+ 140:	9c 01       	movw	r18, r24
+	}
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+ 142:	80 91 8a 00 	lds	r24, 0x008A
+ 146:	88 23       	and	r24, r24
+ 148:	e1 f7       	brne	.-8      	; 0x142 <sTX_putint+0x2>
+		sTX_data   = data;							//Put data ready
+ 14a:	20 93 60 00 	sts	0x0060, r18
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 14e:	81 e0       	ldi	r24, 0x01	; 1
+ 150:	80 93 8a 00 	sts	0x008A, r24
+		TIMSK0 	|= (1<<OCIE0A);						//Enable timer interrupt
+ 154:	89 b7       	in	r24, 0x39	; 57
+ 156:	84 60       	ori	r24, 0x04	; 4
+ 158:	89 bf       	out	0x39, r24	; 57
+	}
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+ 15a:	80 91 8a 00 	lds	r24, 0x008A
+ 15e:	88 23       	and	r24, r24
+ 160:	e1 f7       	brne	.-8      	; 0x15a <sTX_putint+0x1a>
+#endif
+
+#ifdef putint
+void sTX_putint(int data){
+	sTX_putchar(data& 0xFF);	//Low
+	sTX_putchar(data>>8);		//High 
+ 162:	83 2f       	mov	r24, r19
+ 164:	99 27       	eor	r25, r25
+ 166:	87 fd       	sbrc	r24, 7
+ 168:	9a 95       	dec	r25
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+		sTX_data   = data;							//Put data ready
+ 16a:	80 93 60 00 	sts	0x0060, r24
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 16e:	81 e0       	ldi	r24, 0x01	; 1
+ 170:	80 93 8a 00 	sts	0x008A, r24
+		TIMSK0 	|= (1<<OCIE0A);						//Enable timer interrupt
+ 174:	89 b7       	in	r24, 0x39	; 57
+ 176:	84 60       	ori	r24, 0x04	; 4
+ 178:	89 bf       	out	0x39, r24	; 57
+
+#ifdef putint
+void sTX_putint(int data){
+	sTX_putchar(data& 0xFF);	//Low
+	sTX_putchar(data>>8);		//High 
+}
+ 17a:	08 95       	ret
+
+0000017c <sTX_putint_ascii>:
+#endif
+
+#ifdef putint_ascii
+void sTX_putint_ascii(int data){
+ 17c:	cf 93       	push	r28
+ 17e:	df 93       	push	r29
+ 180:	ec 01       	movw	r28, r24
+ 182:	20 e1       	ldi	r18, 0x10	; 16
+ 184:	37 e2       	ldi	r19, 0x27	; 39
+ 186:	e0 e0       	ldi	r30, 0x00	; 0
+ 188:	f0 e0       	ldi	r31, 0x00	; 0
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+		sTX_data   = data;							//Put data ready
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 18a:	41 e0       	ldi	r20, 0x01	; 1
+	}
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+ 18c:	80 91 8a 00 	lds	r24, 0x008A
+ 190:	88 23       	and	r24, r24
+ 192:	e1 f7       	brne	.-8      	; 0x18c <sTX_putint_ascii+0x10>
+
+#ifdef putint_ascii
+void sTX_putint_ascii(int data){
+	unsigned int i;
+    for(i=10000;i>=1;i=i/10){			
+        sTX_putchar ( ((data/i)%10)+48 );			//digit = (input / divisor) Mod 10
+ 194:	ce 01       	movw	r24, r28
+ 196:	b9 01       	movw	r22, r18
+ 198:	34 d0       	rcall	.+104    	; 0x202 <__udivmodhi4>
+ 19a:	cb 01       	movw	r24, r22
+ 19c:	6a e0       	ldi	r22, 0x0A	; 10
+ 19e:	70 e0       	ldi	r23, 0x00	; 0
+ 1a0:	30 d0       	rcall	.+96     	; 0x202 <__udivmodhi4>
+ 1a2:	80 5d       	subi	r24, 0xD0	; 208
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+		sTX_data   = data;							//Put data ready
+ 1a4:	80 93 60 00 	sts	0x0060, r24
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 1a8:	40 93 8a 00 	sts	0x008A, r20
+		TIMSK0 	|= (1<<OCIE0A);						//Enable timer interrupt
+ 1ac:	89 b7       	in	r24, 0x39	; 57
+ 1ae:	84 60       	ori	r24, 0x04	; 4
+ 1b0:	89 bf       	out	0x39, r24	; 57
+#endif
+
+#ifdef putint_ascii
+void sTX_putint_ascii(int data){
+	unsigned int i;
+    for(i=10000;i>=1;i=i/10){			
+ 1b2:	c9 01       	movw	r24, r18
+ 1b4:	6a e0       	ldi	r22, 0x0A	; 10
+ 1b6:	70 e0       	ldi	r23, 0x00	; 0
+ 1b8:	24 d0       	rcall	.+72     	; 0x202 <__udivmodhi4>
+ 1ba:	9b 01       	movw	r18, r22
+ 1bc:	31 96       	adiw	r30, 0x01	; 1
+ 1be:	e5 30       	cpi	r30, 0x05	; 5
+ 1c0:	f1 05       	cpc	r31, r1
+ 1c2:	21 f7       	brne	.-56     	; 0x18c <sTX_putint_ascii+0x10>
+        sTX_putchar ( ((data/i)%10)+48 );			//digit = (input / divisor) Mod 10
+    }  
+}
+ 1c4:	df 91       	pop	r29
+ 1c6:	cf 91       	pop	r28
+ 1c8:	08 95       	ret
+
+000001ca <sTX_putstring>:
+#endif
+
+#ifdef putstring
+// This function uses lots of memory because the strings in the argument are inside the flash memory, and reseved in data*
+void sTX_putstring(char *p){
+ 1ca:	ac 01       	movw	r20, r24
+ 1cc:	20 e0       	ldi	r18, 0x00	; 0
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+		sTX_data   = data;							//Put data ready
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 1ce:	91 e0       	ldi	r25, 0x01	; 1
+ 1d0:	0c c0       	rjmp	.+24     	; 0x1ea <sTX_putstring+0x20>
+	}
+	return;
+}
+
+void sTX_putchar(byte data){
+	while(sTX_state != IDLE);						//When routine is not idle, wait for it to become idle
+ 1d2:	80 91 8a 00 	lds	r24, 0x008A
+ 1d6:	88 23       	and	r24, r24
+ 1d8:	e1 f7       	brne	.-8      	; 0x1d2 <sTX_putstring+0x8>
+		sTX_data   = data;							//Put data ready
+ 1da:	e0 93 60 00 	sts	0x0060, r30
+		sTX_state  = STARTBIT;						//Set state to startbit
+ 1de:	90 93 8a 00 	sts	0x008A, r25
+		TIMSK0 	|= (1<<OCIE0A);						//Enable timer interrupt
+ 1e2:	89 b7       	in	r24, 0x39	; 57
+ 1e4:	84 60       	ori	r24, 0x04	; 4
+ 1e6:	89 bf       	out	0x39, r24	; 57
+	byte i_putstring = 0; 
+ 
+ 	while (p[i_putstring] != '\0') 	
+ 	{
+		sTX_putchar(p[i_putstring]);
+  		i_putstring++;
+ 1e8:	2f 5f       	subi	r18, 0xFF	; 255
+#ifdef putstring
+// This function uses lots of memory because the strings in the argument are inside the flash memory, and reseved in data*
+void sTX_putstring(char *p){
+	byte i_putstring = 0; 
+ 
+ 	while (p[i_putstring] != '\0') 	
+ 1ea:	fa 01       	movw	r30, r20
+ 1ec:	e2 0f       	add	r30, r18
+ 1ee:	f1 1d       	adc	r31, r1
+ 1f0:	e0 81       	ld	r30, Z
+ 1f2:	ee 23       	and	r30, r30
+ 1f4:	71 f7       	brne	.-36     	; 0x1d2 <sTX_putstring+0x8>
+ 	{
+		sTX_putchar(p[i_putstring]);
+  		i_putstring++;
+ 	}
+}
+ 1f6:	08 95       	ret
+
+000001f8 <main>:
+#include "SoftwareUART.h"
+
+int main(){
+	
+	init_suart();
+ 1f8:	27 df       	rcall	.-434    	; 0x48 <init_suart>
+	sTX_putstring("This is a test at 4,8 Mhz with 9600 8N1");	
+ 1fa:	81 e6       	ldi	r24, 0x61	; 97
+ 1fc:	90 e0       	ldi	r25, 0x00	; 0
+ 1fe:	e5 df       	rcall	.-54     	; 0x1ca <sTX_putstring>
+ 200:	ff cf       	rjmp	.-2      	; 0x200 <main+0x8>
+
+00000202 <__udivmodhi4>:
+ 202:	aa 1b       	sub	r26, r26
+ 204:	bb 1b       	sub	r27, r27
+ 206:	51 e1       	ldi	r21, 0x11	; 17
+ 208:	07 c0       	rjmp	.+14     	; 0x218 <__udivmodhi4_ep>
+
+0000020a <__udivmodhi4_loop>:
+ 20a:	aa 1f       	adc	r26, r26
+ 20c:	bb 1f       	adc	r27, r27
+ 20e:	a6 17       	cp	r26, r22
+ 210:	b7 07       	cpc	r27, r23
+ 212:	10 f0       	brcs	.+4      	; 0x218 <__udivmodhi4_ep>
+ 214:	a6 1b       	sub	r26, r22
+ 216:	b7 0b       	sbc	r27, r23
+
+00000218 <__udivmodhi4_ep>:
+ 218:	88 1f       	adc	r24, r24
+ 21a:	99 1f       	adc	r25, r25
+ 21c:	5a 95       	dec	r21
+ 21e:	a9 f7       	brne	.-22     	; 0x20a <__udivmodhi4_loop>
+ 220:	80 95       	com	r24
+ 222:	90 95       	com	r25
+ 224:	bc 01       	movw	r22, r24
+ 226:	cd 01       	movw	r24, r26
+ 228:	08 95       	ret
+
+0000022a <_exit>:
+ 22a:	f8 94       	cli
+
+0000022c <__stop_program>:
+ 22c:	ff cf       	rjmp	.-2      	; 0x22c <__stop_program>
