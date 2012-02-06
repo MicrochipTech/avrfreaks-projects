@@ -1,0 +1,57 @@
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+#include <stdint.h>
+
+typedef uint32_t	u32;
+typedef uint16_t	u16;
+typedef uint8_t		u8;
+typedef int32_t		s32;
+typedef int16_t		s16;
+typedef int8_t		s8;
+
+#define DACP OCR0A
+#define DACN OCR0B
+
+__attribute__((naked)) int main(void)
+{
+	// Configure ports
+	DDRB  = 0b00000011; // OC0AB are L/R PWM output
+//	PORTB = 0b00000000; // No activate pull-ups
+
+	// ADC
+	ADMUX = 0b00000011; // PB3, AVcc, 10 bit
+	ADCSRA = 0b11000100; // CPU/16 sampling rate; Sampling freq: 16 MHz / 16 / 13 = 78 kHz
+	
+	// Power reduction
+	PRR   = 0b00001010; // Clock-gate USI + Counter1
+	MCUCR = 0b00100000;
+
+
+	// PWM
+	TCCR0A = 0b10100011; // Fast PWM
+	TCCR0B = 0b00000001; // Increment TCNT0 at CPU; Sampling freq: 16MHz / 256 = 64 kHz
+	TIMSK = 0b10; // Interrupt on overflow
+
+	sei();
+
+	while(1) {
+		sleep_cpu();
+	}
+}
+
+
+ISR(TIMER0_OVF_vect) {
+    static u8 last_error;
+
+	s16 adc		= ADC;
+	s8 val1		= (u8)(ADC >> 2) - 128;
+	u8 val2		= adc>>1 & 1;
+	u8 error	= adc & 1;
+	u8 dither	= error & last_error;
+	last_error	= error - dither;
+
+	DACN = 128 - val1 - dither;
+	DACP = 128 + val1 + val2;
+}
+
+
