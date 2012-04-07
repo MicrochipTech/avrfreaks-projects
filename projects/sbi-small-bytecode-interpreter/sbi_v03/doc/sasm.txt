@@ -1,0 +1,245 @@
+--------------------------------------------------------------------------------
+
+The SASM programming language
+
+--------------------------------------------------------------------------------
+
+The SASM (SbiASeMbly) is a simple language used to write SBI programs.
+
+You have some slots of memory (you can decide the number before compiling the
+interpreter - 1 byte each) for your temporary data (t0, t1, t2,...).
+You can access these variables by putting an underscore ("_") before the
+variable name (es. "_t25"). The variables can be used as parameters for the
+instructions.
+
+--------------------------------------------------------------------------------
+
+The instruction set is the following:
+
+SASM instruction					Instruction code
+
+	assign							0x01
+	move							0x02
+	
+	add							0x10
+	sub							0x11
+	mul							0x12
+	div							0x13
+	
+	incr							0x20
+	decr							0x21
+	inv							0x22
+	tob							0x23
+	
+	cmp							0x30
+	high							0x31
+	low							0x32
+	
+	label							0x40
+	jump							0x41
+	cmpjump							0x42
+	ret							0x42
+	
+	debug							0x50
+	error							0x52
+	
+	exit							0xFF
+
+assign:
+	Parameters:
+		1: <variable name>
+		2: <value>
+Assigns <value> to <variable name>
+
+move:
+	Parameters:
+		1: <source variable name>
+		2: <destination variable name>
+Copies the value of <source variable name> to <destination variable name>
+
+add:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <variable name (out)>
+Adds <variable name (in1)> to <variable name (in2)> and puts the output
+to <variable name (out)>
+
+sub:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <variable name (out)>
+Subtracts <variable name (in2)> to <variable name (in1)> and puts the output
+to <variable name (out)>
+
+mul:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <variable name (out)>
+Multiplies <variable name (in1)> for <variable name (in2)> and puts the output
+to <variable name (out)>
+
+div:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <variable name (out)>
+Does: <variable name (in1)> / <variable name (in2)> and puts the output
+to <variable name (out)>
+
+incr:
+	Parameters:
+		1: <variable name>
+Increments <variable name>
+
+decr:
+	Parameters:
+		1: <variable name>
+Decrements <variable name>
+
+inv:
+	Parameters:
+		1: <variable name>
+Inverts the value of <variable name>:
+	In					Out
+	 == 0					 1
+	 >= 1					 0
+
+tob:
+	Parameters:
+		1: <variable name>
+-TOBool-
+Converts the value of <variable name> into 0/1:
+	In					Out
+	 == 0					 0
+	 >= 1					 1
+
+cmp:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <variable name (out)>
+Compares <variable name (in1)> and <variable name (in2)>
+Puts the output to <variable name (out)> (puts 1 if they are equal, otherwise
+puts 0)
+
+high:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <variable name (out)>
+Compares <variable name (in1)> and <variable name (in2)>
+Puts the output to <variable name (out)> (puts 1 if <variable name (in1)> is
+higher than <variable name (in2)>, otherwise puts 0)
+
+low:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <variable name (out)>
+Compares <variable name (in1)> and <variable name (in2)>
+Puts the output to <variable name (out)> (puts 1 if <variable name (in1)> is
+lower than <variable name (in2)>, otherwise puts 0)
+
+label:
+	Parameters:
+		1: <labelid>
+Defines the label <labelid>
+
+jump:
+	Parameters:
+		1: <labelid>
+		2: <mode>
+Jumps to the label <labelid>.
+<mode> can be 0 (for normal jump) or >0 (for jumping to subroutines).
+
+cmpjump:
+	Parameters:
+		1: <variable name/value (in1)>
+		2: <variable name/value (in2)>
+		3: <labelid>
+		4: <mode>
+Compares <variable name (in1)> and <variable name (in2)>
+If they are equal jumps to the label <labelid>.
+<mode> can be 0 (for normal jump) or >0 (for jumping to subroutines).
+
+ret:
+	Parameters: -none-
+Returns to the last jump (es. to create simple "subroutines")
+
+debug:
+	Parameters:
+		1: <value>
+Sends <value> to the debug function
+
+error:
+	Parameters:
+		1: <value>
+Sends 0xFF,<value>,0xFF to the debug function and exits
+
+exit:
+	Parameters: -none-
+Exits the program
+
+--------------------------------------------------------------------------------
+
+How to use the compiler
+
+The compiler is very easy to use.
+First, you need to build it. To do this, go to /sasmc directory from the root
+directory of SBI. Then type 'make' in the command prompt.
+Now you have the SASMC (Sbi ASseMbly Compiler) ready for use.
+
+The command line sintax is the following:
+	sasmc -i <input.sasmc> [-o out.sbi] [-s] [-cl]
+
+Use '-s' to compile the program without printing anything on the console.
+Use '-cl' to clean the temporary files created during the compilation process.
+
+For example, to compile 'source.sasm' into 'program.sbi', type the following in
+the command line:
+	sasmc -i source.sasm -o program.sbi
+
+Or, to compile the same source but cleaning temporary files and without showing
+nothing on the screen:
+	sasmc -i source.sasm -o program.sbi -s -cl
+
+If you don't specify output's name, the output will be named 'out.sbi'.
+
+--------------------------------------------------------------------------------
+
+Sample programs
+
+In the /examples/{pc/avr}/programs directory, you have some example programs.
+For example, the 'counter.sasm' program is the following:
+
+	assign _t0 0
+	
+	label 0
+	debug _t0
+	incr _t0
+	low _t0 10 _t1
+	cmpjump _t1 1 0 0
+	
+	exit
+
+Translating it in human-language:
+
+	assign _t0 0			t0 = 0
+	
+	label 0				Define label number 0
+	debug _t0			Prints t0 on the debug stream
+	incr _t0			Increments t0 (t0++)
+	low _t0 10 _t1			If t0 < 10: t1 = 1, else t1 = 0
+	cmpjump _t1 1 0 0		If t1 = 1: jump to label 0 (4° parameter = 0 = normal jump)
+	
+	exit				Exits the program
+
+So, the program does the following:
+1. Assigns 0 to t0
+2. Prints the value of t0
+3. Increments t0
+4. If t0 is lower than 10, jump to step 2
+5. Exits the program (reached in case of t0 is equal or higher than 10)
