@@ -1,0 +1,117 @@
+How to compile and install irmega-compatible LIRC v.0.9.0
+---------------------------------------------------------
+
+Copy the lirc-0.9.0-irmega_YYYYMMDD.tar.gz archive (where YYYYMMDD is
+archive creation date) to your working directory and extract archive
+here. You should get two directories - etc and lirc-0.9.0-irmega.
+
+Open terminal, cd to the lirc-0.9.0_irmega directory and run
+
+# ./configure --with-driver=irmega
+
+If configure succeeded, run:
+
+ make clean
+ make
+ make install
+
+Now you should have binaries in /usr/local/bin and /usr/local/sbin.
+
+  NOTE: if you compile the source for the first time, the 'make clean'
+  is not necessary. Anyway, I usually run these commands using shell
+  script so I run 'make clean' even if not needed.
+
+Run the udevadm tool and connect IRmega hardware using USB cable.
+Yu should see something like:
+
+# udevadm monitor
+  monitor will print the received events for:
+  UDEV - the event which udev sends out after rule processing
+  KERNEL - the kernel uevent
+
+  KERNEL[435.533494] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5 (usb)
+  KERNEL[435.535053] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5/4-5:1.0 (usb)
+  KERNEL[435.535524] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5/4-5:1.1 (usb)
+  UDEV  [435.734657] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5 (usb)
+  UDEV  [435.743826] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5/4-5:1.1 (usb)
+  KERNEL[435.744966] add  /module/cdc_acm (module)
+  UDEV  [435.746914] add  /module/cdc_acm (module)
+  KERNEL[435.748145] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5/4-5:1.0/tty/ttyACM0 (tty)
+  KERNEL[435.748524] add  /bus/usb/drivers/cdc_acm (drivers)
+  UDEV  [435.749416] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5/4-5:1.0 (usb)
+  UDEV  [435.750255] add  /bus/usb/drivers/cdc_acm (drivers)
+  UDEV  [435.765439] add  /devices/pci0000:00/0000:00:12.0/usb4/4-5/4-5:1.0/tty/ttyACM0 (tty)
+
+You should find also new ttyACM device (not allways ttyACM0!!)
+in the /dev directory:
+
+# ls -l /dev/ttyACM*
+  crw-rw---- 1 root dialout 166, 0 2012-01-24 13:39 /dev/ttyACM0
+
+Now run mode2 tool to make sure the hardware is working:
+
+# mode2 --device=/dev/ttyACM0 --driver=irmega
+  mode2: IRmega: entering init()
+  mode2: IRmega: locking '/dev/ttyACM0' device
+  mode2: IRmega: opening '/dev/ttyACM0' device
+
+The mode2 prints out just pulse/space widths so does not depend on
+the lircd.conf file. You should get something like:
+
+  space 16000000
+  pulse 2664
+  space 884
+  pulse 436
+  space 448
+    ....
+
+If installing LIRC from source, you have also to add/tweak some
+system files. All you need is in the etc_changes directory.
+
+Create /etc/lirc directory and copy preconfigured hardware.conf file
+to this directory.
+
+  # mkdir /etc/lirc
+  # cp hardware.conf /etc/lirc 
+
+Create the /var/run/lirc directory:
+
+  # mkdir /var/run/lirc
+
+  NOTE: in the Ubuntu 11.10 (maybe in other distros too) the var/run
+  is symbolic link to /run. I such case 'make /var/run/lirc' works just
+  temporarily. Use 'make /run/lirc' instead.
+
+If everything works, look for correct configuration file for your favorite
+remote and copy this file to /etc/lirc under name lircd.conf. Yo can also
+create your own config file using irrecord (follow LIRC documentation).
+
+Then run lircd and irw:
+
+  # lircd --device=/dev/ttyACM0 --driver=irmega
+  # irw
+
+Now, if you press any key on your remote, you should see something like:
+
+  000000005ea1d827 00 VOL- yamaha_RAV34
+  000000005ea1d827 01 VOL- yamaha_RAV34
+  000000005ea1d827 02 VOL- yamaha_RAV34
+  000000005ea17b84 00 ENTER yamaha_RAV34
+      ........
+
+And it's all, folks. IRmega is working!
+
+THE FINAL NOTES:
+
+If you don't understand something (or everything) here, the only
+working advice is: stop work for now and read thoroughly the LIRC
+documentation!
+
+If you do not belive me or need to tweak other LIRC version to work
+with IRmega, the lirc-0.9.0-irmega_changes_YYYYMMDD.tar.gz archive
+is the right file to play with. You can find there all files I have
+modified or added, so you can compare them with original sources
+and go your own way.
+
+Good luck.
+
