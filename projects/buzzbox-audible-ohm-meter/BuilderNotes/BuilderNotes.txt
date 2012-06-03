@@ -1,0 +1,49 @@
+Circuit description:
+LED1 is a poor man's voltage standard.  A yellow LED will provide a relatively
+stable 1.8V.  R6/R7 divide the voltage down to 375mV.  IC2A buffers that voltage
+so it doesn't vary under load and provides a low (<1 Ohm) output impedance.
+
+NOTE: IC2 must be a rail-to-rail input and output opamp.  I used an LT1490 
+because I had one.  Many others will work but 747s, etc. will not.
+
+R4 sets the output impedance at 100 Ohms and limits current to 3.75 mA maximum.  
+This completes the voltage source.  Note that the output of this source and the
+input to the sense amp (IC2B) must be connected together at the probe.  In other
+words, JP1 pin 2 and pin 4 both get wired to the tip of aa single probe.  This
+is known as a kelvin connection and effectively nulls out the resistance of the
+wire running to the probe.  The other probe goes to JP1 pin 1, commonly known
+as ground.  One circuit improvement would be to provide a kelvin junction on the
+ground side, but it adds a lot more complexity.
+
+IC2B provides a gain of 10, increasing the sensitivity of the BuzzBox.
+
+I used 1% resistors in the analog circuitry out of habit.  5% would be adequate.
+
+IC1 is an ATtiny13A but could be any of a dozen or so Atmel parts.  The code uses
+~470 bytes of flash and ~17 bytes of data ram.
+
+Code description:
+After initializing ports the code falls in an infinite loop:
+	-- it takes an ADC reading,
+	-- compares it against some limits
+		-- in the 3 lowest ranges, it lights an LED, green is < 1 ohm,
+		blue is 1-3 ohms, and red is 3-6 ohms.  
+		-- depending on the reading it sets timer0 to generate a
+		frequency which is inversely proportional to the resistance
+		-- delays for 250ms while the tone blasts
+	-- end compare
+-- end loop
+
+NOTE: I had trouble setting the compare values for the timer.  Calculated
+values were way off and I ended up determining them experimentally.  Piezos
+have a resonant frequency where they are loudest and they drop off rather
+quickly when you get away from resonance.  i take advantage of that fact and
+use it as a volume control -- the farther you get from 0 Ohms, the farther
+from resonance the frequency gets, thus turning down the volume as well as
+changing the tone.
+
+One last NOTE: there are 2 types of piezos.  You want the kind that does NOT
+have a driver circuit.
+
+Sherman 
+6/2/12
