@@ -1,0 +1,270 @@
+program BatteryMeter
+
+' Author: Len Koppl, KDØRC
+'         1404 Dexter St
+'         Broomfield, CO  80020
+'
+' Created: 6/8/12
+'
+' Copyright: All rights reserved by Len Koppl
+'
+' BatteryMeter is a battery charge state meter for 12 volt lead-acid
+' batteries.  The volt meter seems to be accurate to about .05 volts compared
+' to an ExTech model 22-816 volt meter bought at Radio Shack.  No temperature
+' compensation or calibration has been attempted with this unit, so it is
+' unknown what the accuracy is in environments other than my ham shack.  It
+' is powered by the battery that it is measuring.  It uses values
+' provided by http://www.solarnavigator.net/battery_charging.htm to determine 
+' the charge state, 0 - 100% based on voltage.
+
+' The meter draws about 12 mA while running.  By removing the comment in the
+' Define SleepMode statement, it will enter power down sleep mode about
+' 30 seconds after power up or reset.  In sleep mode, it draws about 5 mA.
+' If using SleepMode, you will need to provide a reset button from pin 10
+' (PB7/Reset) to ground to wake it up again.
+'
+' BatteryMeter is programmed in mikroBasic PRO. You can find the compiler at
+' http://www.mikroe.com   The free version of the compiler is full-featured
+' but has a limit of 4K of code that can be generated.  For hobbyist and small
+' applications, this may be enough.  It is certainly a good way to check it
+' out before you buy.
+'
+' BatteryMeter can be reprogrammed via the six pin ISP header, and it is
+' configured to be programmed from the Atmel STK500 starter kit.  Any
+' Atmel programmer using the six pin header should work.  
+' http://www.avrfreaks.net is a good source of info for all things Atmel.
+'
+' Target Processor: ATTiny861A, 8 MHz
+
+'    #Define SleepMode          ' Uncomment to allow sleep mode
+
+dim LCD_RS as sbit at PORTA0_bit
+dim LCD_EN as sbit at PORTA1_bit
+dim LCD_D4 as sbit at PORTA2_bit
+dim LCD_D5 as sbit at PORTA3_bit
+dim LCD_D6 as sbit at PORTA4_bit
+dim LCD_D7 as sbit at PORTA5_bit
+dim LCD_RS_Direction as sbit at DDA0_bit
+dim LCD_EN_Direction as sbit at DDA1_bit
+dim LCD_D4_Direction as sbit at DDA2_bit
+dim LCD_D5_Direction as sbit at DDA3_bit
+dim LCD_D6_Direction as sbit at DDA4_bit
+dim LCD_D7_Direction as sbit at DDA5_bit
+' End LCD module connections
+
+
+dim Block as char[1]
+dim Hbeat as boolean
+dim HbeatCnt as byte
+dim i as byte
+dim Pct as byte
+dim SavePct as byte
+#ifdef SleepMode then
+dim SleepTimer as longword
+#endif
+dim StopAlarm as boolean
+dim tmp as word
+dim txt1 as string[7]
+dim txt2 as string[6]
+dim Voltage as word
+dim VoltCalc as longword
+dim VoltFrac as string[2]
+dim VoltWhole as string[2]
+
+const character as byte[8] = (31,17,17,17,17,17,17,31)
+const HbeatMax as byte = 5
+
+sub procedure CustomChar(dim pos_row as byte, dim pos_char as byte)
+  dim i as byte
+    Lcd_Cmd(64)
+    for i = 0 to 7
+      Lcd_Chr_CP(character[i])
+    next i
+    Lcd_Cmd(_LCD_RETURN_HOME)
+    Lcd_Chr(pos_row, pos_char, 0)
+end sub
+
+sub procedure Dit()
+    Sound_Play(1000, 50)
+    Delay_ms(50)
+end sub
+
+sub procedure Dah()
+    Sound_Play(1000, 150)
+    Delay_ms(50)
+end sub
+
+main:
+     #ifdef SleepMode then
+     SleepTimer = 100                 ' 100 = approx 30 seconds
+     #else
+     MCUCR.SE = 0                     ' disable sleep
+     #endif
+     
+     DDRB  = 0x40                     ' PORTB bit 6 to output for speaker
+     PORTB4_bit = 1                   ' Activate Port B bit 4 pull-up
+     
+     Block = chr(255)                 ' Define solid block character
+     Lcd_Init()                        ' Initialize LCD
+     Lcd_Cmd(_LCD_CLEAR)               ' Clear display
+     Lcd_Cmd(_LCD_CURSOR_OFF)          ' Cursor off
+     LCD_Out(2,12, "KD0RC")
+
+     Sound_Init(PORTB, 6)
+     
+     ' Send morse code 'KDØRC'
+     Dah                                ' K
+     Dit
+     Dah
+     Delay_ms(150)
+     Dah                                ' D
+     Dit
+     Dit
+     Delay_ms(150)
+     Dah                                ' Ø
+     Dah
+     Dah
+     Dah
+     Dah
+     Delay_ms(150)
+     Dit                                ' R
+     Dah
+     Dit
+     Delay_ms(150)
+     Dah                                ' C
+     Dit
+     Dah
+     Dit
+     
+     StopAlarm = false
+     SavePct = 100
+
+     while true
+       #ifdef SleepMode then
+       SleepTimer = SleepTimer - 1
+       if SleepTimer <= 0 then
+            Lcd_Cmd(_LCD_Turn_Off)
+            MCUCR.SE = 1               ' enable sleep
+            MCUCR.SM0 = 0              ' SM 01 = Power Down mode
+            MCUCR.SM1 = 1
+            asm
+               sleep                   ' Reset to wake
+            end asm
+       end if
+       #endif
+        
+       tmp = 0                         ' clear temp Voltage value
+
+       for i = 1 to 3                  ' number of reads to let volts stabilize
+         Voltage = ADC_Read(8)
+         if tmp = Voltage then
+            break
+         else
+             tmp = Voltage
+             delay_ms(50)
+         end if
+       next i
+
+       Voltage = Voltage * 4.2          ' Calibration value to scale for 12 V
+       VoltCalc = Voltage * 100         ' scale up to get 2 dec digits without
+                                        ' using floating point
+       ' calculate charge percentage in 10% increments based on voltage
+       if Voltage <= 1080 then
+          Pct = 0
+       end if
+       if Voltage > 1080 then
+          Pct = 10
+       end if
+       if Voltage > 1145 then
+          Pct = 20
+       end if
+       if Voltage > 1167 then
+          Pct = 30
+       end if
+       if Voltage > 1183 then
+          Pct = 40
+       end if
+       if Voltage > 1198 then
+          Pct = 50
+       end if
+       if Voltage > 1213 then
+          Pct = 60
+       end if
+       if Voltage > 1226 then
+          Pct = 70
+       end if
+       if Voltage > 1237 then
+          Pct = 80
+       end if
+       if Voltage > 1246 then
+          Pct = 90
+       end if
+       if Voltage >  1260 then
+          Pct = 100
+       end if
+       
+       if Pct < SavePct then                 ' reset alarm if Pct drops
+          if StopAlarm then
+             StopAlarm = false
+          end if
+       end if
+       
+       if PINB4_bit = 0 then                 ' reset alarm button pushed
+         Dah                                 ' aknowledge button push
+         Dah
+         SavePct = Pct
+         StopAlarm = true
+       end if
+       
+       if (Pct <= 30) and (StopAlarm = false) then  ' Alarm if 30% or less
+          Sound_Play(1600, 250)
+       end if
+       
+       if Pct < 10 then                        ' annoying alarm that can't be
+          for tmp = 800 to 2000 step 100       ' shut off
+              sound_play (tmp, 100)
+          next tmp
+       end if
+       
+       if Pct > 30 then
+          StopAlarm = false                   ' reset the alarm if Pct goes up
+          SavePct = Pct
+       end if
+       
+       WordToStr(Voltage, txt1)               ' Convert voltage to text
+       WordToStr(Pct,txt2)                    ' Convert percent to text
+
+       VoltWhole = txt1[1] + txt1[2]          ' First two digits
+       VoltFrac = txt1[3] + txt1[4]           ' Second two digits (fractional)
+       txt1 = VoltWhole + "." + VoltFrac      ' Make fixed decimal
+
+       LCD_Out(1,1,txt1 + "V " + txt2 + "%")  ' Write volts and PCT in first row
+       
+       Pct = Pct / 10
+       
+       for i = 1 to Pct                       ' solid boxes
+          LCD_Out(2,i,Block)
+       next i
+
+       for i = PCT + 1 to 10                  ' Blank boxes
+          CustomChar(2,i)
+       next i
+
+       ' heartbeat - provides a blinking box to show that the unit is working
+       inc(HbeatCnt)
+
+       if HbeatCnt >= HbeatMax then
+          HbeatCnt = 0
+          'Hbeat = not Hbeat       ' for some reason, this does not work
+          if Hbeat then
+             lcd_Out(1,16,Block)
+             Hbeat = false
+          else
+             lcd_Out(1,16," ")
+             Hbeat = true
+          end if
+       end if
+
+      wend
+
+end.
