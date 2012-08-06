@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\AVR\AvrAssembler2\avrasm2.exe" -S "C:\AVR\AVR Development project\labels.tmp" -fI -W+ie -C V2E -o "C:\AVR\AVR Development project\RTC_twi_atmaga16_asm.hex" -d "C:\AVR\AVR Development project\RTC_twi_atmaga16_asm.obj" -e "C:\AVR\AVR Development project\RTC_twi_atmaga16_asm.eep" -m "C:\AVR\AVR Development project\RTC_twi_atmaga16_asm.map" "C:\AVR\AVR Development project\RTC_twi_atmaga16_asm.asm"
