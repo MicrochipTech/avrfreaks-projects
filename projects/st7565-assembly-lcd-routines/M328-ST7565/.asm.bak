@@ -1,0 +1,387 @@
+
+;
+; see the ST7565.asm file for the LCD stuff
+;
+; For 8Mhz clk. 
+;
+; Most of this is my own but some bits came off the internet and are
+; indicated with origins.
+; The font is a modified one, original was from Adafruit (where I got the screen). Just some bit-swapping.
+; 
+; 
+; Use for whatever you want. 
+
+
+;.include	"m328pdef.inc"		; if using AS4, pick a processor. Not required for AS6.
+;.include	"m168def.inc"
+.include	"macros.inc"
+
+.equ	true		= 0xff
+.equ	false		= 0
+
+.equ	cr		= 0x0d
+.equ	lf		= 0x0a
+
+; output stream destinations
+.equ	null_stream	= 0	; nowhere
+.equ	serial_stream	= 1	; serial out
+.equ	memory_stream	= 2	; RAM
+.equ	lcd_stream	= 3	; LCD screen
+
+.equ	ram = 1			; used for the ldX/ldY/ldZ/ldACC macros
+.equ	rom = 2
+
+
+;==============================================================
+;.def	 =		r0	; 
+;.def	 =		r1	;
+.def	zero	=	r2	; always contains zero
+;.def	 =		r3	;
+;.def	 =		r4	;-rand used to produce randonm numbers
+;.def	 =		r5	;-rand
+;.def	 =		r6	;-rand
+;.def	 =		r7	;-rand
+;.def	 =		r8	;
+;.def	 =		r9	; 
+;.def	 =		r10	; 
+;.def	 =		r11	; 
+;.def	 =		r12	; 
+;.def	 =		r13	; 
+;.def	 =		r14	; 
+;.def	 =		r15	; 
+
+.def	temp1	=	r16	; temp register
+.def	temp2	=	r17	; temp register
+.def	temp3	=	r18	; temp register
+.def	loopcounter =	r19	; used for loop counting
+;.def	 =		r20		; 
+;.def	 =		r21		; 
+;.def	 =		r22		; 
+
+.def	bitflags =	r23	; assorted bit flags ----|
+;							 |
+; r24 & 25 can be used for 16-bit operations             |
+.def	accL =		r24	;			 |
+.def	accH =		r25	;			 |
+;********************************			 |
+; These are the bitflags-bits. Use with sb & cb macros <-| 
+.equ	invert		= 0	; set every second in T0 int routine
+;.equ			= 1	; for LCD
+;.equ			= 2	; 
+;.equ			= 3	; 
+;.equ			= 4	; 
+;.equ			= 5	; 
+;.equ			= 6	; 
+;.equ			= 7	; 
+
+
+
+
+;==============================================================================
+;==============================================================================
+.dseg                        ; Start data segment
+
+stream_destination:	.byte	1	; where an output stream is sent
+					; (null, serial, memory, lcd)
+;==============================================================================
+
+.cseg
+; ATmega328/168 vectors, 2 bytes per entry
+	.org	0x0000
+	jmp	RESET			; Reset Handler
+	.org	0x0002
+;	jmp	EXT_INT0		; IRQ0 Handler
+	.org	0x0004
+;	jmp	EXT_INT1		; IRQ1 Handler
+	.org	0x0006
+;	jmp	PCINT0			; PCINT0 Handler
+	.org	0x0008
+;	jmp	PCINT1			; PCINT1 Handler
+	.org	0x000A
+;	jmp	PCINT2			; PCINT2 Handler
+	.org	0x000C
+;	jmp	WDT			; Watchdog Timer Handler
+	.org	0x000E
+;	jmp	TIM2_COMPA		; Timer2 Compare A Handler
+	.org	0x0010
+;	jmp	TIM2_COMPB		; Timer2 Compare B Handler
+	.org	0x0012
+;	jmp	TIM2_OVF		; Timer2 Overflow Handler
+	.org	0x0014
+;	jmp	TIM1_CAPT		; Timer1 Capture Handler
+	.org	0x0016
+;	jmp	TIM1_COMPA		; Timer1 Compare A Handler
+	.org	0x0018
+;	jmp	TIM1_COMPB		; Timer1 Compare B Handler
+	.org	0x001A
+;	jmp	TIM1_OVF		; Timer1 Overflow Handler
+	.org	0x001C
+;	jmp	TIM0_COMPA		; Timer0 Compare A Handler
+	.org	0x001E
+;	jmp	TIM0_COMPB		; Timer0 Compare B Handler
+	.org	0x0020
+;	jmp	TIM0_OVF		; Timer0 Overflow Handler
+	.org	0x0022
+;	jmp	SPI_STC			; SPI Transfer Complete Handler
+	.org	0x0024
+;	jmp	USART_RXC		; USART, RX Complete Handler
+	.org	0x0026
+;	jmp	USART_UDRE		; USART, UDR Empty Handler
+	.org	0x0028
+;	jmp	USART_TXC		; USART, TX Complete Handler
+	.org	0x002A
+;	jmp	ADC			; ADC Conversion Complete Handler
+	.org	0x002C
+;	jmp	EE_RDY			; EEPROM Ready Handler
+	.org	0x002E
+;	jmp	ANA_COMP		; Analog Comparator Handler
+	.org	0x0030
+;	jmp	TWI			; 2-wire Serial Interface Handler
+	.org	0x0032
+;	jmp	SPM_RDY			; Store Program Memory Ready Handler
+
+
+	
+
+
+;******************************************************************************
+;			reset vector (code start)
+;******************************************************************************
+
+RESET:
+; basic ports setup
+;******************************************************************************
+; port-D
+; bits are assigned as....
+; 0-RXD		(in)  0		; RS485 receive
+; 1-TXD		(out) 1		; RS485 transmit
+; 2-INT0		(in)  0		; 
+; 3-INT1		(out) 1		; 
+; 4-RS485 DIR	(out) 1		; RS485 low=RX high=TX
+; 5-n/u		(in)  0		; 
+; 6-n/u		(in)  0		; 
+; 7-n/u		(in)  0		; 
+	ldi	temp1,0b11111010
+	out	DDRD,temp1
+	ldi	temp1,0b11001111 ; pullups and levels (RS485=RX on startup)
+	out	PORTD,temp1
+;******************************************************************************
+; port-C (ADC inputs)
+; bits are assigned as....
+; 0-n/u		(out) 1		; 
+; 1-n/u		(out) 1		; 
+; 2-n/u		(out) 1		; 
+; 3-n/u		(out) 1		; 
+; 4-n/u		(in)  0		; 
+; 5-n/u		(in)  0		; 
+; 6-RST pin	(in)  0		; reset pin
+; 7-NO bit 7 implimented
+	ldi	temp1,0b11111111; all out's
+	out	DDRC,temp1	; set direction
+	clr	temp1
+	out	PORTC,temp1	; start all OFF
+;******************************************************************************
+; port-B
+; bits are assigned as....
+; 0-			(in)  0		; 
+; 1-			(in)  0		; 
+; 2-SS			(out) 1		; SS for SPI port
+; 3-MOSI			(out) 1		; MOSI
+; 4-MISO			(in)  0		; MISO
+; 5-SCK			(out) 1		; clock for SPI port
+; 6-			(in)  0		; used for xtal
+; 7-			(in)  0		; used for xtal
+
+	ldi	temp1,0b00101100	;
+	out	DDRB,temp1
+	ldi	temp1,0b00101100
+	out	PORTB,temp1
+
+;******************************************************************************
+;	end of port setup
+;******************************************************************************
+
+	clr	zero			; always a zero (r2)
+
+; set up random number seed
+	ldi	temp1,0x55
+	mov	r4,temp1
+	ldi	temp1,0xaa
+	mov	r5,temp1
+	ldi	temp1,0x55
+	mov	r6,temp1
+	ldi	temp1,0xaa
+	mov	r7,temp1
+
+	clr	bitflags
+
+; clear ram to zero
+	ldZ	ram,SRAM_START
+	ldi	loopcounter,0		; 256 bytes of ram
+	ldi	temp2,(SRAM_SIZE/256)	; how many pages of 256 bytes
+
+wploop:	st	z+,zero			; write 0's to ram
+	dec	loopcounter		; inner loop
+	brne	wploop
+	dec	temp2
+	brne	wploop			; outer loop
+
+
+; set up stack
+	ldi	temp1,high(RAMEND)	; Init SP
+	out	SPH,temp1
+	ldi	temp1,low(RAMEND)
+	out	SPL,temp1
+
+	call	init_st7565		; starts LCD screen
+
+	stream	lcd_stream		; o/p stream to screen
+
+
+; quick demo
+; =============================================================================
+; =============================================================================
+
+main:	rcall	topbox			; basic frame & text
+	rcall	showallchars		; pages through all chars
+	lcd_clear			; clears screen
+	csdelay	30			; wait 3 sec (30 x 0.1 sec)
+	rjmp	main			; cycle forever
+
+; =============================================================================
+; =============================================================================
+
+
+topbox:
+	rcall	box1			; draws frame
+
+	lcd_set	1,1			; position for write
+
+	lcd_invert			; 'clear' chars, black backgound
+	stringout " Hello world "
+	lcd_normal			; and back to normal black chars
+
+	lcd_set	2,1			; position for write
+	stringout " Hello world "
+	ret
+
+; writes a frame around the top half of the screen
+box1:	lcd_coll 0		; positions to the horizontal pixel (0..127) on the current page
+	lcd_page 0		; sets the page (0..7)
+
+	ldi	temp1,213	; top left corner box char
+	rcall	put_LCDchar	; writes at the current horizontal pixel pos and page
+
+	ldi	temp1,205	; horizontal strip box char
+	ldi	temp2,23
+	rcall	put_many
+
+	ldi	temp1,184	; top right corner box char
+	rcall	put_LCDchar
+; and so on......
+	lcd_coll 0
+	lcd_page 1
+	ldi	temp1,179
+	rcall	put_LCDchar
+
+	lcd_coll 0
+	lcd_page 2
+	ldi	temp1,179
+	rcall	put_LCDchar
+
+	lcd_coll 0
+	lcd_page 3
+	ldi	temp1,212
+	rcall	put_LCDchar
+
+	ldi	temp1,205
+	ldi	temp2,23
+	rcall	put_many
+
+	ldi	temp1,190
+	rcall	put_LCDchar
+
+	lcd_coll 120
+	lcd_page 1
+	ldi	temp1,179
+	rcall	put_LCDchar
+
+	lcd_coll 120
+	lcd_page 2
+	ldi	temp1,179
+	rcall	put_LCDchar
+	ret
+
+
+; writes random big numbers
+answ:	lcd_coll 85		; horizontal pixel location
+	lcd_page 1		; vertical page (row)
+	call	getone		; random number (0...9)
+	call	put_num16
+	call	lcd_point	; then the decimal point
+	call	getone		; random number (0...9)
+	call	put_num16
+	ret
+
+
+
+; fills the bottom half of the screen with a flipping display as
+; all the chars are shown. cr & lf are filtered out.
+showallchars:
+	call	answ			; random double sized numbers
+	lcd_set	4,0			; position for write, below topbox
+	ldi	loopcounter,84
+	ldi	temp1,0			
+wr:	jeq	temp1,0x0d,skp		; filter out cr/lf
+	jeq	temp1,0x0a,skp
+	rcall	lcd_char		; uses row/coll with autoinc
+skp:	inc	temp1
+	dec	loopcounter
+	brne	wr
+	push	temp1
+	csdelay	30			; 3-sec delay
+
+	call	answ			; random double sized numbers
+	lcd_set	4,0			; position for write
+	ldi	loopcounter,84
+	pop	temp1
+wr2:	rcall	lcd_char		; uses row/coll with autoinc
+	inc	temp1
+	dec	loopcounter
+	brne	wr2
+	push	temp1
+	csdelay	30			; 3-sec delay
+
+	call	answ			; random double sized numbers
+	lcd_set	4,0			; position for write
+	ldi	loopcounter,84
+	pop	temp1
+wr3:	rcall	lcd_char		; uses row/coll with autoinc
+	inc	temp1
+	dec	loopcounter
+	brne	wr3
+	push	temp1
+	csdelay	30			; 3-sec delay
+
+	call	answ			; random double sized numbers
+	lcd_set	4,0			; position for write
+	ldi	loopcounter,84
+	pop	temp1
+wr4:	jeq	temp1,0x0d,skp2		; char value wrapped round
+	jeq	temp1,0x0a,skp2		; so filter out cr/lf again
+	rcall	lcd_char		; uses row/coll with autoinc
+skp2:	inc	temp1
+	dec	loopcounter
+	brne	wr4
+	csdelay	30			; 3-sec delay
+	ret
+
+
+
+
+.include	"subs.asm"
+.include	"ST7565.asm"
+
+
+
+
