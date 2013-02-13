@@ -1,0 +1,164 @@
+;=======================================
+;	Scurity Password...
+;---------------------------------------
+.equ		c_maxpsw	= 6
+.equ		v_dpsw	= v_ptask
+.equ		v_epsw	= v_ptask+5
+.equ		v_vpsw	= v_ptask+6
+.equ		v_newpsw	= v_tmpadd
+;---------------------------------------	
+def_psw:	.db	'724298',eop
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+chk_mpsw:	mov	dptr,#ad_admin
+	mov	R0,#v_dpsw
+	mov	v_vpsw,#c_maxpsw
+chkmpsw1:	rcall	eep_exrd
+	mov	v_asclw,A
+	mov	A,@R0
+	inc	R0
+	cjne	A,v_asclw,chkmpsw2
+	djnz	v_vpsw,chkmpsw1
+	ret
+chkmpsw2:	clr	s_equ
+	ret
+chk_dpsw:	mov	dptr,#def_psw
+	mov	R0,#v_dpsw
+	mov	v_vpsw,#c_maxpsw
+chkdpsw1:	clr	A
+	movc	A,@A+dptr
+	mov	v_asclw,A
+	mov	A,@R0
+	inc	R0
+	inc	dptr
+	cjne	A,v_asclw,chkdpsw2
+	djnz	v_vpsw,chkdpsw1
+	ret
+chkdpsw2:	clr	s_equ
+	ret
+str_pasw:	mov	tsk_sts,#0
+	setb	cs_pasw
+strpasws:	rcall	clrlines
+	rcall	lcdline1
+	rcall	lcd_str
+	db	'Password? ',eop
+strpasw1:	rcall	lcdline2
+	rcall	lcd_str
+	db	'------',eop
+	mov	v_vpsw,#v_dpsw
+	rcall	lcdline2
+strpaswr:	ret
+tsk_pasw:	jnb	s_evbtn,strpaswr
+	mov	A,v_evbtn
+	cjne	A,#0dh,tskpasw1
+tskpaswr:	ret
+tskpasw1:	jnc	tskpaswr
+	mov	A,v_vpsw
+	cjne	A,#v_epsw,tskpaswb
+	rcall	tskpaswb
+	setb	s_equ
+	rcall	chk_dpsw
+	jb	s_equ,tskpasw2
+	setb	s_equ
+	rcall	chk_mpsw
+	jb	s_equ,tskpasw3
+	;------------------
+	;rjmp	str_srun
+	;==================
+	mov	tsk_sts,#0
+	ret
+tskpasw2:	rcall	setdefa
+tskpasw3:	rjmp	str_menu
+tskpaswb:	mov	A,#0dbh
+	rcall	lcdprn
+	mov	A,v_evbtn
+	orl	A,#30h
+	mov	R0,v_vpsw
+	mov	@R0,A
+	inc	v_vpsw
+	ret
+;=======================================
+;	Ubah password
+;	v_subact
+;	0: ad_admin
+;	1: ad_user
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+txtBaru:	.db	'Passw Baru?',eop
+txtConf:	.db	'Konfirmasi?',eop
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+savenpsw:	mov	dptr,#ad_admin
+	mov	R0,#v_newpsw
+	mov	v_vpsw,#c_maxpsw
+savnpsws:	mov	A,@R0
+	inc	R0
+	rcall	eep_exwr
+	djnz	v_vpsw,savnpsws
+	ret
+dspspsws:	rcall	clrlines
+	rcall	lcdline1
+	rcall	lcdprint
+	rjmp	strpasw1
+str_spsw:	mov	tsk_sts,#0
+	setb	cs_spsw
+	rcall	strpasws
+	mov	v_setpsw,#0
+strspswr:	ret
+tskspswb:	mov	A,#0dbh
+	rcall	lcdprn
+	mov	A,v_evbtn
+	orl	A,#30h
+	mov	R0,v_vpsw
+	mov	@R0,A
+	inc	v_vpsw
+	ret
+tsk_spsw:	jnb	s_evbtn,strspswr
+	mov	A,v_evbtn
+	cjne	A,#sp_esc,tskspswa
+	rjmp	strmenus
+tskspswa:	cjne	v_setpsw,#3,tskspsw0
+	rjmp	strmenus
+tskspsw0:	cjne	A,#0dh,tskspsw1
+tskspsw1:	jnc	strspswr
+	mov	A,v_vpsw
+	cjne	A,#v_epsw,tskspswb
+	rcall	tskspswb
+	cjne	v_setpsw,#0,tsksps1s
+	setb	s_equ
+	rcall	chk_mpsw
+	jb	s_equ,tskspss1
+tskspsw2:	rjmp	strmenus
+tskspss1:	inc	v_setpsw
+	mov	dptr,#txtBaru
+	rjmp	dspspsws
+tsksps1s:	cjne	v_setpsw,#1,tsksps2s
+	mov	R0,#v_dpsw
+	mov	R1,#v_newpsw
+	mov	B,#c_maxpsw
+tsksps11:	mov	A,@R0
+	inc	R0
+	mov	@R1,A
+	inc	R1
+	djnz	B,tsksps11
+	inc	v_setpsw
+	mov	dptr,#txtConf
+	rjmp	dspspsws
+tsksps2s:	cjne	v_setpsw,#2,tskspswr
+	mov	R0,#v_dpsw
+	mov	R1,#v_newpsw
+	mov	B,#c_maxpsw
+tsksps21:	mov	A,@R0
+	inc	R0
+	mov	v_asclw,A
+	mov	A,@R1
+	inc	R1
+	cjne	A,v_asclw,tskspsw2
+	djnz	B,tsksps21
+	rcall	savenpsw
+	rcall	clrlines
+	rcall	lcdline1
+	rcall	lcd_str
+	db	'Password ',eop
+	rcall	lcdline2
+	rcall	lcd_str
+	db	'telah berubah...',eop	
+	inc	v_setpsw
+tskspswr:	ret
