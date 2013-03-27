@@ -1,0 +1,164 @@
+
+SPI_CODE.elf:     file format elf32-avr
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         00000088  00000000  00000000  00000054  2**1
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 .debug_aranges 00000020  00000000  00000000  000000dc  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  2 .debug_pubnames 0000001b  00000000  00000000  000000fc  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  3 .debug_info   0000019b  00000000  00000000  00000117  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  4 .debug_abbrev 000000dd  00000000  00000000  000002b2  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  5 .debug_line   00000188  00000000  00000000  0000038f  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  6 .debug_frame  00000020  00000000  00000000  00000518  2**2
+                  CONTENTS, READONLY, DEBUGGING
+  7 .debug_str    00000109  00000000  00000000  00000538  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  8 .debug_loc    00000048  00000000  00000000  00000641  2**0
+                  CONTENTS, READONLY, DEBUGGING
+
+Disassembly of section .text:
+
+00000000 <__vectors>:
+   0:	12 c0       	rjmp	.+36     	; 0x26 <__ctors_end>
+   2:	19 c0       	rjmp	.+50     	; 0x36 <__bad_interrupt>
+   4:	18 c0       	rjmp	.+48     	; 0x36 <__bad_interrupt>
+   6:	17 c0       	rjmp	.+46     	; 0x36 <__bad_interrupt>
+   8:	16 c0       	rjmp	.+44     	; 0x36 <__bad_interrupt>
+   a:	15 c0       	rjmp	.+42     	; 0x36 <__bad_interrupt>
+   c:	14 c0       	rjmp	.+40     	; 0x36 <__bad_interrupt>
+   e:	13 c0       	rjmp	.+38     	; 0x36 <__bad_interrupt>
+  10:	12 c0       	rjmp	.+36     	; 0x36 <__bad_interrupt>
+  12:	11 c0       	rjmp	.+34     	; 0x36 <__bad_interrupt>
+  14:	10 c0       	rjmp	.+32     	; 0x36 <__bad_interrupt>
+  16:	0f c0       	rjmp	.+30     	; 0x36 <__bad_interrupt>
+  18:	0e c0       	rjmp	.+28     	; 0x36 <__bad_interrupt>
+  1a:	0d c0       	rjmp	.+26     	; 0x36 <__bad_interrupt>
+  1c:	0c c0       	rjmp	.+24     	; 0x36 <__bad_interrupt>
+  1e:	0b c0       	rjmp	.+22     	; 0x36 <__bad_interrupt>
+  20:	0a c0       	rjmp	.+20     	; 0x36 <__bad_interrupt>
+  22:	09 c0       	rjmp	.+18     	; 0x36 <__bad_interrupt>
+  24:	08 c0       	rjmp	.+16     	; 0x36 <__bad_interrupt>
+
+00000026 <__ctors_end>:
+  26:	11 24       	eor	r1, r1
+  28:	1f be       	out	0x3f, r1	; 63
+  2a:	cf e5       	ldi	r28, 0x5F	; 95
+  2c:	d4 e0       	ldi	r29, 0x04	; 4
+  2e:	de bf       	out	0x3e, r29	; 62
+  30:	cd bf       	out	0x3d, r28	; 61
+  32:	02 d0       	rcall	.+4      	; 0x38 <main>
+  34:	27 c0       	rjmp	.+78     	; 0x84 <_exit>
+
+00000036 <__bad_interrupt>:
+  36:	e4 cf       	rjmp	.-56     	; 0x0 <__vectors>
+
+00000038 <main>:
+							  // Here 255 address with 255 data can be transmitted
+	uint16_t  address,cdata;
+
+	uint8_t i;
+    
+    SPI_DDR  = _BV(SPI_CHIP_SELECT) + _BV(SPI_MOSI) + _BV(SPI_SCK) + _BV(LED_PWR);    /* SPI port initialization (/SS, MOSI, SCK output, MISO input) */
+  38:	8d e2       	ldi	r24, 0x2D	; 45
+  3a:	87 bb       	out	0x17, r24	; 23
+	sbi(PORTB,0);					//LED1 ON (INDICATION FOR READY TO USE)	
+  3c:	c0 9a       	sbi	0x18, 0	; 24
+    SPCR = _BV(SPE) +_BV(MSTR) + _BV(CPOL) + _BV(CPHA);    			/* SPI interrupt disabled, SPI port enabled, master mode, MSB first, SPI mode 3, SPI Clock = XTAL/4 */
+  3e:	8c e5       	ldi	r24, 0x5C	; 92
+  40:	8d b9       	out	0x0d, r24	; 13
+     
+    for(i=0; i<=0; i++)
+    {
+        address = Data;
+		address = ((address & 0xFF00)>>8); 
+		PORTB &= ~_BV(SPI_CHIP_SELECT);     	// enable SPI device
+  42:	c2 98       	cbi	0x18, 2	; 24
+        SPDR = address;                         	// send data to SPI device (turn LED on/off)
+  44:	82 e0       	ldi	r24, 0x02	; 2
+  46:	8f b9       	out	0x0f, r24	; 15
+        while (!(SPSR & _BV(SPIF)));        	// wait until write complets
+  48:	77 9b       	sbis	0x0e, 7	; 14
+  4a:	fe cf       	rjmp	.-4      	; 0x48 <__SREG__+0x9>
+        PORTB |= _BV(SPI_CHIP_SELECT);      	// disable SPI device
+  4c:	c2 9a       	sbi	0x18, 2	; 24
+  4e:	80 e1       	ldi	r24, 0x10	; 16
+  50:	97 e2       	ldi	r25, 0x27	; 39
+    milliseconds can be achieved.
+ */
+void
+_delay_loop_2(uint16_t __count)
+{
+	__asm__ volatile (
+  52:	29 e1       	ldi	r18, 0x19	; 25
+  54:	30 e0       	ldi	r19, 0x00	; 0
+  56:	f9 01       	movw	r30, r18
+  58:	31 97       	sbiw	r30, 0x01	; 1
+  5a:	f1 f7       	brne	.-4      	; 0x58 <__SREG__+0x19>
+		__ticks = (uint16_t) (__ms * 10.0);
+		while(__ticks)
+		{
+			// wait 1/10 ms
+			_delay_loop_2(((F_CPU) / 4e3) / 10);
+			__ticks --;
+  5c:	01 97       	sbiw	r24, 0x01	; 1
+		__ticks = 1;
+	else if (__tmp > 65535)
+	{
+		//	__ticks = requested delay in 1/10 ms
+		__ticks = (uint16_t) (__ms * 10.0);
+		while(__ticks)
+  5e:	d9 f7       	brne	.-10     	; 0x56 <__SREG__+0x17>
+                               	// toggle LED
+     	_delay_ms(1000);                       	// delay 0.1 seconds
+		
+		cdata = Data;
+		cdata = (cdata & 0x00FF);
+		PORTB &= ~_BV(SPI_CHIP_SELECT);     	// enable SPI device
+  60:	c2 98       	cbi	0x18, 2	; 24
+        SPDR = cdata;                         	// send data to SPI device (turn LED on/off)
+  62:	8d ee       	ldi	r24, 0xED	; 237
+  64:	8f b9       	out	0x0f, r24	; 15
+        while (!(SPSR & _BV(SPIF)));        	// wait until write complets
+  66:	77 9b       	sbis	0x0e, 7	; 14
+  68:	fe cf       	rjmp	.-4      	; 0x66 <__SREG__+0x27>
+        PORTB |= _BV(SPI_CHIP_SELECT);      	// disable SPI device
+  6a:	c2 9a       	sbi	0x18, 2	; 24
+  6c:	80 e1       	ldi	r24, 0x10	; 16
+  6e:	97 e2       	ldi	r25, 0x27	; 39
+  70:	29 e1       	ldi	r18, 0x19	; 25
+  72:	30 e0       	ldi	r19, 0x00	; 0
+  74:	f9 01       	movw	r30, r18
+  76:	31 97       	sbiw	r30, 0x01	; 1
+  78:	f1 f7       	brne	.-4      	; 0x76 <__SREG__+0x37>
+		{
+			// wait 1/10 ms
+			_delay_loop_2(((F_CPU) / 4e3) / 10);
+			__ticks --;
+  7a:	01 97       	sbiw	r24, 0x01	; 1
+		__ticks = 1;
+	else if (__tmp > 65535)
+	{
+		//	__ticks = requested delay in 1/10 ms
+		__ticks = (uint16_t) (__ms * 10.0);
+		while(__ticks)
+  7c:	d9 f7       	brne	.-10     	; 0x74 <__SREG__+0x35>
+
+                               	// toggle LED
+		_delay_ms(1000); 
+   }
+}
+  7e:	80 e0       	ldi	r24, 0x00	; 0
+  80:	90 e0       	ldi	r25, 0x00	; 0
+  82:	08 95       	ret
+
+00000084 <_exit>:
+  84:	f8 94       	cli
+
+00000086 <__stop_program>:
+  86:	ff cf       	rjmp	.-2      	; 0x86 <__stop_program>
