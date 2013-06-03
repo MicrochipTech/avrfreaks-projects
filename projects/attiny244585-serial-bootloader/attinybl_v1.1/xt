@@ -1,0 +1,31 @@
+
+
+This is my port of the t2313bl v0.8 bootloader by Arne Rossius to the attiny25/45/85. 
+Arne's bootloader is at http://elektronik-kompendium.de/public/arnerossius/schaltungen/avr/tn2313bl.htm. This page is in German but google gives a good translation and his bootloader code is in English.
+
+My port includes these changes:
+- It uses a modified version of the AVR305 Software UART.
+- I use the watchdog timer to exit the bootloader and jump to the application.
+- I've added support for the AVR910 blockmode commands. Using these makes the bootloader a little bigger but up to 6x faster so i's a great option for the attiny45/85. Using the blockmode commands at "ludicrous" speed (aka 230400 baud using the internal oscillator at 8MHz) makes programming impressively fast on these small memory attinys.
+- You can still compile using just the bytemode commands to get the smallest possible bootloader for the attiny25.
+
+The bootloader is located at the end of the flash memory.
+
+There is one requirement for the program you load using this bootloader. You must define the reset vector as an rjmp command at 0x000 in your program. The other interrupt vectors can be included, or not, as your program requires. The boootloader doesn't care.
+
+The bootloader uses the AVR910 protocol and is intended to be used with avrdude. 
+
+To minimize the bootloader size I've removed everything that avrdude either doesn't require or doesn't care about. The Software Identifier is 5 'S' characters followed by two non-printing characters, the attiny device code and 0x00, and the hardware and software identifiers are both the same two non-printing characters. 
+This has two implications:
+1) The avrdude output looks a bit strange reporting these non-printing characters but we don't care because avrdude is happy and our bootloader code is smaller.
+2) I have only tested the bootloader with avrdude and so these changes to minimize the code size my not be compatible with other programming software which use the AVR910 protocol.
+
+The default avrdude.conf file does not include unique values of the avr910_devcode for the attiny25/45/85 and actually defaults to the AT90S2313 devcode for all of them. The bootloader uses the avr910_devcode parameters for attiny25/45/85 taken from the serial ISP programmer avr910_2313_v38c.asm so if you update the avr910_devcode for the attiny25/45/85 in your avrdude.conf file with these then the avrdude "-t" option will work as expected.
+
+
+Change Log
+v1.0 Initial release
+v1.1 Disable the WDT in the initialization section. This needs to be done before jumping to the appln.
+
+
+
