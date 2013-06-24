@@ -1,0 +1,629 @@
+EESchema Schematic File Version 2  date 24/06/2013 1:32:45 PM
+LIBS:attiny
+LIBS:power
+LIBS:device
+LIBS:transistors
+LIBS:conn
+LIBS:linear
+LIBS:regul
+LIBS:74xx
+LIBS:cmos4000
+LIBS:adc-dac
+LIBS:memory
+LIBS:xilinx
+LIBS:special
+LIBS:microcontrollers
+LIBS:dsp
+LIBS:microchip
+LIBS:analog_switches
+LIBS:motorola
+LIBS:texas
+LIBS:intel
+LIBS:audio
+LIBS:interface
+LIBS:digital-audio
+LIBS:philips
+LIBS:display
+LIBS:cypress
+LIBS:siliconi
+LIBS:opto
+LIBS:atmel
+LIBS:contrib
+LIBS:valves
+LIBS:stewartslib
+LIBS:tiny461-3-cache
+EELAYER 27 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title "ATtiny461/861 RFM12 node"
+Date "19 jun 2013"
+Rev "3"
+Comp "StewieTee"
+Comment1 "Open Hardware"
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+Wire Wire Line
+	5200 4200 4800 4200
+Wire Wire Line
+	7800 4050 8300 4050
+Wire Wire Line
+	4650 5150 4250 5150
+Wire Wire Line
+	4800 2800 5200 2800
+Wire Wire Line
+	4800 2600 5200 2600
+Wire Wire Line
+	7800 3850 8300 3850
+Wire Wire Line
+	5200 4100 4800 4100
+Wire Wire Line
+	2350 4950 1950 4950
+Wire Wire Line
+	3000 4950 2850 4950
+Wire Wire Line
+	5200 4000 4800 4000
+Connection ~ 1300 6150
+Wire Wire Line
+	1300 6050 1300 6150
+Wire Wire Line
+	1500 6050 1500 6150
+Wire Wire Line
+	1500 6150 900  6150
+Wire Wire Line
+	4500 4950 4500 5050
+Wire Wire Line
+	4500 5050 4650 5050
+Wire Wire Line
+	4800 3300 5200 3300
+Wire Wire Line
+	4800 3100 5200 3100
+Wire Wire Line
+	4650 5350 4250 5350
+Wire Wire Line
+	5600 6400 5900 6400
+Wire Wire Line
+	5900 6400 5900 6800
+Connection ~ 2400 3000
+Wire Wire Line
+	2400 3000 2400 3650
+Wire Wire Line
+	2400 3650 2000 3650
+Connection ~ 2250 2600
+Wire Wire Line
+	2250 2600 2250 2500
+Wire Wire Line
+	4800 2900 5200 2900
+Wire Wire Line
+	4800 3600 5200 3600
+Connection ~ 2350 4200
+Wire Wire Line
+	2350 4300 2350 3800
+Wire Wire Line
+	2350 3800 2600 3800
+Wire Wire Line
+	1550 6650 2600 6650
+Wire Wire Line
+	7200 3450 8300 3450
+Wire Wire Line
+	2850 1600 2050 1600
+Wire Wire Line
+	6350 1500 6800 1500
+Wire Wire Line
+	5550 1600 5100 1600
+Wire Wire Line
+	5550 1400 5100 1400
+Wire Wire Line
+	8300 3550 7800 3550
+Wire Wire Line
+	8300 3350 7800 3350
+Connection ~ 2500 6650
+Wire Wire Line
+	2500 6750 2500 6650
+Connection ~ 3500 6650
+Wire Wire Line
+	3500 6750 3500 6650
+Connection ~ 3850 6650
+Connection ~ 4250 6650
+Wire Wire Line
+	3850 6650 3850 6750
+Wire Wire Line
+	4250 6650 4250 6750
+Wire Wire Line
+	4250 7250 4250 7150
+Wire Wire Line
+	3850 7250 3850 7150
+Connection ~ 4250 7250
+Wire Wire Line
+	3000 7250 3000 6950
+Connection ~ 3850 7250
+Wire Wire Line
+	3500 7150 3500 7250
+Connection ~ 3500 7250
+Wire Wire Line
+	2500 7250 2500 7150
+Connection ~ 3000 7250
+Connection ~ 2500 7250
+Wire Wire Line
+	1550 6850 1700 6850
+Wire Wire Line
+	1700 6850 1700 7250
+Wire Wire Line
+	4900 6650 3400 6650
+Wire Wire Line
+	8300 3650 7800 3650
+Wire Wire Line
+	5550 1500 5100 1500
+Wire Wire Line
+	6350 1400 6800 1400
+Wire Wire Line
+	6350 1600 6800 1600
+Wire Wire Line
+	2850 1400 2050 1400
+Wire Wire Line
+	2850 1500 2050 1500
+Wire Wire Line
+	2600 6750 2550 6750
+Wire Wire Line
+	2550 6750 2550 6650
+Connection ~ 2550 6650
+Wire Wire Line
+	4800 3500 5200 3500
+Wire Wire Line
+	4800 3700 5200 3700
+Wire Wire Line
+	2000 3650 2000 3800
+Wire Wire Line
+	1700 4200 2600 4200
+Connection ~ 2000 4200
+Wire Wire Line
+	1700 3800 1700 2600
+Wire Wire Line
+	1700 2600 2600 2600
+Connection ~ 1700 3000
+Wire Wire Line
+	2300 3000 2600 3000
+Wire Wire Line
+	1700 7250 5900 7250
+Wire Wire Line
+	5900 7250 5900 7200
+Wire Wire Line
+	4650 5250 4250 5250
+Wire Wire Line
+	4650 5450 4250 5450
+Wire Wire Line
+	4800 3200 5200 3200
+Wire Wire Line
+	1100 6050 1100 6150
+Connection ~ 1100 6150
+Wire Wire Line
+	900  6250 900  6050
+Connection ~ 900  6150
+Wire Wire Line
+	3500 5000 3500 4950
+Wire Wire Line
+	3500 4950 3400 4950
+Wire Wire Line
+	7000 2750 8300 2750
+Wire Wire Line
+	7000 2850 8300 2850
+Wire Wire Line
+	7800 3950 8300 3950
+Wire Wire Line
+	5200 3000 4800 3000
+Wire Wire Line
+	4800 2700 5200 2700
+Wire Wire Line
+	4650 5550 4500 5550
+Wire Wire Line
+	4500 5550 4500 5600
+Wire Wire Line
+	5200 3800 4800 3800
+Wire Wire Line
+	5200 3900 4800 3900
+Text Notes 750  5750 0    60   ~ 0
+PCB mounting holes
+Text Label 4350 5150 0    60   ~ 0
+AN3
+$Comp
+L CONN_6 P3
+U 1 1 5017C6A9
+P 5000 5300
+F 0 "P3" V 4950 5300 60  0000 C CNN
+F 1 "CONN_6" V 5050 5300 60  0000 C CNN
+F 2 "" H 5000 5300 60  0001 C CNN
+F 3 "" H 5000 5300 60  0001 C CNN
+	1    5000 5300
+	1    0    0    -1  
+$EndComp
+Text Label 4900 3000 0    60   ~ 0
+AN3
+Text Label 4900 3200 0    60   ~ 0
+AN5
+Text Label 4900 3300 0    60   ~ 0
+AN6
+Text Label 4900 2800 0    60   ~ 0
+DSCK
+Text Label 4900 2700 0    60   ~ 0
+DOUT
+Text Label 4900 2600 0    60   ~ 0
+DIN
+Text Label 4850 3800 0    60   ~ 0
+SS
+Text Label 7950 3950 0    60   ~ 0
+DSCK
+Text Label 7950 3850 0    60   ~ 0
+DOUT
+Text Label 7950 2750 0    60   ~ 0
+DIN
+$Comp
+L ATTINY861-S IC1
+U 1 1 4FFBEB2D
+P 3400 3400
+F 0 "IC1" H 2900 4350 60  0000 C CNN
+F 1 "ATTINY861-S" H 4300 2450 60  0000 C CNN
+F 2 "SO20" H 2950 2450 60  0001 C CNN
+F 3 "" H 3400 3400 60  0001 C CNN
+	1    3400 3400
+	1    0    0    -1  
+$EndComp
+Text Label 2000 4950 0    60   ~ 0
+ULED
+$Comp
+L GND #PWR01
+U 1 1 4F57087E
+P 3500 5000
+F 0 "#PWR01" H 3500 5000 30  0001 C CNN
+F 1 "GND" H 3500 4930 30  0001 C CNN
+F 2 "" H 3500 5000 60  0001 C CNN
+F 3 "" H 3500 5000 60  0001 C CNN
+	1    3500 5000
+	1    0    0    -1  
+$EndComp
+$Comp
+L LED D2
+U 1 1 4F57086D
+P 3200 4950
+F 0 "D2" H 3200 5050 50  0000 C CNN
+F 1 "LED" H 3200 4850 50  0000 C CNN
+F 2 "" H 3200 4950 60  0001 C CNN
+F 3 "" H 3200 4950 60  0001 C CNN
+	1    3200 4950
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R3
+U 1 1 4F570865
+P 2600 4950
+F 0 "R3" V 2680 4950 50  0000 C CNN
+F 1 "680R" V 2600 4950 50  0000 C CNN
+F 2 "" H 2600 4950 60  0001 C CNN
+F 3 "" H 2600 4950 60  0001 C CNN
+	1    2600 4950
+	0    1    1    0   
+$EndComp
+Text Label 4850 4000 0    60   ~ 0
+ULED
+Text Label 2350 3000 0    60   ~ 0
+AVCC
+$Comp
+L GND #PWR02
+U 1 1 4F56FD4A
+P 900 6250
+F 0 "#PWR02" H 900 6250 30  0001 C CNN
+F 1 "GND" H 900 6180 30  0001 C CNN
+F 2 "" H 900 6250 60  0001 C CNN
+F 3 "" H 900 6250 60  0001 C CNN
+	1    900  6250
+	1    0    0    -1  
+$EndComp
+$Comp
+L CONN_1 P9
+U 1 1 4F56FD3B
+P 1500 5900
+F 0 "P9" V 1580 5900 40  0000 L CNN
+F 1 "CONN_1" H 1500 5955 30  0001 C CNN
+F 2 "" H 1500 5900 60  0001 C CNN
+F 3 "" H 1500 5900 60  0001 C CNN
+	1    1500 5900
+	0    -1   -1   0   
+$EndComp
+$Comp
+L CONN_1 P8
+U 1 1 4F56FD39
+P 1300 5900
+F 0 "P8" V 1380 5900 40  0000 L CNN
+F 1 "CONN_1" H 1300 5955 30  0001 C CNN
+F 2 "" H 1300 5900 60  0001 C CNN
+F 3 "" H 1300 5900 60  0001 C CNN
+	1    1300 5900
+	0    -1   -1   0   
+$EndComp
+$Comp
+L CONN_1 P7
+U 1 1 4F56FD37
+P 1100 5900
+F 0 "P7" V 1180 5900 40  0000 L CNN
+F 1 "CONN_1" H 1100 5955 30  0001 C CNN
+F 2 "" H 1100 5900 60  0001 C CNN
+F 3 "" H 1100 5900 60  0001 C CNN
+	1    1100 5900
+	0    -1   -1   0   
+$EndComp
+$Comp
+L CONN_1 P6
+U 1 1 4F56FD31
+P 900 5900
+F 0 "P6" V 980 5900 40  0000 L CNN
+F 1 "CONN_1" H 900 5955 30  0001 C CNN
+F 2 "" H 900 5900 60  0001 C CNN
+F 3 "" H 900 5900 60  0001 C CNN
+	1    900  5900
+	0    -1   -1   0   
+$EndComp
+Text Label 2100 1600 0    60   ~ 0
+1WIRE
+$Comp
+L GND #PWR03
+U 1 1 4F55F067
+P 4500 5600
+F 0 "#PWR03" H 4500 5600 30  0001 C CNN
+F 1 "GND" H 4500 5530 30  0001 C CNN
+F 2 "" H 4500 5600 60  0001 C CNN
+F 3 "" H 4500 5600 60  0001 C CNN
+	1    4500 5600
+	1    0    0    -1  
+$EndComp
+$Comp
+L VCC #PWR04
+U 1 1 4F55F061
+P 4500 4950
+F 0 "#PWR04" H 4500 5050 30  0001 C CNN
+F 1 "VCC" H 4500 5050 30  0000 C CNN
+F 2 "" H 4500 4950 60  0001 C CNN
+F 3 "" H 4500 4950 60  0001 C CNN
+	1    4500 4950
+	1    0    0    -1  
+$EndComp
+Text Label 4850 3900 0    60   ~ 0
+1WIRE
+Text Label 4350 5450 0    60   ~ 0
+AN6
+Text Label 4350 5350 0    60   ~ 0
+AN5
+Text Label 4350 5250 0    60   ~ 0
+AN4
+Text Label 4900 3100 0    60   ~ 0
+AN4
+Text Label 5650 6400 0    60   ~ 0
+AREF
+$Comp
+L C C7
+U 1 1 4F55E30E
+P 5900 7000
+F 0 "C7" H 5950 7100 50  0000 L CNN
+F 1 "0.1" H 5950 6900 50  0000 L CNN
+F 2 "" H 5900 7000 60  0001 C CNN
+F 3 "" H 5900 7000 60  0001 C CNN
+	1    5900 7000
+	1    0    0    -1  
+$EndComp
+$Comp
+L INDUCTOR L1
+U 1 1 4F55E2EE
+P 2000 3000
+F 0 "L1" V 1950 3000 40  0000 C CNN
+F 1 "INDUCTOR" V 2100 3000 40  0000 C CNN
+F 2 "" H 2000 3000 60  0001 C CNN
+F 3 "" H 2000 3000 60  0001 C CNN
+	1    2000 3000
+	0    1    1    0   
+$EndComp
+$Comp
+L C C1
+U 1 1 4F55E2B2
+P 1700 4000
+F 0 "C1" H 1750 4100 50  0000 L CNN
+F 1 "0.1u" H 1750 3900 50  0000 L CNN
+F 2 "" H 1700 4000 60  0001 C CNN
+F 3 "" H 1700 4000 60  0001 C CNN
+	1    1700 4000
+	1    0    0    -1  
+$EndComp
+Text Label 4900 2900 0    60   ~ 0
+AREF
+$Comp
+L C C2
+U 1 1 4F55E25F
+P 2000 4000
+F 0 "C2" H 2050 4100 50  0000 L CNN
+F 1 "0.1u" H 2050 3900 50  0000 L CNN
+F 2 "" H 2000 4000 60  0001 C CNN
+F 3 "" H 2000 4000 60  0001 C CNN
+	1    2000 4000
+	1    0    0    -1  
+$EndComp
+Text Label 4850 3700 0    60   ~ 0
+SCK
+Text Label 4850 3600 0    60   ~ 0
+MISO
+Text Label 4850 3500 0    60   ~ 0
+MOSI
+$Comp
+L GND #PWR05
+U 1 1 4F55C872
+P 2350 4300
+F 0 "#PWR05" H 2350 4300 30  0001 C CNN
+F 1 "GND" H 2350 4230 30  0001 C CNN
+F 2 "" H 2350 4300 60  0001 C CNN
+F 3 "" H 2350 4300 60  0001 C CNN
+	1    2350 4300
+	1    0    0    -1  
+$EndComp
+$Comp
+L VCC #PWR06
+U 1 1 4F55C866
+P 2250 2500
+F 0 "#PWR06" H 2250 2600 30  0001 C CNN
+F 1 "VCC" H 2250 2600 30  0000 C CNN
+F 2 "" H 2250 2500 60  0001 C CNN
+F 3 "" H 2250 2500 60  0001 C CNN
+	1    2250 2500
+	1    0    0    -1  
+$EndComp
+Text Notes 8150 950  0    60   ~ 0
+Primary use of board is as a remote temperature sensor using\na RFM12 transciever and a DS18B20 1-wire sensor
+Text Notes 2900 1250 0    60   ~ 0
+1-WIRE PORT
+Text Notes 5400 1150 0    60   ~ 0
+ATMEL 6-pin ICP header
+$Comp
+L LP2981 U1
+U 1 1 4C7C8E48
+P 3000 6700
+F 0 "U1" H 3150 6504 60  0000 C CNN
+F 1 "LP2981" H 3000 6900 60  0000 C CNN
+F 2 "" H 3000 6700 60  0001 C CNN
+F 3 "" H 3000 6700 60  0001 C CNN
+	1    3000 6700
+	1    0    0    -1  
+$EndComp
+Text Label 2100 1400 0    60   ~ 0
+GND
+Text Label 2100 1500 0    60   ~ 0
+VCC
+$Comp
+L CONN_3 P2
+U 1 1 4C386236
+P 3200 1500
+F 0 "P2" V 3150 1500 50  0000 C CNN
+F 1 "CONN_3" V 3250 1500 40  0000 C CNN
+F 2 "" H 3200 1500 60  0001 C CNN
+F 3 "" H 3200 1500 60  0001 C CNN
+	1    3200 1500
+	1    0    0    -1  
+$EndComp
+Text Label 7950 4050 0    60   ~ 0
+SS
+Text Label 4850 4200 0    60   ~ 0
+RST
+Text Label 6450 1600 0    60   ~ 0
+GND
+Text Label 6450 1500 0    60   ~ 0
+MOSI
+Text Label 6450 1400 0    60   ~ 0
+VCC
+Text Label 5200 1600 0    60   ~ 0
+RST
+Text Label 5200 1500 0    60   ~ 0
+SCK
+Text Label 5200 1400 0    60   ~ 0
+MISO
+$Comp
+L CONN_3X2 P4
+U 1 1 4C3852E7
+P 5950 1550
+F 0 "P4" H 5950 1800 50  0000 C CNN
+F 1 "CONN_3X2" H 5950 1400 40  0000 C CNN
+F 2 "" H 5950 1550 60  0001 C CNN
+F 3 "" H 5950 1550 60  0001 C CNN
+	1    5950 1550
+	1    0    0    -1  
+$EndComp
+Text Label 4850 4100 0    60   ~ 0
+INT0
+Text Label 7950 3650 0    60   ~ 0
+GND
+Text Label 7950 3550 0    60   ~ 0
+VCC
+Text Label 7850 3450 0    60   ~ 0
+ANTENNA
+Text Label 7950 3350 0    60   ~ 0
+GND
+Text Label 7950 2850 0    60   ~ 0
+INT0
+$Comp
+L TST P5
+U 1 1 4BFD082F
+P 7200 3450
+F 0 "P5" H 7200 3750 40  0000 C CNN
+F 1 "TST" H 7200 3700 30  0000 C CNN
+F 2 "" H 7200 3450 60  0001 C CNN
+F 3 "" H 7200 3450 60  0001 C CNN
+	1    7200 3450
+	1    0    0    -1  
+$EndComp
+$Comp
+L RFM12B_SMT U2
+U 1 1 4BFD06CC
+P 9150 2650
+F 0 "U2" H 9250 2700 60  0000 C CNN
+F 1 "RFM12B_SMT" H 9350 1900 60  0000 C CNN
+F 2 "" H 9150 2650 60  0001 C CNN
+F 3 "" H 9150 2650 60  0001 C CNN
+	1    9150 2650
+	1    0    0    -1  
+$EndComp
+$Comp
+L CONN_2 P1
+U 1 1 4BED556B
+P 1200 6750
+F 0 "P1" V 1150 6750 40  0000 C CNN
+F 1 "CONN_2" V 1250 6750 40  0000 C CNN
+F 2 "" H 1200 6750 60  0001 C CNN
+F 3 "" H 1200 6750 60  0001 C CNN
+	1    1200 6750
+	-1   0    0    -1  
+$EndComp
+$Comp
+L C C3
+U 1 1 4BED553F
+P 2500 6950
+F 0 "C3" H 2550 7050 50  0000 L CNN
+F 1 "4.7u" H 2550 6850 50  0000 L CNN
+F 2 "" H 2500 6950 60  0001 C CNN
+F 3 "" H 2500 6950 60  0001 C CNN
+	1    2500 6950
+	1    0    0    -1  
+$EndComp
+$Comp
+L CP C4
+U 1 1 4BED5467
+P 3500 6950
+F 0 "C4" H 3550 7050 50  0000 L CNN
+F 1 "10u" H 3550 6850 50  0000 L CNN
+F 2 "" H 3500 6950 60  0001 C CNN
+F 3 "" H 3500 6950 60  0001 C CNN
+	1    3500 6950
+	1    0    0    -1  
+$EndComp
+$Comp
+L C C5
+U 1 1 4BED5035
+P 3850 6950
+F 0 "C5" H 3900 7050 50  0000 L CNN
+F 1 "0.1" H 3900 6850 50  0000 L CNN
+F 2 "" H 3850 6950 60  0001 C CNN
+F 3 "" H 3850 6950 60  0001 C CNN
+	1    3850 6950
+	1    0    0    -1  
+$EndComp
+Text Label 4350 7250 0    60   ~ 0
+GND
+Text Label 4300 6650 0    60   ~ 0
+VCC
+$Comp
+L C C6
+U 1 1 4BEC66A1
+P 4250 6950
+F 0 "C6" H 4300 7050 50  0000 L CNN
+F 1 "0.1" H 4300 6850 50  0000 L CNN
+F 2 "" H 4250 6950 60  0001 C CNN
+F 3 "" H 4250 6950 60  0001 C CNN
+	1    4250 6950
+	1    0    0    -1  
+$EndComp
+$EndSCHEMATC
