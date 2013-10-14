@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "F:\Projects\Active\ATTOBASIC\Code\V231\labels.tmp" -fI -W+ie -I "Include" -C V3 -o "F:\Projects\Active\ATTOBASIC\Code\V231\AttoBASICV231.hex" -d "F:\Projects\Active\ATTOBASIC\Code\V231\AttoBASICV231.obj" -e "F:\Projects\Active\ATTOBASIC\Code\V231\AttoBASICV231.eep" -m "F:\Projects\Active\ATTOBASIC\Code\V231\AttoBASICV231.map" -l "F:\Projects\Active\ATTOBASIC\Code\V231\AttoBASICV231.lst" "F:\Projects\Active\ATTOBASIC\Code\V231\AttoBASICV231.asm"

@@ -1,0 +1,2 @@
+@set PATH=Path=C:\Program Files\Far2\;D:\WinAVR-20100110\bin;D:\WinAVR-20100110\utils\bin;C:\Program Files (x86)\PC Connectivity Solution\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Program Files (x86)\Borland\Delphi7\Bin;C:\Program Files (x86)\Borland\Delphi7\Projects\Bpl
+make %*

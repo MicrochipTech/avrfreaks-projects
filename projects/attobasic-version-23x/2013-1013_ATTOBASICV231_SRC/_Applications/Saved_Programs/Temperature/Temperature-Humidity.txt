@@ -1,0 +1,32 @@
+5 PRI "Temp & Humidity Logger~"
+10 EMI $0C# clear screen
+#15 SDD3 ; CBD3 ; SDD2 ; CBD2#enable Ext EEP access and LED 
+20 DFV 0; DFI 0 255; DFX; CBC5# init 256 pages, 1 field per record, reset adress pointer
+25 RTI 2# 100mS per RTC tick
+30 DHU 0; DHS 0# Read DHT in *F, ignore sign
+35 ADR# Select internal Vref
+#40 RTR# reset RTC
+45 DHT# initiate a data transfer from the DHT
+50 A:= PEEK VPG@DFA1# fetch DFL page pointer
+55 B:= PEEK VPG@DFA0# fetch DFL offset pointer
+60 M:= A= $FF; N:= B> $FE# test for datafile overflow
+65 IF M & N THEN END# datafile overflow, branch
+70 DFL PEEK VPG@RTC2# fetch and write RTC2
+75 DFL PEEK VPG@RTC1# fetch and write RTC1
+80 DFL PEEK VPG@RTC0# fetch and write RTC0
+85 DFL PEEK VPG@DHI# fetch and write RH integer 
+90 DFL PEEK VPG@DTI# fetch and write *C integer
+95 DFL PEEK VPG@DTD# fetch and write *C decimal
+100 DFL ADC 0 # fetch and write value on ADC 0
+105 PRI "RTP: "; RTP# print RTP info
+110 PRI "*C : "; PRI PEEK VPG@DTI# print *C integer 
+115 PRI "%RH: "; PRI PEEK VPG@DHI# print RH
+120 PRI "========~"# divider and CR/LF for next line
+125 FOR N= 1 45# loop counter 45 * 4 Sec = 3 minutes
+130 SLP 8# sleep 4 seconds
+#135 SBD2 ; SLP 1 ; CBD2#Blip LED
+140 NEXT 
+145 GOTO 45# loop for more readings
+#155 END
+#200 SDD3 ; CBD3 ; DFF7 ; SLP9# 7 fields per record
+#205 210 DFD 0 32 ; EMI 4#dump the data
