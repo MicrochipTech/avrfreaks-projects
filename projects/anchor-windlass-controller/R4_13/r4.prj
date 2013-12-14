@@ -1,0 +1,121 @@
+;; ************************************************************
+; PROJECT:	Winch Controller
+; AUTHOR:	BobC
+; ************************************************************
+
+; Micro + software running
+; ------------------------------------------------------------
+.MICRO "AT90S2313"
+.PROGRAM "R4.asm""2313def.inc"
+.TARGET "R4.hex"
+.TAB 8
+;.TRACE              ; Activate micro trace
+
+; Following lines are optional; if not included
+; exactly these values are taken by default
+; ------------------------------------------------------------
+.POWER VDD=5 VSS=0  ; Power nodes
+.CLOCK 1meg         ; Micro clock
+;.STORE 250m         ; Trace (micro+signals) storage time
+; ------------------------------------------------------------
+ ;LCD connections:
+;		RS				PB6
+;		R/W			PB5
+;		E				PB4
+;		D4				PB0
+;		D5				PB1
+;		D6				PB2
+;		D7				PB3
+
+;  Winch Connections
+;
+;PD0  Lower I/P Active Hi					Pin 2
+;PD1  Raise I/P Active Hi        		Pin 3
+;PD2  Count I/P Hi to lo transition		Pin 6
+;PD3  Clear I/P                        Pin 7
+;PD4  Stop O/P Hi to activate	LED D2   Pin 8
+;PD5  0 ft 							LED D3   Pin 9
+;PD6  O/P Micro Running Lo 	LED D1   Pin 11
+
+; -------------------------------------------------------------------
+; LCD cell
+; Parameters are: (characters, lines, oscillator frequency)
+;
+; In the software, it is used the 4 bits interface, to save ports
+; but LCD has 8 bus lines, therefore, the 4 LSB must be connedted to
+; dummy nodes
+;
+;                                                       not connect,
+;                    RS   R/W   E   4 bits interface   arbitrary nodes
+;                    ---  ---  ---  ----------------   ---------------
+Xdisp LCD(16 2 250K) PB6  PB5  PB4   PB3 PB2 PB1 PB0   nc3 nc2 nc1 nc0
+;
+;----------------------------------------------------------------------
+
+K0 Vss PD0  LATCHED 		;lowering
+K1 Vss PD1  LATCHED  		;raising
+K2 Vss pd3  MONOSTABLE (200m)  ; clear counter
+K3 vdd in1  Latched
+K4 vss in0  latched  		;enable turning signal
+
+D1 VDD l1  			; Micro running
+;D2 VDD pd4    			; 20 ft lowering Stop pulse
+;D3 VDD pd5      	  ; 0 ft raise stop signal
+
+K8 Vss reset 		;  Reset Micro
+
+R0 vdd pd0 1k
+R1 vdd pd1 1k
+r3 vdd pd3 1k
+r4 vdd in0 1k
+
+X0  ND2 out4 gen pd2	;winch turning signal 	
+X1  ND2 out3 out3 out1    ;enable
+X2  ND2 pd6 pd6 l1	; Micro active signal
+X3  ND2 in0 pd4 out3
+X4 ND2 L R out4
+X5 ND2 out1 PD0 L
+X6 ND2 PD1 PD1 R
+;X7 ND2 R1 PD5 PD1 	;raise signal
+
+
+;-----------------------------------------------------
+;Pulse Generator
+
+;V[inst_name]  node VSS PULSE(v_initial v_final t_delay t_rise t_fall t_width t_period)
+
+Vmygen gen VSS PULSE(0 5 0 0 0 1m 100m)
+;
+;------------------------------------------------------------
+;Set up scope
+.PLOT V(pd0) V(pd1) V(pd2) V(pd3) V(pd4) V(out4)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
