@@ -1,0 +1,238 @@
+.device ATtiny13
+
+;Tomicko2014
+
+;+----------------------------------------------------------------------------------+
+;|                                                                      			|
+;|	Pin1, PB5 - reset, pull up resistor												|
+;|	Pin2, PB3 - out, piezo +				 										|
+;|	Pin3, PB4 - out, piezo -				 										|
+;|	Pin4      - gnd                  												|
+;|	Pin5, PB0 - nc, in																|
+;|	Pin6, PB1 - nc, in																|
+;|	Pin7, PB2 - nc, in																|
+;|	Pin8      - Vcc, 5V1 zener diode, 100nF  										|
+;|                                                                      			|
+;+----------------------------------------------------------------------------------+
+
+;+----------------------------------------------------------------------------------+
+;|																					|
+;|			+---+   +---+   +---+	    +---+						+---+			|
+;|			|   |   |   |   |   |	    |   |						|  	|			|
+;|			|   |   |   |   |   |	    |   |						|  	|			|
+;|		   -+   +---+   +---+   +- ... -+   +-------- ... ----------+   +--	...		|
+;|			 t1  t2																	|
+;|			|              t3               |           t4          |				|
+;|																					|
+;|	t1 = 0.833uS * tajmer_max * vreme_impulsa	(for RC clock 4,8MHz, clkdiv/8=1)	|
+;|	t2 = 0.833uS * tajmer_max * vreme_impulsa	(for RC clokc 4,8MHz, clkdiv/8=1)	|
+;|	f  = 1/(t1+t2)																	|
+;|	t3 = (t1+t2) * br_ponavljanja * trajanje_tona									|
+;|	t4 = 0.833 * tajmer_max * konstanta_1 * trajanje_pauze							|
+;|																					|
+;+----------------------------------------------------------------------------------+							
+
+;--------------------------------
+.equ	SREG	=$3F								
+.equ	SPL		=$3D									
+.equ	GIMSK	=$3B									
+.equ	GICR	=$3B   												   
+.equ	GIFR	=$3A			
+.equ	TIMSK0	=$39					
+.equ	TIFR0	=$38									
+.equ	SPMCSR  =$37   												   
+.equ	OCR0A	=$36   												   
+.equ	MCUCR	=$35	
+.equ	MCUSR	=$34								
+.equ	TCCR0B	=$33					
+.equ	TCNT0	=$32	
+.equ	OSCCAL	=$31   												   
+.equ	TCCR0A	=$2F  												   
+.equ	DWDR	=$2E   												   
+.equ	OCR0B	=$29   												   
+.equ	GTCCR	=$28   												   
+.equ	CLKPR	=$26   												   
+.equ	WDTCR	=$21   												   
+.equ   	EEAR	=$1E   												   
+.equ	EEARL	=$1E   												  
+.equ	EEDR	=$1D   												   
+.equ	EECR	=$1C   												   
+.equ	PORTB	=$18	
+.equ	DDRB	=$17	
+.equ	PINB	=$16	
+.equ	PCMSK	=$15	
+.equ	DIDR0	=$14	  											   	
+.equ	ACSR	=$08	
+.equ	ADMUX	=$07   												   
+.equ	ADCSRA	=$06    											   
+.equ	ADCH	=$05                                                   
+.equ	ADCL	=$04   												   
+.equ	ADCSRB	=$03												   
+;--------------------------------
+
+
+
+;--------------------------------
+	.equ tajmer_max 	= 0x3D			
+	.equ vreme_impulsa	= 0x0D			
+	.equ br_ponavljanja	= 0x06			
+	.equ trajanje_tona	= 0x18			
+	.equ konstanta_1	= 0xC4		
+	.equ trajanje_pauze = 0x18			
+;--------------------------------
+
+
+
+;--------------------------------
+.def temp	=r16	
+.def d		=r17	
+.def ii		=r18	
+.def k		=r19	
+.def semafor=r20	
+.def b		=r21	
+.def j		=r22	
+.def i		=r23	
+;--------------------------------
+
+
+
+;----------------INTERRUPT VECTOR TABLE-----------------------------------------+
+.org	0x000				;Reset, Brown-on, Watchdog, Power on				|
+	rjmp	reset															   ;|
+.org	0x001				;External Interrupt Request 0		(INT0)			|
+	reti																	   ;|
+.org	0x002				;Pin Change Interrupt Request 0		(PCINT0)		|
+	reti																	   ;|
+.org	0x003				;Timer/Counter Overflow				(TIM0_OVF)		|
+	reti																	   ;|
+.org	0x004				;EEPROM Ready										|
+	reti																	   ;|
+.org	0x005				;Analog Comparator									|
+	reti																	   ;|
+.org	0x006				;Timer/Counter Compare Match A						|
+	rjmp tajmer_a															   ;|
+.org	0x007				;Timer/Counter Compare Match B						|
+	reti																	   ;|
+.org	0x008				;Watchdog Time-out									|
+	reti																	   ;|
+.org	0x009				;ADC Conversion Complete							|
+	reti																	   ;|
+;-------------------------------------------------------------------------------+
+
+
+	;---------------------------
+	reset:																								   
+		cli																				
+		nop																								   
+		ldi temp, 0x9F			
+		out SPL, temp			
+		ldi temp, 0b00011000	
+		out DDRB, temp			
+		ldi temp, 0x80			
+		out ACSR, temp			
+		ldi temp, tajmer_max																			   
+		out OCR0A, temp			
+		ldi temp, 0b00000010																			   
+		out TCCR0A, temp		
+		ldi temp, 0b00000000	
+;		ldi temp, 0b00000001	
+		out TCCR0B, temp		
+		ldi temp, 0b00000100	
+		out TIMSK0, temp		
+	;---------------------------
+ 		
+
+;----------------------------
+		sei		
+		nop	
+	pocetak:
+			cbi PORTB,3
+			cbi PORTB,4			; (pin2(PB3)=0V i pin3(PB4)=0V)
+		ldi temp, 0b00000001	
+		out TCCR0B, temp		
+
+
+;************* sound on **************
+	start:						
+		clr b					
+		clr j					
+		clr k	
+	dalje_0:
+			cbi PORTB,3			
+			sbi PORTB,4
+		clr semafor
+		clr i
+	cekaj_prekid_1:
+		ldi temp, 0x01
+		cp temp, semafor
+		brne cekaj_prekid_1		
+		clr semafor
+		inc i
+		ldi temp, vreme_impulsa
+		cp temp, i
+		breq dalje_1
+		rjmp cekaj_prekid_1
+	dalje_1:
+			cbi PORTB,4			; (pin2(PB3)=5V i pin3(PB4)=0V)
+			sbi PORTB,3
+	dalje_4:
+		clr i
+		clr semafor
+	cekaj_prekid_2:
+		ldi temp, 0x01
+		cp temp, semafor
+		brne cekaj_prekid_2		
+		clr semafor
+		inc i
+		ldi temp, vreme_impulsa
+		cp temp, i
+		breq dalje_5
+		rjmp cekaj_prekid_2
+	dalje_5:
+		inc k
+		ldi temp, br_ponavljanja
+		cp temp, k
+		breq dalje_66
+		rjmp dalje_0
+	dalje_66:
+		clr k
+		inc b
+		ldi temp, trajanje_tona
+		cp temp, b
+		breq dalje_7
+		rjmp dalje_0
+
+
+;************* sound off **************
+	dalje_7:
+			cbi PORTB,4			; (pin2(PB3)=0V i pin3(PB4)=0V)
+			cbi PORTB,3
+		clr b
+		clr semafor
+		clr j
+	cekaj_prekid_3:
+		ldi temp, 0x01
+		cp temp, semafor
+		brne cekaj_prekid_3		
+		clr semafor
+		inc j
+		ldi temp, konstanta_1
+		cp j, temp
+		brlo cekaj_prekid_3
+		clr j
+		inc b
+	dalje_8:
+		ldi temp, trajanje_tona
+		cp temp, b
+		brlo dalje_9
+		rjmp cekaj_prekid_3
+	dalje_9:
+		rjmp start
+
+
+
+;----------------Interupt software-------------
+	tajmer_a:				
+		ldi semafor, 0x01	
+		reti
+
