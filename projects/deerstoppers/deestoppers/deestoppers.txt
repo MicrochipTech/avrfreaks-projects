@@ -1,0 +1,119 @@
+/*
+ * attiny85debugtest.cpp
+ *
+ * Created: 8/1/2014 11:37:32 AM
+ *  Author: cgriffin
+ */
+// ATMEL ATTINY 25/45/85 / ARDUINO
+//
+//                 +-\/-+
+// Ain0 (D5) PB5  1|    |8  Vcc
+// Ain3 (D3) PB3  2|    |7  PB2 INT0 (D2) Ain1
+// Ain2 (D4) PB4  3|    |6  PB1  (D1) pwm1
+//           GND  4|    |5  PB0 (D0) pwm0
+//                 +----+
+ 
+
+#define F_CPU 8000000UL
+#define DDRx DDRB
+#define SPRAYER_PIN PB0
+#define STATUS_PIN PB1
+#define SET_TIME_BUTTON_PIN PB2
+
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+ 
+int realTime = 0;		//This will incriment every .01 seconds
+int i = 0;				//This stores button hits
+int secondcount = 0;	//this counts for the flashing led and main off time of sprayer pin			
+int buttoncounter;		//this is the counter that measures the length of time the button was depressed 
+
+ void initTimer0(){
+	  TCCR0A = (1 << WGM01);	//Set CTC Bit
+	  OCR0A = 78;				//number of beats in .01 seconds
+	  TIMSK = (1 << OCIE0A);	//match and trigger on compare
+	  TCCR0B |= (1 << CS00) | (1 << CS02);  // Prescaler = F_CPU/1024 //start at 1024 prescalar
+ }
+ 
+ void setProcprescale(){
+	 	CLKPR = (1 << CLKPCE);     //activate CLKPCE
+	 	CLKPR &= (0 << CLKPS0) | (0 << CLKPS1) | (0 << CLKPS2) | (0 << CLKPS3); //set for no scaling (full 8Mhz)
+
+ }
+ 
+ void setIO(){
+		DDRx |= (1 << SPRAYER_PIN) | (1 << STATUS_PIN) | (0 << SET_TIME_BUTTON_PIN); /* Set PORTB IOs  */
+		PORTB = (1 << SET_TIME_BUTTON_PIN); /*set input pin high*/
+
+ }
+ 
+ void setButtonINT0(){
+	  MCUCR &= (1<<ISC01) | (0<<ISC00); //set INT0 as falling edge trigger
+	  GIMSK |= (1<<INT0); //enable INTO in global interrupt mask
+ }
+ 
+ void buttonCheck(){
+	  if (bit_is_clear(PINB,SET_TIME_BUTTON_PIN)){  //if the button is depressed 		
+			_delay_ms(1);
+			buttoncounter++;  //increment buttoncounter
+				if (buttoncounter > 2000){  //initiate reset if button is held low for more than 2 seconds
+					i=0;
+					secondcount=0;
+					TCCR0A = 0x00;}
+				
+				if (bit_is_set(PINB,SET_TIME_BUTTON_PIN)){ //if the button is released 
+					if (buttoncounter > 2000){  //initiate reset if button is held low for more than 2 seconds
+						buttoncounter=0;
+					}else{
+						i++;				//increment i whenever on/off pattern detected
+				}
+			}
+		}	
+	}
+	
+ 
+ ISR(INT0_vect) {
+	 initTimer0();  //initializes timer after button push
+	 buttonCheck();
+ }
+
+ 
+ ISR(TIMER0_COMPA_vect) //once activated increments every 78 clock hits or .01 seconds
+ {
+	 realTime++;
+ }
+ 
+int main(void)
+{
+	setIO();
+	setProcprescale();
+    setButtonINT0();
+	
+    sei();
+     
+while(1)   //TODO:: Please write your application code
+    {
+    if (i > 0){
+		    PORTB|= (1 << SPRAYER_PIN);
+			if(realTime >= 100){			//this tests for 1 second
+				realTime = 0;				//time reset for blinking status pin
+				secondcount++;				//counter incrementing 1 per second to determine LED flash rate and timing to keep sprayer pin off
+				PORTB ^= (1<<STATUS_PIN);	//flips status led bit 
+				if (secondcount >= (i*3600)){ //this is the total time the sprayer pin is off and status led is blinking
+					i=0;					//reset button counter
+					secondcount=0;			//reset second counter
+					TCCR0A = 0x00;			//reset TIMER0
+				}
+			}
+		}
+		else
+		{
+		PORTB &=  (0 << STATUS_PIN) | (0 << SPRAYER_PIN); //natural state is PB0 and PB1 in an on state
+		}
+	}
+	return 0;
+}
+ 
+ 
