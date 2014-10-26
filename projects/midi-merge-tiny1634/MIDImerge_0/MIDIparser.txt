@@ -1,0 +1,85 @@
+Use Lucida Console or Terminal font to view correctly:
+
+
+MIDIparse gets called whenever the mainloop notes that the inQueue's In pointer is not the same as the inQueue's Out pointer.  It is sent the value pointed to
+       by the inQueue's Out pointer.  This is the new_MIDI_byte that has just arrived.
+
+|-------------\                      /
+| MIDIParse    \                     | MsgBuff[MsgLen] << NMB                            /
+| (NewMIDIByte) }                    | MsgLen <<  1                                      | NMB =  0xf0------------ isSysEx     << TRUE
+|              /                     |                                                   |     +
+|-------------/                      | aNMB << NMB & 0xf0                                |     +                 /
+|                                    |                                                   | NMB =  0xf7-----------| BuffPointerH:L << addr(MsgBuff[0])
+|                                    | aNMB =  0xf0 -------------------------------------|     +                 | isMsgRdy    << TRUE
+|    from previous interations:      |      +                                            |     +                 | isSysEx     << FALSE
+|       RunCmd      || 0x00          |      +                                            |     +                 | isTwoByte   << FALSE
+|       MsgLen      || 0x00          |      +                                            |     +                 | isThreeByte << FALSE
+|       MsgBuff[]   || size=16 bytes |      +                                            |     +                 | isRunStatus << FALSE
+|       isRunStatus || FALSE         |                           /                       |     +                 \
+|       isTwoByte   || FALSE         | aNMB =  0xc0 + 0xd0 ------| isTwoByte << TRUE     |     +
+|       isThreeByte || FALSE         |      +                    | RunCmd << NMB         | NMB =  0xf2------------ isTwoByte   << TRUE
+|       isSysEx     || FALSE         |      +                    \                       |     +
+|                     RESET values   |      +                                            |     +
+|     /                              |                                                   | NMB =  0xf3------------ isThreeByte << TRUE
+|     | isMsgRdy << FALSE            | aNMB =  0x80 + 0x90 +     /                       |     +
+|     | isError  << FALSE            |         0xA0 + 0xB0 +     | isThreeByte << TRUE   | ___________________
+|     |                              |         0xE0 -------------| RunCmd << NMB         | NMB = 0xf0,f7,f2,f3---- MsgLen << 0    // ignore all system MIDI commands
+|     | NMB = cmd -------------------|                           \                       \
+|     |   (*1)                       |
+\-----|     +                        \
+      |     +                                                    /
+      |     +                                                    | RunCmd = 0x00-----------isError << TRUE
+      |     +                        /                           |    @1
+      |     +                        | MsgLen = 0----------------|    +                  /                                        /
+      |     +                        |      +                    |    +                  | MsgBuff[0] << NMB                      | BuffPointerH:L << addr(RunCmd)
+      |     +                        |      +                    | _____________         | MsgLen << 1                            | isMsgRdy    << TRUE
+      |     +                        |      +                    | RunCmd = 0x00-------- | aRunCmd <<  RunCmd & 0xf0              | isSysEx     << FALSE
+      |     +                        |      +                    \                       |                                        | isTwoByte   << FALSE
+      |     +                        |      +                                            | aRunCmd = 0xc0,0xd0--------------------| isThreeByte << FALSE
+      | NMB = data ------------------|      +                                            |        +                               | isRunStatus << FALSE
+      |     (*2)                     |      +                                            |        +                               \
+      |                              |      +                                            |        +                               
+      \                              |      +                                            | ___________________                    /
+                                     |      +                                            | aRunCmd = 0xc0,0xd0--------------------| isThreeByte << TRUE
+                                     |      +                                            \                                        | isRunStatus << TRUE
+   *1   NMB bit 7 set                |      +                                                                                     \
+   *2   NMB bit 7 clear              | ___________               /                       /
+                                     | MsgLen = 0 ---------------| isSysEx  = TRUE ------| MsgBuff[MsgLen] << NMB // System Exclusive messages can be any length.
+                                     \                           |      +                | MsgLen << MsgLen + 1   // But this code assumes that they are 16 bytes or less.
+                                                                 |      +                \
+   On parseMIDI's return, caller checks if isError is TRUE.      |      +
+   If yes, then ignore byte and give an error message.           |      +                /
+                                                                 |      +                | MsgBuff[MsgLen] << NMB
+   If isError is FALSE, caller checks if isMsgRdy is TRUE.       |      +                | MsgLen << 2
+   If yes, then caller gets the data bytes of the message        |                       | BuffPointerH:L << addr( MsgBuff[0]] )
+   whose beginning is pointed to by BuffPointerH:L.              | isTwoByte = TRUE -----| isMsgRdy    << TRUE
+                                                                 |      +                | isSysEx     << FALSE
+   These data bytes are sent to the USART outout buffer.         |      +                | isTwoByte   << FALSE
+   The number of bytes sent is MsgLen.  MsgLen is used as        |      +                | isThreeByte << FALSE
+   the stop condition of the FOR loop that moves the bytes       |      +                | isRunStatus    << FALSE
+   from the message buffer area to the USART output buffer.      |      +                \
+                                                                 |      +                                                         /
+   When message is fully copied, the UDRIE is activated and      |      +                /                                        | MsgBuff[MsgLen] << NMB
+   the received message is tranmitted through MIDI-OUT.          |      +                |                /                       | MsgLen << 3
+   After each message gets sent, MsgLen is reset to 0x00.        |      +                | MsgLen = 1  ---| isRunStatus = TRUE ---| BuffPointerH:L << addr(RunCmd)
+                                                                 | isThreeByte= TRUE ----|     @2         |      +                | isMsgRdy    << TRUE
+                                                                 \                       |      +         |      +                | isSysEx     << FALSE
+                                                                                         |      +         |      +                | isTwoByte   << FALSE
+             @1  If RunCmd is 0x00 then there has                                        |      +         |      +                | isThreeByte << FALSE
+                 been no command byte received since                                     |      +         |      +                | isRunStatus << FALSE
+                 power-on/reset.  Perhaps MIDIPARSER                                     |      +         |      +                \
+                 started in the middle of a MIDI message.                                |      +         |      +                
+                    If RunCmd is not 0x00 then there has                                 |      +         |      +                /
+                 been a previous command byte received.                                  |      +         | isRunStatus = FALSE---|  MsgBuff[MsgLen] << NMB
+                 This is a Running-Status MIDI message.                                  |      +         \                       |  MsgLen << 2
+                 The previous command byte, stored in                                    |      +                                 \
+                 RunCmd, becomes the command byte for                                    |      +         /
+                 incoming data bytes.                                                    |      +         | MsgBuff[MsgLen] << NMB
+             @2  NMB is first of two data bytes                                          |      +         | MsgLen << 3
+             @3  NMB is second and last of two data bytes                                |      +         | BuffPointerH:L << addr(MsgBuff[0]])
+                                                                                         |      +         | isMsgRdy    << TRUE
+                                                                                         |      +         | isSysEx     << FALSE
+                                                                                         | MsgLen = 2 ----| isTwoByte   << FALSE
+                                                                                         |     @3         | isThreeByte << FALSE
+                                                                                         |                | isRunStatus << FALSE
+                                                                                         \                \                                                                                                     
