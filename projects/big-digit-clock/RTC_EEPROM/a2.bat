@@ -1,0 +1,1 @@
+avrasm2 -fI  %1.asm  -l %1.lst -o %1.hex  

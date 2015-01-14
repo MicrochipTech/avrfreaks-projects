@@ -1,0 +1,3213 @@
+
+AVRASM ver. 2.1.2  FontLoad32.asm Tue Jan 13 15:31:28 2015
+
+FontLoad32.asm(75): Including file 'M8def.inc'
+                 
+                 
+                 ;  displays the contents of the serial EEPROM onto the Nokia 5110 graphics LCD.
+                 ;
+                 ;  Use Lucida Console font to see correctly. Recommend editor with syntax-coloring like Programmer's Notebook.
+                 ;
+                 ;  BigDigits font loads into EEPROM start address: 0x000
+                 ;  Standard ASCII font loads into EEPROM start address: 0x000 (decimal:576).
+                 ;  These are the normal 7x5_pixel characters.
+                 ;  BigDigits font loads into EEPROM start address: 0x300
+                 ;  Add the equate statements below to programs using EEPROM fonts:
+                 ;
+                 ; .equ	BD_EEADDRESS	= 0x300	; begining location in EEPROM where Big Digit 12x3rows font data is stored.
+                 ; .equ	STD_EEADDRESS	= 0x000	; begining location in EEPROM where standard 7x5 font data is stored.
+                 ;
+                 ;  See the Nokia5110 display routines for comment/uncomment instructions to activate EEPROM fonts.
+                 
+                 ;
+                 ; When writing both font sets to EEPROM, comment out calls to FillEEblock. Uncomment calls and inits to LoadEEPROM.
+                 ; If successful, the display will show the following screens:
+                 ;
+                 ;   00 00 00 00 00 beginning	1F 00 41 36 08 matches
+                 ;      00 AA AA AA data of	   00 AA AA AA data on
+                 ;      00 00 5F 00 standard	   02 01 02 04 lines:
+                 ;      00 AA AA AA 7x5 char	   02 AA AA AA  2288
+                 ;      00 07 00 07 font.	   3C 26 23 26  2289
+                 ;      00 AA AA AA space '!'	   3C AA AA AA
+                 ;
+                 ;   20 FC FE FE 0F		37 00 00 00 00
+                 ;      07 07 07 07		   AA AA AA AA
+                 ;      CF FC FC F8		   00 00 00 00
+                 ;      AA AA AA AA		   00 00 00 00
+                 ;      FF FF FF F0		   00 00 00 00
+                 ;      78 3C 1E 0F		   AA AA AA AA
+                 ;  matches data on	 	  matches data on
+                 ;  line# 2298. Begin              line# 2344. End
+                 ;  of BigDigit font.              of BigDigit font.
+                 ;
+                 
+                 
+                 .cseg
+                 .org 0x0013
+                 ;&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+                 ;   14 x 6 =                           1111 	;&
+                 ;   84 total scr chars       01234567890123 	;&
+000013 6f46
+000014 746e
+000015 6f4c
+000016 6461
+000017 3233
+000018 612e
+000019 6d73      Line0_OpenMsg:		.db "FontLoad32.asm"	;&
+00001a 6544
+00001b 2063
+00001c 3932
+00001d 202c
+00001e 3032
+00001f 3431
+000020 2020      			.db "Dec 29, 2014  "	;&
+000021 7562
+000022 6c69
+000023 3a64
+000024 6520
+000025 2020
+000026 3076
+000027 312e      			.db "build: e  v0.1"	;&
+000028 2020
+000029 2020
+00002a 2020
+00002b 2020
+00002c 2020
+00002d 2020
+00002e 2020      			.db "              "	;&
+00002f 6c41
+000030 6e61
+000031 5020
+000032 6f72
+000033 6162
+000034 646e
+000035 2074      			.db "Alan Probandt "	;&
+000036 6f50
+000037 7472
+000038 616c
+000039 646e
+00003a 4f2c
+00003b 2052
+00003c 2020
+00003d 0000      			.db "Portland,OR   ",0,0;&
+                 ;&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+                 
+                 ;==================================================================================================
+                 ;
+                 ; Atmel AVR Mega8  [8K flash / 1K SRAM [address range:0x100 to 0x4ff]/ 512 EEPROM]
+                 ;                       _______                           ______
+                 ;   reset/  Nokia_reset |1  28| PC5 SCL               A0 |1   2| Vcc (nc)
+                 ;                   PD0 |2  27| PC4 SDA               A1 |2   4| WE\
+                 ;                   PD1 |3  26| ADC3                  A2 |3   6| SCL
+                 ;                   PD2 |4  25| ADC2                 GND |4   5| SDA
+                 ;                   PD3 |5  24| ADC1  pot                ------
+                 ;                   PD4 |6  23| ADC0                     EEPROM
+                 ;              +5V  VCC |7  22| GND
+                 ;                   GND |8  21| AREF  +5V                ______
+                 ;                   PB6 |9  20| AVCC  +5V           MISO |1  2| Vcc (nc)
+                 ;                   PB7 |10 19| PB5  SCK	    SCLK |3  4| MOSI
+                 ;                   PD5 |11 18| PB4  MOSI	    RST  |5  6| gnd
+                 ;                   PD6 |12 17| PB3  MISO	         ------
+                 ;                   PD7 |13 16| PB2  Nokia_SDIN           ISP
+                 ;       Nokia_DC    PB0 |14 15| PB1  Nokia_SCLK
+                 ;                       -------
+                 ;==================================================================================================
+                 
+                 .list
+                 
+                 
+                 ;======================================
+                 ; TIMER equates  (for AVR Mega8)
+                 ;--------------------------------------
+                 .equ	clock		=  8000000	; AVR internal system clock [in Hertz]
+                 .equ	OPENING_SCR_TIME =  4	; seconds
+                 .equ	Contrast_Value	=  53
+                 
+                 .equ	HB_PRESCALE	=  256	; prescaler for 32 mS increment  using timer 1
+                 .equ	HB_LOGIC	=  (1<<CS12) | (0<<CS11) | (0<<CS10)
+                 .equ	HB_PER_SECOND	=  32	; Heartbeat periods per second. Each period is 31.25 milliSe
+                 .equ	LongPeriod 	=  (clock / HB_PRESCALE) / HB_PER_SECOND   ; HBS=32 >> 977 counts up
+                 .equ	baud38K		=  (clock/(38400*16)) - 1 ; 14  AVR USART baud rate low register value: baud high = 00
+                 
+                 ;##############################################################################################
+                 ;
+                 ;=======================================
+                 ; LCD display equates for Nokia 5110
+                 ;---------------------------------------
+                 .equ	PIN_DC			=  0
+                 .equ	PIN_SDIN		=  2
+                 .equ	PIN_SCLK		=  1
+                 .equ	PORT_DC			= PortB
+                 .equ	PORT_SDIN		= PortB
+                 .equ	PORT_SCLK		= PortB
+                 .equ	DDR_DC			= DDRB
+                 .equ	DDR_SDIN		= DDRB
+                 .equ	DDR_SCLK		= DDRB
+                 .equ	LCD_D			=  1		; Configuration for the LCD
+                 .equ	LCD_CMD			=  0
+                 .equ	LCD_X			= 84		; Size of the LCD
+                 .equ	LCD_Y			= 48
+                 .equ	NOKIA_STRING_SIZE	= 14
+                 .equ	PIXELSperCHAR		=  6		; five dots and one space
+                 .equ	NUM_ROWS_PER_CHAR	=  3
+                 .equ	BIGCHARWIDTH            = 12
+                 .equ	BIGSPACEOFFSET		= 11	; offset of beginning of space character data in BigDigits
+                 .equ	MAXHEXPOSITION		= 6 * 4	; 6 rows of 4 hexpairs displayed on Nokia5110 LCD screen.
+                 
+                 .equ	BIGDIGIT12X3_PAGECNT	= 18	; number of pages (32 bytes/page 24C32) for Big Digit font [12 x 3 pixels/char]
+                 .equ	STDFONT_PAGECNT		= 24	; number of pages (32 bytes/page 24C32) for standard font  [ 7 x 5 pixels/char]
+                 .equ	RTBRKBRD_EEPAGESIZE	= 32	; page size on the 24C32 serial EEPROM found on RealTime IC DS1307 breakout boards
+                 .equ	BD_EEADDRESS		= 0x300	; begining location in EEPROM where Big Digit 12x3rows font data is to be stored
+                 .equ	STD_EEADDRESS		= 0x000	; begining location in EEPROM where standard 7x5 font data is to be stored
+                 .equ	EEFONT			= 0x000
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 
+                 .equ	LED_DDR		= DDRD
+                 .equ	LED_PORT	= PORTD
+                 .equ	LED_DEBUG	= 5
+                 .equ	SLA_RTC		= 0xd0  ; 8-bit slave address 1101 for RealTimeClock IC: device address 000
+                 .equ	RTC_STARTADDR	= 0	; only used by SetRTC
+                 .equ	RTCreadSIZE	= 8	; 0x08 for DS1307 RTC IC: 0x0e when using DS3231 RTC IC
+                 .equ	RTCwriteSIZE	= 8	; 0x08 for DS1307 RTC IC: 0x0e when using DS3231 RTC IC
+                 .equ	TWISTOPDELAY	= 45 	; 135 cycles at 0.125uSec/cycle   16.8uSec
+                 
+                 .equ	SerEE_PageSize	= 32
+                 .equ	DELAY8USEC	= 136
+                 .equ	ADC_MUX1	= 1
+                 .equ	ADC_MUX0	= 0
+                 
+                 ;=====================================
+                 ;
+                 ;  	REGISTER Definitions
+                 ;
+                 ;=====================================
+                 ;
+                 ;; low register use   r0 - r15
+                 .def	lowTemp0	= r2
+                 .def	lowTemp1	= r3
+                 .def	rBin1L		= r4
+                 .def	rBin1H		= r5
+                 .def	rBin2L		= r6
+                 .def	rBin2H		= r7
+                 .def	ColumnCounter	= r8
+                 .def	wTemp0		= r10	; found in Nokia 5110 LCD routines
+                 .def	wTemp1		= r11	; found in Nokia 5110 LCD routines
+                 .def	counter		= r12	; found in ReadPage(TWI) routine
+                 .def	SREGtemp 	= r14	; found in interrupt routines
+                 .def	ZeroReg		= r15	; found in 16-bit add routines
+                 
+                 ;  upper registers   r16 - r31
+                 .def	temp		= r16
+                 .def	temp2		= r17
+                 .def	temp3		= r18
+                 .def	irqtemp		= r19
+                 .def	FlagsReg	= r20
+                 .equ	  WPOK		= 7
+                 .equ	  RPOK		= 6
+                 
+                 ; upper register pairs:  r31:r30--ZH:ZL  r29:r28--YH:YL  r27:r26--XH:XL
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                 
+                 ;================================================================================================
+                 ;
+                 ;	SRAM Definitions
+                 ;
+                 ;================================================================================================
+                 .dseg ; 1024 bytes SRAM in mega8  START = 0x0060  RAMEND= 0x045f
+                  ;TaskFlags
+                 .equ	T1_HeartBeat	= 7
+                 .equ	TWIer_flag	= 6
+                 .equ	BlinkLED	= 5
+                 .equ	SetGetFlag 	= 4 ; clr is set routine, set is get routine
+                 .equ	ClearNow	= 3
+                 
+000060           Page_Buffer:		.byte   128	;0x060
+0000e0           HeartBeatCntr:		.byte	1       ;0x0e0
+0000e1           SecondCount:		.byte	1       ;0x0e1
+0000e2           HighSecCount:		.byte	1       ;0x0e2
+0000e3           PrevSecCount:		.byte	1       ;0x0e3
+0000e4           PrevHiSecCnt:		.byte	1       ;0x0e4
+0000e5           VarByteOne:		.byte	1       ;0x0e5
+0000e6           VarByteTwo:		.byte	1       ;0x0e6
+0000e7           VarByteThree:		.byte	1       ;0x0e7
+0000e8           PtrOneLow:		.byte	1       ;0x0e8
+0000e9           PtrOneHigh:		.byte	1       ;0x0e9
+0000ea           PtrTwoLow:		.byte	1       ;0x0ea
+0000eb           PtrTwoHigh:		.byte	1       ;0x0eb
+0000ec           DataByte:		.byte	1       ;0x0ec
+0000ed           EEPageSize:		.byte	1       ;0x0ed
+0000ee           PageCount:		.byte	1       ;0x0ee
+0000ef           TaskFlags:		.byte	1       ;0x0ef
+0000f0           ByteASChigh:		.byte	1       ;0x0f0
+0000f1           ByteASCLow:		.byte	1       ;0x0f1
+0000f2           ASCIIdigits:		.byte	5       ;0x0f2
+0000f7           ZeroLoc:		.byte	1       ;0x0f7
+0000f8           resultL:		.byte	1       ;0x0f8
+0000f9           resultH:		.byte	1       ;0x0f9
+0000fa           TWIstepValue:		.byte	1       ;0x0fa
+0000fb           ReceivedTWSR:		.byte	1       ;0x0fb
+0000fc           ExpectedTWSR:		.byte	1       ;0x0fc
+0000fd           SLA:			.byte	1       ;0x0fd
+0000fe           ReadBlockSize:		.byte	1       ;0x0fe
+0000ff           WriteBlockSize:		.byte	1       ;0x0ff
+000100           HighAddress:		.byte	1       ;0x100
+000101           LowAddress:		.byte	1       ;0x101
+000102           ADConeValLow:		.byte	1       ;0x102
+000103           ADConeValHigh:		.byte	1       ;0x103
+000104           ADCOnePrevLow:		.byte	1       ;0x104
+000105           ADCOnePrevHigh:		.byte	1       ;0x105
+000106           HexPosition:		.byte	1	;0x106
+000107           SCRpot:			.byte	1	;0x107
+                 
+                 
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 
+                 
+                 .cseg
+                 .org 0x0000
+                 ;************************************************************************************************
+                 ; interrupt vectors for Mega8
+000000 c03f      	rjmp	reset		; rjmp reset is firmware-system-crash-handling code.
+                 ; ***** INTERRUPT VECTORS ***********************************************************
+000001 c03e      	rjmp	reset		; = 0x001  External Interrupt Request 0
+000002 c03d      	rjmp	reset		; = 0x002  External Interrupt Request 1
+000003 c03c      	rjmp	reset		; = 0x003  Timer/Counter2 Compare Match
+000004 c03b      	rjmp	reset		; = 0x004  Timer/Counter2 Overflow
+000005 c03a      	rjmp	reset		; = 0x005  Timer/Counter1 Capture Event
+000006 c039      	rjmp	reset		; = 0x006  Timer/Counter1 Compare Match A
+000007 c038      	rjmp	reset		; = 0x007  Timer/Counter1 Compare Match B
+000008 c3cd      	rjmp	TIM1_OVF	; = 0x008  Timer/Counter1 Overflow
+000009 c036      	rjmp	reset		; = 0x009  Timer/Counter0 Overflow
+00000a c035      	rjmp	reset		; = 0x00a  Serial Transfer Complete
+00000b c034      	rjmp	reset		; = 0x00b  USART, Rx Complete
+00000c c033      	rjmp	reset		; = 0x00c  USART Data Register Empty
+00000d c032      	rjmp	reset		; = 0x00d  USART, Tx Complete
+00000e c031      	rjmp	reset		; = 0x00e  ADC Conversion Complete
+00000f c030      	rjmp	reset		; = 0x00f  EEPROM Ready
+000010 c02f      	rjmp	reset		; = 0x010  Analog Comparator
+000011 c02e      	rjmp	reset		; = 0x011  2-wire Serial Interface
+000012 c02d      	rjmp	reset		; = 0x012  Store Program Memory Ready
+                 
+                 ;===================================================================================================
+                 .org 0x040  ; vector tables and opening screen occupy flash below 0x040
+                 reset:
+000040 e004      	ldi	temp, high (RAMEND)	; On Mega8, need to initialize stack pointer to end of SRAM.
+000041 bf0e      	out	SPH, temp		; Not needed on other Mega AVRs, but good idea to do
+000042 e50f      	ldi	temp, low  (RAMEND)	; in case your embedded-system crash handler code jumps
+000043 bf0d      	out	SPL, temp		; to reset (flash addr 000) instead of doing a hardware reset
+                 
+                 ;----------------------------------------------------------------------------------------------
+                 ; initialize Timer 1  16bit  32mSecond increments; overflows 32 times a second  HB_PER_SECOND
+000044 e004      	ldi	temp, (1 << TOV1)
+000045 bf08      	out	TIFR, temp              ; clear interrupt flag.  use TIFR1:0x16 for Mega328
+000046 e004      	ldi	temp, (1 << TOIE1)
+000047 bf09      	out	TIMSK, temp		; enable interrupt.   use TIMSK1:0x6f for Mega328
+000048 ef0c      	ldi	temp, high (~LongPeriod ) ; write high byte of 16-bit value first
+000049 bd0d      	out	TCNT1H, temp		; TCNT1H [Mega328= 0x85]
+00004a e20f      	ldi	temp, low  (~LongPeriod )
+00004b bd0c      	out	TCNT1L, temp 		; TCNT1L [Mega328= 0x84]
+00004c e004      	ldi	temp, HB_LOGIC		; ( (1<<CS12) | (0<<CS11) | (0<<CS10) )
+00004d bd0e      	out	TCCR1B, temp		; [Mega328:TCCR1B= 0x81] increment timer every 256 system clocks
+00004e 2700      	clr	temp
+00004f 9300 00e0 	sts	HeartBeatCntr, temp
+                 
+                 ;;----------------------------------------------------------
+                 ;; initialize USART   ; USCR0C default values OK for 8/N/1
+                 ;rst_UART:
+                 ;	ldi	temp, high (baud38K) ;Baud rate H
+                 ;	out	UBRRH, temp
+                 ;	ldi	temp, low  (baud38K) ;Baud rate L
+                 ;	out	UBRRL, temp
+                 ;	ldi	temp, (1<<RXEN) | (1<<TXEN) | (1<<RXCIE)
+                 ;	out	UCSRB, temp  ; turn on receive and transmit
+                 
+                 
+                 ;----------------------------------------------------------------------------------------------
+                 ; initialize TwoWire Interface
+000051 e002      	ldi 	temp, 2		; cpu clock / (16 + (2*twbr) * prescale
+000052 b900      	out	twbr, temp		; 8000000/86 = 93 KHz TWI/I2C clock rate
+000053 e000      	ldi 	temp, 0x00		; prescale bits: 0 0   prescaler value = 1
+000054 b901      	out 	twsr, temp		; TW status Reg.
+000055 2700      	clr 	temp
+000056 b902      	out 	twar, temp		; TW address Reg.  only used when Mega8 is a I2C slave
+000057 e004      	ldi 	temp, (1 << TWEN)	; 0b00000100
+000058 bf06      	out	twcr, temp 		; TW control Reg
+                 
+                 ;	(0<<TWINT)|(0<<TWEA)|(0<<TWSTA)|(0<<TWSTO)|(0<<TWWC)|(1<<TWEN)|(0<<TWIE)
+                 ;	   bit 7	6	5	    4	       3	2	   0
+                 ; initial value all 0 at reset.
+                 ;
+                 ; control byte for 24LC512, 24LC256, 24LC128, 24LC64, -- 1010 control code, IC addr 3 bits (always 1
+000059 ea00      	ldi	temp,  0b10100000
+00005a 9300 00fd 	sts	SLA, temp
+                 
+                 ;  writing a logic 1 to TWINT is only way to clear this interrupt flag.
+                 ;  It gets set when TWI has finished its current job.
+                 ;  clearing TWINT starts the next operation of the TWI, so TWAR, TWSR,
+                 ;  and TWDR must be ready before clearing TWINT.
+                 ;
+                 ;  if TWEA is set, then an ACK will be written by the TWI
+                 ;   when a byte is received in Master Receiver mode.
+                 ;----------------------------------------------------------------------------------------------
+                 
+                 
+                 ; initialize global interrupt enable
+00005c 9478      	sei	; switch on the AVR general interrupt enabler
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 ;
+                 ;
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 ; initialize application
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 ; initialize (usually clear) variables
+00005d 24ff      	clr	ZeroReg
+00005e 92f0 00ef 	sts	TaskFlags,    ZeroReg
+000060 92f0 00f7 	sts	ZeroLoc,      ZeroReg
+000062 92f0 00e1 	sts	secondCount,  ZeroReg
+000064 92f0 00e3 	sts	PrevSecCount, ZeroReg
+000066 92f0 00e2 	sts	HighSecCount, ZeroReg
+000068 92f0 00e4 	sts	PrevHiSecCnt, ZeroReg
+                 
+00006a e001      	ldi	temp, ADC_MUX1
+00006b d359      	rcall	doADC10
+00006c 9100 0103 	lds	temp, ADConeValHigh	; bits 7:0 hold ADC 9:2
+00006e 9300 0105 	sts	ADCOnePrevHigh, temp
+                 
+000070 d158       	rcall	LCD_Initialize		; write seven commands to Nokia 5110
+                 
+000071 2700      	clr	temp			; set display cursor to upper left of screen
+000072 9300 00e5 	sts	VarByteOne, temp
+000074 9300 00e6 	sts	VarByteTwo, temp
+000076 d1fc      	rcall	LCD_gotoXY
+                 
+                  ; display opening screen
+000077 e000      	ldi	temp, high (Line0_OpenMsg << 1 )
+000078 9300 00e9 	sts	PtrOneHigh, temp
+00007a e206      	ldi	temp, low  (Line0_OpenMsg << 1)
+00007b 9300 00e8 	sts	PtrOneLow, temp
+00007d d180      	rcall	LCD_stringP
+                 
+                 initLoop0:
+00007e 9100 00e1 	lds	temp, secondCount
+000080 3004      	cpi	temp, OPENING_SCR_TIME
+000081 f7e1      	brne	initLoop0
+                 
+000082 d1b8        	rcall	LCD_clear
+                 
+                 
+                 ;********************************************************************************
+                 ; Font loading into EEPROM routines
+                 ;
+                 ;  Loading data into a serial EEPROM requires four parameters:
+                 ;  -PtrOneHigh:Low  Location of data in the flash of the host loader program
+                 ;  -PtrTwoHigh:Low  Address in the EEPROM where the data will be written
+                 ;  -EEPageSize        The size of the memory page for the EEPROM type
+                 ;  -PageCount       The number of pages to be written into the EEPROM
+                 ;
+                 ;  These parameters are stored in .equ and label statements before the
+                 ;  font loader routine is called. An example set of .equ lines is:
+                 ;
+                 ;	BigDigitEEFont:  flash code label of .db data
+                 ;	.equ	BD_EEADDRESS  = 0x200
+                 ;	.equ	BIGDIGIT12X3_PAGECNT = 18
+                 ;	.equ	RTBRKBRD_EEPAGESIZE  = 32  24C32 EEPROM page size
+                 ;
+                 ;  The font loader calls the routine that writes to EEPROM. This
+                 ;  routine (WritePage) receives several SRAM variables that need
+                 ;  to be initialized before the font loader code is called.
+                 ;
+                 ;	SLA		EEPROM device address
+                 ;	WriteBlockSize	number of bytes written to EEPROM
+                 ;	Page_Buffer	SRAM that holds data being written to EE
+                 ;	HighAddress:LowAddress   location in EE where data gets written
+                 ;
+                 ;  The font loader uses a register that is always value 0x00: ZeroReg.
+                 ;
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 
+                 
+                 ; Load standard font [7x5 pixels] into 24C32 EEPROM.  Initialize four parameters.
+000083 e00b      	ldi	temp, high (StandardEEFont << 1)
+000084 e81a      	ldi	temp2, low (StandardEEFont << 1)
+000085 9300 00e9 	sts	PtrOneHigh, temp
+000087 9310 00e8 	sts	PtrOneLow, temp2
+                 
+000089 e000      	ldi	temp, high (STD_EEADDRESS)
+00008a e010      	ldi	temp2, low (STD_EEADDRESS)	; 0x0000 first data block in EEPROM
+00008b 9300 00eb 	sts	PtrTwoHigh, temp
+00008d 9310 00ea 	sts	PtrTwoLow,  temp2
+                 
+00008f e108      	ldi	temp, STDFONT_PAGECNT
+000090 9300 00ee 	sts	PageCount, temp
+                 
+000092 e210      	ldi	temp2, RTBRKBRD_EEPAGESIZE
+000093 9310 00ed 	sts	EEPageSize, temp2
+                 
+000095 d019      	rcall	LoadEEPROM
+                 
+                 ;  Load Big Digit font [12x3rows] into 24C32 EEPROM. Initialize four parameters.
+000096 e00e      	ldi	temp, high (BigDigitEEFont << 1)
+000097 e81a      	ldi	temp2, low (BigDigitEEFont << 1)
+000098 9300 00e9 	sts	PtrOneHigh, temp
+00009a 9310 00e8 	sts	PtrOneLow,  temp2
+                 
+00009c e003      	ldi	temp, high (BD_EEADDRESS)	 ; 0x0300 second data block in EEPROM
+00009d e010      	ldi	temp2, low (BD_EEADDRESS)
+00009e 9300 00eb 	sts	PtrTwoHigh, temp
+0000a0 9310 00ea 	sts	PtrTwoLow,  temp2
+                 
+0000a2 e102      	ldi	temp,  BIGDIGIT12X3_PAGECNT
+0000a3 9300 00ee 	sts	PageCount, temp
+                 
+0000a5 e210      	ldi	temp2, RTBRKBRD_EEPAGESIZE
+0000a6 9310 00ed 	sts	EEPageSize, temp2
+                 
+0000a8 d006      	rcall	LoadEEPROM
+                 
+                 ;-----------
+                 
+                 
+                 ;##############################################################################################
+                 ;						;##############################################
+                 ;  Main Code loop				;##############################################
+                 ;						;##############################################
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~;##############################################
+                 main_loop:					;####					   ####
+0000a9 9100 00ef 	lds	temp, TaskFlags			;####	 Heartbeat time?  32 a second	   ####
+0000ab ff07      	sbrs	temp, T1_HeartBeat		;####	 flicker LED; get pot values.	   ####
+0000ac c001      	rjmp	ml_noNew_HeartBeat 		;####					   ####
+0000ad d046      	rcall	HeartBeat_Period		;##############################################
+                 ml_noNew_HeartBeat:				;##############################################
+                 						;##############################################
+                 						;##############################################
+0000ae cffa      	rjmp	main_loop			;##############################################
+                 ;						;##############################################
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                 
+                 
+                 
+                 ;***************************************************************;
+                 ; Load_EEPROM   Branch to here in Reset/Init section		;
+                 ;                                                       	;
+                 ; Load data from flash memory into serial EEPROM.          	;
+                 ; Data is stored at the end of this program.                    ;
+                 ; The data size should ALWAYS be a multiple of the page size.	;
+                 ;                                                               ;
+                 ; send: EEPageSize   serial EEPROM's page size in bytes		;
+                 ;	PageCount  number of pages transfered from flash to EE  ;
+                 ; 	PtrOneHigh:PtrOneLow  _ address in flash of EE data	;
+                 ;       PtrTwoHigh:PtrTwoLow  _ address in EE to write		;
+                 ;								;
+                 ; uses:   	SLA    initialized for EEPROM to 0xa0		;
+                 ; [SRAM]	HighAddress:LowAddress				;
+                 ;		WriteBlockSize					;
+                 ;		Page_Buffer					;
+                 ;		PtrOneHigh:PtrOneLow   EE data's flash address	;
+                 ;		PtrTwoHigh:PtrTwoLow   EE write address		;
+                 ;								;
+                 ; [registers]	ZeroPage, temp, temp2, temp3,			;
+                 ;		ZH:ZL, YH:YL, XH:XL, R0:R1			;
+                 ;								;
+                 ; calls:	WritePage 					;
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Load_EEPROM
+                 LoadEEPROM:  							; Load_EEPROM
+0000af 931f      	push	temp2						; Load_EEPROM
+0000b0 93ff      	push	ZH						; Load_EEPROM
+0000b1 93ef      	push	ZL						; Load_EEPROM
+0000b2 93df      	push	YH						; Load_EEPROM
+0000b3 93cf      	push	YL						; Load_EEPROM
+0000b4 93bf      	push	XH 						; Load_EEPROM
+0000b5 93af      	push	XL						; Load_EEPROM
+                 								; Load_EEPROM
+0000b6 91f0 00e9 	lds	ZH, PtrOneHigh ; address in flash of EE data	; Load_EEPROM
+0000b8 91e0 00e8 	lds	ZL, PtrOneLow  					; Load_EEPROM
+                 	  							; Load_EEPROM
+0000ba 9100 00eb 	lds	temp,  PtrTwoHigh				; Load_EEPROM
+0000bc 9300 0100  	sts	HighAddress, temp 	; address in EE where	; Load_EEPROM
+0000be 9100 00ea  	lds	temp,  PtrTwoLow	; data will be written	; Load_EEPROM
+0000c0 9300 0101 	sts	LowAddress, temp 				; Load_EEPROM
+                 	  							; Load_EEPROM
+                 ; calculate number of bytes to write to EEPROM from #pages	; Load_EEPROM
+0000c2 9100 00ed 	lds	temp,  EEPageSize				; Load_EEPROM
+0000c4 9110 00ee 	lds	temp2, PageCount				; Load_EEPROM
+0000c6 9f01      	mul	temp, temp2					; Load_EEPROM
+0000c7 2dc0      	mov	YL, r0						; Load_EEPROM
+0000c8 2dd1      	mov	YH, r1						; Load_EEPROM
+                 								; Load_EEPROM
+0000c9 e0b0      	ldi	XH, high (Page_Buffer)	; SRAM buffer for data	; Load_EEPROM
+0000ca e6a0      	ldi	XL, low  (Page_Buffer)	; to be written to EE	; Load_EEPROM
+0000cb 9100 00ed 	lds	temp,  EEPageSize				; Load_EEPROM
+0000cd 9300 00ff 	sts	WriteBlockSize, temp ; variable for WritePage	; Load_EEPROM
+                 								; Load_EEPROM
+                 ;-------------------						; Load_EEPROM
+                 ; load page buffer with one page of font data			; Load_EEPROM
+0000cf 9110 00ed LdEE:	lds	temp2, EEPageSize				; Load_EEPROM
+0000d1 9105      LdEE_a:	lpm	temp, z+					; Load_EEPROM
+0000d2 930d      	st	x+, temp					; Load_EEPROM
+0000d3 951a      	dec	temp2						; Load_EEPROM
+0000d4 f7e1      	brne	LdEE_a						; Load_EEPROM
+                 ; send data block of one full page size to EEPROM 		; Load_EEPROM
+0000d5 d329      	rcall	WritePage ; WritePage receives WriteBlockSize,	; Load_EEPROM
+                 ; 		    HighAddress, LowAddress, SLA, Page_Buffer 	; Load_EEPROM
+                 								; Load_EEPROM
+                 ;-------------------						; Load_EEPROM
+                 ; Continue page writes until all data is written to EEPROM.	; Load_EEPROM
+                 ; adjust parameters for next page write				; Load_EEPROM
+0000d6 91a0 0101 	lds	XL, LowAddress	; adjust page address for EE	; Load_EEPROM
+0000d8 91b0 0100 	lds	XH, HighAddress					; Load_EEPROM
+0000da 9100 00ed 	lds	temp, EEPageSize				; Load_EEPROM
+0000dc 0fa0      	add	XL, temp					; Load_EEPROM
+0000dd 1dbf      	adc	XH, ZeroReg					; Load_EEPROM
+0000de 93a0 0101 	sts	LowAddress,  XL					; Load_EEPROM
+0000e0 93b0 0100 	sts	HighAddress, XH					; Load_EEPROM
+                 								; Load_EEPROM
+0000e2 e0b0      	ldi	XH, high (Page_Buffer) ; repoint X to the start	; Load_EEPROM
+0000e3 e6a0      	ldi	XL, low  (Page_Buffer) ; of the SRAM data buffer; Load_EEPROM
+                 								; Load_EEPROM
+0000e4 9100 00ed 	lds	temp, EEPageSize				; Load_EEPROM
+0000e6 1bc0      	sub	YL, temp					; Load_EEPROM
+0000e7 09df      	sbc	YH, ZeroReg					; Load_EEPROM
+0000e8 15cf      	cp	YL, ZeroReg					; Load_EEPROM
+0000e9 05df      	cpc	YH, ZeroReg					; Load_EEPROM
+0000ea f009      	breq	LdEE_x						; Load_EEPROM
+0000eb cfe3      	rjmp	LdEE						; Load_EEPROM
+                 LdEE_x:								; Load_EEPROM
+                 			        				; Load_EEPROM
+                 ;-----------------------------					; Load_EEPROM
+0000ec 91af      	pop	XL	        				; Load_EEPROM
+0000ed 91bf      	pop	XH	        				; Load_EEPROM
+0000ee 91cf      	pop	YL	        				; Load_EEPROM
+0000ef 91df      	pop	YH	        				; Load_EEPROM
+0000f0 91ef      	pop	ZL	        				; Load_EEPROM
+0000f1 91ff      	pop	ZH	        				; Load_EEPROM
+0000f2 911f      	pop	temp2          					; Load_EEPROM
+0000f3 9508      	ret							; Load_EEPROM
+                 								; Load_EEPROM
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%; Load_EEPROM
+                 
+                 
+                 
+                 
+                 
+                 
+                 ;;***************************************************************;
+                 ;; Fill_EEBlock  needs debugging! ######			;
+                 ;;                                                       	;
+                 ;; Load 0xff data from flash memory into serial EEPROM.        	;
+                 ;; The data size should ALWAYS be a multiple of the page size.	;
+                 ;;                                                              ;
+                 ;; send: EEPageSize   serial EEPROM's page size in bytes	;
+                 ;;	PageCount  number of pages transfered from flash to EE  ;
+                 ;;       PtrOneHigh:PtrOneLow  _ address in EE to write		;
+                 ;;								;
+                 ;; uses:   	SLA    initialized for EEPROM to 0xa0		;
+                 ;; [SRAM]	HighAddress:LowAddress				;
+                 ;;		WriteBlockSize					;
+                 ;;		Page_Buffer					;
+                 ;;		PtrOneHigh:PtrOneLow   EE write address		;
+                 ;;								;
+                 ;; [registers]	ZeroPage, temp, temp2, temp3,			;
+                 ;;		ZH:ZL, YH:YL, XH:XL, R0:R1			;
+                 ;;								;
+                 ;; calls:	WritePage 					;
+                 ;;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~;
+                 ;FillEEBlock:							; Fill_EE
+                 ;	push	temp2						; Fill_EE
+                 ;	push	temp3						; Fill_EE
+                 ;	push	ZH						; Fill_EE
+                 ;	push	ZL						; Fill_EE
+                 ;	push	YH						; Fill_EE
+                 ;	push	YL						; Fill_EE
+                 ;	push	XH 						; Fill_EE
+                 ;	push	XL						; Fill_EE
+                 ;								; Fill_EE
+                 ;	lds	temp,  PtrOneHigh				; Fill_EE
+                 ; 	sts	HighAddress, temp 	; address in EE where	; Fill_EE
+                 ; 	lds	temp,  PtrOneLow	; data will be written	; Fill_EE
+                 ;	sts	LowAddress, temp 				; Fill_EE
+                 ;	  							; Fill_EE
+                 ;	ldi	ZH, high (Page_Buffer)	; SRAM buffer for data	; Fill_EE
+                 ;	ldi	ZL, low  (Page_Buffer)	; to be written to EE	; Fill_EE
+                 ;	lds	temp2,  EEPageSize				; Fill_EE
+                 ;	sts	WriteBlockSize, temp2 ; variable for WritePage	; Fill_EE
+                 ;	ldi	temp, 0xff					; Fill_EE
+                 ;;-------------------						; Fill_EE
+                 ;; load page buffer with one page of font data			; Fill_EE
+                 ;FlEE:	  							; Fill_EE	
+                 ;	st	z+, temp					; Fill_EE
+                 ;	dec	temp2						; Fill_EE
+                 ;	brne	FlEE						; Fill_EE
+                 ;	  							; Fill_EE
+                 ;; send data block of one full page size to EEPROM 		; Fill_EE
+                 ;FlEE_b:							; Fill_EE
+                 ;	rcall	WritePage ; WritePage receives Write_BlockSize,	; Fill_EE
+                 ;; 		    HighAddress, LowAddress, SLA, Page_Buffer 	; Fill_EE
+                 ;;-------------------						; Fill_EE
+                 ;; Continue page writes until all data is written to EEPROM.	; Fill_EE
+                 ;; adjust parameters for next page write			; Fill_EE
+                 ;	lds	XL, LowAddress	; adjust page address for EE	; Fill_EE
+                 ;	lds	XH, HighAddress					; Fill_EE
+                 ;	lds	temp2, EEPageSize				; Fill_EE
+                 ;	add	XL, temp2					; Fill_EE
+                 ;	adc	XH, ZeroReg					; Fill_EE
+                 ;	sts	LowAddress,  XL					; Fill_EE
+                 ;	sts	HighAddress, XH					; Fill_EE
+                 ;	ldi	ZH, high (Page_Buffer)	; SRAM buffer for data	; Fill_EE
+                 ;	ldi	ZL, low  (Page_Buffer)	; to be written to EE	; Fill_EE
+                 ;								; Fill_EE
+                 ;	lds 	temp, PageCount					; Fill_EE
+                 ;	dec	temp						; Fill_EE
+                 ;	sts	PageCount, temp					; Fill_EE
+                 ;	tst	temp						; Fill_EE
+                 ;	brne	FlEE_b						; Fill_EE
+                 ;			        				; Fill_EE
+                 ;;-----------------------------					; Fill_EE
+                 ;	pop	XL	        				; Fill_EE
+                 ;	pop	XH	        				; Fill_EE
+                 ;	pop	YL	        				; Fill_EE
+                 ;	pop	YH	        				; Fill_EE
+                 ;	pop	ZL	        				; Fill_EE
+                 ;	pop	ZH	        				; Fill_EE
+                 ;	pop	temp3						; Fill_EE
+                 ;	pop	temp2          					; Fill_EE
+                 ;	ret							; Fill_EE
+                 ;								; Fill_EE
+                 ;;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%; Fill_EE
+                 ;
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 ;***************************************************************;**********
+                 ;  HeartBeat   Branch to here HB_PER_SECOND 			; HeartBeat
+                 ;    Branches here from main when mainloop detects		; HeartBeat
+                 ;     TaskFlags:T1_Heartbeat is set.				; HeartBeat
+                 ; 								; HeartBeat
+                 ;  Checks for debug-indicator (quick flash of LED) is active.	; HeartBeat
+                 ;  LED will flash if the selected code point is run.		; HeartBeat
+                 ;  LED turns on until next time HBcntr mod 32=0.		; HeartBeat
+                 ;  To use: place these three instructions into code:		; HeartBeat
+                 ;								; HeartBeat
+                 ;          lds	temp, TaskFlags ; turn on T1_HB flag next HB	; HeartBeat
+                 ;          sbr	temp, ( 1 << T1_HeartBeat )			; HeartBeat
+                 ;          sts	TaskFlags, temp					; HeartBeat
+                 ;								; HeartBeat
+                 ;  Check for potentiometer change.  On any pot turn, convert	; HeartBeat
+                 ;  the new setting to an EEPROM address and display the 24-byte	; HeartBeat
+                 ;  block of data found at that EEPROM location (in Hex).	; HeartBeat
+                 ;								; HeartBeat
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; HeartBeat
+                 HeartBeat_Period:						; HeartBeat
+0000f4 930f      	push	temp						; HeartBeat
+0000f5 93ff      	push	ZH						; HeartBeat
+0000f6 93ef      	push	ZL						; HeartBeat
+                 ;								; HeartBeat
+0000f7 9100 00ef 	lds	temp, TaskFlags ; turn off T1_HB flag		; HeartBeat
+0000f9 770f      	cbr	temp, ( 1 << T1_HeartBeat )			; HeartBeat
+0000fa 9300 00ef 	sts	TaskFlags, temp					; HeartBeat
+                 ;								; HeartBeat
+                 ; Check for active LED-flicker debugging-indicator =============; HeartBeat
+                 HBP_isLEDblinkon: 						; HeartBeat
+0000fc 9100 00ef 	lds	temp, TaskFlags					; HeartBeat
+0000fe ff05      	sbrs	temp, BlinkLED					; HeartBeat
+0000ff c00c      	rjmp	HBP_blinkExit					; HeartBeat
+                 ;								; HeartBeat
+                 ;	turn on LED for less than 1 sec	[only for debugging]	; HeartBeat
+000100 9895      	cbi	LED_PORT, LED_DEBUG 				; HeartBeat
+000101 9100 00e0 	lds	temp, HeartBeatCntr  ; update 32/sec		; HeartBeat
+000103 710f      	andi	temp, 0b00011111				; HeartBeat
+000104 f009      	breq	HBP_LEDoff ; when HBcnt = 0			; HeartBeat
+                 ;								; HeartBeat
+000105 c006      	rjmp	HBP_blinkExit					; HeartBeat
+                 ;;								; HeartBeat
+                 HBP_LEDoff:	; turn off LED 					; HeartBeat
+000106 9a95      	sbi	LED_PORT, LED_DEBUG 				; HeartBeat
+000107 9100 00ef 	lds	temp, TaskFlags					; HeartBeat
+000109 7d0f      	cbr 	temp, ( 1 << BlinkLED)				; HeartBeat
+00010a 9300 00ef 	sts	TaskFlags, temp					; HeartBeat
+                 ;								; HeartBeat
+                 HBP_blinkExit:  ;===============================================; HeartBeat
+                 								; HeartBeat
+                 ; Check for new secondCount value				; HeartBeat
+00010c 9100 00e1 	lds	temp,  SecondCount	; incremented by 	; HeartBeat
+00010e 9110 00e3 	lds	temp2, PrevSecCount	; the T1_overflow IRQ	; HeartBeat
+000110 1701      	cp	temp, temp2					; HeartBeat
+000111 f0d9      	breq	HBP_exit					; HeartBeat
+                 								; HeartBeat
+                 ;--------------------						; HeartBeat
+000112 9300 00e3 	sts	PrevSecCount, temp				; HeartBeat
+                 								; HeartBeat
+                 ;===============================================================; HeartBeat
+                 ;;Simple display second count to indicate heartbeat activity	; HeartBeat
+                 ;	sts	DataByte, temp					; HeartBeat
+                 ;	ldi	temp, 3	  ; row 				; HeartBeat
+                 ;	sts	VarByteTwo, temp				; HeartBeat
+                 ;	ldi	temp, 0 * PIXELSperCHAR				; HeartBeat
+                 ;	sts	VarByteOne, temp				; HeartBeat
+                 ;	rcall	LCD_gotoXY					; HeartBeat
+                 ;	rcall	DisplayHexByte					; HeartBeat
+                 ;	rjmp	HBP_exit					; HeartBeat
+                 ;===============================================================; HeartBeat
+                 ;								; HeartBeat
+                 ; Check for new pot value. if yes, read EE, display 24 bytes	; HeartBeat
+000114 e001      	ldi	temp, ADC_MUX1					; HeartBeat
+000115 d2af      	rcall	doADC10						; HeartBeat
+000116 9100 0103 	lds	temp,  ADConeValHigh				; HeartBeat
+000118 9110 0105  	lds	temp2, ADCOnePrevHigh				; HeartBeat
+00011a 1301       	cpse	temp, temp2					; HeartBeat
+00011b c001       	rjmp	HBP_0a						; HeartBeat
+00011c c010       	rjmp	HBP_0x						; HeartBeat
+                 HBP_0a:								; HeartBeat
+00011d 9300 0105 	sts	ADCOnePrevHigh, temp 				; HeartBeat
+00011f 9506      	lsr	temp		; 128*24=3072			; HeartBeat
+000120 9300 0107 	sts	SCRpot, temp	; screen pot value from ADCH/2	; HeartBeat
+000122 e118      	ldi	temp2, 24					; HeartBeat
+000123 9f01      	mul	temp, temp2					; HeartBeat
+000124 9200 0101 	sts	LowAddress,  r0					; HeartBeat
+000126 9210 0100 	sts	HighAddress, r1					; HeartBeat
+000128 e108      	ldi	temp, MAXHEXPOSITION	; 24			; HeartBeat
+000129 9300 00fe 	sts	ReadBlockSize, temp 				; HeartBeat
+00012b d349      	rcall	ReadPage					; HeartBeat
+00012c d05d      	rcall	WriteFullScr	 				; HeartBeat
+                 HBP_0x:								; HeartBeat
+                 								; HeartBeat
+                 HBP_exit:							; HeartBeat
+00012d 91ef      	pop	ZL						; HeartBeat
+00012e 91ff      	pop	ZH						; HeartBeat
+00012f 910f      	pop	temp						; HeartBeat
+000130 9508      	ret							; HeartBeat
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%;%%%%%%%%%%
+                 
+                 
+                 
+                 ;***************************************************************;***********
+                 ;Write_Byte    write a hex-pair stream				; Write_Byte
+                 ;	Takes about 1 millisecond to write a hex pair		; Write_Byte
+                 ;  Checks if Task_Flags:ClearNow flag set. if yes, then 	; Write_Byte
+                 ; clear LCD screen and write hex pair at (0,0) 			; Write_Byte
+                 ;    								; Write_Byte
+                 ;      If Task_Flags:ClearNow is not set, then checks		; Write_Byte
+                 ;  HexPosition range (0-23).  If out of range, moves		; Write_Byte
+                 ;  cursor to top-left corner. { gotoxy(0,0) }			; Write_Byte
+                 ;  if HexPosition mod 3 == 0, then reposition cursor		; Write_Byte
+                 ;  to leftmost of four write locations of next row.		; Write_Byte
+                 ;  Else, move to write location according to mod, 		; Write_Byte
+                 ;  writes two ASCII hex characters and a space, then		; Write_Byte
+                 ;  increments HexPosition SRAM variable, test for max,		; Write_Byte
+                 ;  If at max, set HPX to 0, and set TaskFlags:ClearNow		; Write_Byte
+                 ;								; Write_Byte
+                 ;  receives:	{SRAM} DataByte, HexPosition 			; Write_Byte
+                 ;		TaskFlags:ClearNow				; Write_Byte
+                 ;  calls:	LCD__gotoXY, Display_HexByte			; Write_Byte
+                 ;  called by:	Heartbeat, Do_NewMIDI, doNewscan_code		; Write_Byte
+                 ;---------------------------------------------------------------; Write_Byte
+                 WriteByte:							; Write_Byte
+000131 930f      	push	temp						; Write_Byte
+000132 93ef      	push	ZL						; Write_Byte
+000133 93ff      	push	ZH						; Write_Byte
+                 ;								; Write_Byte
+000134 9100 00ef 	lds	temp, TaskFlags					; Write_Byte
+000136 ff03      	sbrs	temp, ClearNow					; Write_Byte
+000137 c007      	rjmp	WB_a						; Write_Byte
+                 ;								; Write_Byte
+000138 7f07      	cbr	temp, (1 <<  ClearNow)				; Write_Byte
+000139 9300 00ef 	sts	TaskFlags, temp					; Write_Byte
+00013b d0ff      	rcall	LCD_clear					; Write_Byte
+00013c 2700      	clr	temp						; Write_Byte
+00013d 9300 0106 	sts	HexPosition, temp				; Write_Byte
+                 ;								; Write_Byte
+                 ; determine which column to write hexpair			; Write_Byte
+00013f 9100 0106 WB_a:	lds	temp, HexPosition				; Write_Byte
+000141 7003      	andi	temp, 0b00000011				; Write_Byte
+000142 ece2      	ldi	ZL, low  ( WBcolumn << 1)			; Write_Byte
+000143 e0f2      	ldi	ZH, high ( WBcolumn << 1)			; Write_Byte
+000144 0fe0      	add	ZL, temp					; Write_Byte
+000145 1dff      	adc	ZH, ZeroReg					; Write_Byte
+000146 9104      	lpm	temp, z						; Write_Byte
+000147 9300 00e5 	sts	VarByteOne, temp	; x (column)		; Write_Byte
+000149 9100 0106 	lds	temp, HexPosition				; Write_Byte
+00014b 9506      	lsr	temp						; Write_Byte
+00014c 9506      	lsr	temp						; Write_Byte
+00014d 9300 00e6 	sts	VarByteTwo, temp	; y (row #)		; Write_Byte
+00014f d123      	rcall	LCD_gotoXY					; Write_Byte
+                 ;								; Write_Byte
+000150 d012      	rcall	DisplayHexByte	; receives DataByte		; Write_Byte
+                 								; Write_Byte
+000151 9100 0106 	lds	temp, HexPosition				; Write_Byte
+000153 9503      	inc	temp						; Write_Byte
+000154 3108      	cpi	temp, MAXHEXPOSITION 				; Write_Byte
+000155 f028      	brlo	WB_w						; Write_Byte
+                 ; check if screen if full, if yes don't erase screen		; Write_Byte
+                 ;	until next MIDI in					; Write_Byte
+000156 9100 00ef 	lds	temp, TaskFlags					; Write_Byte
+000158 6008      	sbr	temp, (1 << ClearNow)				; Write_Byte
+000159 9300 00ef 	sts	TaskFlags, temp					; Write_Byte
+                 ;								; Write_Byte
+00015b 9300 0106 WB_w:	sts	HexPosition, temp				; Write_Byte
+                 								; Write_Byte
+                 WB_exit:							; Write_Byte
+00015d 91ff      	pop	ZH						; Write_Byte
+00015e 91ef      	pop	ZL						; Write_Byte
+00015f 910f      	pop	temp						; Write_Byte
+000160 9508      	ret							; Write_Byte
+                 								; Write_Byte
+000161 2212
+000162 4232      WBcolumn: .db	18, 16+18, 32+18, 48+18 			; Write_Byte
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%;%%%%%%%%%%%
+                 
+                 
+                 
+                 
+                 ;***************************************************************;**************
+                 ; Display_HexByte 	; displays DataByte at current cursor.	;Display_HexByte
+                 ;								;Display_HexByte
+                 ; send:      	{SRAM} DataByte 				;Display_HexByte
+                 ; returns:   	---						;Display_HexByte
+                 ; calls:	LCD_character					;Display_HexByte
+                 ; SRAM:		Var_ByteOne					;Display_HexByte
+                 ; registers:	temp, ZH:ZL, ZeroReg				;Display_HexByte
+                 ; called by:	Write_Byte		 			;Display_HexByte
+                 ;   								;Display_HexByte
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~;Display_HexByte
+                 DisplayHexByte:	; send {SRAM} DataByte				;Display_HexByte
+000163 93ff      	push	ZH						;Display_HexByte
+000164 93ef      	push	ZL						;Display_HexByte
+000165 930f      	push	temp						;Display_HexByte
+                 ;   								;Display_HexByte
+000166 9100 00ec 	lds	temp, DataByte					;Display_HexByte
+000168 7f00      	andi	temp, 0xf0					;Display_HexByte
+000169 9502      	swap	temp						;Display_HexByte
+00016a e0f3       	ldi	ZH, high (HexChars << 1)			;Display_HexByte
+00016b e0e2       	ldi	ZL, low  (HexChars << 1) 			;Display_HexByte
+00016c 0fe0       	add	ZL, temp					;Display_HexByte
+00016d 1dff       	adc	ZH, ZeroReg					;Display_HexByte
+00016e 9104       	lpm	temp, z						;Display_HexByte
+00016f 9300 00e5  	sts	VarByteOne, temp				;Display_HexByte
+000171 d09e      	rcall	LCD_character					;Display_HexByte
+                 ;								;Display_HexByte
+000172 9100 00ec  	lds	temp, DataByte					;Display_HexByte
+000174 700f       	andi	temp, 0x0f					;Display_HexByte
+000175 e0f3        	ldi	ZH, high (HexChars << 1)			;Display_HexByte
+000176 e0e2        	ldi	ZL, low  (HexChars << 1)			;Display_HexByte
+000177 0fe0        	add	ZL, temp					;Display_HexByte
+000178 1dff      	adc	ZH, ZeroReg					;Display_HexByte
+000179 9104        	lpm	temp, z						;Display_HexByte
+00017a 9300 00e5   	sts	VarByteOne, temp				;Display_HexByte
+00017c d093       	rcall	LCD_character					;Display_HexByte
+                 ;								;Display_HexByte
+00017d 910f      	pop	temp						;Display_HexByte
+00017e 91ef      	pop	ZL						;Display_HexByte
+00017f 91ff      	pop	ZH						;Display_HexByte
+000180 9508      	ret							;Display_HexByte
+                 ;								;Display_HexByte
+000181 3130
+000182 3332
+000183 3534
+000184 3736
+000185 3938
+000186 4241
+000187 4443
+000188 4645
+000189 0020      HexChars: .db "0123456789ABCDEF ",0				;Display_HexByte
+                 ;%%%%%%%%%%%%  end of Hex-ASCII routines %%%%%%%%%%%%%%%%%%%%%%%;Display_HexByte
+                 
+                 
+                 
+                 
+                 ;***************************************************************;**************
+                 ;Write_FullScr   fill Nokia screen with 24 hex pairs		; Write_FullScr
+                 								; Write_FullScr
+                 ;  receives:	[SRAM] 	ScrPot, Page_Buffer			; Write_FullScr
+                 ;								; Write_FullScr
+                 ;  calls:	LCD__gotoXY, Display_HexByte			; Write_FullScr
+                 ;  called by:	Heartbeat, 					; Write_FullScr
+                 ;---------------------------------------------------------------; Write_FullScr
+                 WriteFullScr:							; Write_FullScr
+00018a 930f      	push	temp						; Write_FullScr
+00018b 931f      	push	temp2						; Write_FullScr
+00018c 932f      	push	temp3						; Write_FullScr
+00018d 93ef      	push	ZL						; Write_FullScr
+00018e 93ff      	push	ZH						; Write_FullScr
+00018f 93cf      	push	YL						; Write_FullScr
+000190 93df      	push	YH						; Write_FullScr
+                 ;								; Write_FullScr
+000191 d0a9      	rcall	LCD_clear					; Write_FullScr
+                 ;  Display screen number (hex) in upper left of Nokia 5110	; Write_FullScr
+000192 9100 0107 	lds	temp, SCRpot	 				; Write_FullScr
+000194 9300 00ec 	sts	DataByte, temp					; Write_FullScr
+000196 e000      	ldi	temp, 0	  ; row 				; Write_FullScr
+000197 9300 00e6 	sts	VarByteTwo, temp				; Write_FullScr
+000199 e000      	ldi	temp, 0 * PIXELSperCHAR				; Write_FullScr
+00019a 9300 00e5 	sts	VarByteOne, temp				; Write_FullScr
+00019c d0d6      	rcall	LCD_gotoXY					; Write_FullScr
+00019d dfc5      	rcall	DisplayHexByte					; Write_FullScr
+                 ;								; Write_FullScr
+00019e e0d0      	ldi	YH, high (Page_Buffer)	 			; Write_FullScr
+00019f e6c0      	ldi	YL, low  (Page_Buffer)				; Write_FullScr
+0001a0 2711      	clr	temp2						; Write_FullScr
+0001a1 9310 0106 	sts	HexPosition, temp2 				; Write_FullScr
+                 ;								; Write_FullScr
+                 WrFS_write: 							; Write_FullScr
+                 ; determine which column to write hexpair. Go there		; Write_FullScr
+0001a3 9100 0106  	lds	temp, HexPosition				; Write_FullScr
+0001a5 7003      	andi	temp, 0b00000011				; Write_FullScr
+0001a6 e8ee      	ldi	ZL, low  (WrFScolumn << 1)			; Write_FullScr
+0001a7 e0f3      	ldi	ZH, high (WrFScolumn << 1)			; Write_FullScr
+0001a8 0fe0      	add	ZL, temp					; Write_FullScr
+0001a9 1dff      	adc	ZH, ZeroReg					; Write_FullScr
+0001aa 9104      	lpm	temp, z						; Write_FullScr
+0001ab 9300 00e5 	sts	VarByteOne, temp	; x (column)		; Write_FullScr
+0001ad 9110 0106 	lds	temp2, HexPosition ; determine row#		; Write_FullScr
+0001af 9516      	lsr	temp2						; Write_FullScr
+0001b0 9516      	lsr	temp2						; Write_FullScr
+0001b1 9310 00e6 	sts	VarByteTwo, temp2	; y (row #)		; Write_FullScr
+0001b3 d0bf      	rcall	LCD_gotoXY					; Write_FullScr
+                 ;								; Write_FullScr
+0001b4 9109      	ld	temp, y+    					; Write_FullScr
+0001b5 9300 00ec 	sts	DataByte, temp					; Write_FullScr
+0001b7 dfab      	rcall	DisplayHexByte					; Write_FullScr
+0001b8 9100 0106 	lds	temp, HexPosition				; Write_FullScr
+0001ba 9503      	inc	temp						; Write_FullScr
+0001bb 9300 0106 	sts	HexPosition, temp				; Write_FullScr
+0001bd 3108      	cpi	temp, MAXHEXPOSITION				; Write_FullScr
+0001be f320      	brlo	WrFS_write					; Write_FullScr
+                 								; Write_FullScr
+                 WrFS_exit:							; Write_FullScr
+0001bf 91df      	pop	YH						; Write_FullScr
+0001c0 91cf      	pop	YL						; Write_FullScr
+0001c1 91ff      	pop	ZH						; Write_FullScr
+0001c2 91ef      	pop	ZL						; Write_FullScr
+0001c3 912f      	pop	temp3						; Write_FullScr
+0001c4 911f      	pop	temp2						; Write_FullScr
+0001c5 910f      	pop	temp						; Write_FullScr
+                 								; Write_FullScr
+0001c6 9508      	ret							; Write_FullScr
+                 								; Write_FullScr
+0001c7 2212
+0001c8 4232      WrFScolumn: .db	18, 16+18, 32+18, 48+18				; Write_FullScr
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%;%%%%%%%%%%%%%%
+                 
+                 
+                 
+                 ;***************************************************************; Nokia_5110
+                 ;  Nokia 5110 graphics display routines:			; Nokia_5110
+                 ;	Source code @600 bytes					; Nokia_5110
+                 ;	plus font tables: ASCII chars 480 bytes			; Nokia_5110
+                 ;	total:    @1100 bytes 					; Nokia_5110
+                 ;								; Nokia_5110
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Nokia_5110
+                 ;								; Nokia_5110
+                 ;  In order to convert code from Arduino_C			; Nokia_5110
+                 ;  into AVR assembler, I am using variables			; Nokia_5110
+                 ;  in SRAM to store the function arguments			; Nokia_5110
+                 ;  from the Ard_C code.  These are pre-named			; Nokia_5110
+                 ;  as Var_ByteOne and Var_ByteTwo.  When main			; Nokia_5110
+                 ;  asm code calls a subroutine that models			; Nokia_5110
+                 ;  the actions of the Adr_C function, it first			; Nokia_5110
+                 ;  loads the values of the arguments into the			; Nokia_5110
+                 ;  SRAM variables set aside for this purpose.			; Nokia_5110
+                 ;  Var_ByteOne:	     size= 1 byte each				; Nokia_5110
+                 ;  Var_ByteTwo:							; Nokia_5110
+                 ;  Ptr_OneLow:							; Nokia_5110
+                 ;  Ptr_OneHigh:							; Nokia_5110
+                 ;  								; Nokia_5110
+                 ;  LCD__Initialize: 	; no arguments				; Nokia_5110
+                 ;  LCD__stringP:	; Ptr_OneLow:Ptr_OneHigh = adr of strg	; Nokia_5110
+                 ;  LCD__character:	; Var_ByteOne == char	   in flash	; Nokia_5110
+                 ;  LCD__clear:		; no arguments				; Nokia_5110
+                 ;  LCD__write:		; Var_ByteOne== 0=cmd;1=dt: Var_ByteTwo	; Nokia_5110
+                 ;  LCD__gotoXY:		; Var_ByteOne= x : Var_ByteTwo = y	; Nokia_5110
+                 ;  LCD__stringSRAM	; Ptr_OneLow:Ptr_OneHigh = adr str SRAM	; Nokia_5110
+                 ;								; Nokia_5110
+                 ; Hardware:							; Nokia_5110
+                 ;	DDR__DC; DDR__SDIN; DDR__SCLK  				; Nokia_5110
+                 ;	PORT__DC; PORT__SDIN; PORT__SCLK 			; Nokia_5110
+                 ;	PIN__DC; PIN__SDIN; PIN__SCLK  				; Nokia_5110
+                 ;_______________________________________________________________; Nokia_5110
+                 ;	; Example Code						; Nokia_5110
+                 ;								; Nokia_5110
+                 ;  	; clear bottom line of Nokia display, 			; Nokia_5110
+                 ;	ldi	temp, 0		; position cursor column 0-83	; Nokia_5110
+                 ;	sts	Var_ByteOne, temp				; Nokia_5110
+                 ;	ldi	temp, 5		; position Nokia cursor 0-5 	; Nokia_5110
+                 ;	sts	Var_ByteTwo, temp ; display error msg 		; Nokia_5110
+                 ;	rcall	LCD_gotoXY	;on Nokia 5110 bottom row	; Nokia_5110
+                 ;	ldi	temp, high (ClearLine << 1)			; Nokia_5110
+                 ;	sts	Ptr_OneHigh, temp ; erase bottom line		; Nokia_5110
+                 ;	ldi	temp, low  (ClearLine << 1)			; Nokia_5110
+                 ;	sts	Ptr_OneLow, temp				; Nokia_5110
+                 ;	rcall	LCD__stringP					; Nokia_5110
+                 ;								; Nokia_5110
+                 ;	ClearLine:	.db "              ", 0, 0		; Nokia_5110
+                 ;								; Nokia_5110
+                 ;***************************************************************; Nokia_5110
+                 LCD_Initialize:							; Nokia_5110
+0001c9 9ab8      	sbi	DDR_DC,   PIN_DC  ; Nokia5110 control signals	; Nokia_5110
+0001ca 9aba      	sbi	DDR_SDIN, PIN_SDIN	; can be on diff ports	; Nokia_5110
+0001cb 9ab9      	sbi	DDR_SCLK, PIN_SCLK 	; DDRA  0x10 		; Nokia_5110
+                 ;								; Nokia_5110
+                 ;  LCD_write(LCD__CMD, 0x21);  	; LCD Extended Commands.	; Nokia_5110
+0001cc e000      	ldi	temp, LCD_CMD					; Nokia_5110
+0001cd 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+0001cf e201      	ldi	temp, 0x21					; Nokia_5110
+0001d0 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+0001d2 d083      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+                 ;.equ	CONTRAST_VALUE	=  40					; Nokia_5110
+0001d3 e000      	ldi	temp, LCD_CMD	; Set LCD Vop (Contrast).   	; Nokia_5110
+0001d4 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+0001d6 eb05      	ldi	temp, 0x80 |  CONTRAST_VALUE			; Nokia_5110
+0001d7 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+0001d9 d07c      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+0001da e000      	ldi	temp, LCD_CMD	; Set Temp coefficent. ;;0x04	; Nokia_5110
+0001db 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+0001dd e004      	ldi	temp, 0x04					; Nokia_5110
+0001de 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+0001e0 d075      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+0001e1 e000      	ldi	temp, LCD_CMD	; LCD bias mode 1:48. ;;0x14	; Nokia_5110
+0001e2 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+0001e4 e104      	ldi	temp, 0x14					; Nokia_5110
+0001e5 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+0001e7 d06e      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+0001e8 e000      	ldi	temp, LCD_CMD	; LCD in normal mode.		; Nokia_5110
+0001e9 9300 00e5 	sts	VarByteOne, temp ; 0x0d for inverse		; Nokia_5110
+0001eb e00c      	ldi	temp, 0x0c					; Nokia_5110
+0001ec 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+0001ee d067      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+0001ef e000      	ldi	temp, LCD_CMD	 ; LCD standard commands	; Nokia_5110
+0001f0 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+0001f2 e200      	ldi	temp, 0x20					; Nokia_5110
+0001f3 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+0001f5 d060      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+0001f6 e000      	ldi	temp, LCD_CMD					; Nokia_5110
+0001f7 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+0001f9 e00c      	ldi	temp, 0x0c					; Nokia_5110
+0001fa 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+0001fc d059      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+0001fd 9508      	ret							; Nokia_5110
+                 ;								; Nokia_5110
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Nokia_5110
+                  								; Nokia_5110
+                 ;***************************************************************; Nokia_5110
+                 ;void Lcd__StringP(char *characters)  // string in prog flash	; Nokia_5110
+                 ;{								; Nokia_5110
+                 ;  while (*characters)						; Nokia_5110
+                 ;  {								; Nokia_5110
+                 ;    LcdCharacter(*characters++);				; Nokia_5110
+                 ;  }								; Nokia_5110
+                 ;}								; Nokia_5110
+                 ;---------------------------------------------------------------; Nokia_5110
+                 LCD_stringP:							; Nokia_5110
+0001fe 93ff      	push	zh						; Nokia_5110
+0001ff 93ef      	push	zl						; Nokia_5110
+000200 930f      	push	temp						; Nokia_5110
+                 ;								; Nokia_5110
+000201 91f0 00e9 	lds	zh, PtrOneHigh					; Nokia_5110
+000203 91e0 00e8 	lds	zl, PtrOneLow 					; Nokia_5110
+                 LstrP_0:							; Nokia_5110
+000205 9105      	lpm	temp, z+	;  dereferenced pointer 	; Nokia_5110
+000206 2300      	tst	temp		;  value is in flash		; Nokia_5110
+000207 f021      	breq	LstrP_exit					; Nokia_5110
+                 ;								; Nokia_5110
+000208 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+00020a d005      	rcall	LCD_character					; Nokia_5110
+                 ;								; Nokia_5110
+00020b cff9      	rjmp	LstrP_0						; Nokia_5110
+                 ;								; Nokia_5110
+                 LstrP_exit:							; Nokia_5110
+00020c 910f      	pop	temp						; Nokia_5110
+00020d 91ef      	pop	zl						; Nokia_5110
+00020e 91ff      	pop	zh						; Nokia_5110
+00020f 9508      	ret							; Nokia_5110
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Nokia_5110
+                 	 							; Nokia_5110
+                 ;***************************************************************; Nokia_5110
+                 ;void LcdCharacter			 			; Nokia_5110
+                 ; character in Var_ByteOne [range 0x20 to 0x7f]			; Nokia_5110
+                 ; subtract 0x20 and multiply by 5 to get table offset  		; Nokia_5110
+                 ;  offset range [from ASCII_font begin] 0x00 to 0x27b {635}	; Nokia_5110
+                 ;								; Nokia_5110
+                 ;---------------------------------------------------------------; Nokia_5110
+                 LCD_character:	; character in VarByteOne			; Nokia_5110
+000210 93ff      	push	zh						; Nokia_5110
+000211 93ef      	push	zl						; Nokia_5110
+000212 931f      	push	temp2						; Nokia_5110
+000213 932f      	push	temp3						; Nokia_5110
+000214 930f      	push	temp						; Nokia_5110
+                 ;								; Nokia_5110
+000215 9110 00e5 	lds	temp2, VarByteOne				; Nokia_5110
+000217 5210      	subi	temp2, 0x20					; Nokia_5110
+                 ;								; Nokia_5110
+                 ;; if using font in EEPROM, comment all from here to LCy:	; Nokia_5110
+                 		 						; Nokia_5110
+                 ; multiply temp2 by 5 [number of bytes per bit-mapped char] 	; Nokia_5110
+000218 2f21      	mov	temp3, temp2					; Nokia_5110
+000219 2700      	clr	temp						; Nokia_5110
+00021a 0f11      	lsl	temp2 						; Nokia_5110
+00021b 1f00      	rol	temp						; Nokia_5110
+00021c 0f11      	lsl	temp2						; Nokia_5110
+00021d 1f00      	rol	temp						; Nokia_5110
+00021e 0f12      	add	temp2, temp3	;  low of offset into table	; Nokia_5110
+00021f 1d0f      	adc	temp, ZeroReg	; high of offset into table	; Nokia_5110
+                 ; 								; Nokia_5110
+                 ;Lchar0:							; Nokia_5110
+000220 e0f5      	ldi	ZH, high (InLineFont << 1)			; Nokia_5110
+000221 e6e2      	ldi	ZL, low  (InLineFont << 1) 			; Nokia_5110
+000222 0fe1      	add	ZL, temp2 ; ZH:ZL points to first of five bytes ; Nokia_5110
+000223 1ff0      	adc	ZH, temp					; Nokia_5110
+000224 e025      	ldi	temp3, 5					; Nokia_5110
+                 Lchar_loop:							; Nokia_5110
+000225 9105      	lpm	temp, z+					; Nokia_5110
+                 ;; LCy:	_this line is always commented				; Nokia_5110 
+                 ;								; Nokia_5110
+                 ;; When using in-line (not EEPROM) font, comment lines to LCz.	; Nokia_5110
+                 ;; when font is stored in serial EEPROM, use lines to LCz:	; Nokia_5110
+                 ;	clr	temp3 						; Nokia_5110
+                 ;	lsl temp2    rol temp3    ; times 2 16-bit		; Nokia_5110
+                 ;	lsl temp2    rol temp3    ; times 4 16-bit		; Nokia_5110
+                 ;	lsl temp2    rol temp3    ; times 8 16-bit		; Nokia_5110
+                 ;	ldi	ZH, high ( EEFont )				; Nokia_5110
+                 ;	ldi	ZL, low  ( EEFont ) 				; Nokia_5110
+                 ;	add	ZL, temp2 ; ZH:ZL points to first of 8 bytes 	; Nokia_5110
+                 ;	adc	ZH, temp3					; Nokia_5110
+                 ;	sts	HighAddress, ZH					; Nokia_5110
+                 ;	sts	LowAddress,  ZL					; Nokia_5110
+                 ;	ldi	temp, 8						; Nokia_5110
+                 ;	sts	ReadBlockSize, temp				; Nokia_5110
+                 ;	rcall	ReadPage  ; send High:lowAddress, ReadBlockSize	; Nokia_5110
+                 ;	ldi	temp3, 5					; Nokia_5110
+                 ;	ldi	ZH, high (Page_Buffer)				; Nokia_5110
+                 ;	ldi	ZL, low  (Page_Buffer)				; Nokia_5110
+                 ;Lchar_loop:							; Nokia_5110
+                 ;	ld	temp, z+					; Nokia_5110
+                 ;; LCz: _this line is always commented				; Nokia_5110
+                 								; Nokia_5110
+000226 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+000228 e001      	ldi	temp, LCD_D					; Nokia_5110
+000229 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+00022b d02a      	rcall	LCD_write					; Nokia_5110
+                 								; Nokia_5110
+00022c 952a      	dec	temp3						; Nokia_5110
+00022d f7b9      	brne	Lchar_loop					; Nokia_5110
+                 ;								; Nokia_5110
+00022e e001      	ldi	temp, LCD_D					; Nokia_5110
+00022f 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+000231 e000      	ldi	temp, 0x00	; blank column			; Nokia_5110
+000232 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+000234 d021      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+000235 910f      	pop	temp						; Nokia_5110
+000236 912f      	pop	temp3						; Nokia_5110
+000237 911f      	pop	temp2						; Nokia_5110
+000238 91ef      	pop	zl						; Nokia_5110
+000239 91ff      	pop	zh						; Nokia_5110
+00023a 9508      	ret							; Nokia_5110
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Nokia_5110
+                 								; Nokia_5110
+                 ;***************************************************************; Nokia_5110
+                 ;void LcdClear(void)						; Nokia_5110
+                 ;{								; Nokia_5110
+                 ;  for (int index = 0; index < LCD_X * LCD_Y ; index++)		; Nokia_5110
+                 ;  {								; Nokia_5110
+                       ;    LCD_write(LCD_D, 0x00);				; Nokia_5110
+                 ;  }								; Nokia_5110
+                 ;}								; Nokia_5110
+                 ;---------------------------------------------------------------; Nokia_5110
+                 LCD_clear:							; Nokia_5110
+00023b 93ff      	push	zh						; Nokia_5110
+00023c 93ef      	push	zl						; Nokia_5110
+00023d 930f      	push	temp						; Nokia_5110
+                 ;								; Nokia_5110
+00023e 2700      	clr	temp		; position cursor to top 	; Nokia_5110
+00023f 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+000241 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+000243 d02f      	rcall	LCD_gotoXY					; Nokia_5110
+                 ;								; Nokia_5110
+000244 e0f1      	ldi	zh, high  ( LCD_X * ( LCD_Y / 8) )		; Nokia_5110
+000245 efe8      	ldi	zl, low   ( LCD_X * ( LCD_Y / 8) )		; Nokia_5110
+                 ;								; Nokia_5110
+                 L_clr0:								; Nokia_5110
+000246 e001      	ldi	temp, LCD_D					; Nokia_5110
+000247 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+000249 e000      	ldi	temp, 0x00					; Nokia_5110
+00024a 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+00024c d009      	rcall	LCD_write					; Nokia_5110
+                 ;								; Nokia_5110
+00024d 95ea      	dec	zl						; Nokia_5110
+00024e f7b9      	brne	L_clr0						; Nokia_5110
+00024f 95fa      	dec	zh						; Nokia_5110
+000250 23ff      	tst	zh						; Nokia_5110
+000251 f7a2      	brpl	L_clr0						; Nokia_5110
+                 ;								; Nokia_5110
+000252 910f      	pop	temp						; Nokia_5110
+000253 91ef      	pop	zl						; Nokia_5110
+000254 91ff      	pop	zh						; Nokia_5110
+                 ;								; Nokia_5110
+000255 9508      	ret							; Nokia_5110
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Nokia_5110
+                 								; Nokia_5110
+                 								; Nokia_5110
+                 ;***************************************************************; Nokia_5110
+                 LCD_write:; Var_ByteOne: dc {0=cmd;1=d}  :: Var_ByteTwo: data	; Nokia_5110
+000256 932f      	push	temp3		; LOWEST LEVEL FUNCTION		; Nokia_5110
+000257 931f      	push	temp2						; Nokia_5110
+000258 930f      	push	temp						; Nokia_5110
+                 ;								; Nokia_5110
+000259 9120 00e5 	lds	temp3, VarByteOne	; cmd=0; data=1		; Nokia_5110
+00025b 2322      	tst	temp3						; Nokia_5110
+00025c f011      	breq	Lw1						; Nokia_5110
+                 ;								; Nokia_5110
+00025d 9ac0      	sbi	PORT_DC, PIN_DC					; Nokia_5110
+00025e c001      	rjmp	Lw2						; Nokia_5110
+                 ;		; Nokia gLCD command  selected low on DC	; Nokia_5110
+00025f 98c0      Lw1:	cbi	PORT_DC, PIN_DC					; Nokia_5110
+                 ;								; Nokia_5110
+000260 e008      Lw2:	ldi	temp, 8						; Nokia_5110
+000261 9110 00e6 	lds	temp2, VarByteTwo				; Nokia_5110
+                 ;								; Nokia_5110
+                 Lw_loop:							; Nokia_5110
+000263 0f11      	lsl	temp2			; MSB first 		; Nokia_5110
+000264 f420      	brcc	Lw4						; Nokia_5110
+                 ;	carry bit set						; Nokia_5110
+000265 9ac2      	sbi	PORT_SDIN, PIN_SDIN				; Nokia_5110
+000266 9ac1      	sbi	PORT_SCLK, PIN_SCLK				; Nokia_5110
+000267 98c1      	cbi	PORT_SCLK, PIN_SCLK				; Nokia_5110
+000268 c003      	rjmp	Lw5						; Nokia_5110
+                 Lw4:	; carry bit clear					; Nokia_5110
+000269 98c2      	cbi	PORT_SDIN, PIN_SDIN				; Nokia_5110
+00026a 9ac1      	sbi	PORT_SCLK, PIN_SCLK				; Nokia_5110
+00026b 98c1      	cbi	PORT_SCLK, PIN_SCLK				; Nokia_5110
+                 ;								; Nokia_5110
+00026c 950a      Lw5:	dec	temp						; Nokia_5110
+00026d f009      	breq	Lw_exit						; Nokia_5110
+00026e cff4      	rjmp	Lw_loop						; Nokia_5110
+                 ;--------------------------					; Nokia_5110
+                 ;								; Nokia_5110
+                 Lw_exit:							; Nokia_5110
+00026f 910f      	pop	temp						; Nokia_5110
+000270 911f      	pop	temp2						; Nokia_5110
+000271 912f      	pop	temp3						; Nokia_5110
+000272 9508      	ret							; Nokia_5110
+                 ;								; Nokia_5110
+                 ;								; Nokia_5110
+                 ;;**************************************************************; Nokia_5110
+                 ; * gotoXY routine to position cursor				; Nokia_5110
+                 ; * byte offset is column X {Var_ByteOne}, row(y) {Var_ByteTwo}	; Nokia_5110
+                 ; * x - range: 0 to 83		Display address=(y*84)+x	; Nokia_5110
+                 ; * y - range: 0 to 5  						; Nokia_5110
+                 ; *;								; Nokia_5110
+                 ;void gotoXY(int x, int y)					; Nokia_5110
+                 ;{								; Nokia_5110
+                 ;  LCD_write( 0, 0x80 | x);  ;; Column.				; Nokia_5110
+                 ;  LCD_write( 0, 0x40 | y);  ;; Row.				; Nokia_5110
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Nokia_5110
+                 LCD_gotoXY:		; Var_ByteOne: x, Var_ByteTwo y)	; Nokia_5110
+000273 930f      	push	temp						; Nokia_5110
+000274 922f      	push	lowTemp0					; Nokia_5110
+000275 923f      	push	lowTemp1					; Nokia_5110
+                 								; Nokia_5110
+000276 9020 00e5 	lds	lowTemp0, VarByteOne				; Nokia_5110
+000278 9030 00e6 	lds	lowTemp1, VarByteTwo				; Nokia_5110
+                 								; Nokia_5110
+00027a e000      	ldi	temp,  0					; Nokia_5110
+00027b 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+00027d e800      	ldi	temp, 0x80					; Nokia_5110
+00027e 2902      	or	temp, lowTemp0	; x position offset 0-83	; Nokia_5110
+00027f 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+000281 dfd4      	rcall	LCD_write					; Nokia_5110
+                 								; Nokia_5110
+000282 e000      	ldi	temp,  0					; Nokia_5110
+000283 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+000285 e400      	ldi	temp, 0x40					; Nokia_5110
+000286 2903      	or	temp, lowTemp1	; y position offset 0-5		; Nokia_5110
+000287 9300 00e6 	sts	VarByteTwo, temp				; Nokia_5110
+000289 dfcc      	rcall	LCD_write					; Nokia_5110
+                 								; Nokia_5110
+00028a 903f      	pop	lowTemp1					; Nokia_5110
+00028b 902f      	pop	lowTemp0					; Nokia_5110
+00028c 910f      	pop	temp						; Nokia_5110
+00028d 9508      	ret							; Nokia_5110
+                 								; Nokia_5110
+                 ;***************************************************************; Nokia_5110
+                 ; LCD__clearline	 					; Nokia_5110
+                 ;   Display decimal number starting at LCD position		; Nokia_5110
+                 ;								; Nokia_5110
+                 ; send:  VarByteOne with line value (0-5)			; Nokia_5110
+                 ;	 							; Nokia_5110
+                 ;***************************************************************; Nokia_5110
+                 LCD_clearline:							; Nokia_5110
+00028e 930f      	push	temp						; Nokia_5110
+00028f 931f      	push	temp2						; Nokia_5110
+000290 93ff      	push	ZH						; Nokia_5110
+000291 93ef      	push	ZL						; Nokia_5110
+                 								; Nokia_5110
+000292 9110 00e5 	lds	temp2, VarByteOne				; Nokia_5110
+000294 e0f5      	ldi	ZH, high (ClearLine << 1)			; Nokia_5110
+000295 e5e0      	ldi	ZL, low  (ClearLine << 1)			; Nokia_5110
+                 								; Nokia_5110
+000296 e000      	ldi	temp, 0						; Nokia_5110
+000297 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+000299 9310 00e6 	sts	VarByteTwo, temp2				; Nokia_5110
+00029b dfd7      	rcall	LCD_gotoXY					; Nokia_5110
+                 Lclln_0:							; Nokia_5110
+00029c 9105      	lpm	temp, z+					; Nokia_5110
+00029d 2300      	tst	temp						; Nokia_5110
+00029e f021      	breq	Lclln_1						; Nokia_5110
+00029f 9300 00e5 	sts	VarByteOne, temp				; Nokia_5110
+0002a1 df6e      	rcall	LCD_character					; Nokia_5110
+0002a2 cff9      	rjmp	Lclln_0						; Nokia_5110
+                 Lclln_1:							; Nokia_5110
+                 								; Nokia_5110
+0002a3 91ef      	pop	ZL						; Nokia_5110
+0002a4 91ff      	pop	ZH						; Nokia_5110
+0002a5 911f      	pop	temp2						; Nokia_5110
+0002a6 910f      	pop	temp						; Nokia_5110
+0002a7 9508      	ret							; Nokia_5110
+                 								; Nokia_5110
+0002a8 2020
+0002a9 2020
+0002aa 2020
+0002ab 2020
+0002ac 2020
+0002ad 2020
+0002ae 2020
+0002af 2020
+0002b0 0000      ClearLine:  .db "                ",0,0				; Nokia_5110
+                 								; Nokia_5110
+                 								; Nokia_5110
+                 ;###############################################################; Nokia_5110
+                 ;								; Nokia_5110
+                 ;  	Nokia 5110 Graphic Character Fonts			; Nokia_5110
+                 ;								; Nokia_5110
+                 ;###############################################################; Nokia_5110
+                 ;
+                 InLineFont:  ; 480 bytes; 96 character's font data;  5 col x 7 rows per char
+                 ; 2 chars/line as the assembler must have an even number of .db bytes on each line.	; Nokia 5110
+0002b1 0000
+0002b2 0000
+0002b3 0000
+0002b4 5f00
+0002b5 0000      .db	0x00, 0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x5F, 0x00, 0x00 ;   space  21 !	; Nokia 5110
+0002b6 0700
+0002b7 0700
+0002b8 1400
+0002b9 147f
+0002ba 147f      .db	0x00, 0x07, 0x00, 0x07, 0x00,  0x14, 0x7F, 0x14, 0x7F, 0x14 ;   22 "   23 #	; Nokia 5110
+0002bb 2a24
+0002bc 2a7f
+0002bd 2312
+0002be 0813
+0002bf 6264      .db	0x24, 0x2A, 0x7F, 0x2A, 0x12,  0x23, 0x13, 0x08, 0x64, 0x62 ;   24 $   25 %	; Nokia 5110
+0002c0 4936
+0002c1 2056
+0002c2 0050
+0002c3 0708
+0002c4 0003      .db	0x36, 0x49, 0x56, 0x20, 0x50,  0x00, 0x08, 0x07, 0x03, 0x00 ;   26 &   27 '	; Nokia 5110
+0002c5 1c00
+0002c6 4122
+0002c7 0000
+0002c8 2241
+0002c9 001c      .db	0x00, 0x1C, 0x22, 0x41, 0x00,  0x00, 0x41, 0x22, 0x1C, 0x00 ;   28 (   29 )	; Nokia 5110
+0002ca 1c2a
+0002cb 1c7f
+0002cc 082a
+0002cd 3e08
+0002ce 0808      .db	0x2A, 0x1C, 0x7F, 0x1C, 0x2A,  0x08, 0x08, 0x3E, 0x08, 0x08 ;   2a *   2b +	; Nokia 5110
+0002cf 8000
+0002d0 3070
+0002d1 0800
+0002d2 0808
+0002d3 0808      .db	0x00, 0x80, 0x70, 0x30, 0x00,  0x08, 0x08, 0x08, 0x08, 0x08 ;   2c ,   2d -	; Nokia 5110
+0002d4 0000
+0002d5 6060
+0002d6 2000
+0002d7 0810
+0002d8 0204      .db	0x00, 0x00, 0x60, 0x60, 0x00,  0x20, 0x10, 0x08, 0x04, 0x02 ;   2e .   2f ;	; Nokia 5110
+0002d9 513e
+0002da 4549
+0002db 003e
+0002dc 7f42
+0002dd 0040      .db	0x3E, 0x51, 0x49, 0x45, 0x3E,  0x00, 0x42, 0x7F, 0x40, 0x00 ;   30 0   31 1	; Nokia 5110
+0002de 4972
+0002df 4949
+0002e0 2146
+0002e1 4941
+0002e2 334d      .db	0x72, 0x49, 0x49, 0x49, 0x46,  0x21, 0x41, 0x49, 0x4D, 0x33 ;   32 2   33 3	; Nokia 5110
+0002e3 1418
+0002e4 7f12
+0002e5 2710
+0002e6 4545
+0002e7 3945      .db	0x18, 0x14, 0x12, 0x7F, 0x10,  0x27, 0x45, 0x45, 0x45, 0x39 ;   34 4   35 5	; Nokia 5110
+0002e8 4a3c
+0002e9 4949
+0002ea 4131
+0002eb 1121
+0002ec 0709      .db	0x3C, 0x4A, 0x49, 0x49, 0x31,  0x41, 0x21, 0x11, 0x09, 0x07 ;   36 6   37 7	; Nokia 5110
+0002ed 4936
+0002ee 4949
+0002ef 4636
+0002f0 4949
+0002f1 1e29      .db	0x36, 0x49, 0x49, 0x49, 0x36,  0x46, 0x49, 0x49, 0x29, 0x1E ;   38 8   39 9	; Nokia 5110
+0002f2 0000
+0002f3 0014
+0002f4 0000
+0002f5 3440
+0002f6 0000      .db	0x00, 0x00, 0x14, 0x00, 0x00,  0x00, 0x40, 0x34, 0x00, 0x00 ;   3a :   3b ;	; Nokia 5110
+0002f7 0800
+0002f8 2214
+0002f9 1441
+0002fa 1414
+0002fb 1414      .db	0x00, 0x08, 0x14, 0x22, 0x41,  0x14, 0x14, 0x14, 0x14, 0x14 ;   3c <   3d =	; Nokia 5110
+0002fc 4100
+0002fd 1422
+0002fe 0208
+0002ff 5901
+000300 0609      .db	0x00, 0x41, 0x22, 0x14, 0x08,  0x02, 0x01, 0x59, 0x09, 0x06 ;   3e >   3f ?	; Nokia 5110
+000301 413e
+000302 595d
+000303 7c4e
+000304 1112
+000305 7c12      .db	0x3E, 0x41, 0x5D, 0x59, 0x4E,  0x7C, 0x12, 0x11, 0x12, 0x7C ;   40 @   41 A	; Nokia 5110
+000306 497f
+000307 4949
+000308 3e36
+000309 4141
+00030a 2241      .db	0x7F, 0x49, 0x49, 0x49, 0x36,  0x3E, 0x41, 0x41, 0x41, 0x22 ;   42 B   43 C	; Nokia 5110
+00030b 417f
+00030c 4141
+00030d 7f3e
+00030e 4949
+00030f 4149      .db	0x7F, 0x41, 0x41, 0x41, 0x3E,  0x7F, 0x49, 0x49, 0x49, 0x41 ;   44 D   45 E	; Nokia 5110
+000310 097f
+000311 0909
+000312 3e01
+000313 4141
+000314 7351      .db	0x7F, 0x09, 0x09, 0x09, 0x01,  0x3E, 0x41, 0x41, 0x51, 0x73 ;   46 F   47 G	; Nokia 5110
+000315 087f
+000316 0808
+000317 007f
+000318 7f41
+000319 0041      .db	0x7F, 0x08, 0x08, 0x08, 0x7F,  0x00, 0x41, 0x7F, 0x41, 0x00 ;   48 H   49 I	; Nokia 5110
+00031a 4020
+00031b 3f41
+00031c 7f01
+00031d 1408
+00031e 4122      .db	0x20, 0x40, 0x41, 0x3F, 0x01,  0x7F, 0x08, 0x14, 0x22, 0x41 ;   4a J   4b K	; Nokia 5110
+00031f 407f
+000320 4040
+000321 7f40
+000322 1c02
+000323 7f02      .db	0x7F, 0x40, 0x40, 0x40, 0x40,  0x7F, 0x02, 0x1C, 0x02, 0x7F ;   4c L   4d M	; Nokia 5110
+000324 047f
+000325 1008
+000326 3e7f
+000327 4141
+000328 3e41      .db	0x7F, 0x04, 0x08, 0x10, 0x7F,  0x3E, 0x41, 0x41, 0x41, 0x3E ;   4e N   4f O	; Nokia 5110
+000329 097f
+00032a 0909
+00032b 3e06
+00032c 5141
+00032d 5e21      .db	0x7F, 0x09, 0x09, 0x09, 0x06,  0x3E, 0x41, 0x51, 0x21, 0x5E ;   50 P   51 Q	; Nokia 5110
+00032e 097f
+00032f 2919
+000330 2646
+000331 4949
+000332 3249      .db	0x7F, 0x09, 0x19, 0x29, 0x46,  0x26, 0x49, 0x49, 0x49, 0x32 ;   52 R   53 S	; Nokia 5110
+000333 0103
+000334 017f
+000335 3f03
+000336 4040
+000337 3f40      .db	0x03, 0x01, 0x7F, 0x01, 0x03,  0x3F, 0x40, 0x40, 0x40, 0x3F ;   54 T   55 U	; Nokia 5110
+000338 201f
+000339 2040
+00033a 3f1f
+00033b 3840
+00033c 3f40      .db	0x1F, 0x20, 0x40, 0x20, 0x1F,  0x3F, 0x40, 0x38, 0x40, 0x3F ;   56 V   57 W	; Nokia 5110
+00033d 1463
+00033e 1408
+00033f 0363
+000340 7804
+000341 0304      .db	0x63, 0x14, 0x08, 0x14, 0x63,  0x03, 0x04, 0x78, 0x04, 0x03 ;   58 X   59 Y	; Nokia 5110
+000342 5961
+000343 4d49
+000344 0043
+000345 417f
+000346 4141      .db	0x61, 0x59, 0x49, 0x4D, 0x43,  0x00, 0x7F, 0x41, 0x41, 0x41 ;   5a Z   5b [	; Nokia 5110
+000347 0402
+000348 1008
+000349 0020
+00034a 4141
+00034b 7f41      .db	0x02, 0x04, 0x08, 0x10, 0x20,  0x00, 0x41, 0x41, 0x41, 0x7F ;   5c ¥   5d ]	; Nokia 5110
+00034c 0204
+00034d 0201
+00034e 4004
+00034f 4040
+000350 4040      .db	0x04, 0x02, 0x01, 0x02, 0x04,  0x40, 0x40, 0x40, 0x40, 0x40 ;   5e ^   5f _	; Nokia 5110
+000351 0300
+000352 0807
+000353 2000
+000354 5454
+000355 4078      .db	0x00, 0x03, 0x07, 0x08, 0x00,  0x20, 0x54, 0x54, 0x78, 0x40 ;   60 `   61 a	; Nokia 5110
+000356 287f
+000357 4444
+000358 3838
+000359 4444
+00035a 2844      .db	0x7F, 0x28, 0x44, 0x44, 0x38,  0x38, 0x44, 0x44, 0x44, 0x28 ;   62 b   63 c	; Nokia 5110
+00035b 4438
+00035c 2844
+00035d 387f
+00035e 5454
+00035f 1854      .db	0x38, 0x44, 0x44, 0x28, 0x7F,  0x38, 0x54, 0x54, 0x54, 0x18 ;   64 d   65 e	; Nokia 5110
+000360 0800
+000361 097e
+000362 1802
+000363 a4a4
+000364 789c      .db	0x00, 0x08, 0x7E, 0x09, 0x02,  0x18, 0xA4, 0xA4, 0x9C, 0x78 ;   66 f   67 g	; Nokia 5110
+000365 087f
+000366 0404
+000367 0078
+000368 7d44
+000369 0040      .db	0x7F, 0x08, 0x04, 0x04, 0x78,  0x00, 0x44, 0x7D, 0x40, 0x00 ;   68 h   69 i	; Nokia 5110
+00036a 4020
+00036b 3d40
+00036c 7f00
+00036d 2810
+00036e 0044      .db	0x20, 0x40, 0x40, 0x3D, 0x00,  0x7F, 0x10, 0x28, 0x44, 0x00 ;   6a j   6b k	; Nokia 5110
+00036f 4100
+000370 407f
+000371 7c00
+000372 7804
+000373 7804      .db	0x00, 0x41, 0x7F, 0x40, 0x00,  0x7C, 0x04, 0x78, 0x04, 0x78 ;   6c l   6d m	; Nokia 5110
+000374 087c
+000375 0404
+000376 3878
+000377 4444
+000378 3844      .db	0x7C, 0x08, 0x04, 0x04, 0x78,  0x38, 0x44, 0x44, 0x44, 0x38 ;   6e n   6f o	; Nokia 5110
+000379 18fc
+00037a 2424
+00037b 1818
+00037c 2424
+00037d fc18      .db	0xFC, 0x18, 0x24, 0x24, 0x18,  0x18, 0x24, 0x24, 0x18, 0xFC ;   70 p   71 q	; Nokia 5110
+00037e 087c
+00037f 0404
+000380 4808
+000381 5454
+000382 2454      .db	0x7C, 0x08, 0x04, 0x04, 0x08,  0x48, 0x54, 0x54, 0x54, 0x24 ;   72 r   73 s	; Nokia 5110
+000383 0404
+000384 443f
+000385 3c24
+000386 4040
+000387 7c20      .db	0x04, 0x04, 0x3F, 0x44, 0x24,  0x3C, 0x40, 0x40, 0x20, 0x7C ;   74 t   75 u	; Nokia 5110
+000388 201c
+000389 2040
+00038a 3c1c
+00038b 3040
+00038c 3c40      .db	0x1C, 0x20, 0x40, 0x20, 0x1C,  0x3C, 0x40, 0x30, 0x40, 0x3C ;   76 v   77 w	; Nokia 5110
+00038d 2844
+00038e 2810
+00038f 4c44
+000390 9090
+000391 7c90      .db	0x44, 0x28, 0x10, 0x28, 0x44,  0x4C, 0x90, 0x90, 0x90, 0x7C ;   78 x   79 y	; Nokia 5110
+000392 6444
+000393 4c54
+000394 0044
+000395 3608
+000396 0041      .db	0x44, 0x64, 0x54, 0x4C, 0x44,  0x00, 0x08, 0x36, 0x41, 0x00 ;   7a z   7b {	; Nokia 5110
+000397 0000
+000398 0077
+000399 0000
+00039a 3641
+00039b 0008      .db	0x00, 0x00, 0x77, 0x00, 0x00,  0x00, 0x41, 0x36, 0x08, 0x00 ;   7c |   7d }	; Nokia 5110
+00039c 0102
+00039d 0402
+00039e 3c02
+00039f 2326
+0003a0 3c26      .db	0x02, 0x01, 0x02, 0x04, 0x02,  0x3C, 0x26, 0x23, 0x26, 0x3C ;   7e ?   7f ?	; Nokia 5110
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; Nokia 5110
+                 
+                 
+                 
+                 ;***************************************************************************
+                 ;  Byte2Hex ASCII  Convert a byte to two hexidecimal ASCII characters.
+                 ;
+                 ; send:		DataByte
+                 ; return:	{SRAM} ByteASChigh, ByteASClow
+                 ; uses:		temp; ZH:ZL (non-destructive)
+                 ;***************************************************************************
+                 Byte2HexASCII:							; Byte2hex
+0003a1 93ff      	push	ZH						; Byte2hex
+0003a2 93ef      	push	ZL						; Byte2hex
+0003a3 930f      	push	temp						; Byte2hex
+                 								; Byte2hex
+0003a4 9100 00ec 	lds	temp, DataByte					; Byte2hex
+0003a6 9502      	swap	temp						; Byte2hex
+0003a7 700f      	andi	temp, 0x0f					; Byte2hex
+0003a8 e0f7      	ldi	ZH, high (B2Hexchars << 1)			; Byte2hex
+0003a9 e7ea      	ldi	ZL, low  (B2Hexchars << 1)			; Byte2hex
+0003aa 0fe0      	add	ZL, temp					; Byte2hex
+0003ab 1dff      	adc	ZH, ZeroReg					; Byte2hex
+0003ac 9104      	lpm	temp, z						; Byte2hex
+0003ad 9300 00f0 	sts	ByteASChigh, temp				; Byte2hex
+                 								; Byte2hex
+0003af 9100 00ec 	lds	temp, DataByte					; Byte2hex
+0003b1 700f      	andi	temp, 0x0f					; Byte2hex
+0003b2 e0f7      	ldi	ZH, high (B2Hexchars << 1)			; Byte2hex
+0003b3 e7ea      	ldi	ZL, low  (B2Hexchars << 1)			; Byte2hex
+0003b4 0fe0      	add	ZL, temp					; Byte2hex
+0003b5 1dff      	adc	ZH, ZeroReg					; Byte2hex
+0003b6 9104      	lpm	temp, z						; Byte2hex
+0003b7 9300 00f1 	sts	ByteASClow, temp				; Byte2hex
+                 								; Byte2hex
+0003b9 910f      	pop	temp						; Byte2hex
+0003ba 91ef      	pop	ZL						; Byte2hex
+0003bb 91ff      	pop	ZH						; Byte2hex
+0003bc 9508      	ret							; Byte2hex
+                 								; Byte2hex
+0003bd 3130
+0003be 3332
+0003bf 3534
+0003c0 3736
+0003c1 3938
+0003c2 4241
+0003c3 4443
+0003c4 4645      B2Hexchars: .db "0123456789ABCDEF"				; Byte2hex
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                 
+                 
+                 
+                 ;***************************************************************
+                 ; do ADC10      Mega8 analog-to-digital 10-bit conversion
+                 ;  >>  ADC clock set at 125K (8MHz/64) 8uS*13=104uS/ADC
+                 ; called by: 	Heartbeat_Period
+                 ; send:		The ADC channel in temp
+                 ; return:	ADConeValH:L  ADCtwoValH:L
+                 ; uses:  	temp
+                 ;					size: 25 instructions
+                 ;***************************************************************; do ADC10
+                 doADC10:							; do ADC10
+0003c5 930f      	push	temp						; do ADC10
+                 ;								; do ADC10
+0003c6 e001      	ldi	temp, ADC_MUX1	; ADMUX:76 are 0 0 for AREF +5V	; do ADC10
+0003c7 6200      	ori	temp, 0b00100000 ; set ADLAR for left adjust	; do ADC10
+0003c8 b907      	out	ADMUX, temp  ; ADMUX:5 is ADLAR. If 0,right adj	; do ADC10
+0003c9 e806      	ldi	temp, (1 << ADEN) | (1<<ADPS2) | (1<<ADPS1)  	; do ADC10
+0003ca b906      	out	ADCSRA, temp	;ADPS = 1 1 0    8MHz/64=125K	; do ADC10
+0003cb 9a36      	sbi	ADCSRA, ADSC	; start ADC, takes 104 uSec	; do ADC10
+                 ;								; do ADC10
+                 ADC10_loop:	; ADSC returns low when ADC done		; do ADC10
+0003cc 9936      	sbic	ADCSRA, ADSC 					; do ADC10
+0003cd cffe      	rjmp	ADC10_loop					; do ADC10
+                 ;								; do ADC10
+0003ce b104      	in	temp, ADCL					; do ADC10
+0003cf 9300 0102 	sts	ADConeValLow, temp				; do ADC10
+0003d1 b105      	in	temp, ADCH					; do ADC10
+0003d2 9300 0103 	sts	ADConeValHigh, temp				; do ADC10
+                 ;								; do ADC10
+0003d4 910f      	pop	temp						; do ADC10
+                 ;								; do ADC10
+0003d5 9508      	ret							; do ADC10
+                 								; do ADC10
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%;%%%%%%%%%
+                 
+                 
+                 
+                 
+                 ;***************************************************************;<> Interrupt_Routines
+                 ;  Timer 1 overflow   set to activate every 31.25 milliseconds	;<> Interrupt_Routines
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+                 TIM1_OVF:							;<> Interrupt_Routines
+0003d6 b6ef      	in	SREGtemp, SREG	; 0x3f				;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+0003d7 ef3c      	ldi	irqtemp, high (~LongPeriod)			;<> Interrupt_Routines
+0003d8 bd3d      	out	TCNT1H, irqtemp  	; 0x6f			;<> Interrupt_Routines
+0003d9 e23f      	ldi	irqtemp, low  (~LongPeriod)			;<> Interrupt_Routines
+0003da bd3c      	out	TCNT1L,  irqtemp  	; 0x6e			;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+                 ;  set a flag for the main code to know that T1 IRQ happened	;<> Interrupt_Routines
+0003db 9130 00ef 	lds	irqtemp, TaskFlags				;<> Interrupt_Routines
+0003dd 6830      	sbr	irqtemp, (1 << T1_HeartBeat)			;<> Interrupt_Routines
+0003de 9330 00ef 	sts	TaskFlags, irqtemp				;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+0003e0 9130 00e0 	lds	irqtemp, HeartBeatCntr				;<> Interrupt_Routines
+0003e2 9533      	inc	irqtemp						;<> Interrupt_Routines
+0003e3 9330 00e0 	sts	HeartBeatCntr, irqtemp				;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+                 ; check if HBcntr mod 32 == 0. If yes, inc SecondCount		;<> Interrupt_Routines
+0003e5 713f       	andi	irqtemp,  HB_PER_SECOND - 1    ; ### DEBUG	;<> Interrupt_Routines
+0003e6 f461      	brne	T1ovf_exit					;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+0003e7 9130 00e1 	lds	irqtemp, SecondCount  ; init to 0 by reset	;<> Interrupt_Routines
+0003e9 9533      	inc	irqtemp						;<> Interrupt_Routines
+0003ea 9330 00e1 	sts	SecondCount, irqtemp				;<> Interrupt_Routines
+0003ec 2333      	tst	irqtemp						;<> Interrupt_Routines
+0003ed f429      	brne	T1ovf_exit					;<> Interrupt_Routines
+0003ee 9130 00e2 	lds	irqtemp, HighSecCount ; init to 0 by reset	;<> Interrupt_Routines
+0003f0 9533      	inc	irqtemp						;<> Interrupt_Routines
+0003f1 9330 00e2 	sts	HighSecCount, irqtemp				;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+                 T1ovf_exit:							;<> Interrupt_Routines
+0003f3 beef      	out	SREG, SREGtemp		;0x3f			;<> Interrupt_Routines
+0003f4 9518       	reti 							;<> Interrupt_Routines
+                 								;<> Interrupt_Routines
+                 ;***************************************************************;<> Interrupt_Routines
+                 
+                 
+                 
+                 ;****************************************************************
+                 ; LongDelay	counts T1 periods { 80 per second: 12.5mS
+                 ;		for long do-nothing loops.
+                 ;  used by Reset/initApplication for LCD message display timing.
+                 ;  send:	temp    - 8MHz =0.125uS period
+                 ;  if timer1 prescaler=1024, then each timer1 interval is 128uS.
+                 ;  uses: 	temp2 (n_d) = number of 12.5mS periods to wait
+                 ;****************************************************************
+                 LongDelay:
+0003f5 931f      	push	temp2
+                 
+0003f6 9110 00e0 	lds	temp2, HeartBeatCntr
+0003f8 0f10      	add	temp2, temp
+0003f9 9100 00e0 LDly_1:	lds	temp, HeartBeatCntr
+0003fb 1301      	cpse	temp, temp2
+0003fc cffc      	rjmp	LDly_1
+                 
+0003fd 911f      	pop	temp2
+0003fe 9508      	ret
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                 
+                 
+                 
+                 
+                 
+                 
+                 ;*******************************************************************************
+                 ; WritePage -  Write a page from Page_Buffer in SRAM to the EEPROM
+                 ;
+                 ; After writing START:SLA+1:addrH:addrL:data bytes,
+                 ; STOP condition sent by AVR master. EE is polled for
+                 ; completion of write interval by START:SLA+0.
+                 ; Loops until ACK returned from EE.
+                 ;
+                 ; send:		HighAddress, LowAddress, SLA, Page_Buffer, Write_BlockSize
+                 ; return: 	FlagsReg:WPOK
+                 ; uses: 	temp, temp2, temp3, ReceivedTWSR
+                 ; calls: 	tw_wait
+                 ;
+                 ;  TWSR (two-wire status register) message codes returned:
+                 ;  after ANDing the returned byte with 0b1111.1000
+                 ; ..........................................................
+                 ; 0000.1---  ==  received START_sent_OK
+                 ; 0001.1---  ==  Wrote_SLA+w__received_ACK
+                 ; 0100.0---  ==  Wrote_SLA+r__received_ACK
+                 ; 0010.1---  ==  Wrote Data - received ACK
+                 ; 0001.0---  ==  Repeated START sent OK
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; TWI_WritePage
+                 WritePage:								; TWI_WritePage
+0003ff 930f       	push	temp							; TWI_WritePage
+000400 931f       	push	temp2							; TWI_WritePage
+000401 932f       	push	temp3							; TWI_WritePage
+000402 93ef       	push	ZL							; TWI_WritePage
+000403 93ff       	push	ZH							; TWI_WritePage
+                 									; TWI_WritePage
+000404 774f      	cbr	FlagsReg, (1 << WPOK)					; TWI_WritePage
+                 									; TWI_WritePage
+000405 ea04      	ldi	temp, (1<<TWINT) | (1<<TWSTA) | (1<<TWEN)		; TWI_WritePage
+000406 bf06      	out	TWCR, temp	 					; TWI_WritePage
+000407 d1b9      	rcall	tw_wait							; TWI_WritePage
+                 									; TWI_WritePage
+000408 e000      	ldi	temp, 0							; TWI_WritePage
+000409 9300 00fa 	sts	TWIstepValue, temp					; TWI_WritePage
+                 									; TWI_WritePage
+00040b b101      	in	temp, TWSR						; TWI_WritePage
+00040c 7f08      	andi	temp, 0xF8						; TWI_WritePage
+00040d 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_WritePage
+                 									; TWI_WritePage
+00040f e018      	ldi	temp2, 0x08						; TWI_WritePage
+000410 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_WritePage
+000412 1301      	cpse	temp, temp2	 					; TWI_WritePage
+000413 c05f      	rjmp	WP_ERROR						; TWI_WritePage
+                 ;----------------------------------------				; TWI_WritePage
+                 ; Send control byte  device code bits7-4 {1010},			; TWI_WritePage
+                 ; dev addr: (bits 3,2,1 =0  0 0), and R/_w bit0 (0=write)		; TWI_WritePage
+000414 9100 00fd 	lds	temp, SLA						; TWI_WritePage
+000416 7f0e      	andi	temp, 0b11111110	 				; TWI_WritePage
+000417 b903      	out	TWDR, temp						; TWI_WritePage
+000418 e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_WritePage
+000419 bf06      	out	TWCR, temp						; TWI_WritePage
+00041a d1a6      	rcall	tw_wait							; TWI_WritePage
+                 									; TWI_WritePage
+00041b e001      	ldi	temp, 1							; TWI_WritePage
+00041c 9300 00fa 	sts	TWIstepValue, temp					; TWI_WritePage
+                 									; TWI_WritePage
+00041e b101      	in	temp, TWSR						; TWI_WritePage
+00041f 7f08      	andi	temp, 0xF8						; TWI_WritePage
+000420 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_WritePage
+                 									; TWI_WritePage
+000422 e118      	ldi	temp2, 0x18						; TWI_WritePage
+000423 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_WritePage
+000425 1301      	cpse	temp, temp2						; TWI_WritePage
+000426 c04c      	rjmp	WP_ERROR						; TWI_WritePage
+                 ;--------------------------						; TWI_WritePage
+000427 9100 0100 	lds	temp, HighAddress					; TWI_WritePage
+000429 b903      	out	TWDR, temp						; TWI_WritePage
+00042a e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_WritePage
+00042b bf06      	out	TWCR, temp						; TWI_WritePage
+00042c d194      	rcall	tw_wait							; TWI_WritePage
+                 									; TWI_WritePage
+00042d e002      	ldi	temp, 2							; TWI_WritePage
+00042e 9300 00fa 	sts	TWIstepValue, temp					; TWI_WritePage
+                 									; TWI_WritePage
+000430 b101      	in	temp, TWSR						; TWI_WritePage
+000431 7f08      	andi	temp, 0xF8						; TWI_WritePage
+000432 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_WritePage
+                 									; TWI_WritePage
+000434 e218      	ldi	temp2, 0x28						; TWI_WritePage
+000435 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_WritePage
+000437 1301      	cpse	temp, temp2						; TWI_WritePage
+000438 c03a      	rjmp	WP_ERROR						; TWI_WritePage
+                 ;-----------------------------------					; TWI_WritePage
+000439 9100 0101 	lds	temp, LowAddress					; TWI_WritePage
+00043b b903      	out	TWDR, temp						; TWI_WritePage
+00043c e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_WritePage
+00043d bf06      	out	TWCR, temp						; TWI_WritePage
+00043e d182      	rcall	tw_wait							; TWI_WritePage
+                 									; TWI_WritePage
+00043f e003      	ldi	temp, 3							; TWI_WritePage
+000440 9300 00fa 	sts	TWIstepValue, temp					; TWI_WritePage
+                 									; TWI_WritePage
+000442 b101      	in	temp, TWSR						; TWI_WritePage
+000443 7f08      	andi	temp, 0xF8						; TWI_WritePage
+000444 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_WritePage
+                 									; TWI_WritePage
+000446 e218      	ldi	temp2, 0x28						; TWI_WritePage
+000447 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_WritePage
+000449 1301      	cpse	temp, temp2						; TWI_WritePage
+00044a c028      	rjmp	WP_ERROR						; TWI_WritePage
+                 ;-----------------------------------					; TWI_WritePage
+00044b e0f0      	ldi	ZH, high (Page_Buffer)					; TWI_WritePage
+00044c e6e0      	ldi	ZL, low  (Page_Buffer)					; TWI_WritePage
+00044d 9120 00ff 	lds	temp3, WriteBlockSize					; TWI_WritePage
+                 									; TWI_WritePage
+00044f 9101      WIP_0:	ld	temp, z+						; TWI_WritePage
+000450 b903      	out	TWDR, temp						; TWI_WritePage
+000451 e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_WritePage
+000452 bf06      	out	TWCR, temp						; TWI_WritePage
+000453 d16d      	rcall	tw_wait							; TWI_WritePage
+                 									; TWI_WritePage
+000454 9100 00fa 	lds	temp, TWIstepValue					; TWI_WritePage
+000456 9503      	inc	temp							; TWI_WritePage
+000457 9300 00fa 	sts	TWIstepValue, temp					; TWI_WritePage
+                 									; TWI_WritePage
+000459 b101      	in	temp, TWSR						; TWI_WritePage
+00045a 7f08      	andi	temp, 0xF8						; TWI_WritePage
+00045b 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_WritePage
+                 									; TWI_WritePage
+00045d e218      	ldi	temp2, 0x28						; TWI_WritePage
+00045e 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_WritePage
+000460 1301      	cpse	temp, temp2						; TWI_WritePage
+000461 c011      	rjmp	WP_ERROR						; TWI_WritePage
+                 									; TWI_WritePage
+000462 952a      	dec	temp3							; TWI_WritePage
+000463 f759      	brne	WIP_0							; TWI_WritePage
+                 ;;-----------------------------						; TWI_WritePage
+000464 6840      	sbr	FlagsReg, (1 << WPOK)					; TWI_WritePage
+                 									; TWI_WritePage
+                 ;===================================================			; TWI_WritePage
+                 ; test for EE Page Write interval timeout goes here			; TWI_WritePage
+                 									; TWI_WritePage
+                 									; TWI_WritePage
+                 ; Repeat sending STOP: START: SLA+0 until EE returns ACK		; TWI_WritePage
+                 ;---------------------------------------------------------		; TWI_WritePage
+                 WP_WriteInterval:							; TWI_WritePage
+000465 e904      	ldi	temp, (1<<TWINT) | (1<<TWSTO) | (1<<TWEN)		; TWI_WritePage
+000466 bf06      	out	TWCR, temp						; TWI_WritePage
+                 	; Transmit stop cond to start writing page to EEPROM		; TWI_WritePage
+                 	; wait 25 milli seconds						; TWI_WritePage
+                 									; TWI_WritePage
+                 ; Wait 10 milliseconds for page-write operation				; TWI_WritePage
+000467 2700      	clr	temp							; TWI_WritePage
+000468 e810      	ldi	temp2, 0x80						; TWI_WritePage
+000469 950a      WPdl:	dec	temp  	; 256 * 3 = 768 clocks				; TWI_WritePage
+00046a f7f1      	brne	WPdl							; TWI_WritePage
+00046b 951a      	dec	temp2	; 128 * 768 = @12.5 milliSeconds		; TWI_WritePage
+00046c f7e1      	brne	WPdl							; TWI_WritePage
+                 									; TWI_WritePage
+                 ;	ldi	temp, DELAY8USEC					; TWI_WritePage
+                 ;WIP_STOP_loop:								; TWI_WritePage
+                 ;	dec	temp							; TWI_WritePage
+                 ;	brne	WIP_STOP_loop						; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;;---------------------------------------------------------		; TWI_WritePage
+                 ;;  After sending STOP [ which begins the EEPROM 			; TWI_WritePage
+                 ;;  write period @5 milliseconds] and waiting about			; TWI_WritePage
+                 ;;  16 uSec, send a START command and test for TWI 			; TWI_WritePage
+                 ;;  compliance.  Then send SLA+w.  If NACK, then 			; TWI_WritePage
+                 ;;  EEPROM is still writing previous data to memory.			; TWI_WritePage
+                 ;;  In that case, send STOP and wait about 16 uSec.			; TWI_WritePage
+                 ;;  Keep sending SLA+w until EEPROM returns ACK. 			; TWI_WritePage
+                 ;;  Write period is finished.						; TWI_WritePage
+                 ;;									; TWI_WritePage
+                 ;	ldi	temp, (1<<TWINT) | (1<<TWSTA) | (1<<TWEN)		; TWI_WritePage
+                 ;	out	TWCR, temp		; Transmit start cond		; TWI_WritePage
+                 ;	rcall	tw_wait							; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;	in	temp, TWSR						; TWI_WritePage
+                 ;	andi	temp, 0xF8						; TWI_WritePage
+                 ;	sts	ReceivedTWSR, temp					; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;	ldi	temp2, 0x08						; TWI_WritePage
+                 ;	sts	ExpectedTWSR, temp2					; TWI_WritePage
+                 ;	cpse	temp, temp2		 				; TWI_WritePage
+                 ;	rjmp	WP_ERROR						; TWI_WritePage
+                 ;;----------------------------------------------------------		; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;	lds	temp, SLA						; TWI_WritePage
+                 ;	andi	temp, 0b11111110	 				; TWI_WritePage
+                 ;	out	TWDR, temp						; TWI_WritePage
+                 ;	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_WritePage
+                 ;	out	TWCR, temp						; TWI_WritePage
+                 ;	rcall	tw_wait							; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;	in	temp, TWSR						; TWI_WritePage
+                 ;	andi	temp, 0xF8						; TWI_WritePage
+                 ;	sts	ReceivedTWSR, temp					; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;	ldi	temp2, 0x18						; TWI_WritePage
+                 ;	cpse	temp, temp2						; TWI_WritePage
+                 ; ; skip polling when EE returns ACK  (TWSR & 0xf8 == 0x18)		; TWI_WritePage
+                 ;	rjmp	WP_WriteInterval					; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;; write final STOP condition after 					; TWI_WritePage
+                 ;; Page Write interval @5mS is completed				; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;	ldi	temp, (1<<TWINT) | (1<<TWSTO) | (1<<TWEN)		; TWI_WritePage
+                 ;	out	TWCR, temp						; TWI_WritePage
+                 ;; Transmit stop cond to start writing page to EEPROM			; TWI_WritePage
+                 ;									; TWI_WritePage
+                 ;	ldi	temp, DELAY8USEC					; TWI_WritePage
+                 ;WIP_STOP_loop2:							; TWI_WritePage
+                 ;	dec	temp							; TWI_WritePage
+                 ;	brne	WIP_STOP_loop2						; TWI_WritePage
+                 									; TWI_WritePage
+                 ;~~~~~~~~~~~~~~~~~~							; TWI_WritePage
+                 WIP_exit:								; TWI_WritePage
+00046d 91ff      	pop	ZH							; TWI_WritePage
+00046e 91ef      	pop	ZL							; TWI_WritePage
+00046f 912f      	pop	temp3							; TWI_WritePage
+000470 911f      	pop	temp2							; TWI_WritePage
+000471 910f      	pop	temp							; TWI_WritePage
+000472 9508      	ret	; single exit point for WritePage subroutine		; TWI_WritePage
+                 									; TWI_WritePage
+                 									; TWI_WritePage
+                 ;***********************************************************************; TWI_WritePage
+                 WP_ERROR:								; TWI_WritePage
+000473 d0ad      	rcall	doTWIerror						; TWI_WritePage
+000474 cff8      	rjmp	WIP_exit						; TWI_WritePage
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%; TWI_WritePage
+                 
+                 
+                 
+                 ;************************************************************************
+                 ; ReadPage					  			;
+                 ;						 			;
+                 ; Do START condition, slave address + write, 				;
+                 ;  high address, and low address, do a REPEAT_START.			;
+                 ; Send slave address + READ. Then read block 				;
+                 ; size of data bytes, and send a STOP condition.			;
+                 ; Data goes into Page_Buffer.  Full Address 				;
+                 ; range of serial EEPROM available.					;
+                 ;									;
+                 ; send:		[SRAM] HighAddress, LowAddress,				;
+                 ;		SLA, ReadBlockSize, Page_Buffer				;
+                 ; return:	Page_Buffer (32 bytes in SRAM)				;
+                 ; uses:		temp, counter						;
+                 ; calls: tw_wait							;
+                 ;									;
+                 ;  TWSR (two-wire status register) message 				;
+                 ;  codes returned by the TWI unit:					;
+                 ; ......................................................................;
+                 ; 0000.1---  ==  START_sent_OK						; TWI_ReadPage
+                 ; 0001.1---  ==  Wrote_SLA+w__received_ACK  				; TWI_ReadPage
+                 ; 0100.0---  ==  Wrote_SLA+r__received_ACK				; TWI_ReadPage
+                 ; 0010.1---  ==  Wrote_Data___received ACK				; TWI_ReadPage
+                 ; 0001.0---  ==  Repeated START sent OK					; TWI_ReadPage
+                 ; 0101.0---  ==  Read_Data OK __master sent ACK				; TWI_ReadPage
+                 ; 0101.1---  ==  Master read Data OK__master sent NACK			; TWI_ReadPage
+                 ;                to indicate that slave should release SDA		; TWI_ReadPage
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~; TWI_ReadPage
+                 ReadPage:								; TWI_ReadPage
+000475 930f      	push	temp							; TWI_ReadPage
+000476 931f      	push	temp2							; TWI_ReadPage
+000477 932f      	push	temp3							; TWI_ReadPage
+000478 93ef      	push	ZL							; TWI_ReadPage
+000479 93ff      	push	ZH							; TWI_ReadPage
+                 									; TWI_ReadPage
+00047a 7b4f      	cbr	FlagsReg, (1 << RPOK)					; TWI_ReadPage
+                 ;Transmit start condition						; TWI_ReadPage
+00047b ea04      	ldi	temp, (1<<TWINT) | (1<<TWSTA) | (1<<TWEN)		; TWI_ReadPage
+00047c bf06      	out	TWCR, temp						; TWI_ReadPage
+00047d d143      	rcall	tw_wait							; TWI_ReadPage
+                 									; TWI_ReadPage
+00047e e000      	ldi	temp, 0							; TWI_ReadPage
+00047f 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+000481 b101      	in	temp, TWSR						; TWI_ReadPage
+000482 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+000483 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 ; Read SReg. 0x08 received (START sent)					; TWI_ReadPage
+000485 e018      	ldi	temp2, 0x08						; TWI_ReadPage
+000486 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+000488 1301      	cpse	temp, temp2						; TWI_ReadPage
+000489 d094      	rcall	RP_ERROR						; TWI_ReadPage
+                 									; TWI_ReadPage
+                 ;--------------------------------------------				; TWI_ReadPage
+                 ; Send SLA+0  [device code, address, and R/W bit low]			; TWI_ReadPage
+00048a 9100 00fd 	lds	temp, SLA						; TWI_ReadPage
+00048c 7f0e      	andi	temp, 0b11111110					; TWI_ReadPage
+00048d b903      	out	TWDR, temp						; TWI_ReadPage
+00048e e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_ReadPage
+00048f bf06      	out	TWCR, temp						; TWI_ReadPage
+000490 d130      	rcall	tw_wait							; TWI_ReadPage
+                 									; TWI_ReadPage
+000491 e001      	ldi	temp, 1							; TWI_ReadPage
+000492 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+000494 b101      	in	temp, TWSR						; TWI_ReadPage
+000495 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+000496 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 ; 0001.1---  ==  Wrote_SLA+w__received_ACK  msg from TWI 		; TWI_ReadPage
+000498 e118      	ldi	temp2, 0x18						; TWI_ReadPage
+000499 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+00049b 1301      	cpse	temp, temp2						; TWI_ReadPage
+00049c d081      	rcall	RP_ERROR						; TWI_ReadPage
+                 									; TWI_ReadPage
+                 ;--------------------------------------------				; TWI_ReadPage
+                 ; TWDR should only be written when TWINT is high. 			; TWI_ReadPage
+                 ; TW_wait routine checks for this.					; TWI_ReadPage
+00049d 9100 0100 	lds	temp, HighAddress					; TWI_ReadPage
+00049f b903      	out	TWDR, temp						; TWI_ReadPage
+                 									; TWI_ReadPage
+0004a0 e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_ReadPage
+0004a1 bf06      	out	TWCR, temp						; TWI_ReadPage
+0004a2 d11e      	rcall	tw_wait							; TWI_ReadPage
+                 									; TWI_ReadPage
+0004a3 e002      	ldi	temp, 2							; TWI_ReadPage
+0004a4 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+0004a6 b101      	in	temp, TWSR						; TWI_ReadPage
+0004a7 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+0004a8 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 ;  0x28 == data sent, ACK received					; TWI_ReadPage
+0004aa e218      	ldi	temp2, 0x28						; TWI_ReadPage
+0004ab 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+0004ad 1301      	cpse	temp, temp2						; TWI_ReadPage
+0004ae d06f      	rcall	RP_ERROR						; TWI_ReadPage
+                 ;-----------------------------------					; TWI_ReadPage
+0004af 9100 0101 	lds	temp, LowAddress					; TWI_ReadPage
+0004b1 b903      	out	TWDR, temp						; TWI_ReadPage
+                 									; TWI_ReadPage
+0004b2 e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_ReadPage
+0004b3 bf06      	out	TWCR, temp						; TWI_ReadPage
+0004b4 d10c      	rcall	tw_wait							; TWI_ReadPage
+                 									; TWI_ReadPage
+0004b5 e003      	ldi	temp, 3							; TWI_ReadPage
+0004b6 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+0004b8 b101      	in	temp, TWSR						; TWI_ReadPage
+0004b9 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+0004ba 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 ;  0x28 == data sent, ACK received 					; TWI_ReadPage
+0004bc e218              ldi	temp2, 0x28						; TWI_ReadPage
+0004bd 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+0004bf 1301      	cpse	temp, temp2						; TWI_ReadPage
+0004c0 d05d      	rcall	RP_ERROR						; TWI_ReadPage
+                 ;-----------------------------------					; TWI_ReadPage
+                 ;  This is a REPEATED START and it tells				; TWI_ReadPage
+                 ;  the slave that the write operation is 				; TWI_ReadPage
+                 ;  aborted while keeping the address that was sent.			; TWI_ReadPage
+0004c1 ea04      	ldi	temp, (1<<TWINT) | (1<<TWSTA) | (1<<TWEN)		; TWI_ReadPage
+0004c2 bf06      	out	TWCR, temp						; TWI_ReadPage
+0004c3 d0fd      	rcall	tw_wait							; TWI_ReadPage
+                 									; TWI_ReadPage
+0004c4 e004      	ldi	temp, 4							; TWI_ReadPage
+0004c5 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+0004c7 b101      	in	temp, TWSR						; TWI_ReadPage
+0004c8 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+0004c9 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+0004cb e110      	ldi	temp2, 0x10	;  Repeated_START sent			; TWI_ReadPage
+0004cc 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+0004ce 1301      	cpse	temp, temp2						; TWI_ReadPage
+0004cf d04e      	rcall	RP_ERROR						; TWI_ReadPage
+                 ;----------------------------------------------				; TWI_ReadPage
+                 ; Send SLA+1 control byte [device code, address, and R/W bit]		; TWI_ReadPage
+0004d0 9100 00fd 	lds	temp, SLA						; TWI_ReadPage
+0004d2 6001      	ori	temp, 0b00000001 ; r~/w (bit 0) set (read data)		; TWI_ReadPage
+0004d3 b903      	out	TWDR, temp						; TWI_ReadPage
+                 									; TWI_ReadPage
+0004d4 e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)				; TWI_ReadPage
+0004d5 bf06      	out	TWCR, temp						; TWI_ReadPage
+0004d6 d0ea      	rcall	tw_wait							; TWI_ReadPage
+                 									; TWI_ReadPage
+0004d7 e005      	ldi	temp, 5							; TWI_ReadPage
+0004d8 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+0004da b101      	in	temp, TWSR						; TWI_ReadPage
+0004db 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+0004dc 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+0004de e410      	ldi	temp2, 0x40	; ACK received after SLA+R		; TWI_ReadPage
+0004df 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+0004e1 1301      	cpse	temp, temp2						; TWI_ReadPage
+0004e2 d03b      	rcall	RP_ERROR						; TWI_ReadPage
+                 ;-----------------------------------------------------------------------; TWI_ReadPage
+                 ; read ReadBlockSize-1 bytes from EEPROM and send ACK after each byte	; TWI_ReadPage
+0004e3 e0f0      	ldi	ZH, high (Page_Buffer)					; TWI_ReadPage
+0004e4 e6e0      	ldi	ZL, low  (Page_Buffer)					; TWI_ReadPage
+0004e5 90c0 00fe 	lds	counter, ReadBlockSize 					; TWI_ReadPage
+0004e7 94ca      	dec 	counter							; TWI_ReadPage
+                 ; Read Data with Enable ACK						; TWI_ReadPage
+0004e8 ec04      RIP_1:	ldi	temp, (1<<TWINT) | (1<<TWEN) | (1<<TWEA)		; TWI_ReadPage
+0004e9 bf06      	out	TWCR, temp						; TWI_ReadPage
+0004ea d0d6      	rcall	tw_wait							; TWI_ReadPage
+                 ; store the data byte read from the EEPROM				; TWI_ReadPage
+0004eb b123      	in	temp3, TWDR 						; TWI_ReadPage
+                 									; TWI_ReadPage
+0004ec 9100 00fa 	lds	temp, TWIstepValue					; TWI_ReadPage
+0004ee 9503      	inc	temp							; TWI_ReadPage
+0004ef 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+0004f1 b101      	in	temp, TWSR						; TWI_ReadPage
+0004f2 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+0004f3 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 ; 0x50 Master Read data received w/ Acknowledge				; TWI_ReadPage
+0004f5 e510      	ldi	temp2, 0x50     					; TWI_ReadPage
+0004f6 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+0004f8 1301      	cpse	temp, temp2						; TWI_ReadPage
+0004f9 d024      	rcall	RP_ERROR						; TWI_ReadPage
+                 									; TWI_ReadPage
+0004fa 9321      	st	z+, temp3						; TWI_ReadPage
+0004fb 94ca      	dec	counter							; TWI_ReadPage
+                 ; loop to read each byte in the EEPROM page				; TWI_ReadPage
+0004fc f759      	brne	RIP_1  							; TWI_ReadPage
+                 ;-----------------------------------------------------------------------; TWI_ReadPage
+                 ;  read last byte from EEPROM, 						; TWI_ReadPage
+                 ;  then send NACK after receiving data bits				; TWI_ReadPage
+0004fd e804      	ldi	temp, (1<<TWINT) | (1<<TWEN)  				; TWI_ReadPage
+0004fe bf06      	out	TWCR, temp ; Read Data with NACK			; TWI_ReadPage
+0004ff d0c1      	rcall	TW_Wait							; TWI_ReadPage
+                 									; TWI_ReadPage
+000500 9100 00fa 	lds	temp, TWIstepValue					; TWI_ReadPage
+000502 9503      	inc	temp							; TWI_ReadPage
+000503 9300 00fa 	sts	TWIstepValue, temp					; TWI_ReadPage
+                 									; TWI_ReadPage
+000505 b101      	in	temp, TWSR						; TWI_ReadPage
+000506 7f08      	andi	temp, 0xF8						; TWI_ReadPage
+000507 9300 00fb 	sts	ReceivedTWSR, temp					; TWI_ReadPage
+                 ; 0x58 Master Read data received w/ No Acknowledge			; TWI_ReadPage
+000509 e518      	ldi	temp2, 0x58						; TWI_ReadPage
+00050a 9310 00fc 	sts	ExpectedTWSR, temp2					; TWI_ReadPage
+00050c 1301      	cpse	temp, temp2						; TWI_ReadPage
+00050d d010      	rcall	RP_ERROR						; TWI_ReadPage
+                 									; TWI_ReadPage
+                 ; store the data byte read from the EEPROM				; TWI_ReadPage
+00050e b123      	in	temp3, TWDR						; TWI_ReadPage
+00050f 9321      	st	z+, temp3						; TWI_ReadPage
+                 									; TWI_ReadPage
+                 ;-----------------------------------------------------------------------; TWI_ReadPage
+000510 e904      	ldi	temp, (1<<TWINT) | (1<<TWSTO) | (1<<TWEN)		; TWI_ReadPage
+000511 bf06      	out	TWCR, temp						; TWI_ReadPage
+000512 e808      	ldi	temp, Delay8uSec					; TWI_ReadPage
+000513 950a      RIP_2:	dec	temp							; TWI_ReadPage
+000514 f7f1      	brne	RIP_2 							; TWI_ReadPage
+                 ; wait 8-16 uSec after STOP before turning off TWI			; TWI_ReadPage
+000515 e000      	ldi	temp, 0	; TWI unit disabled				; TWI_ReadPage
+000516 bf06      	out	TWCR, temp						; TWI_ReadPage
+                 									; TWI_ReadPage
+000517 6440      	sbr	FlagsReg, ( 1 << RPOK)					; TWI_ReadPage
+                 									; TWI_ReadPage
+                 ; single exit point for ReadPage subroutine  				; TWI_ReadPage
+                 RIP_exit:								; TWI_ReadPage
+000518 91ff             	pop	ZH							; TWI_ReadPage
+000519 91ef      	pop	ZL							; TWI_ReadPage
+00051a 912f      	pop	temp3							; TWI_ReadPage
+00051b 911f      	pop	temp2							; TWI_ReadPage
+00051c 910f      	pop	temp							; TWI_ReadPage
+00051d 9508      	ret								; TWI_ReadPage
+                 ;									; TWI_ReadPage
+                 ;									; TWI_ReadPage
+                 ;***********************************************************************; TWI_ReadPage
+                 ; ERROR  not a subroutine itself, but an extension			; TWI_ReadPage
+                 ; of the 'ReadPage' or 'WritePage' subroutine				; TWI_ReadPage
+                 									; TWI_ReadPage
+                 ;***********************************************************************; TWI_ReadPage
+                 RP_ERROR:								; TWI_ReadPage
+00051e d002      	rcall	doTWIerror						; TWI_ReadPage
+00051f 7b4f      	cbr	FlagsReg, ( 1 << RPOK)					; TWI_ReadPage
+000520 cff7      	rjmp	RIP_exit						; TWI_ReadPage
+                 									; TWI_ReadPage
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%; TWI_ReadPage
+                 
+                 
+                 
+                 
+                 ;***************************************************************************************;** TWI_err
+                 ; TWIerror  - a subroutine extension of TWI Read_Page/Write_page routines.		;** TWI_err
+                 ;  This routine called when the returned status code is not the expected code.		;** TWI_err
+                 ;  This code is specific to the display available on the hardware of the application.	;** TWI_err
+                 ;  With LCD, display text and TWI error-number for 2 sec.  Then return and continue.	;** TWI_err
+                 ;											;** TWI_err
+                 ;  send: [SRAM] ExpectedTWSR, ReceivedTWSR						;** TWI_err
+                 ;  error routine size: 318 flash bytes							;** TWI_err
+                 ;***************************************************************************************;** TWI_err
+                 doTWIerror:		; called by TWIerror,GRTCerror in Get_RTC, Set_RTC		;** TWI_err
+000521 9100 00fb 	lds	temp, ReceivedTWSR							;** TWI_err
+000523 9300 00ec 	sts	DataByte, temp								;** TWI_err
+000525 de7b      	rcall	Byte2HexASCII		; send DataByte, rtn ASCII in ByteASChigh:low	;** TWI_err
+                 ;---------------------------------------------------------------------------------------;** TWI_err
+                 ;  display err msg, hex digits of actual TWSR value, and expected TWSR value on LCD.	;** TWI_err
+000526 e005      	ldi	temp, 0x05 								;** TWI_err
+000527 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+000529 dd64      	rcall	LCD_clearline								;** TWI_err
+                 ;											;** TWI_err
+00052a e000      	ldi	temp, 0	* PIXELSperCHAR							;** TWI_err
+00052b 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+00052d e005      	ldi	temp, 5									;** TWI_err
+00052e 9300 00e6 	sts	VarByteTwo, temp							;** TWI_err
+000530 dd42      	rcall	LCD_gotoXY								;** TWI_err
+                 ; 											;** TWI_err
+000531 9100 00f0 	lds	temp, ByteASChigh	;display Received TWSR				;** TWI_err
+000533 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+000535 dcda      	rcall	LCD_character								;** TWI_err
+000536 9100 00f1 	lds	temp, ByteASClow							;** TWI_err
+000538 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+00053a dcd5      	rcall	LCD_character								;** TWI_err
+                 ;											;** TWI_err
+00053b 9100 00fc 	lds	temp, ExpectedTWSR	;display Expected TWSR				;** TWI_err
+00053d 9300 00ec 	sts	DataByte, temp								;** TWI_err
+00053f de61      	rcall	Byte2HexASCII								;** TWI_err
+000540 9100 00f0 	lds	temp, ByteASChigh							;** TWI_err
+000542 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+000544 dccb      	rcall	LCD_character								;** TWI_err
+000545 9100 00f1 	lds	temp, ByteASClow							;** TWI_err
+000547 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+000549 dcc6      	rcall	LCD_character								;** TWI_err
+                 											;** TWI_err
+00054a 9100 00fa 	lds	temp, TWIstepValue	;display TWIstep				;** TWI_err
+00054c 9300 00ec 	sts	DataByte, temp								;** TWI_err
+00054e de52      	rcall	Byte2HexASCII								;** TWI_err
+00054f 9100 00f0 	lds	temp, ByteASChigh							;** TWI_err
+000551 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+000553 dcbc      	rcall	LCD_character								;** TWI_err
+000554 9100 00f1 	lds	temp, ByteASClow							;** TWI_err
+000556 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+000558 dcb7      	rcall	LCD_character								;** TWI_err
+                 											;** TWI_err
+000559 9100 00fc 	lds	temp, ExpectedTWSR							;** TWI_err
+00055b 3008      	cpi	temp, 0x08	; code for START OK					;** TWI_err
+00055c f419      	brne	TWIertx1  								;** TWI_err
+00055d e0fb      	ldi	ZH, high (TWx_BdStr << 1)	; Bad START -  will trigger if 0x10	;** TWI_err
+00055e e4ea      	ldi	ZL, low  (TWx_BdStr << 1)	; REPEAT-START error is returned.	;** TWI_err
+00055f c01e      	rjmp	RIPDsptx								;** TWI_err
+                 TWIertx1:										;** TWI_err
+000560 3108      	cpi	temp, 0x18	; code for SLA+W Tx'ed, ACK received			;** TWI_err
+000561 f419      	brne	TWIertx2								;** TWI_err
+000562 e0fb      	ldi	ZH, high (TWx_SLAWEr << 1)	; Slave addr write - no ACK from slave	;** TWI_err
+000563 e5e2      	ldi	ZL, low  (TWx_SLAWEr << 1)						;** TWI_err
+000564 c019      	rjmp	RIPDsptx								;** TWI_err
+                 TWIertx2:										;** TWI_err
+000565 3208      	cpi	temp, 0x28	; code for Data byte Tx'ed, ACK received		;** TWI_err
+000566 f419      	brne	TWIertx3								;** TWI_err
+000567 e0fb      	ldi	ZH, high (TWx_DtACEr << 1)	; Data write - no ACK from slave	;** TWI_err
+000568 e5ea      	ldi	ZL, low  (TWx_DtACEr << 1)						;** TWI_err
+000569 c014      	rjmp	RIPDsptx  								;** TWI_err
+                 TWIertx3:										;** TWI_err
+00056a 3100      	cpi	temp, 0x10	; code for REPEAT_START OK				;** TWI_err
+00056b f419      	brne	TWIertx4								;** TWI_err
+00056c e0fb      	ldi	ZH, high (TWx_RpStEr << 1)	; REPEAT-START error			;** TWI_err
+00056d e6e2      	ldi	ZL, low  (TWx_RpStEr << 1)						;** TWI_err
+00056e c00f      	rjmp	RIPDsptx  								;** TWI_err
+                 TWIertx4:										;** TWI_err
+00056f 3400      	cpi	temp, 0x40	; [Master Receive mode]  SLA+R Tx'ed, ACK received	;** TWI_err
+000570 f419      	brne	TWIertx5								;** TWI_err
+000571 e0fb      	ldi	ZH, high (TWx_CnRdEr << 1)						;** TWI_err
+000572 e6ea      	ldi	ZL, low  (TWx_CnRdEr << 1)						;** TWI_err
+000573 c00a      	rjmp	RIPDsptx								;** TWI_err
+                 TWIertx5:										;** TWI_err
+000574 3500      	cpi	temp, 0x50	; [Master Receive mode]  Data Tx'ed, ACK received	;** TWI_err
+000575 f419      	brne	TWIertx6								;** TWI_err
+000576 e0fb      	ldi	ZH, high (TWx_RdByEr << 1)						;** TWI_err
+000577 e7e2      	ldi	ZL, low  (TWx_RdByEr << 1)						;** TWI_err
+000578 c005      	rjmp	RIPDsptx								;** TWI_err
+                 TWIertx6:										;** TWI_err
+000579 3508      	cpi	temp, 0x58	; [Master Receive mode]  Data Tx'ed, NACK received	;** TWI_err
+00057a f419      	brne	RIPDsptx								;** TWI_err
+00057b e0fb      	ldi	ZH, high (TWx_RdNAEr << 1)						;** TWI_err
+00057c e7ea      	ldi	ZL, low  (TWx_RdNAEr << 1)						;** TWI_err
+00057d c000      	rjmp	RIPDsptx								;** TWI_err
+                 ;											;** TWI_err
+                 RIPDsptx:										;** TWI_err
+00057e e204      	ldi	temp, 6 * PIXELSperCHAR 						;** TWI_err
+00057f 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+000581 e005      	ldi	temp, 5	; row #								;** TWI_err
+000582 9300 00e6 	sts	VarByteTwo, temp							;** TWI_err
+000584 dcee      	rcall	LCD_gotoXY								;** TWI_err
+                 											;** TWI_err
+000585 9100 00ef 	lds	temp, TaskFlags								;** TWI_err
+000587 7100      	andi	temp, (1 << SetGetFlag)							;** TWI_err
+000588 2300      	tst	temp									;** TWI_err
+000589 f429      	brne	RIPDsptx1								;** TWI_err
+00058a e503      	ldi	temp, 'S'	; SetGetFlag is clear					;** TWI_err
+00058b 9300 00e5 	sts	VarbyteOne, temp							;** TWI_err
+00058d dc82      	rcall	LCD_character								;** TWI_err
+00058e c005      	rjmp	RIPDsptx2								;** TWI_err
+                 RIPDsptx1:										;** TWI_err
+00058f e407      	ldi	temp, 'G'       ; SetGetFlag is set					;** TWI_err
+000590 9300 00e5 	sts	VarbyteOne, temp							;** TWI_err
+000592 dc7d      	rcall	LCD_character								;** TWI_err
+000593 c000      	rjmp	RIPDsptx2								;** TWI_err
+                 											;** TWI_err
+                 RIPDsptx2:										;** TWI_err
+000594 93f0 00e9 	sts	PtrOneHigh, ZH								;** TWI_err
+000596 93e0 00e8 	sts	PtrOneLow, ZL								;** TWI_err
+000598 dc65      	rcall	LCD_stringP								;** TWI_err
+                 ;											;** TWI_err
+                 ;---------------------------------------------------------------			;** TWI_err
+                 ;											;** TWI_err
+000599 9100 00ef 	lds	temp, TaskFlags								;** TWI_err
+00059b 6400      	sbr	temp, (1 << TWIer_flag)							;** TWI_err
+00059c 9300 00ef 	sts	TaskFlags, temp								;** TWI_err
+                 											;** TWI_err
+00059e e00c      	ldi	temp, 12		; 0.75 second display of error message		;** TWI_err
+00059f de55      	rcall	LongDelay								;** TWI_err
+                 ;											;** TWI_err
+                 ;  display err msg, hex digits of actual TWSR value, and expected TWSR value on LCD.	;** TWI_err
+0005a0 e005      	ldi	temp, 0x05 		; Nokia 5110 bottom row				;** TWI_err
+0005a1 9300 00e5 	sts	VarByteOne, temp							;** TWI_err
+0005a3 dcea      	rcall	LCD_clearline								;** TWI_err
+                 ;											;** TWI_err
+0005a4 9508      	ret				; return to GRTCerror, SRTC_error		;** TWI_err
+                 											;** TWI_err
+                 ;		     01234567								;** TWI_err
+0005a5 6442
+0005a6 7453
+0005a7 7261
+0005a8 0074      TWx_BdStr:	.db "BdStart", 0 	; not 0x08  SDA ast with SCL rel, didn't happen	;** TWI_err
+0005a9 4c53
+0005aa 5741
+0005ab 6f6e
+0005ac 0041      TWx_SLAWEr:	.db "SLAWnoA", 0 	; not 0x18  SLA and write sent, no ACK received	;** TWI_err
+0005ad 7444
+0005ae 7257
+0005af 6f4e
+0005b0 0041      TWx_DtACEr:	.db "DtWrNoA", 0 	; not 0x28  Data write, no ACK received		;** TWI_err
+0005b1 7052
+0005b2 5374
+0005b3 4574
+0005b4 0072      TWx_RpStEr:	.db "RptStEr", 0 	; not 0x10  Repeat START error			;** TWI_err
+0005b5 4c53
+0005b6 5241
+0005b7 6f6e
+0005b8 0041      TWx_CnRdEr:	.db "SLARnoA", 0 	; not 0x40  SLA and read sent, no ACK received	;** TWI_err
+0005b9 7444
+0005ba 6452
+0005bb 6f6e
+0005bc 0041      TWx_RdByEr:	.db "DtRdnoA", 0 	; not 0x50  Data read, no ACK			;** TWI_err
+0005bd 6e45
+0005be 4e64
+0005bf 4e6f
+0005c0 0041      TWx_RdNAEr:	.db "EndNoNA", 0 	; not 0x50  ???					;** TWI_err
+                 											;** TWI_err
+                 ;***************************************************************************************;** TWI_err
+                 ; TWI_Wait   wait for TWINT flag in TWCR to set						;** TWI_err
+                 ; TWDR should only be written when TWINT is high.					;** TWI_err
+                 ;											;** TWI_err
+                 ; send: -  										;** TWI_err
+                 ; return: -										;** TWI_err
+                 ; uses and changes: temp								;** TWI_err
+                 ;***************************************************************************************;** TWI_err
+                 TW_Wait:										;** TWI_err
+0005c1 b706      	in	temp, TWCR								;** TWI_err
+0005c2 ff07      	sbrs	temp, TWINT	; TWINT set means TWI is ready for new command		;** TWI_err
+0005c3 cffd      	rjmp	TW_Wait									;** TWI_err
+0005c4 9508      	ret 			; TWINT is high now.  TWSR has a new valid value.	;** TWI_err
+                 ;											;** TWI_err
+                 ;***** end of Real-Time Clock routine  *************************************************;** TWI_err
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%;** TWI_err
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                 ;
+                 ;
+                 ;   Data to be stored into the EEPROM is found here
+                 ;
+                 ;
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                 
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 
+                 ;.org 0x600   ; 0xaa is an unused spacer byte needed to align font data inside EEPROM pages
+                 StandardEEFont:  ; 96 chars, 8 bytes per char 768 bytes  5 columns by 7 rows  24 pages
+0005c5 0000
+0005c6 0000
+0005c7 aa00
+0005c8 aaaa      .db  0x00, 0x00, 0x00, 0x00, 0x00,   0xaa, 0xaa, 0xaa ; space
+0005c9 0000
+0005ca 005f
+0005cb aa00
+0005cc aaaa      .db  0x00, 0x00, 0x5F, 0x00, 0x00,   0xaa, 0xaa, 0xaa ; 21 !
+0005cd 0700
+0005ce 0700
+0005cf aa00
+0005d0 aaaa      .db  0x00, 0x07, 0x00, 0x07, 0x00,   0xaa, 0xaa, 0xaa ; 22 "
+0005d1 7f14
+0005d2 7f14
+0005d3 aa14
+0005d4 aaaa      .db  0x14, 0x7F, 0x14, 0x7F, 0x14,   0xaa, 0xaa, 0xaa ; 23 #
+0005d5 2a24
+0005d6 2a7f
+0005d7 aa12
+0005d8 aaaa      .db  0x24, 0x2A, 0x7F, 0x2A, 0x12,   0xaa, 0xaa, 0xaa ; 24 $
+0005d9 1323
+0005da 6408
+0005db aa62
+0005dc aaaa      .db  0x23, 0x13, 0x08, 0x64, 0x62,   0xaa, 0xaa, 0xaa ; 25 %
+0005dd 4936
+0005de 2056
+0005df aa50
+0005e0 aaaa      .db  0x36, 0x49, 0x56, 0x20, 0x50,   0xaa, 0xaa, 0xaa ; 26 &
+0005e1 0800
+0005e2 0307
+0005e3 aa00
+0005e4 aaaa      .db  0x00, 0x08, 0x07, 0x03, 0x00,   0xaa, 0xaa, 0xaa ; 27 '
+0005e5 1c00
+0005e6 4122
+0005e7 aa00
+0005e8 aaaa      .db  0x00, 0x1C, 0x22, 0x41, 0x00,   0xaa, 0xaa, 0xaa ; 28 (
+0005e9 4100
+0005ea 1c22
+0005eb aa00
+0005ec aaaa      .db  0x00, 0x41, 0x22, 0x1C, 0x00,   0xaa, 0xaa, 0xaa ; 29 )
+0005ed 1c2a
+0005ee 1c7f
+0005ef aa2a
+0005f0 aaaa      .db  0x2A, 0x1C, 0x7F, 0x1C, 0x2A,   0xaa, 0xaa, 0xaa ; 2a *
+0005f1 0808
+0005f2 083e
+0005f3 aa08
+0005f4 aaaa      .db  0x08, 0x08, 0x3E, 0x08, 0x08,   0xaa, 0xaa, 0xaa ; 2b +
+0005f5 8000
+0005f6 3070
+0005f7 aa00
+0005f8 aaaa      .db  0x00, 0x80, 0x70, 0x30, 0x00,   0xaa, 0xaa, 0xaa ; 2c ,
+0005f9 0808
+0005fa 0808
+0005fb aa08
+0005fc aaaa      .db  0x08, 0x08, 0x08, 0x08, 0x08,   0xaa, 0xaa, 0xaa ; 2d -
+0005fd 0000
+0005fe 6060
+0005ff aa00
+000600 aaaa      .db  0x00, 0x00, 0x60, 0x60, 0x00,   0xaa, 0xaa, 0xaa ; 2e .
+000601 1020
+000602 0408
+000603 aa02
+000604 aaaa      .db  0x20, 0x10, 0x08, 0x04, 0x02,   0xaa, 0xaa, 0xaa ; 2f ;
+000605 513e
+000606 4549
+000607 aa3e
+000608 aaaa      .db  0x3E, 0x51, 0x49, 0x45, 0x3E,   0xaa, 0xaa, 0xaa ; 30 0
+000609 4200
+00060a 407f
+00060b aa00
+00060c aaaa      .db  0x00, 0x42, 0x7F, 0x40, 0x00,   0xaa, 0xaa, 0xaa ; 31 1
+00060d 4972
+00060e 4949
+00060f aa46
+000610 aaaa      .db  0x72, 0x49, 0x49, 0x49, 0x46,   0xaa, 0xaa, 0xaa ; 32 2
+000611 4121
+000612 4d49
+000613 aa33
+000614 aaaa      .db  0x21, 0x41, 0x49, 0x4D, 0x33,   0xaa, 0xaa, 0xaa ; 33 3
+000615 1418
+000616 7f12
+000617 aa10
+000618 aaaa      .db  0x18, 0x14, 0x12, 0x7F, 0x10,   0xaa, 0xaa, 0xaa ; 34 4
+000619 4527
+00061a 4545
+00061b aa39
+00061c aaaa      .db  0x27, 0x45, 0x45, 0x45, 0x39,   0xaa, 0xaa, 0xaa ; 35 5
+00061d 4a3c
+00061e 4949
+00061f aa31
+000620 aaaa      .db  0x3C, 0x4A, 0x49, 0x49, 0x31,   0xaa, 0xaa, 0xaa ; 36 6
+000621 2141
+000622 0911
+000623 aa07
+000624 aaaa      .db  0x41, 0x21, 0x11, 0x09, 0x07,   0xaa, 0xaa, 0xaa ; 37 7
+000625 4936
+000626 4949
+000627 aa36
+000628 aaaa      .db  0x36, 0x49, 0x49, 0x49, 0x36,   0xaa, 0xaa, 0xaa ; 38 8
+000629 4946
+00062a 2949
+00062b aa1e
+00062c aaaa      .db  0x46, 0x49, 0x49, 0x29, 0x1E,   0xaa, 0xaa, 0xaa ; 39 9
+00062d 0000
+00062e 0014
+00062f aa00
+000630 aaaa      .db  0x00, 0x00, 0x14, 0x00, 0x00,   0xaa, 0xaa, 0xaa ; 3a :
+000631 4000
+000632 0034
+000633 aa00
+000634 aaaa      .db  0x00, 0x40, 0x34, 0x00, 0x00,   0xaa, 0xaa, 0xaa ; 3b ;
+000635 0800
+000636 2214
+000637 aa41
+000638 aaaa      .db  0x00, 0x08, 0x14, 0x22, 0x41,   0xaa, 0xaa, 0xaa ; 3c <
+000639 1414
+00063a 1414
+00063b aa14
+00063c aaaa      .db  0x14, 0x14, 0x14, 0x14, 0x14,   0xaa, 0xaa, 0xaa ; 3d =
+00063d 4100
+00063e 1422
+00063f aa08
+000640 aaaa      .db  0x00, 0x41, 0x22, 0x14, 0x08,   0xaa, 0xaa, 0xaa ; 3e >
+000641 0102
+000642 0959
+000643 aa06
+000644 aaaa      .db  0x02, 0x01, 0x59, 0x09, 0x06,   0xaa, 0xaa, 0xaa ; 3f ?
+000645 413e
+000646 595d
+000647 aa4e
+000648 aaaa      .db  0x3E, 0x41, 0x5D, 0x59, 0x4E,   0xaa, 0xaa, 0xaa ; 40 @
+000649 127c
+00064a 1211
+00064b aa7c
+00064c aaaa      .db  0x7C, 0x12, 0x11, 0x12, 0x7C,   0xaa, 0xaa, 0xaa ; 41 A
+00064d 497f
+00064e 4949
+00064f aa36
+000650 aaaa      .db  0x7F, 0x49, 0x49, 0x49, 0x36,   0xaa, 0xaa, 0xaa ; 42 B
+000651 413e
+000652 4141
+000653 aa22
+000654 aaaa      .db  0x3E, 0x41, 0x41, 0x41, 0x22,   0xaa, 0xaa, 0xaa ; 43 C
+000655 417f
+000656 4141
+000657 aa3e
+000658 aaaa      .db  0x7F, 0x41, 0x41, 0x41, 0x3E,   0xaa, 0xaa, 0xaa ; 44 D
+000659 497f
+00065a 4949
+00065b aa41
+00065c aaaa      .db  0x7F, 0x49, 0x49, 0x49, 0x41,   0xaa, 0xaa, 0xaa ; 45 E
+00065d 097f
+00065e 0909
+00065f aa01
+000660 aaaa      .db  0x7F, 0x09, 0x09, 0x09, 0x01,   0xaa, 0xaa, 0xaa ; 46 F
+000661 413e
+000662 5141
+000663 aa73
+000664 aaaa      .db  0x3E, 0x41, 0x41, 0x51, 0x73,   0xaa, 0xaa, 0xaa ; 47 G
+000665 087f
+000666 0808
+000667 aa7f
+000668 aaaa      .db  0x7F, 0x08, 0x08, 0x08, 0x7F,   0xaa, 0xaa, 0xaa ; 48 H
+000669 4100
+00066a 417f
+00066b aa00
+00066c aaaa      .db  0x00, 0x41, 0x7F, 0x41, 0x00,   0xaa, 0xaa, 0xaa ; 49 I
+00066d 4020
+00066e 3f41
+00066f aa01
+000670 aaaa      .db  0x20, 0x40, 0x41, 0x3F, 0x01,   0xaa, 0xaa, 0xaa ; 4a J
+000671 087f
+000672 2214
+000673 aa41
+000674 aaaa      .db  0x7F, 0x08, 0x14, 0x22, 0x41,   0xaa, 0xaa, 0xaa ; 4b K
+000675 407f
+000676 4040
+000677 aa40
+000678 aaaa      .db  0x7F, 0x40, 0x40, 0x40, 0x40,   0xaa, 0xaa, 0xaa ; 4c L
+000679 027f
+00067a 021c
+00067b aa7f
+00067c aaaa      .db  0x7F, 0x02, 0x1C, 0x02, 0x7F,   0xaa, 0xaa, 0xaa ; 4d M
+00067d 047f
+00067e 1008
+00067f aa7f
+000680 aaaa      .db  0x7F, 0x04, 0x08, 0x10, 0x7F,   0xaa, 0xaa, 0xaa ; 4e N
+000681 413e
+000682 4141
+000683 aa3e
+000684 aaaa      .db  0x3E, 0x41, 0x41, 0x41, 0x3E,   0xaa, 0xaa, 0xaa ; 4f O
+000685 097f
+000686 0909
+000687 aa06
+000688 aaaa      .db  0x7F, 0x09, 0x09, 0x09, 0x06,   0xaa, 0xaa, 0xaa ; 50 P
+000689 413e
+00068a 2151
+00068b aa5e
+00068c aaaa      .db  0x3E, 0x41, 0x51, 0x21, 0x5E,   0xaa, 0xaa, 0xaa ; 51 Q
+00068d 097f
+00068e 2919
+00068f aa46
+000690 aaaa      .db  0x7F, 0x09, 0x19, 0x29, 0x46,   0xaa, 0xaa, 0xaa ; 52 R
+000691 4926
+000692 4949
+000693 aa32
+000694 aaaa      .db  0x26, 0x49, 0x49, 0x49, 0x32,   0xaa, 0xaa, 0xaa ; 53 S
+000695 0103
+000696 017f
+000697 aa03
+000698 aaaa      .db  0x03, 0x01, 0x7F, 0x01, 0x03,   0xaa, 0xaa, 0xaa ; 54 T
+000699 403f
+00069a 4040
+00069b aa3f
+00069c aaaa      .db  0x3F, 0x40, 0x40, 0x40, 0x3F,   0xaa, 0xaa, 0xaa ; 55 U
+00069d 201f
+00069e 2040
+00069f aa1f
+0006a0 aaaa      .db  0x1F, 0x20, 0x40, 0x20, 0x1F,   0xaa, 0xaa, 0xaa ; 56 V
+0006a1 403f
+0006a2 4038
+0006a3 aa3f
+0006a4 aaaa      .db  0x3F, 0x40, 0x38, 0x40, 0x3F,   0xaa, 0xaa, 0xaa ; 57 W
+0006a5 1463
+0006a6 1408
+0006a7 aa63
+0006a8 aaaa      .db  0x63, 0x14, 0x08, 0x14, 0x63,   0xaa, 0xaa, 0xaa ; 58 X
+0006a9 0403
+0006aa 0478
+0006ab aa03
+0006ac aaaa      .db  0x03, 0x04, 0x78, 0x04, 0x03,   0xaa, 0xaa, 0xaa ; 59 Y
+0006ad 5961
+0006ae 4d49
+0006af aa43
+0006b0 aaaa      .db  0x61, 0x59, 0x49, 0x4D, 0x43,   0xaa, 0xaa, 0xaa ; 5a Z
+0006b1 7f00
+0006b2 4141
+0006b3 aa41
+0006b4 aaaa      .db  0x00, 0x7F, 0x41, 0x41, 0x41,   0xaa, 0xaa, 0xaa ; 5b [
+0006b5 0402
+0006b6 1008
+0006b7 aa20
+0006b8 aaaa      .db  0x02, 0x04, 0x08, 0x10, 0x20,   0xaa, 0xaa, 0xaa ; 5c ¥
+0006b9 4100
+0006ba 4141
+0006bb aa7f
+0006bc aaaa      .db  0x00, 0x41, 0x41, 0x41, 0x7F,   0xaa, 0xaa, 0xaa ; 5d ]
+0006bd 0204
+0006be 0201
+0006bf aa04
+0006c0 aaaa      .db  0x04, 0x02, 0x01, 0x02, 0x04,   0xaa, 0xaa, 0xaa ; 5e ^
+0006c1 4040
+0006c2 4040
+0006c3 aa40
+0006c4 aaaa      .db  0x40, 0x40, 0x40, 0x40, 0x40,   0xaa, 0xaa, 0xaa ; 5f _
+0006c5 0300
+0006c6 0807
+0006c7 aa00
+0006c8 aaaa      .db  0x00, 0x03, 0x07, 0x08, 0x00,   0xaa, 0xaa, 0xaa ; 60 `
+0006c9 5420
+0006ca 7854
+0006cb aa40
+0006cc aaaa      .db  0x20, 0x54, 0x54, 0x78, 0x40,   0xaa, 0xaa, 0xaa ; 61 a
+0006cd 287f
+0006ce 4444
+0006cf aa38
+0006d0 aaaa      .db  0x7F, 0x28, 0x44, 0x44, 0x38,   0xaa, 0xaa, 0xaa ; 62 b
+0006d1 4438
+0006d2 4444
+0006d3 aa28
+0006d4 aaaa      .db  0x38, 0x44, 0x44, 0x44, 0x28,   0xaa, 0xaa, 0xaa ; 63 c
+0006d5 4438
+0006d6 2844
+0006d7 aa7f
+0006d8 aaaa      .db  0x38, 0x44, 0x44, 0x28, 0x7F,   0xaa, 0xaa, 0xaa ; 64 d
+0006d9 5438
+0006da 5454
+0006db aa18
+0006dc aaaa      .db  0x38, 0x54, 0x54, 0x54, 0x18,   0xaa, 0xaa, 0xaa ; 65 e
+0006dd 0800
+0006de 097e
+0006df aa02
+0006e0 aaaa      .db  0x00, 0x08, 0x7E, 0x09, 0x02,   0xaa, 0xaa, 0xaa ; 66 f
+0006e1 a418
+0006e2 9ca4
+0006e3 aa78
+0006e4 aaaa      .db  0x18, 0xA4, 0xA4, 0x9C, 0x78,   0xaa, 0xaa, 0xaa ; 67 g
+0006e5 087f
+0006e6 0404
+0006e7 aa78
+0006e8 aaaa      .db  0x7F, 0x08, 0x04, 0x04, 0x78,   0xaa, 0xaa, 0xaa ; 68 h
+0006e9 4400
+0006ea 407d
+0006eb aa00
+0006ec aaaa      .db  0x00, 0x44, 0x7D, 0x40, 0x00,   0xaa, 0xaa, 0xaa ; 69 i
+0006ed 4020
+0006ee 3d40
+0006ef aa00
+0006f0 aaaa      .db  0x20, 0x40, 0x40, 0x3D, 0x00,   0xaa, 0xaa, 0xaa ; 6a j
+0006f1 107f
+0006f2 4428
+0006f3 aa00
+0006f4 aaaa      .db  0x7F, 0x10, 0x28, 0x44, 0x00,   0xaa, 0xaa, 0xaa ; 6b k
+0006f5 4100
+0006f6 407f
+0006f7 aa00
+0006f8 aaaa      .db  0x00, 0x41, 0x7F, 0x40, 0x00,   0xaa, 0xaa, 0xaa ; 6c l
+0006f9 047c
+0006fa 0478
+0006fb aa78
+0006fc aaaa      .db  0x7C, 0x04, 0x78, 0x04, 0x78,   0xaa, 0xaa, 0xaa ; 6d m
+0006fd 087c
+0006fe 0404
+0006ff aa78
+000700 aaaa      .db  0x7C, 0x08, 0x04, 0x04, 0x78,   0xaa, 0xaa, 0xaa ; 6e n
+000701 4438
+000702 4444
+000703 aa38
+000704 aaaa      .db  0x38, 0x44, 0x44, 0x44, 0x38,   0xaa, 0xaa, 0xaa ; 6f o
+000705 18fc
+000706 2424
+000707 aa18
+000708 aaaa      .db  0xFC, 0x18, 0x24, 0x24, 0x18,   0xaa, 0xaa, 0xaa ; 70 p
+000709 2418
+00070a 1824
+00070b aafc
+00070c aaaa      .db  0x18, 0x24, 0x24, 0x18, 0xFC,   0xaa, 0xaa, 0xaa ; 71 q
+00070d 087c
+00070e 0404
+00070f aa08
+000710 aaaa      .db  0x7C, 0x08, 0x04, 0x04, 0x08,   0xaa, 0xaa, 0xaa ; 72 r
+000711 5448
+000712 5454
+000713 aa24
+000714 aaaa      .db  0x48, 0x54, 0x54, 0x54, 0x24,   0xaa, 0xaa, 0xaa ; 73 s
+000715 0404
+000716 443f
+000717 aa24
+000718 aaaa      .db  0x04, 0x04, 0x3F, 0x44, 0x24,   0xaa, 0xaa, 0xaa ; 74 t
+000719 403c
+00071a 2040
+00071b aa7c
+00071c aaaa      .db  0x3C, 0x40, 0x40, 0x20, 0x7C,   0xaa, 0xaa, 0xaa ; 75 u
+00071d 201c
+00071e 2040
+00071f aa1c
+000720 aaaa      .db  0x1C, 0x20, 0x40, 0x20, 0x1C,   0xaa, 0xaa, 0xaa ; 76 v
+000721 403c
+000722 4030
+000723 aa3c
+000724 aaaa      .db  0x3C, 0x40, 0x30, 0x40, 0x3C,   0xaa, 0xaa, 0xaa ; 77 w
+000725 2844
+000726 2810
+000727 aa44
+000728 aaaa      .db  0x44, 0x28, 0x10, 0x28, 0x44,   0xaa, 0xaa, 0xaa ; 78 x
+000729 904c
+00072a 9090
+00072b aa7c
+00072c aaaa      .db  0x4C, 0x90, 0x90, 0x90, 0x7C,   0xaa, 0xaa, 0xaa ; 79 y
+00072d 6444
+00072e 4c54
+00072f aa44
+000730 aaaa      .db  0x44, 0x64, 0x54, 0x4C, 0x44,   0xaa, 0xaa, 0xaa ; 7a z
+000731 0800
+000732 4136
+000733 aa00
+000734 aaaa      .db  0x00, 0x08, 0x36, 0x41, 0x00,   0xaa, 0xaa, 0xaa ; 7b {
+000735 0000
+000736 0077
+000737 aa00
+000738 aaaa      .db  0x00, 0x00, 0x77, 0x00, 0x00,   0xaa, 0xaa, 0xaa ; 7c |
+000739 4100
+00073a 0836
+00073b aa00
+00073c aaaa      .db  0x00, 0x41, 0x36, 0x08, 0x00,   0xaa, 0xaa, 0xaa ; 7d }
+00073d 0102
+00073e 0402
+00073f aa02
+000740 aaaa      .db  0x02, 0x01, 0x02, 0x04, 0x02,   0xaa, 0xaa, 0xaa ; 7e ?
+000741 263c
+000742 2623
+000743 aa3c
+000744 aaaa      .db  0x3C, 0x26, 0x23, 0x26, 0x3C,   0xaa, 0xaa, 0xaa ; 7f ?
+                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                 ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                 ;
+                 ;
+                 ;
+                 BigDigitEEFont:	 ; 0xaa is an unused spacer byte needed to align font data inside EEPROM pages
+                 ; 16 column bytes [12 pixels per columns] * 3 rows * 12 characters__576 bytes__18 pages
+                 ;          0    1    2    3    4    5    6    7    8    9    a    b       c    d    e    f
+000745 fefc
+000746 0ffe
+000747 0707
+000748 0707
+000749 fccf
+00074a f8fc
+00074b aaaa
+00074c aaaa      .db	0xfc,0xfe,0xfe,0x0f,0x07,0x07,0x07,0x07,0xcf,0xfc,0xfc,0xf8,   0xaa,0xaa,0xaa,0xaa ;character '0'     ;          0 1 2 3 4 5 6 7 8 9 a b       
+00074d ffff
+00074e f0ff
+00074f 3c78
+000750 0f1e
+000751 ff07
+000752 ffff
+000753 aaaa
+000754 aaaa      .db	0xff,0xff,0xff,0xf0,0x78,0x3c,0x1e,0x0f,0x07,0xff,0xff,0xff,   0xaa,0xaa,0xaa,0xaa                    ; row 0  0       * * * * * *             
+000755 7f3f
+000756 f87f
+000757 f0f0
+000758 f0f0
+000759 7ff8
+00075a 1f7f
+00075b aaaa
+00075c aaaa      .db	0x3f,0x7f,0x7f,0xf8,0xf0,0xf0,0xf0,0xf0,0xf8,0x7f,0x7f,0x1f,   0xaa,0xaa,0xaa,0xaa                    ;        1   * * * * * * * * * *         
+                                                                                                                               ;        2 * * * * * * * * * * *         
+00075d 0000
+00075e 6040
+00075f 7870
+000760 fefc
+000761 ffff
+000762 0000
+000763 aaaa
+000764 aaaa      .db     0x00,0x00,0x40,0x60,0x70,0x78,0xfc,0xfe,0xff,0xff,0x00,0x00,   0xaa,0xaa,0xaa,0xaa ;character '1'     ;        3 * * * *         * * * *       
+000765 0000
+000766 0000
+000767 0000
+000768 ffff
+000769 ffff
+00076a 0000
+00076b aaaa
+00076c aaaa      .db     0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0x00,0x00,   0xaa,0xaa,0xaa,0xaa                    ;        4 * * *             * * *       
+00076d 0000
+00076e 0000
+00076f 0000
+000770 ffff
+000771 ffff
+000772 0000
+000773 aaaa
+000774 aaaa      .db     0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0x00,0x00,   0xaa,0xaa,0xaa,0xaa                    ;        5 * * *             * * *       
+                                                                                                                               ;        6 * * *             * * *       
+000775 3c38
+000776 0f3e
+000777 0707
+000778 0f07
+000779 ff1f
+00077a fcfe
+00077b aaaa
+00077c aaaa      .db     0x38,0x3c,0x3e,0x0f,0x07,0x07,0x07,0x0f,0x1f,0xff,0xfe,0xfc,   0xaa,0xaa,0xaa,0xaa ;character '2'     ;        7 * * *           * * * *       
+00077d e0c0
+00077e f0e0
+00077f 7878
+000780 1e3c
+000781 0f0f
+000782 0307
+000783 aaaa
+000784 aaaa      .db     0xc0,0xe0,0xe0,0xf0,0x78,0x78,0x3c,0x1e,0x0f,0x0f,0x07,0x03,   0xaa,0xaa,0xaa,0xaa                    ; row 1  0 * * *         * * * * *       
+000785 ffff
+000786 f0ff
+000787 f0f0
+000788 f0f0
+000789 f0f0
+00078a f0f0
+00078b aaaa
+00078c aaaa      .db     0xff,0xff,0xff,0xf0,0xf0,0xf0,0xf0,0xf0,0xf0,0xf0,0xf0,0xf0,   0xaa,0xaa,0xaa,0xaa                    ;        1 * * *       * * * * * *       
+                                                                                                                               ;        2 * * *     * * * * * * *       
+00078d 3c38
+00078e 0f1e
+00078f 0f0f
+000790 0f0f
+000791 fc1e
+000792 f0f8
+000793 aaaa
+000794 aaaa      .db	0x38,0x3c,0x1e,0x0f,0x0f,0x0f,0x0f,0x0f,0x1e,0xfc,0xf8,0xf0,   0xaa,0xaa,0xaa,0xaa ;character '3'     ;        3 * * *   * * * *   * * *       
+000795 0000
+000796 1e00
+000797 1e1e
+000798 3e1e
+000799 ffff
+00079a 80e7
+00079b aaaa
+00079c aaaa      .db	0x00,0x00,0x00,0x1e,0x1e,0x1e,0x1e,0x3e,0xff,0xff,0xe7,0x80,   0xaa,0xaa,0xaa,0xaa                    ;        4 * * * * * * *     * * *       
+00079d f878
+00079e f0f0
+00079f f0f0
+0007a0 f0f0
+0007a1 fff8
+0007a2 1f7f
+0007a3 aaaa
+0007a4 aaaa      .db	0x78,0xf8,0xf0,0xf0,0xf0,0xf0,0xf0,0xf0,0xf8,0xff,0x7f,0x1f,   0xaa,0xaa,0xaa,0xaa                    ;        5 * * * * * *       * * *       
+                                                                                                                               ;        6 * * * * *         * * *       
+0007a5 0000
+0007a6 0000
+0007a7 c000
+0007a8 f8f0
+0007a9 ff7e
+0007aa ffff
+0007ab aaaa
+0007ac aaaa      .db	0x00,0x00,0x00,0x00,0x00,0xc0,0xf0,0xf8,0x7e,0xff,0xff,0xff,   0xaa,0xaa,0xaa,0xaa ;character '4'     ;        7 * * * *           * * *       
+0007ad f0e0
+0007ae bef8
+0007af 8f9f
+0007b0 8183
+0007b1 ff80
+0007b2 ffff
+0007b3 aaaa
+0007b4 aaaa      .db	0xe0,0xf0,0xf8,0xbe,0x9f,0x8f,0x83,0x81,0x80,0xff,0xff,0xff,   0xaa,0xaa,0xaa,0xaa                    ; row 2  0 * * *             * * *       
+0007b5 0303
+0007b6 0303
+0007b7 0303
+0007b8 0303
+0007b9 ff03
+0007ba ffff
+0007bb aaaa
+0007bc aaaa      .db	0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0xff,0xff,0xff,   0xaa,0xaa,0xaa,0xaa                    ;        1 * * *             * * *       
+                                                                                                                               ;        2 * * *             * * *       
+0007bd ffff
+0007be 87ff
+0007bf 8787
+0007c0 8787
+0007c1 0787
+0007c2 0707
+0007c3 aaaa
+0007c4 aaaa      .db     0xff,0xff,0xff,0x87,0x87,0x87,0x87,0x87,0x87,0x07,0x07,0x07,   0xaa,0xaa,0xaa,0xaa ;character '5'     ;        3 * * * *         * * * *       
+0007c5 0707
+0007c6 0303
+0007c7 0303
+0007c8 0303
+0007c9 ff07
+0007ca fcff
+0007cb aaaa
+0007cc aaaa      .db     0x07,0x07,0x03,0x03,0x03,0x03,0x03,0x03,0x07,0xff,0xff,0xfc,   0xaa,0xaa,0xaa,0xaa                    ;        4 * * * * * * * * * * * *       
+0007cd 7c3c
+0007ce f078
+0007cf f0f0
+0007d0 f0f0
+0007d1 7f78
+0007d2 1f3f
+0007d3 aaaa
+0007d4 aaaa      .db     0x3c,0x7c,0x78,0xf0,0xf0,0xf0,0xf0,0xf0,0x78,0x7f,0x3f,0x1f,   0xaa,0xaa,0xaa,0xaa                    ;        5 * * * * * * * * * * *         
+                                                                                                                               ;        6   * * * * * * * * * *         
+0007d5 fcf8
+0007d6 0ffe
+0007d7 0707
+0007d8 0707
+0007d9 0f07
+0007da 1c1e
+0007db aaaa
+0007dc aaaa      .db	0xf8,0xfc,0xfe,0x0f,0x07,0x07,0x07,0x07,0x07,0x0f,0x1e,0x1c,   0xaa,0xaa,0xaa,0xaa ;character '6'     ;        7       * * * * * *             
+0007dd ffff
+0007de 1eff
+0007df 0e0e
+0007e0 0e0e
+0007e1 fe1e
+0007e2 f8fc
+0007e3 aaaa
+0007e4 aaaa      .db	0xff,0xff,0xff,0x1e,0x0e,0x0e,0x0e,0x0e,0x1e,0xfe,0xfc,0xf8,   0xaa,0xaa,0xaa,0xaa                                                          
+0007e5 7f3f
+0007e6 f07f
+0007e7 e0e0
+0007e8 e0e0
+0007e9 7ff8
+0007ea 1f3f
+0007eb aaaa
+0007ec aaaa      .db	0x3f,0x7f,0x7f,0xf0,0xe0,0xe0,0xe0,0xe0,0xf8,0x7f,0x3f,0x1f,   0xaa,0xaa,0xaa,0xaa
+                 
+0007ed 0707
+0007ee 0707
+0007ef 0707
+0007f0 0707
+0007f1 ffff
+0007f2 ffff
+0007f3 aaaa
+0007f4 aaaa      .db	0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0xff,0xff,0xff,0xff,   0xaa,0xaa,0xaa,0xaa ;character '7'
+0007f5 0000
+0007f6 0000
+0007f7 e080
+0007f8 fef8
+0007f9 1f7f
+0007fa 030f
+0007fb aaaa
+0007fc aaaa      .db	0x00,0x00,0x00,0x00,0x80,0xe0,0xf8,0xfe,0x7f,0x1f,0x0f,0x03,   0xaa,0xaa,0xaa,0xaa
+0007fd c000
+0007fe fef0
+0007ff 1fff
+000800 0107
+000801 0000
+000802 0000
+000803 aaaa
+000804 aaaa      .db	0x00,0xc0,0xf0,0xfe,0xff,0x1f,0x07,0x01,0x00,0x00,0x00,0x00,   0xaa,0xaa,0xaa,0xaa
+                 
+000805 fef8
+000806 07ff
+000807 0707
+000808 0707
+000809 ff8f
+00080a 78fe
+00080b aaaa
+00080c aaaa      .db	0xf8,0xfe,0xff,0x07,0x07,0x07,0x07,0x07,0x8f,0xff,0xfe,0x78,   0xaa,0xaa,0xaa,0xaa ;character '8'
+00080d ffe0
+00080e 1fff
+00080f 0e0e
+000810 1f0e
+000811 ff3f
+000812 e0f9
+000813 aaaa
+000814 aaaa      .db	0xe0,0xff,0xff,0x1f,0x0e,0x0e,0x0e,0x1f,0x3f,0xff,0xf9,0xe0,   0xaa,0xaa,0xaa,0xaa
+000815 7f1f
+000816 f07f
+000817 e0e0
+000818 f0e0
+000819 7f78
+00081a 1f3f
+00081b aaaa
+00081c aaaa      .db	0x1f,0x7f,0x7f,0xf0,0xe0,0xe0,0xe0,0xf0,0x78,0x7f,0x3f,0x1f,   0xaa,0xaa,0xaa,0xaa
+                 
+00081d fefc
+00081e 0fff
+00081f 0707
+000820 0707
+000821 ff0f
+000822 f8fc
+000823 aaaa
+000824 aaaa      .db	0xfc,0xfe,0xff,0x0f,0x07,0x07,0x07,0x07,0x0f,0xff,0xfc,0xf8,   0xaa,0xaa,0xaa,0xaa ;character '9'
+000825 3f1f
+000826 7c3f
+000827 7878
+000828 7878
+000829 ff3c
+00082a ffff
+00082b aaaa
+00082c aaaa      .db	0x1f,0x3f,0x3f,0x7c,0x78,0x78,0x78,0x78,0x3c,0xff,0xff,0xff,   0xaa,0xaa,0xaa,0xaa
+00082d 7000
+00082e f0f0
+00082f f0f0
+000830 7870
+000831 3f7c
+000832 0f3f
+000833 aaaa
+000834 aaaa      .db	0x00,0x70,0xf0,0xf0,0xf0,0xf0,0x70,0x78,0x7c,0x3f,0x3f,0x0f,   0xaa,0xaa,0xaa,0xaa
+                 
+000835 0000
+000836 6000
+000837 f8f0
+000838 f0f8
+000839 0060
+00083a 0000
+00083b aaaa
+00083c aaaa      .db	0x00,0x00,0x00,0x60,0xf0,0xf8,0xf8,0xf0,0x60,0x00,0x00,0x00,   0xaa,0xaa,0xaa,0xaa ;character ':'
+00083d 0000
+00083e 0000
+00083f c180
+000840 80c1
+000841 0000
+000842 0000
+000843 aaaa
+000844 aaaa      .db	0x00,0x00,0x00,0x00,0x80,0xc1,0xc1,0x80,0x00,0x00,0x00,0x00,   0xaa,0xaa,0xaa,0xaa
+000845 0000
+000846 0300
+000847 0f07
+000848 070f
+000849 0003
+00084a 0000
+00084b aaaa
+00084c aaaa      .db	0x00,0x00,0x00,0x03,0x07,0x0f,0x0f,0x07,0x03,0x00,0x00,0x00,   0xaa,0xaa,0xaa,0xaa
+                 
+00084d 0000
+00084e 0000
+00084f 0000
+000850 0000
+000851 0000
+000852 0000
+000853 aaaa
+000854 aaaa      .db     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,   0xaa,0xaa,0xaa,0xaa ;character ' '
+000855 0000
+000856 0000
+000857 0000
+000858 0000
+000859 0000
+00085a 0000
+00085b aaaa
+00085c aaaa      .db     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,   0xaa,0xaa,0xaa,0xaa
+00085d 0000
+00085e 0000
+00085f 0000
+000860 0000
+000861 0000
+000862 0000
+000863 aaaa
+000864 aaaa      .db     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,   0xaa,0xaa,0xaa,0xaa
+                 
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATmega8 register use summary:
+r0 :   2 r1 :   2 r2 :   4 r3 :   4 r4 :   0 r5 :   0 r6 :   0 r7 :   0 
+r8 :   0 r9 :   0 r10:   0 r11:   0 r12:   3 r13:   0 r14:   2 r15:  18 
+r16: 444 r17:  99 r18:  22 r19:  18 r20:   5 r21:   0 r22:   0 r23:   0 
+r24:   0 r25:   0 r26:   7 r27:   7 r28:   8 r29:   8 r30:  53 r31:  54 
+x  :   1 y  :   1 z  :  13 
+Registers used: 21 out of 35 (60.0%)
+
+ATmega8 instruction use summary:
+adc   :   9 add   :  10 adiw  :   0 and   :   0 andi  :  24 asr   :   0 
+bclr  :   0 bld   :   0 brbc  :   0 brbs  :   0 brcc  :   1 brcs  :   0 
+breq  :   7 brge  :   0 brhc  :   0 brhs  :   0 brid  :   0 brie  :   0 
+brlo  :   2 brlt  :   0 brmi  :   0 brne  :  19 brpl  :   1 brsh  :   0 
+brtc  :   0 brts  :   0 brvc  :   0 brvs  :   0 bset  :   0 bst   :   0 
+cbi   :   5 cbr   :   6 clc   :   0 clh   :   0 cli   :   0 cln   :   0 
+clr   :   9 cls   :   0 clt   :   0 clv   :   0 clz   :   0 com   :   0 
+cp    :   2 cpc   :   1 cpi   :  10 cpse  :  15 dec   :  11 eor   :   0 
+fmul  :   0 fmuls :   0 fmulsu:   0 icall :   0 ijmp  :   0 in    :  19 
+inc   :   8 ld    :   2 ldd   :   0 ldi   : 153 lds   :  74 lpm   :  10 
+lsl   :   3 lsr   :   5 mov   :   3 movw  :   0 mul   :   2 muls  :   0 
+mulsu :   0 neg   :   0 nop   :   0 or    :   2 ori   :   2 out   :  40 
+pop   :  59 push  :  59 rcall :  78 ret   :  19 reti  :   1 rjmp  :  51 
+rol   :   2 ror   :   0 sbc   :   1 sbci  :   0 sbi   :   9 sbic  :   1 
+sbis  :   0 sbiw  :   0 sbr   :   5 sbrc  :   0 sbrs  :   4 sec   :   0 
+seh   :   0 sei   :   1 sen   :   0 ser   :   0 ses   :   0 set   :   0 
+sev   :   0 sez   :   0 sleep :   0 spm   :   0 st    :   3 std   :   0 
+sts   : 151 sub   :   1 subi  :   1 swap  :   2 tst   :   6 wdr   :   0 
+
+Instructions used: 48 out of 108 (44.4%)
+
+ATmega8 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x0010ca   2268   2026   4294    8192  52.4%
+[.dseg] 0x000060 0x000108      0    168    168    1024  16.4%
+[.eseg] 0x000000 0x000000      0      0      0     512   0.0%
+
+Assembly complete, 0 errors, 0 warnings
