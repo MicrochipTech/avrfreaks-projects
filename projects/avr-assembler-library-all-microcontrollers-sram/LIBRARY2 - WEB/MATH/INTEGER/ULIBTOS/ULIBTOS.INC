@@ -1,0 +1,168 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATE:17/12/2001 VERSION 1.0							|
+;>------------------------------------------------------------------------------<
+;| I N T E G E R  R O U T I N E S	     					|
+;| U N S I G N E D  L O N G , W O R D , B Y T E  T O  S T R I N G 		|
+;+------------------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM				|
+;+------------------------------------------------------------------------------+
+#ifndef	__INTEGER_ULIBTOS__
+	#define __INTEGER_ULIBTOS__
+	.message "[ (MATH) INTEGER ULIBTOS ]"
+;+----------------------------------------------------------------------+
+;| _ULTOS								|
+;| Convert unsigned double word to string ASCII with fixed size 10 chars|
+;| and no left zero removal with 0 terminator				|
+;|								  	|
+;| Input  : AccTH:AccT:AccH:Acc unsigned double word input	  	|
+;| Output : Z--> SRAM string output with 0			  	|
+;+----------------------------------------------------------------------+
+_ULTOS:
+	push	AccTH
+	push	AccT
+	push	AccH
+	push	Acc
+	push	r0			;save useds
+	push	r1
+	push	r2
+	push	r3
+	push	r4
+	push	Temp
+	ldi	YL,low(_DF_STR)	;aSCII output buffer
+	ldi	YH,high(_DF_STR)
+	ldi	Temp,'+'				;assume positive
+	st	Y+,Temp
+	ldi	ZL,low(_ULTOS_POWER10*2)
+	ldi	ZH,high(_ULTOS_POWER10*2)
+_ULTOS00:
+	lpm
+	adiw	ZL,1
+	mov	r1,r0			;get power of ten constant
+	lpm
+	adiw	ZL,1
+	mov	r2,r0
+	lpm
+	adiw	ZL,1
+	mov	r3,r0
+	lpm
+	adiw	ZL,1
+	mov	r4,r0
+	clr	r0			;digit count
+_ULTOS10:
+	sub	Acc,r1			;find digit
+	sbc	AccH,r2
+	sbc	AccT,r3
+	sbc	AccTH,r4
+	brcs	_ULTOS20
+	inc	r0			;increment digit
+	rjmp	_ULTOS10		;until done
+_ULTOS20:
+	add	Acc,r1			;restore number
+	adc	AccH,r2
+	adc	AccT,r3
+	adc	AccTH,r4
+	ldi	Temp,'0'		;convert to ascii
+	or	Temp,r0
+	st	Y+,Temp			;store then
+	mov	Temp,r1			;last conversion ?
+	cpi	Temp,1
+	brne	_ULTOS00		;next digit
+	clr	r0
+	st	Y+,r0			;zero termination
+	ldi	ZL,low(_DF_STR)	;aSCII output buffer
+	ldi	ZH,high(_DF_STR)
+	pop	Temp			;restore useds
+	pop	r4
+	pop	r2
+	pop	r3
+	pop	r1
+	pop	r0
+_ULTOS_RESTORE:
+	pop	Acc
+	pop	AccH
+	pop	AccT
+	pop	AccTh
+	ret
+;+-----------------------
+;| table of power of 10
+;+-----------------------
+_ULTOS_POWER10:
+	.DW	LWRD(1000000000)	,HWRD(1000000000)
+	.DW	LWRD(100000000)		,HWRD(100000000)
+	.DW	LWRD(10000000)		,HWRD(10000000)
+	.DW	LWRD(1000000) 		,HWRD(1000000)
+	.DW	LWRD(100000)		,HWRD(100000)
+	.DW	LWRD(10000)		,HWRD(10000)
+	.DW	LWRD(1000)		,HWRD(1000)
+	.DW	LWRD(100)		,HWRD(100)
+	.DW	LWRD(10)		,HWRD(10)
+	.DW	LWRD(1)			,HWRD(1)
+	
+;+----------------------------------------------------------------------+
+;| _UBTOS								|
+;| Convert unsigned byte to string ASCII with fixed size 3 chars and 	|
+;| no left zero removal with 0 terminator				|
+;|								  	|
+;| Input  : Acc unsigned byte input				  	|
+;| Output : Z--> SRAM string output with 0			  	|
+;+----------------------------------------------------------------------+
+_UBTOS:
+	push	AccTH
+	push	AccT
+	push	AccH
+	push	Acc
+	clr	AccH
+	clr	AccT
+	clr	AccTH
+	rcall	_ULTOS
+	adiw	ZL,7
+	rjmp	_ULTOS_RESTORE
+;+----------------------------------------------------------------------+
+;| _UITOSU								|
+;| Convert unsigned word to string ASCII with unformatted variable size |
+;| with left zero removal						|
+;|								  	|
+;| Input  : AccH:Acc unsigned word input			  	|
+;| Output : Z--> SRAM string output with 0			  	|
+;+----------------------------------------------------------------------+
+_UITOS:
+	push	AccTH
+	push	AccT
+	push	AccH
+	push	Acc
+	clr	AccT
+	clr	AccTH
+	rcall	_ULTOS
+	adiw	ZL,5
+	rjmp	_ULTOS_RESTORE
+#endif
+.exit
+

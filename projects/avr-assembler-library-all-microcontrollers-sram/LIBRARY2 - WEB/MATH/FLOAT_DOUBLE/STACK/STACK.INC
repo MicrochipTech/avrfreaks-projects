@@ -1,0 +1,1057 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+---------------------------+
+;|												|
+;| DATE:17/01/2003 VERSION 1.0									|
+;>--------------------------------------------------------------+-------------------------------<
+;| D O U B L E   F L O A T  P O I N T  R O U T I N E S		|
+;| S T A C K E D  F U N C T I O N S				|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+#ifndef __MATH_FLOAT_STACK__
+	
+	#define __MATH_FLOAT_STACK__
+	.message "[ (MATH) FLOAT TO STACK ]"
+	;+--------------------------------------+
+	;| RESERVE SPACE FOR STACK POINTER	|
+	;+--------------------------------------+
+	.DSEG
+		_MATH_FLOAT_STACK_START:
+		_DFSTACKPTR:		.BYTE	1			;stack pointer
+		_DFSTACK:		.BYTE	_FDOUBLE*_FDOUBLE_STACK_SIZE	;initialize stack size
+		_DFZSAVE:		.byte	2			;to save Z parms
+		_MATH_FLOAT_STACK_END:
+	.CSEG
+	;+----------------------------------------------+
+	;| THIS MACRO SAVE ALL FLOAT POINT STACK	|
+	;| INTO AVR STACK				|
+	;| Obs: warning when use this macro		|
+	;|	ZL,ZH,Acc,AccT,AccTH are pushed 	|
+	;|	first into stack then float stack	|
+	;|	and all these register is altered,	|
+	;|	this macro usually used into in-	|
+	;|	terrupt context of multitask en-	|
+	;|	vironment				|
+	;+----------------------------------------------+
+	.MACRO	_M_PUSH_MATH_FLOAT_STACK
+		pushw	Z					;save useds
+		push	Acc
+		push	AccT
+		push	AccTH
+		ldiz	_MATH_FLOAT_STACK_START			;Z-->float stack start
+		ldi	AccT,low(_MATH_FLOAT_STACK_END-_MATH_FLOAT_STACK_START)
+		ldi	AccTH,high(_MATH_FLOAT_STACK_END-_MATH_FLOAT_STACK_START)
+	_M_PUSH00:
+		ld	Acc,Z+					;get float data
+		push	Acc					;put into avr stack
+		subi	AccT,1
+		sbci	AccTH,0
+		brne	_M_PUSH00
+	.ENDMACRO
+	.MACRO	_M_POP_MATH_FLOAT_STACK
+		ldiz	_MATH_FLOAT_STACK_END			;Z-->float stack end
+		ldi	AccT,low(_MATH_FLOAT_STACK_END-_MATH_FLOAT_STACK_START)
+		ldi	AccTH,high(_MATH_FLOAT_STACK_END-_MATH_FLOAT_STACK_START)
+	_M_POP00:
+		pop	Acc					;get data form avr stack
+		st	-Z,Acc
+		subi	AccT,1
+		sbci	AccTH,0
+		brne	_M_POP00
+		pop	AccTH					;restore useds
+		pop	AccT
+		pop	AcC
+		popw	Z
+	.ENDMACRO
+	;+--------------------------------------+
+	;| SAVE Z PARMS AND FACC INTO STACK	|
+	;+--------------------------------------+
+	_FDBL_SAVE_FACC:
+		sts	_DFZSAVE,ZL				;save Z parm first
+		sts	_DFZSAVE+1,ZH
+		pop	ZH					;restore return address
+		pop	ZL
+		push	Acc					;save my accumuladors
+		push	AccH
+		push	AccT
+		push	AccTH
+		push	_acc_0					;save Facc
+		push	_acc_1
+		push	_acc_2
+		push	_acc_3
+		push	_acc_4
+		push	_acc_5
+		push	_acc_s
+		push	_acc_e
+		push	ZL					;save return address
+		push	ZH
+		lds	ZL,_DFZSAVE				;restore Z parm
+		lds	ZH,_DFZSAVE+1
+		ret						;return
+	;+--------------------------------------+
+	;| RESTOREF ACC FORM STATCK		|
+	;+--------------------------------------+
+	_FDBL_RESTORE_FACC:
+		pop	_acc_e					;restore Facc
+		pop	_acc_s
+		pop	_acc_5
+		pop	_acc_4
+		pop	_acc_3
+		pop	_acc_2
+		pop	_acc_1
+		pop	_acc_0
+		pop	AccTH					;restore my accumulators
+		pop	AccT
+		pop	AccH
+		pop	Acc
+		ret
+	;+------------------------------+
+	;| INITIALIZE FLOAT POINT STACK	|
+	;|				|
+	;| Input  : None		|
+	;| Output : None		|
+	;| Destroy: Flags		|
+	;+------------------------------+
+	_FDBL_INIT:
+		push	Acc					;save useds registers
+		ldi	Acc,-1					;clear FLOAT stack pointer
+		sts	(_DFSTACKPTR),Acc
+		pop	Acc
+		ret
+	;+------------------------------+
+	;| CLEAR FLOAT POINT STACK	|
+	;|				|
+	;| Input  : None		|
+	;| Output : None		|
+	;| Destroy: Flags		|
+	;+------------------------------+
+	_FDBL_CLEAR:
+		push	Acc					;save useds registers
+		push	AccH
+		push	ZL
+		push	ZH
+		ldi	ZL,low(_DFSTACK)			;Z-->stack
+		ldi	ZH,high(_DFSTACK)
+		ldi	Acc,_FDOUBLE*_FDOUBLE_STACK_SIZE	;number of data to clear
+		clr	AccH
+	_FDBL_CLEAR00:
+		st	Z+,AccH					;clear data
+		dec	Acc					;next data
+		brne	_FDBL_CLEAR00				;until all done
+		pop	ZH					;restore useds registers
+		pop	ZL
+		pop	AccH
+		pop	Acc
+		ret
+	;+--------------------------------------+
+	;| INCREMENT FLOAT POINTER STACK POINTER|
+	;|					|
+	;| Input  : None			|
+	;| Output : None			|
+	;| Destroy: Flags			|
+	;+--------------------------------------+
+	_FDBL_STACK_INC:
+		push	Acc
+		lds	Acc,(_DFSTACKPTR)
+		inc	Acc					;increment pointer
+		cpi	Acc,_FDOUBLE_STACK_SIZE			;max size reach ?
+		brlo	_FDBL_ST00				;no, branch
+		clr	Acc					;else clear
+	_FDBL_ST00:
+		sts	(_DFSTACKPTR),Acc			;store new value
+		pop	Acc
+		ret
+	;+--------------------------------------+
+	;| DECREMENT FLOAT POINTER STACK POINTER|
+	;|					|
+	;| Input  : None			|
+	;| Output : None			|
+	;| Destroy: Flags			|
+	;+--------------------------------------+
+	_FDBL_STACK_DEC:
+		push	Acc
+		lds	Acc,(_DFSTACKPTR)
+		subi	Acc,1					;decrement pointer and see if bellow zero ?
+		brcc	_FDBL_ST00				;no, branch
+		ldi	Acc,_FDOUBLE_STACK_SIZE-1		;else se max value
+		rjmp	_FDBL_ST00
+	
+	;+--------------------------------------+
+	;| GET FLOAT STACK POINT ADDRESS	|
+	;|					|
+	;| Input  : _DFSTACKPTR			|
+	;| Output : Z --> Address		|
+	;| Destroy: Acc,Flags			|
+	;+--------------------------------------+
+	_FDBL_STACK_ADDRESS:
+		lds	Acc,(_DFSTACKPTR)			;Get stack pointer
+		lsl	Acc					;multiply by 8 because a double precision numbers
+		lsl	Acc
+		lsl	Acc
+		ldi	ZL,low(_DFSTACK)			;Z-->_DFSTACK(_DFSTACKPTR)
+		ldi	ZH,high(_DFSTACK)
+		add	ZL,Acc					;calculate entry stack pointer
+		ldi	Acc,0
+		adc	ZH,Acc
+		ret
+	;+--------------------------------------+
+	;| STORE NUMBER INTO FLOAT ACCUMULATOR	|
+	;| TO STACK FLOAT STACK			|
+	;|					|
+	;| Input  : _DFSTACKPTR			|
+	;| Output : _DFSTACK(_DFSTACKPTR)<-FAcc	|
+	;| Destroy: Acc,Z,Flags			|
+	;+--------------------------------------+
+	_FDBL_FACC_TO_STACK:
+		rcall	_FDBL_STACK_ADDRESS			;get address to store
+		rjmp	_DFSTZ					;store facc
+	;+--------------------------------------+
+	;| GET NUMBER FROM STACK FLOAT STACK	|
+	;| AND PUT INTO FLOAT ACC		|
+	;|					|
+	;| Input  : _DFSTACKPTR			|
+	;| Output : FAcc<-DFSTACK(_DFSTACKPTR)	|
+	;| Destroy: Acc,Z,Flags			|
+	;+--------------------------------------+
+	_FDBL_STACK_TO_FACC:
+		rcall	_FDBL_STACK_ADDRESS			;get address to store
+		rjmp	_DFLDZ					;load to facc
+	;+----------------------------------------------+
+	;| LOAD BYTE TO FLOAT STACK			|
+	;|						|
+	;| Input  : Z--> byte number			|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Byte)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDB:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		ld	Acc,Z+					;get value
+		rcall	_DFBTOF					;convert Acc to float
+	_FDBL_INC_ST:
+		rcall	_FDBL_STACK_INC				;increment stack
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| LOAD INTEGER IMEDIATE TO FLOAT STACK		|
+	;|						|
+	;| Input  : Acc:AccH Integer 			|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Integer)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDII:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFITOF					;convert Acc:AccH to float
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD LONG INTEGER IMEDIATE TO FLOAT STACK	|
+	;|						|
+	;| Input  : AccTH:AccT:AccH:Acc long Integer	|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Integer)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDLI:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLTOF					;convert AccTH:AccT:AccH:Acc to float
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD FLOAT CONSTANT TO FLOAT STACK		|
+	;|						|
+	;| Input  : AccH:Acc --> FLOAT CONSTANT		|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Integer)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDFC:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		push	ZL
+		push	ZH
+		mov	ZL,Acc
+		mov	ZH,AccH
+		rcall	_DFLDDC					;load constant pointed by Z to float stack
+		pop	ZH
+		pop	ZL
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+------------------------------------------------------+
+	;| LOAD STRING NUMBER STORE IN FLASH TO FLOAT STACK	|
+	;|							|
+	;| Input  : Z--> String number with zero ended		|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Converted string)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags			|
+	;+------------------------------------------------------+
+	_FDBL_LDS:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFSTOF					;convert Z--> string with zero ended to float
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+------------------------------------------------------+
+	;| LOAD STRING NUMBER STORE IN SRAM TO FLOAT STACK	|
+	;|							|
+	;| Input  : Z--> String number with zero ended		|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Converted string)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags			|
+	;+------------------------------------------------------+
+	_FDBL_LDSS:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFSSTOF				;convert Z--> string with zero ended to float
+		rjmp	_FDBL_INC_ST				;increment and store
+	
+	;+----------------------------------------------+
+	;| LOAD INTEGER TO FLOAT STACK			|
+	;|						|
+	;| Input  : Z--> Integer number(WORD)		|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Integer)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDI:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		ld	Acc,Z+					;get value
+		ld	AccH,Z+
+		rcall	_DFITOF					;convert Acc:AccH to float
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD LONG INTEGER TO FLOAT STACK		|
+	;|						|
+	;| Input  : Z--> Integer number(LONG)		|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(LONG)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDL:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		ld	Acc,Z+					;get value
+		ld	AccH,Z+
+		ld	AccT,Z+
+		ld	AccTH,Z+
+		rcall	_DFLTOF					;convert Acc:AccH:AccT:AccTH to float
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD FLOAT SINGLE TO FLOAT STACK		|
+	;|						|
+	;| Input  : Z--> Float Single			|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Float Single)|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDF:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		clr	_acc_0					;clear least significants bits
+		clr	_acc_1
+		clr	_acc_2
+		clr	_acc_3
+		ld	_acc_4,Z+
+		ld	_acc_5,Z+
+		ld	_acc_s,Z+
+		ld	_acc_e,Z+
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD FLOAT DOUBLE TO FLOAT STACK		|
+	;|						|
+	;| Input  : Z--> Float Double			|
+	;| Output : DFSTACK(_DFSTACKPTR)<-(Float Double)|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LDD:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDZ					;load double float
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD ZERO(0) TO FLOAT STACK			|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-0		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_0:	
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLD0					;load zero
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD ONE(1) TO FLOAT STACK			|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-1		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_1:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLD1					;load one
+		rjmp	_FDBL_INC_ST				;store
+	;+----------------------------------------------+
+	;| LOAD ONE(2) TO FLOAT STACK			|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-2		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_2:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLD2					;load two
+		rjmp	_FDBL_INC_ST				;store	
+	;+----------------------------------------------+
+	;| LOAD ONE(10) TO FLOAT STACK			|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-10		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_10:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLD10					;load 10
+		rjmp	_FDBL_INC_ST				;store	
+	;+----------------------------------------------+
+	;| LOAD PI/2(1,5707963267948966) TO FLOAT STACK	|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-PI/2		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_PI2:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDPI2
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD PI/4(0,78539816339744) TO FLOAT STACK	|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-PI/4		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_PI4:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDPI4
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD PI(3,14159265358979324) TO FLOAT STACK	|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-PI		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_PI:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDPI
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD 3*PI/2(4,71238898038468985) TO FLOAT STACK|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-3*PI/2	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_3PI2:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLD3PI2
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD 2*PI(6,28318530717958648) TO FLOAT STACK|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-2*PI		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_2PI:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLD2PI
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD E(2,71828182845904524) TO FLOAT STACK	|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-E		|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_E:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDE
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD SQRT(2)=1,4142135623730 TO FLOAT STACK	|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-SQRT(2)	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_SQRT2:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDSQRT2
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD SQRT(2)-1=0,4142135623730 TO FLOAT STACK|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-SQRT(2)-1	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_SQRT2M1:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDSQRT2M1
+		rjmp	_FDBL_INC_ST				;increment and store
+	;+----------------------------------------------+
+	;| LOAD SQRT(2)+1=2,4142135623730 TO FLOAT STACK|
+	;|						|
+	;| Input  : None				|
+	;| Output : DFSTACK(_DFSTACKPTR)<-SQRT(2)+1	|
+	;| Destroy: Acc,AccH,AccT,AccTH,Z,Flags		|
+	;+----------------------------------------------+
+	_FDBL_LD_SQRT2P1:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_DFLDSQRT2P1
+		rjmp	_FDBL_INC_ST				;increment and store
+	
+	;+----------------------------------------------+
+	;| SAVE Z POINTER AND CONVERT TOP OF FLOAT STACK|
+	;| TO LONG VALUE				|
+	;|						|
+	;| Input  : Z address to store converted value	|
+	;| Output : Acc:AccH:AccT,AccTH converted value	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_TOP_TO_LONG:
+		push	ZL					;save address
+		push	ZH
+		rcall	_FDBL_STACK_TO_FACC			;get value from stack Facc
+		rcall	_DFFTOL					;convert to long
+	_FDBL_TOP_RESTORE:
+		pop	ZH					;restore address
+		pop	ZL
+		ret
+	;+----------------------------------------------+
+	;| SAVE Z POINTER AND LOAD FLOAT POINT		|
+	;|						|
+	;| Input  : Z address to store converted value	|
+	;| Output : Facc loaded value			|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_TOP_TO_FACC:
+		push	ZL					;save address
+		push	ZH
+		rcall	_FDBL_STACK_TO_FACC			;get value from stack Facc
+		rjmp	_FDBL_TOP_RESTORE
+	;+----------------------------------------------+
+	;| STORE BYTE FROM FLOAT STACK			|
+	;|						|
+	;| Input  : Z address of BYTE			|
+	;| Output : Acc BYTE				|
+	;| Destroy: AccH,AccT,AccTH,Flags		|
+	;+----------------------------------------------+
+	_FDBL_STB:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_TOP_TO_LONG			;convert top of stack to long value
+		st	Z,Acc					;store byte variable
+		rjmp	_FDBL_RESTORE_FACC
+	
+	;+----------------------------------------------+
+	;| STORE INTEGER FROM FLOAT STACK		|
+	;|						|
+	;| Input  : Z address of INTEGER		|
+	;| Output : Acc:AccH INTEGER			|
+	;| Destroy: AccT,AccTH,Flags			|
+	;+----------------------------------------------+
+	_FDBL_STI:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_TOP_TO_LONG			;convert top of stack to long value
+		st	Z+,Acc					;store byte variable
+		st	Z+,AccH
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| STORE LONG NTEGER FROM FLOAT STACK		|
+	;|						|
+	;| Input  : Z address of LONG INTEGER		|
+	;| Output : Acc:AccH:AccT:AccTH LONG INTEGER	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_STL:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_TOP_TO_LONG			;convert top of stack to long value
+		st	Z+,Acc					;store byte variable
+		st	Z+,AccH
+		st	Z+,AccT
+		st	Z+,AccTH
+		rjmp	_FDBL_RESTORE_FACC
+	
+	;+----------------------------------------------+
+	;| STORE FLOAT SINGLE FROM TO FLOAT STACK	|
+	;|						|
+	;| Input  : Z address of SINGLE FLOAT		|
+	;| Output : Facc SINGLE FLOAT			|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_STF:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_TOP_TO_FACC			;get value from stack Facc
+		st	Z+,_acc_4
+		st	Z+,_acc_5
+		st	Z+,_acc_s
+		st	Z+,_acc_e
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| STORE FLOAT DOUBLE FROM FLOAT STACK		|
+	;|						|
+	;| Input  : Z address of DOUBLE FLOAT		|
+	;| Output : Facc DOUBLE FLOAT			|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_STD:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_TOP_TO_FACC			;get value from stack Facc
+		rcall	_DFSTZ					;store float double value
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| STORE BYTE FROM FLOAT STACK AND POP		|
+	;|						|
+	;| Input  : Z address of BYTE			|
+	;| Output : Acc BYTE				|
+	;| Destroy: AccH,AccT,AccTH,Flags		|
+	;+----------------------------------------------+
+	_FDBL_STBP:
+		rcall	_FDBL_STB				;call store byte and pop stack
+	_FDBL_STPOP:
+		rcall	_FDBL_STACK_DEC
+		ret
+	;+----------------------------------------------+
+	;| STORE INTEGER FROM FLOAT STACK AND POP	|
+	;|						|
+	;| Input  : Z address of INTEGER		|
+	;| Output : Acc:AccH INTEGER			|
+	;| Destroy: AccT,AccTH,Flags			|
+	;+----------------------------------------------+
+	_FDBL_STIP:
+		rcall	_FDBL_STI				;call store integer and pop stack
+		rjmp	_FDBL_STPOP
+	;+----------------------------------------------+
+	;| STORE LONG NTEGER FROM FLOAT STACK AND POP	|
+	;|						|
+	;| Input  : Z address of LONG INTEGER		|
+	;| Output : Acc:AccH:AccT:AccTH LONG INTEGER	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_STLP:
+		rcall	_FDBL_STL				;call store lon integer and pop stack
+		rjmp	_FDBL_STPOP
+	
+	;+----------------------------------------------+
+	;| STORE FLOAT SINGLE FROM TO FLOAT STACK AND POP|
+	;|						|
+	;| Input  : Z address of SINGLE FLOAT		|
+	;| Output : Facc SINGLE FLOAT			|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_STFP:
+		rcall	_FDBL_STF				;call store float single and pop stack
+		rjmp	_FDBL_STPOP
+	;+----------------------------------------------+
+	;| STORE FLOAT DOUBLE FROM FLOAT STACK AND POP	|
+	;|						|
+	;| Input  : Z address of DOUBLE FLOAT		|
+	;| Output : Facc DOUBLE FLOAT			|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_STDP:
+		rcall	_FDBL_STD				;call store float double and pop stack
+		rjmp	_FDBL_STPOP
+	;+----------------------------------------------+
+	;| FLOAT GET OP1 AND OP2 FROM STACK		|
+	;|						|
+	;| Input  : None				|
+	;| Output : op1=STACK(TOP) op2=STACK(TOP-1)	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_GETOP1OP2:
+		rcall	_FDBL_STACK_DEC				;decrement stack first
+		rcall	_FDBL_STACK_ADDRESS			;get address
+		rcall	_DFLDOP1Z				;load first operand
+		rcall	_FDBL_STACK_INC				;increment stack to get next operand
+		rcall	_FDBL_STACK_ADDRESS			;get address
+		rcall	_DFLDOP2Z				;load second operand	
+		ret	
+	;+----------------------------------------------+
+	;| FLOAT STACK DEC AND STORE FACC		|
+	;|						|
+	;| Input  : Facc				|
+	;| Output : STACK(TOP)=Facc			|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_DEC_STFACC:
+		rcall	_FDBL_STACK_DEC				;decrement stack to store result
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE ADDITION STACK(TOP)+STACK(TOP-1)|
+	;|						|
+	;| Input  : None				|
+	;| Output : _DF_FSREG FLAGS			|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_ADD:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_GETOP1OP2				;get operands
+		rcall	_DFADD					;add STACK(TOP)+STACK(TOP-1)
+		rjmp	_FDBL_DEC_STFACC			;store facc and restore stack
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE COMPARE STACK(TOP)+STACK(TOP-1) |
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=STACK(TOP)+STACK(TOP-1)	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_COMP:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_GETOP1OP2				;get operands
+		rcall	_DFCPOP1OP2				;compare STACK(TOP)+STACK(TOP-1)
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| FLOAT STACK INCREMENT			|
+	;|						|
+	;| Input  : None				|
+	;| Output : FSTACK+1				|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_INCST:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_INC
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| FLOAT STACK DECREMENT			|
+	;|						|
+	;| Input  : None				|
+	;| Output : FSTACK-1				|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_DECST:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_DEC
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE SUBTRACTION STACK(TOP)-STACK(TOP-1)|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=STACK(TOP)-STACK(TOP-1)	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_SUB:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_GETOP1OP2				;get operands
+		rcall	_DFSUB					;sub STACK(TOP)-STACK(TOP-1)
+		rjmp	_FDBL_DEC_STFACC			;store facc and restore stack
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE MULTIPLY STACK(TOP)*STACK(TOP-1)|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=STACK(TOP)*STACK(TOP-1)	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_MUL:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_GETOP1OP2				;get operands
+		rcall	_DFMUL					;multiply STACK(TOP)*STACK(TOP-1)
+		rjmp	_FDBL_DEC_STFACC			;store facc and restore stack
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE DIVIDE STACK(TOP)/STACK(TOP-1)	|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=STACK(TOP)/STACK(TOP-1)	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_DIV:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_GETOP1OP2				;get operands
+		rcall	_DFDIV					;divide STACK(TOP)/STACK(TOP-1)
+		rjmp	_FDBL_DEC_STFACC			;store facc and restore stack
+	;+--------------------------------------------------------------+
+	;| FLOAT DOUBLE DIVIDE FRACTIONARY STACK(TOP)/STACK(TOP-1)	|
+	;|								|
+	;| Input  : None						|
+	;| Output : STACK(TOP)=STACK(TOP)/STACK(TOP-1)=only fraction part|
+	;| Destroy: Flags						|
+	;+--------------------------------------------------------------+
+	_FDBL_DIVFRAC:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_GETOP1OP2				;get operands
+		rcall	_DFDIVFRAC				;divide STACK(TOP)/STACK(TOP-1) and return only fractionary part
+		rjmp	_FDBL_DEC_STFACC			;store facc and restore stack
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE STACK(TOP)*2			|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=STACK(TOP)*2		|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_MUL2:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFMUL2					;multiply Facc by 2
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE STACK(TOP)/2			|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=STACK(TOP)/2		|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_DIV2:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFDIV2					;divide Facc by 2
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE ABSOLUTE STACK(TOP)		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=ABSOLUTE(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_ABS:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFABS					;get abs
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE INT(TOP)			|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=INT(STACK(TOP))		|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_INT:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFINT					;get INT
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE FIX(TOP)			|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=FIX(STACK(TOP))		|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_FIX:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFFIX					;get FIX
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE -STACK(TOP) (change signal)	|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=-STACK(TOP)		|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_CHS:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFCHS
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE 1/STACK(TOP) (1/X)		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=1/STACK(TOP)		|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_INV:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFINV					;calculate a inverse of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE STACK(TOP)*STACK(TOP)	X^2	|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=STACK(TOP)*STACK(TOP)	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_SQR:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFSQR					;calculate a square of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE SQUARE ROOT(STACK(TOP))		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=SQUAREROOT(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_SQRT:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFSQRT					;calculate a square root of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE PARTIAL SINE(STACK(TOP))	|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=PARTIAL SINE(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_SERSIN:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFSERSIN				;calculate a partial sine of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE SINE(STACK(TOP))		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=SINE(STACK(TOP))		|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_SIN:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFSIN					;calculate a sine of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE CO-SINE(STACK(TOP))		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=CO-SINE(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_COS:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFCOS					;calculate a co-sine of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE TANGENT(STACK(TOP))		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=TANGENT(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_TAN:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFTAN					;calculate a tangent of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE PARTIAL ARC TANGENT(STACK(TOP))	|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=PARTIAL ARC TANGENT(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_SERATN:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFSERATN				;calculate a partial arc tangent of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE ARC TANGENT(STACK(TOP))		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=ARC TANGENT(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_ATAN:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFATAN					;calculate a arc tangent of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE ARC SINE(STACK(TOP))		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=ARC SINE(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_ASIN:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFASIN					;calculate a arc sine of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE ARC CO-SINE(STACK(TOP))		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=ARC CO-SINE(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_ACOS:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFACOS					;calculate a arc sine of Facc
+		rjmp	_FDBL_STBACK_RESTORE
+	
+	;+-----------------------------------------------------
+	;| RESTORE BACK RESULT OF TOP STACK AND RESTORE FACC
+	;+-----------------------------------------------------
+	_FDBL_STBACK_RESTORE:
+		rcall	_FDBL_FACC_TO_STACK			;store back to stack
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE STORE ACC IN BCD FORMAT		|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=ARC CO-SINE(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_BCD:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		push	ZL					;save address to store bcd number
+		push	ZH
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFFTOBCD
+		pop	ZH
+		pop	ZL
+		ldi	XL,low(_DF_BCD)				;transfer X-->Z
+		ldi	XH,high(_DF_BCD)
+		ldi	Acc,8
+	_FDBL_BCD00:
+		ld	AccH,X+					;get bcd
+		st	Z+,AccH					;store into destination
+		dec	Acc
+		brne	_FDBL_BCD00
+		rjmp	_FDBL_RESTORE_FACC
+	;+----------------------------------------------+
+	;| FLOAT DOUBLE STORE ACC IN BCD FORMAT AND POP	|
+	;|						|
+	;| Input  : None				|
+	;| Output : STACK(TOP)=ARC CO-SINE(STACK(TOP))	|
+	;| Destroy: Flags				|
+	;+----------------------------------------------+
+	_FDBL_BCDP:
+		rcall	_FDBL_SAVE_FACC				;save Facc
+		push	ZL					;save address to store bcd number
+		push	ZH
+		rcall	_FDBL_STACK_TO_FACC			;get value from Facc
+		rcall	_DFFTOBCD
+		pop	ZH
+		pop	ZL
+		ldi	XL,low(_DF_BCD)				;transfer X-->Z
+		ldi	XH,high(_DF_BCD)
+		ldi	Acc,8
+	_FDBL_BCDP00:
+		ld	AccH,X+					;get bcd
+		st	Z+,AccH					;store into destination
+		dec	Acc
+		brne	_FDBL_BCDP00
+		rcall	_FDBL_STACK_DEC
+		rjmp	_FDBL_RESTORE_FACC
+	
+#endif	;fim __MATH_FLOAT_STACK__
+.exit
+	
+

@@ -1,0 +1,152 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATE:23/01/2003 VERSION 1.0							|
+;>--------------------------------------------------------------+---------------<
+;| D O U B L E   F L O A T  P O I N T  R O U T I N E S		|
+;| G E N E R A L  A R C  S I N E				|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+;+----------------------------------------------------------------------+	
+;| DOUBLE FLOAT POINT ARC SINE						|
+;|									|
+;| Input  : Float Acc X							|
+;| Output : Float Acc arc sine of X,Acc Exception code			|
+;| Destroy: Flags							|
+;| Method : Describe below						|
+;| 									|
+;+----------------------------------------------+-----------------------+
+;|						|
+;| IMPLEMENTS A GENERAL ARC SINE FUNCTION	|
+;| METHOD:					|
+;|	Arc sine function is performed according|
+;|	following equation			|
+;|						|
+;|	asin(x)=atn(x/sqrt(1-x*x))		|
+;|						|
+;| OBS: if x>1 or x<-1 then return invalid op	|
+;|	if x=1 then return pi/2			|
+;|	if x=-1 then return -pi/2		|
+;+----------------------------------------------+
+#ifndef __MATH_FLOAT_ARC_SINE__
+	#define __MATH_FLOAT_ARC_SINE__
+	.message "[ (MATH) FLOAT ARC SINE ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef __MATH_FLOAT_INFINIT__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\INFINIT_RESULT\DFINF.hug"
+	#endif
+	#ifndef __MATH_FLOAT_NORMALIZE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\NORMALIZE\DFNORM.hug"
+	#endif
+	#ifndef __MATH_FLOAT_ADDSUB__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\ADDSUB\DFADDSUB.hug"
+	#endif
+	#ifndef __MATH_FLOAT_MULDIV__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\MULDIV\DFMULDIV.hug"
+	#endif
+	#ifndef __MATH_FLOAT_UNARY__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\UNARY\UNARY.hug"
+	#endif
+	#ifndef __MATH_FLOAT_LOAD_STORE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\LOAD_STORE\DFLDXSTX.hug"
+	#endif
+	#ifndef __MATH_FLOAT_COMPARE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\COMPARE\DFCPM.hug"
+	#endif
+	#ifndef __MATH_FLOAT_SQUARE_ROOT__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\SQUARE_ROOT\DFSQRT.hug"
+	#endif
+	
+	#ifndef __MATH_FLOAT_ARC_TANGENT_SERIE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\SERIES\ATN\SERIE_ATN.hug"
+	#endif
+	#ifndef __MATH_FLOAT_ARC_TANGENT__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\ATAN\ATAN.hug"
+	#endif
+	_DFASIN:
+		push	ZL
+		push	ZH
+		push	_acc_s					;save arg signal
+		call 	_DFABS					;acc=abs arg
+		call 	_DFACCOP1				;op1=arg
+		call 	_DFLD1					;acc=1
+		call 	_DFACCOP2				;op2=acc
+		_DFJP_NEQ	_DFASIN10			;arg=1 ?, no, branch
+		call 	_DFLDPI2				;else acc=pi/2
+		jmp 	_DFASIN_DONE				;done
+	_DFASIN10:
+		_DFJP_LT	_DFASIN20			;arg<1 ? , yes ,branch
+		pop	Acc
+		pop	ZH
+		pop	ZL
+		ldi	Acc,_FEILLEG				;set illegal function call
+		ret
+	_DFASIN20:
+		call 	_DFOP1ACC
+		push	_acc_0					;save arg
+		push	_acc_1
+		push	_acc_2
+		push	_acc_3
+		push	_acc_4
+		push	_acc_5
+		push	_acc_s
+		push	_acc_e
+		call 	_DFSQR					;acc=arg*arg
+		call 	_DFACCOP2				;op2=acc
+		call 	_DFLD1					;acc=1
+		call 	_DFACCOP1				;op1=acc
+		call 	_DFSUB					;acc=1-arg*arg
+		call 	_DFSQRT					;acc=sqrt(1-arg*arg)
+		call 	_DFACCOP2				;op2=acc
+		pop	_op1_e					;op1=arg
+		pop	_op1_s
+		pop	_op1_5
+		pop	_op1_4
+		pop	_op1_3
+		pop	_op1_2
+		pop	_op1_1
+		pop	_op1_0
+		call 	_DFDIV					;acc=arg/sqrt(1-arg*arg)
+		call 	_DFATAN					;acc=atn(arg/sqrt(1-arg*arg))
+	_DFASIN_DONE:
+		pop	Acc					;restore original signal
+		andi	Acc,0x80				;only signal
+		andi	_Acc_s,0x7f				;to bound at result
+		or	_Acc_s,Acc
+		ldi	Acc,_FPOK				;set float point ok
+		pop	ZH
+		pop	ZL
+		ret
+#endif
+.exit
+
+

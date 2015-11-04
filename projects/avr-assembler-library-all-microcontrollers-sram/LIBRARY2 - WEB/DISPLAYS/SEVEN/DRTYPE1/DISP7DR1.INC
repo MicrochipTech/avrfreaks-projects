@@ -1,0 +1,872 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;+--------------------------------------------------------------+
+;| HOSPITAL SARAH BRASILIA					|
+;| SEVEN SEGMENT DISPLAY					|
+;| NEED FILES 							|
+;|								|
+;|	FILE		DIRECTORY				|
+;|								|
+;|	GLOBDEFS.INC	Avr\Library\Defs\GlobDefs.inc 		|
+;|								|
+;| BY ALEXANDRE SILVA DOS SANTOS				|
+;|    JOAO DARTAGNAN ANTUNES OLIVEIRA				|	
+;| DATE:26/06/2001 VERSION 1.0					|
+;>--------------------------------------------------------------<
+;| 7 S E G M E N T  D R I V E  F O R  M A X I M U M 		|
+;| O F  8  D I G I T S 						|
+;+--------------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;|----------------------------------------------------------------------------------------------|
+;| _DISP7_SHOW_DIGIT	GET ONE DIGIT IN THE BUFFER AND SHOW 					|
+;|			SAMPLE USING DISP_SHOW_DIGIT						|
+;|												|
+;|			LOOP:									|
+;|				RCALL	_DISP_SHOW_DIGIT					|
+;|				'' PROCESS ANY OTHER TASK					|
+;|			RJMP	LOOP								|
+;|			OBS:IT'S RECOMMEND TO THE PROGRAMMER TO USE THIS ROUTINE IN THE 	|
+;|			    INTERRUPT HANDDLE							|
+;|			    EACH TIME THAT THIS ROUTINE IS CALLED THEN THE NEXT DIGIT IS DISPLA-|
+;|			    YED AND REMAINDER UNTIL CALLED LATER				|
+;|----------------------------------------------------------------------------------------------|
+;| _DISP7_DATA		SEND DATA TO DISPLAY							|
+;|			SAMPLE USING DISP_DATA TO SEND CHARACTER '*' TO DISPLAY			|
+;|												|
+;|			LDI	ACC,'*'								|
+;|			RCALL	_DISP_DATA							|
+;|----------------------------------------------------------------------------------------------|
+;| _DISP7_INIT		INITIALIZE DISPLAY							|
+;|												|
+;|			RCALL	_DISP_INIT							|
+;|----------------------------------------------------------------------------------------------|
+;| _DISP7_SEND_STR	SEND STRING INTO FLASH MEMORY TO DISPLAY				|
+;|			SAMPLE USING DISP_SEND_STR TO SEND STRING "HELLO WORD"			|
+;|												|
+;|			LDI	ZL,LOW(MSG*2)							|
+;|			LDI	ZH,HIGH(MSG*2)							|
+;|			RCALL	_DISP_SEND_STR							|
+;|			RJMP	CONTINUE							|
+;|		MSG:	.DB 	"HELLO",0							|
+;|----------------------------------------------------------------------------------------------|
+;| _DISP7_LOCATE	SET CURSOR POSITION							|
+;|			SAMPLE USING DISP_LOCATE TO POSITIONE CURSOR AT  COLUMN 3		|
+;|												|
+;|			LDI	ACCH,3								|
+;|			RCALL	_DISP_LOCATE							|
+;|----------------------------------------------------------------------------------------------|
+;| _DISP7_CLS		CLEAR ENTIRE SCREEN							|
+;|			SAMPLE CODE AS FOLLOWING						|
+;|												|
+;|			RCALL	_DISP_CLS							|
+;+----------------------------------------------------------------------------------------------+
+;| _DISP7_ASCII_TO_SEVEN	CONVERT ASCII FORMAT TO SEVEN SEGMENTS FORMAT			|
+;|				OBS: INTERNAL USE ONLY						|
+;|----------------------------------------------------------------------------------------------|	
+;| _DISP7_LDZAccH		FILL DISPLAY BUFFER WITH SPACE					|
+;|				OBS: INTERNAL USE ONLY						|
+;|----------------------------------------------------------------------------------------------|			
+;|OBS: CALL FUNCTION DISP7_INIT BEFORE USE ANY OTHER FUNCTION TO INITIALIZE THIS DRIVE CORRECTLY|
+;+----------------------------------------------------------------------------------------------+
+;+--------------------------------------------------------------------------------------+
+;| HARDWARE DEFINITIONS	  								|
+;|											|
+;| BEFORE USE THIS DRIVE SET FOLLOWING PARAMETERS					|
+;|											|
+;| _DISP7_SEG_PORT_OUT		TO DEFINE SEGMENT PORT					|
+;| _DISP7_SEG_PORT_DIR									|
+;| _DISP7_SEG_PORT_IN									|
+;|											|
+;| _DISP7_DIG_PORT_OUT		TO DEFINE DIGITS ENABLE PORT				|
+;| _DISP7_DIG_PORT_DIR									|
+;| _DISP7_DIG_PORT_IN									|
+;|											|
+;| _DISP7_SEG_ON		TO DEFINE SEGMENT ACTIVE LEVEL				|					|	
+;| _DISP7_SEG_OFF									|
+;| _DISP7_DIG_ON		TO DEFINE DIGIT ACTIVE LEVEL				|
+;| _DISP7_DIG_OFF									|
+;|											|
+;| _DISP7_NUM_DIGITS		TO DEFINE NUMBER OF DIGITS				|
+;|											|
+;| _DISP7_BIT_SEG_A		TO DEFINE SEGMENTS BITS					|
+;| _DISP7_BIT_SEG_B									|
+;| _DISP7_BIT_SEG_C									|
+;| _DISP7_BIT_SEG_D									|
+;| _DISP7_BIT_SEG_E									|
+;| _DISP7_BIT_SEG_F									|
+;| _DISP7_BIT_SEG_G									|
+;| _DISP7_BIT_SEG_P									|
+;|											|
+;| _DISP7_BIT_DIG_0		TO DEFINE DIGIT ENABLE BITS				|
+;| _DISP7_BIT_DIG_1									|
+;| _DISP7_BIT_DIG_2									|
+;| _DISP7_BIT_DIG_3									|
+;| _DISP7_BIT_DIG_4									|
+;| _DISP7_BIT_DIG_5									|
+;| _DISP7_BIT_DIG_6									|
+;| _DISP7_BIT_DIG_7									|
+;|											|
+;| EXAMPLE:										|
+;|											|
+;|.EQU	_DISP7_SEG_PORT_OUT	= PORTB		;SEGMENT OUTPUT PORT			|
+;|.EQU	_DISP7_SEG_PORT_DIR	= DDRB		;SEGMENT DIRECTION PORT			|
+;|.EQU	_DISP7_SEG_PORT_IN	= PINB		;SEGMENT INPUT PORT			|
+;|											|
+;|.EQU	_DISP7_DIG_PORT_OUT	= PORTD		;DIGIT OUTPUT PORT			|
+;|.EQU	_DISP7_DIG_PORT_DIR	= DDRD		;DIGIT DIRECTION PORT			|
+;|.EQU	_DISP7_DIG_PORT_IN	= PIND		;DIGIT INPUT PORT			|
+;|											|
+;|.EQU	_DISP7_SEG_ON	= 0			;SEGMENT ON  = LOW			|
+;|.EQU	_DISP7_SEG_OFF	= 1			;SEGMENT OFF = HIGH			|
+;|.EQU  _DISP7_DIG_ON	= 0			;DIGIT ON  = LOW			|
+;|.EQU	_DISP7_DIG_OFF	= 1			;DIGIT OFF = HIGH			|
+;|											|
+;|.EQU	_DISP7_NUM_DIGITS	= 8		;SET NUMBER OF DIGITS			|
+;|											|
+;|.EQU	_DISP7_BIT_SEG_A	= 0		;BIT FOR SEGMENT A			|
+;|.EQU	_DISP7_BIT_SEG_B	= 1		;BIT FOR SEGMENT B			|
+;|.EQU	_DISP7_BIT_SEG_C	= 2		;BIT FOR SEGMENT C			|
+;|.EQU	_DISP7_BIT_SEG_D	= 3		;BIT FOR SEGMENT D			|
+;|.EQU	_DISP7_BIT_SEG_E	= 4		;BIT FOR SEGMENT E			|
+;|.EQU	_DISP7_BIT_SEG_F	= 5		;BIT FOR SEGMENT F			|
+;|.EQU	_DISP7_BIT_SEG_G	= 6		;BIT FOR SEGMENT G			|
+;|.EQU	_DISP7_BIT_SEG_P	= 7		;BIT FOR SEGMENT P			|
+;|											|
+;|.EQU	_DISP7_BIT_DIG_0	= 0		;BIT FOR DIGIT 0 ENABLE			|
+;|.EQU	_DISP7_BIT_DIG_1	= 1		;BIT FOR DIGIT 1 ENABLE			|
+;|.EQU	_DISP7_BIT_DIG_2	= 2		;BIT FOR DIGIT 2 ENABLE			|
+;|.EQU	_DISP7_BIT_DIG_3	= 3		;BIT FOR DIGIT 3 ENABLE			|
+;|.EQU	_DISP7_BIT_DIG_4	= 4		;BIT FOR DIGIT 4 ENABLE			|
+;|.EQU	_DISP7_BIT_DIG_5	= 5		;BIT FOR DIGIT 5 ENABLE			|
+;|.EQU	_DISP7_BIT_DIG_6	= 6		;BIT FOR DIGIT 6 ENABLE			|
+;|.EQU	_DISP7_BIT_DIG_7	= 7		;BIT FOR DIGIT 7 ENABLE			|
+;|											|
+;+--------------------------------------------------------------------------------------+
+;+--------------------------------------------------------------------------------------------------------------+
+;| _DISP7 DISPLAY MATRIX CONFIGURATION										|
+;|														|
+;|														|
+;|  	     BIT_DIG_7	 DIT_DIG_6   BIT_DIG_5   BIT_DIG_4   BIT_DIG_3   BIT_DIG_2   BIT_DIG_1   BIT_DIG_0	|
+;|														|
+;|               |           |       	 |           |           |           |           |           |     	|
+;|	         |           |        	 |           |           |           |           |           |     	|
+;|            a  |	   a |         a |	   a |	       a |	   a |	       a |	   a |     	|
+;|   	      -------	  -------     -------	  -------     -------	  -------     -------	  -------     	|
+;| SEG_A >-- |       |	 |       |   |       |	 |       |   |       |	 |       |   |       |	 |       |    	|			
+;| SEG_B >-- |       |	 |       |   |       |	 |       |   |       |	 |       |   |       |	 |       |    	|		
+;| SEG_C >--f|       |b	f|       |b f|       |b f|       |b f|       |b f|       |b f|       |b f|       |b   	|
+;| SEG_D >-- |       |	 |       |   |       |	 |       |   |       |	 |       |   |       |	 |       |    	|
+;| SEG_E >-- |   g   |	 |   g   |   |   g   |	 |   g   |   |   g   |	 |   g   |   |   g   |	 |   g   |    	|
+;| SEG_F >--  -------	  -------     -------	  -------     -------	  -------     -------	  -------     	|
+;| SEG_G >-- |       |	 |       |   |       |	 |       |   |       |	 |       |   |       |	 |       |    	|
+;| SEG_P >-- |       |	 |       |   |       |	 |       |   |       |	 |       |   |       |	 |       |    	|
+;| 	    e|       |c	e|       |c e|       |c e|       |c e|       |c e|       |c e|       |c e|       |c   	|
+;|  	     |       |	 |       |   |       |	 |       |   |       |	 |       |   |       |	 |       |    	|	 
+;|	     |       |	 |       |   |       |	 |       |   |       |	 |       |   |       |	 |       |    	|
+;|   	      -------	  -------     -------	  -------     -------	  -------     -------	  -------     	|
+;|     		 d           d		 d	     d	         d	     d		 d	     d        	|
+;|                                                                                                              |
+;| DIGITS ENABLE BITS LOCATED AT ONE AVR PORT									|
+;| SEGMENT BITS LOCATED AT ONE AVR PORT                                                                         |
+;+--------------------------------------------------------------------------------------------------------------+
+#ifndef __DISP7DR1__
+	#DEFINE __DISP7DR1__
+	
+	.message "+----------+
+	.message "| DISP7DR1 |
+	.message "+----------+
+	
+	;+------------------------------+
+	;| DATA DEFINITION ON SRAM	|
+	;+------------------------------+
+	.DSEG
+		_DISP7_BUFFER:		.BYTE	8				;place where information is store to be displaeyd
+		_DISP7_DIGIT_COUNT:	.BYTE	1				;store what digit is turn on
+		_DISP7_COLUMN:		.BYTE 	1				;store column position
+	.CSEG
+	.SET	_D7DF	= _DISP7_DIG_OFF				;only to simplify code
+	.SET	_D7DO	= _DISP7_DIG_ON
+	.SET	_D7D0	= _DISP7_BIT_DIG_0
+	.SET	_D7D1	= _DISP7_BIT_DIG_1
+	.SET	_D7D2	= _DISP7_BIT_DIG_2
+	.SET	_D7D3	= _DISP7_BIT_DIG_3
+	.SET	_D7D4	= _DISP7_BIT_DIG_4
+	.SET	_D7D5	= _DISP7_BIT_DIG_5
+	.SET	_D7D6	= _DISP7_BIT_DIG_6
+	.SET	_D7D7	= _DISP7_BIT_DIG_7
+	.SET	_D7SFF	= _DISP7_SEG_OFF				;only to simplify code
+	.SET	_D7SON	= _DISP7_SEG_ON
+	.SET	_D7SA	= _DISP7_BIT_SEG_A
+	.SET	_D7SB	= _DISP7_BIT_SEG_B
+	.SET	_D7SC	= _DISP7_BIT_SEG_C
+	.SET	_D7SD	= _DISP7_BIT_SEG_D
+	.SET	_D7SE	= _DISP7_BIT_SEG_E
+	.SET	_D7SF	= _DISP7_BIT_SEG_F
+	.SET	_D7SG	= _DISP7_BIT_SEG_G
+	.SET	_D7SP	= _DISP7_BIT_SEG_P
+	;+------------------------------+
+	;| DIGITS ENABLE DEFINITIONS	|
+	;+------------------------------+--------------------------------------------------------------------------------------------
+	.SET	_D7DIG_DISABLE=(_D7DF<<_D7D7) | (_D7DF<<_D7D6) | (_D7DF<<_D7D5) | (_D7DF<<_D7D4) | (_D7DF<<_D7D3) | (_D7DF<<_D7D2) | (_D7DF<<_D7D1) | (_D7DF<<_D7D0)
+	.SET	_D7SEG_DISABLE=(_D7SFF<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	.SET	_D7DIG0=(_D7DF<<_D7D7) | (_D7DF<<_D7D6) | (_D7DF<<_D7D5) | (_D7DF<<_D7D4) | (_D7DF<<_D7D3) | (_D7DF<<_D7D2) | (_D7DF<<_D7D1) | (_D7DO<<_D7D0)
+	.SET	_D7DIG1=(_D7DF<<_D7D7) | (_D7DF<<_D7D6) | (_D7DF<<_D7D5) | (_D7DF<<_D7D4) | (_D7DF<<_D7D3) | (_D7DF<<_D7D2) | (_D7DO<<_D7D1) | (_D7DF<<_D7D0)
+	.SET	_D7DIG2=(_D7DF<<_D7D7) | (_D7DF<<_D7D6) | (_D7DF<<_D7D5) | (_D7DF<<_D7D4) | (_D7DF<<_D7D3) | (_D7DO<<_D7D2) | (_D7DF<<_D7D1) | (_D7DF<<_D7D0)
+	.SET	_D7DIG3=(_D7DF<<_D7D7) | (_D7DF<<_D7D6) | (_D7DF<<_D7D5) | (_D7DF<<_D7D4) | (_D7DO<<_D7D3) | (_D7DF<<_D7D2) | (_D7DF<<_D7D1) | (_D7DF<<_D7D0)
+	.SET	_D7DIG4=(_D7DF<<_D7D7) | (_D7DF<<_D7D6) | (_D7DF<<_D7D5) | (_D7DO<<_D7D4) | (_D7DF<<_D7D3) | (_D7DF<<_D7D2) | (_D7DF<<_D7D1) | (_D7DF<<_D7D0)
+	.SET	_D7DIG5=(_D7DF<<_D7D7) | (_D7DF<<_D7D6) | (_D7DO<<_D7D5) | (_D7DF<<_D7D4) | (_D7DF<<_D7D3) | (_D7DF<<_D7D2) | (_D7DF<<_D7D1) | (_D7DF<<_D7D0)
+	.SET	_D7DIG6=(_D7DF<<_D7D7) | (_D7DO<<_D7D6) | (_D7DF<<_D7D5) | (_D7DF<<_D7D4) | (_D7DF<<_D7D3) | (_D7DF<<_D7D2) | (_D7DF<<_D7D1) | (_D7DF<<_D7D0)
+	.SET	_D7DIG7=(_D7DO<<_D7D7) | (_D7DF<<_D7D6) | (_D7DF<<_D7D5) | (_D7DF<<_D7D4) | (_D7DF<<_D7D3) | (_D7DF<<_D7D2) | (_D7DF<<_D7D1) | (_D7DF<<_D7D0)
+	;+----------------------+
+	;| DIGITS ENABLE TABLE	|
+	;+----------------------+----------------------------------------------------------------------------------------------------
+	_DISP7_DIGITS_TABLE:
+		.DB	_D7DIG0,_D7DIG1
+		.DB	_D7DIG2,_D7DIG3
+		.DB	_D7DIG4,_D7DIG5
+		.DB	_D7DIG6,_D7DIG7
+	;+------------------------------+
+	;| SEGMENTS DEFINTIONS TABLE	|
+	;+------------------------------+--------------------------------------------------------------------------------------------
+	_DISP7_SEGMENTS_TABLE:
+	;ASCII SPACE 	     a
+	;		   ----
+	;		  |    |
+	;		f |    | b
+	;		  |  g |
+	;		   ---- 
+	;		  |    |
+	;		e |    | c
+	;		  |  d |
+	;		   ---- 
+	.DB	' ',(_D7SFF<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII . 	     a
+	;		   ----
+	;		  |    |
+	;		f |    | b
+	;		  |  g |
+	;		   ---- 
+	;		  |    |
+	;		e |    | c
+	;		  |  d |
+	;		   ----  ##
+	.DB	'.',(_D7SFF<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SON<<_D7SP)
+	;ASCII - 	     a
+	;		   ----
+	;		  |    |
+	;		f |    | b
+	;		  |  g |
+	;		   #### 
+	;		  |    |
+	;		e |    | c
+	;		  |  d |
+	;		   ---- 
+	.DB	'-',(_D7SFF<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 0 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   ---- 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'0',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 1 	     a
+	;		   ----
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   ---- 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   ---- 
+	.DB	'1',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 2 	     a
+	;		   ####
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   #### 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   #### 
+	.DB	'2',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 3 	     a
+	;		   ####
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   #### 
+	.DB	'3',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 4 	     a
+	;		   ----
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   ---- 
+	.DB	'4',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 5 	     a
+	;		   ####
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   #### 
+	.DB	'5',(_D7SON<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 6 	     a
+	;		   ####
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   #### 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'6',(_D7SON<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 7 	     a
+	;		   ####
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   ---- 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   ---- 
+	.DB	'7',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 8 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'8',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII 9	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   #### 
+	.DB	'9',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII A 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   ---- 
+	.DB	'A',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII B 	     a
+	;		   ----
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   #### 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'B',(_D7SFF<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII C 	     a
+	;		   ####
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   ---- 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   #### 
+	.DB	'C',(_D7SON<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII D 	     a
+	;		   ----
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   #### 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'D',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII E 	     a
+	;		   ####
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   #### 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   #### 
+	.DB	'E',(_D7SON<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII F 	     a
+	;		   ####
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   #### 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   ---- 
+	.DB	'F',(_D7SON<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII G 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   #### 
+	.DB	'G',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII H 	     a
+	;		   ----
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   ---- 
+	.DB	'H',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII I 	     a
+	;		   ----
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   ---- 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   ---- 
+	.DB	'I',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII J 	     a
+	;		   ----
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   ---- 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'J',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII L 	     a
+	;		   ----
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   ---- 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   #### 
+	.DB	'L',(_D7SFF<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII N 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   ---- 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   ---- 
+	.DB	'N',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII O 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   ---- 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'O',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII P 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   ---- 
+	.DB	'P',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII Q 	     a
+	;		   ####
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   ---- 
+	.DB	'Q',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII R 	     a
+	;		   ####
+	;		  #    #
+	;		f #    #b
+	;		  #  g #
+	;		   ---- 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   ---- 
+	.DB	'R',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII S 	     a
+	;		   ####
+	;		  #    |
+	;		f #    | b
+	;		  #  g |
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   #### 
+	.DB	'S',(_D7SON<<_D7SA) | (_D7SFF<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII U 	     a
+	;		   ----
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   ---- 
+	;		  #    #
+	;		e #    # c
+	;		  #  d #
+	;		   #### 
+	.DB	'U',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SON<<_D7SF) | (_D7SFF<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII Y	     a 
+	;		   ----
+	;		  #    #
+	;		f #    # b
+	;		  #  g #
+	;		   #### 
+	;		  |    #
+	;		e |    # c
+	;		  |  d #
+	;		   ---- 
+	.DB	'Y',(_D7SFF<<_D7SA) | (_D7SON<<_D7SB) | (_D7SON<<_D7SC) | (_D7SFF<<_D7SD) | (_D7SFF<<_D7SE) | (_D7SON<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	;ASCII Z 	     a
+	;		   ####
+	;		  |    #
+	;		f |    # b
+	;		  |  g #
+	;		   #### 
+	;		  #    |
+	;		e #    | c
+	;		  #  d |
+	;		   #### 
+	.DB	'Z',(_D7SON<<_D7SA) | (_D7SON<<_D7SB) | (_D7SFF<<_D7SC) | (_D7SON<<_D7SD) | (_D7SON<<_D7SE) | (_D7SFF<<_D7SF) | (_D7SON<<_D7SG) | (_D7SFF<<_D7SP)
+	.DB	0	;END OF TABLE
+	;+----------------------+
+	;| Initialize DISP7	|
+	;| Input  : None	|
+	;| Output : None	|
+	;| Destroy: Flags	|
+	;+----------------------+----------------------------------------------------------------------------------------------------
+	_DISP7_INIT:
+		push	Acc
+		in	Acc,SREG					;Save SREG state
+		cli							;to handdling ports correctly
+		push	Acc						;save useds
+		push	AccH
+		push	ZL
+		push	ZH
+		ldi	Acc,_D7DIG_DISABLE
+		out	_DISP7_DIG_PORT_OUT,Acc				;set Digits drives off
+		ser	Acc						;set Digits port output
+		out	_DISP7_DIG_PORT_DIR,Acc
+		ldi	Acc,_D7SEG_DISABLE
+		out	_DISP7_SEG_PORT_OUT,Acc				;set segments drives off
+		ser	Acc						;set segments port output
+		out	_DISP7_SEG_PORT_DIR,Acc
+		clr	Acc
+		sts	_DISP7_DIGIT_COUNT,Acc				;clear digit count
+		sts	_DISP7_COLUMN,Acc				;clear column pointer
+		rcall	_DISP7_CLS
+			
+		pop	ZH						;restore useds
+		pop	ZL
+		pop	AccH
+		pop	Acc
+		out	SREG,Acc					;Restore SREG state
+		pop	Acc
+		ret
+	;+----------------------+
+	;| Show One Digit	|
+	;| Input  : None	|
+	;| Output : None	|
+	;| Destroy: Flags	|
+	;+----------------------+----------------------------------------------------------------------------------------------------
+	_DISP7_SHOW_DIGIT:
+		push	r0						;save useds
+		push 	Acc
+		push	AccH
+		push	ZL
+		push	ZH
+		
+		ldi	Acc,_D7DIG_DISABLE
+		out	_DISP7_DIG_PORT_OUT,Acc				;set Digits drives off	
+		lds	Acc,_DISP7_DIGIT_COUNT				;DIGIT_COUNT++
+		inc	Acc
+		cpi	Acc,_DISP7_NUM_DIGITS				;DIGIT_COUNT < NUM_DIGITS ?
+		brlo	_DISP7_SHOW00					;no, branch.
+		clr	Acc						;else DIGIT_COUNT = 0
+	_DISP7_SHOW00:
+		sts	_DISP7_DIGIT_COUNT,Acc				;_DISP7_DIGIT_cOUINT = Acc, store DIGIT 	 
+		ldi	ZL,low(_DISP7_BUFFER)				;SEG_PORT=SEG_BUFFER(DIGIT_COUNT)
+		ldi	ZH,High(_DISP7_BUFFER)
+		add	ZL,Acc
+		clr	AccH
+		adc	ZH,AccH
+		ld	AccH,Z
+		out	_DISP7_SEG_PORT_OUT,AccH			
+		ldi	ZL,low(_DISP7_DIGITS_TABLE*2)			;DIGIT_PORT=DIGIT_TABLE(DIGIT_COUNT)
+		ldi	ZH,High(_DISP7_DIGITS_TABLE*2)
+		add	ZL,Acc
+		clr	AccH
+		adc	ZH,AccH
+		lpm
+		out	_DISP7_DIG_PORT_OUT,r0
+		
+		pop	ZH						;restore usueds
+		pop	ZL
+		pop	AccH
+		pop	Acc
+		pop	r0
+		ret
+	;+------------------------------+
+	;| ASCII to SEVEN 		|
+	;| Input  : Acc ASCII char	|
+	;| Output : Acc 7 SEGMENT CODE	|
+	;| Destroy: Flags		|
+	;+------------------------------+--------------------------------------------------------------------------------------------
+	_DISP7_ASCII_TO_SEVEN:
+		push	r0						;save useds
+		push	ZL
+		push	ZH
+		ldi	ZL,low(_DISP7_SEGMENTS_TABLE*2)			;DIGIT_PORT=DIGIT_TABLE(DIGIT_COUNT)
+		ldi	ZH,High(_DISP7_SEGMENTS_TABLE*2)
+	_DISP7_ASCII00:
+		lpm							
+		tst	r0						;End of Table?
+		breq	_DISP7_ASCII10					;yes, branch
+		cp	Acc,r0						;Found ASCII to convert?
+		breq	_DISP7_ASCII20					;yes, branch
+		adiw	ZL,2						;no, skip two position in table
+		rjmp	_DISP7_ASCII00					;again
+	_DISP7_ASCII10:
+		ldi	Acc,_D7SEG_DISABLE				;return space
+		rjmp	_DISP7_ASCII_DONE				;go done
+	_DISP7_ASCII20:
+		adiw	ZL,1						;convert ASCII found to 7 SEGMENT FORMAT
+		lpm
+		mov	Acc,r0
+	_DISP7_ASCII_DONE:
+		
+		pop	ZH						;restore useds
+		pop	ZL
+		pop	r0
+		ret
+		
+	;+----------------------+
+	;| Clear Display Screen	|
+	;| Input  : None	|
+	;| Output : None	|
+	;| Destroy: Flags	|
+	;+----------------------+----------------------------------------------------------------------------------------------------
+	_DISP7_CLS:
+		push 	Acc						;save useds
+		push	AccH
+		push	ZL
+		push	ZH
+		ldi	ZL,low(_DISP7_BUFFER)				;clear display buffer with space
+		ldi	ZH,high(_DISP7_BUFFER)
+		ldi	Acc,_DISP7_NUM_DIGITS
+		ldi	AccH,_D7SEG_DISABLE
+	_DISP7_CLS00:
+		st	Z+,AccH						;fill display buffer with space
+		dec	Acc
+		brne	_DISP7_CLS00		
+		
+		pop	ZH						;restore useds
+		pop	ZL
+		pop	AccH
+		pop	Acc
+		ret
+	;+----------------------+
+	;| Locate cursor	|
+	;| Input: AccH column	|
+	;| Output : None	|
+	;| Destroy: Flags	|
+	;+----------------------+----------------------------------------------------------------------------------------------------
+	_DISP7_LOCATE:
+		push	AccH						;save use
+		cpi	AccH,1						;col position > 1 ?
+		brlo	_DISP7_LOCATE_DONE				;yes,branch
+		sts	_DISP7_COLUMN,AccH				;no, put position in _DISP7_COLUMN
+		cpi	AccH,_DISP7_NUM_DIGITS+1			;col position => Number of digits ?
+		brsh	_DISP7_LOCATE_DONE				;yes, branch
+		dec	AccH						;no, position - 1
+		sts	_DISP7_COLUMN,AccH				;store position
+	_DISP7_LOCATE_DONE:
+		
+		pop	AccH						;restore use
+		ret
+	;+----------------------+
+	;| SEND DATA TO DISPLAY	|
+	;| Input: Acc data	|
+	;| Output : None	|
+	;| Destroy: Flags	|
+	;+----------------------+----------------------------------------------------------------------------------------------------
+	_DISP7_DATA:
+		push 	Acc						;save uses
+		push	AccH
+		push	ZL
+		push	ZH
+		cpi	Acc,'.'						;the ASCII is "." ?
+		breq	_DISP7_DATA10					;yes, branch
+		lds	AccH,_DISP7_COLUMN				;verify what column is set 
+		rcall	_DISP7_LDZAccH					;clear buffer
+		rcall	_DISP7_ASCII_TO_SEVEN				;convert ASCII to Seven segments
+		st	Z,Acc						;store in buffer CONVERTED DIGIT  
+	_DISP7_DATA05:
+		lds	AccH,_DISP7_COLUMN				;get column
+		inc	AccH						;column +1
+		cpi	AccH,_DISP7_NUM_DIGITS				;Column < _DISP7_NUM_DIGITS ?
+		brlo	_DISP7_DATA00					;yes,branch
+		clr	AccH						;set home colunm
+	_DISP7_DATA00:
+		sts	_DISP7_COLUMN,AccH				;store column value
+		rjmp	_DISP7_DATA_DONE				;go end
+	_DISP7_DATA10:
+		lds	AccH,_DISP7_COLUMN				;
+		dec	AccH
+		brpl	_DISP7_DATA20
+		clr	AccH
+	_DISP7_DATA20:
+		rcall	_DISP7_LDZAccH
+		andi 	AccH,(1<<_DISP7_BIT_SEG_P)
+		cpi	AccH,(_DISP7_SEG_ON<<_DISP7_BIT_SEG_P)
+		breq	_DISP7_DATA30	
+		ld	AccH,Z
+		ldi	Acc,(1<<_DISP7_BIT_SEG_P)
+		eor	AccH,Acc
+		st	Z,AccH
+		rjmp	_DISP7_DATA_DONE
+	_DISP7_DATA30:
+		lds	AccH,_DISP7_COLUMN
+		rcall	_DISP7_LDZAccH
+		ldi	Acc,(1<<_DISP7_BIT_SEG_P)
+		eor	AccH,Acc
+		st	Z,AccH
+		rjmp	_DISP7_DATA05
+	_DISP7_DATA_DONE:
+		pop	ZH						;restore uses
+		pop	ZL
+		pop	AccH
+		pop	Acc
+		ret
+	;+------------------------
+	;| GET SRAM(Z+AccH)
+	;+------------------------
+	_DISP7_LDZAccH:
+		ldi	ZL,low(_DISP7_BUFFER)				;clear display buffer with space
+		ldi	ZH,high(_DISP7_BUFFER)
+		add	ZL,AccH
+		clr	AccH
+		adc	ZH,AccH		
+		ld	AccH,Z
+		ret
+		
+	;+-----------------------------------+
+	;| SEND STRING TO DISPLAY 	     |
+	;| Input  : Z -->  string into Flash |
+	;| Output : none	  	     |
+	;| Destroy: flags	  	     |
+	;+-----------------------------------+---------------------------------------------------------------------------------------
+	_DISP7_SEND_STR:
+		push 	r0						;save uses
+		push	Acc
+		push	ZL
+		push	ZH
+	_DISP7_SEND_STR00:
+		lpm							;read message string in memory
+		tst	r0						;End of message?
+		breq	_DISP7_SEND_STR_DONE				;yes, branch done
+		mov	Acc,r0						;no, store string
+		rcall	_DISP7_DATA					;send data to 7 segment display
+		adiw	ZL,1						;skip to next string
+		rjmp	_DISP7_SEND_STR00				;again
+	_DISP7_SEND_STR_DONE:
+		
+		pop	ZH						;restore uses
+		pop	ZL
+		pop	Acc
+		pop	r0
+		ret
+#endif
+.exit
+

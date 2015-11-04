@@ -1,0 +1,5911 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATA:4/12/2005					|
+;>------------------------------------------------------<
+;| A V R  N M E A  P R O T O C O L  	 		|
+;| V E R S I O N  1.0					|
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH MEGA AVRS 		|
+;+------------------------------------------------------+
+;|
+;|	N  M  E  A
+;|	
+;|	
+;|	
+;|	            NATIONAL MARINE ELECTRONICS ASSOCIATION
+;|	
+;|	
+;|	                           NMEA 0183
+;|	
+;|	       STANDARD FOR INTERFACING MARINE ELECTRONIC DEVICES
+;|	
+;|	
+;|	                         Version 2.00
+;|	
+;|	
+;|	NMEA  Interface Standards are intended to serve the public
+;|	interest by facilitating interconnection and interchangeability
+;|	of eqipment, minimizing misunderstanding and confusion between
+;|	manufacturers, and assisting purchasers in selecting compatiblr
+;|	equipment.
+;|	
+;|	Standards are adopted by NMEA without regard to whether or not
+;|	their adoption may involve patents on articles, materials or
+;|	processes. By such action, NMEA does not assume any liability to
+;|	any patent owner, nor does it assume any obligation whatever to
+;|	parties adopting these Standards.
+;|	
+;|	This Standard defines electrical signal requirements, data trans-
+;|	mission protocol and timing, and specific sentence formats for a
+;|	4800 baud serial data bus. Each bus may have only a single TALK-
+;|	ER but may have multiple LISTENERS.
+;|	
+;|	Because of differences in baud rate and other transmission param-
+;|	eters, NMEA 0183 data is not directly compatible with NMEA 0180
+;|	or NMEA 0182 Standards.
+;|	
+;|	Equipment that is specified by IMO to meet the SOLAS regulations
+;|	is governed by the requirements of IEC doc.              TC80/WG6.
+;|	The IEC Standard is aligned closely with the NMEA 0183 Standard.
+;|	Where possible, differences between the two documents, and sec-
+;|	tions that pertain specifically to IEC requirements, are indi-
+;|	cated herein by the symbol "*" in the margin.
+;|	
+;|	
+;|	                                    Page 02
+;|	 1. Introduction
+;|	
+;|	1.1 Scope
+;|	
+;|	This standard is developed to permit ready and satisfactory data
+;|	communication between electronic marine instruments, navigation
+;|	equipment and communications equipment when interconnected via an
+;|	appropriate system.
+;|	
+;|	
+;|	1.2 Intended Application and Limitations on Use
+;|	
+;|	This standard is intended to support one-way serial data trans-
+;|	mission from a single TALKER to one or more LISTENERs. This is
+;|	data in printable ASCII form and may include information such as
+;|	position, speed, depth, frequeny allocation, etc. Typical mes-
+;|	sages might be 20 to 80 characters in length and generally re-
+;|	quire transmission no more often than once per second.
+;|	
+;|	The electrical definitions in this standard are not intended to
+;|	accommodate high-bandwidth applications such as radar or video
+;|	imagery, or intensive databased or file transfer applications.
+;|	
+;|	Since there is no provision for garanteed delivery of messages
+;|	and only limited error checking capability, this standard should
+;|	be used with caution in critical applications.
+;|	
+;|	
+;|	1.3 Definitions
+;|	
+;|	1.3.1 General
+;|	
+;|	Common terms are defined in Apendix IV, Glossary, of this Stand-
+;|	ard. Where there is a conflict terms shall be interpreted wher-
+;|	ever possible in accordance with the references in Section 1.4.
+;|	
+;|	
+;|	1.3.2 TALKERs
+;|	
+;|	A TALKER is any device which sends data to other devices within
+;|	this specification. The type of TALKER is identified by a 2-
+;|	character mnemonic as listed in Section 6.2 (Table 4).
+;|	
+;|	
+;|	1.3.3 LISTENERs
+;|	
+;|	A LISTENER is any device which receives data from another device
+;|	within this specification.
+;|	
+;|	
+;|	1.4 References
+;|	
+;|	1.4.1 American National Standards Institute:
+;|	      A. ANSI X 3.15 1976  ANSI Character Structure and
+;|	         Character Parity Sense for Serial-by-Bit Communication
+;|	      B. ANSI X 3.16 1976  ANSI for Bit Sequencing of the ANS
+;|	         Code or Information Interchange in Serial-By-Bit Data
+;|	         Transmission.
+;|	      C. ANSI X 3.14 1977  ANSI Code for Information Interchange
+;|	
+;|	                                    Page 03
+;|	 1.4.2 Electronic Industries Association Standards:
+;|	      A. EIA-422-A December 1978 (CCITT X.27/V.11)
+;|	
+;|	1.4.3 International Electrotechnical Commission:
+;|	      A. IEC 945, Marine Navigational Equipment - General
+;|	         Requirements
+;|	      B. IEC doc.         TC80/WG6
+;|	
+;|	1.4.4 American Practical Navigator, Defence Mapping Agency Hydro
+;|	      graphic/Topographic Center, Publication No. 9, DMA Stock
+;|	      No. NVPUB9V1, Volumes I and II
+;|	
+;|	1.4.5 Interface Control Document, Navstar GPS Space
+;|	      Segment/Navigation User Interface. Rockwell International
+;|	      Corporation Document No. ICD-GPS-200 Revision B (November
+;|	      30, 1987).
+;|	
+;|	
+;|	2. Manufacturer's Documentation
+;|	
+;|	Operator's manuals or other appropriate literature provided for
+;|	equipment that is intended to meet the requirements of this
+;|	standard shall contain the following information:
+;|	
+;|	   1. Identification of the A and B signal lines.
+;|	
+;|	   2. The output drive capability as a TALKER.
+;|	
+;|	   3. A list of approved sentences, noting unused fields, Pro-
+;|	      prietary sentences transmitted as a TALKER, and transmis-
+;|	      sion interval for each sentence.
+;|	
+;|	   4. The load requirements as a LISTENER.
+;|	
+;|	   5. A list of sentences and associated data fields that are
+;|	      required as a LISTENER.
+;|	
+;|	   6. The current software and hardware revision if this is
+;|	      relevant to the interface.
+;|	
+;|	   7. An electrical description or schematic of the
+;|	      LISTENER/TALKER input/output circuits citing actual
+;|	      components and devices used, including connector type and
+;|	      part number.
+;|	
+;|	   8. The Version No. and Date of Update of the standard for
+;|	      which compliance is assured.
+;|	
+;|	                                    Page 04
+;|	 3. Hardware Specification
+;|	
+;|	One TALKER and multiple LISTENERS may be connected in parallel
+;|	over an interconnecting wire. The number of LISTENERS depends on
+;|	the output capability and input drive requirements of individual
+;|	devices.
+;|	
+;|	
+;|	3.1 Interconnecting Wire
+;|	
+;|	Interconnection between devices may be by means of a two-conduc-
+;|	tor, shielded, twisted-pair wire.
+;|	
+;|	
+;|	3.2 Conductor Definitions
+;|	
+;|	The conductors referred to in this standard are the signal lines
+;|	"A" and "B", and shield.
+;|	
+;|	
+;|	3.3 Electrical Connections/Shield Requirements
+;|	
+;|	All signal line "A" connections are connected in parallel with
+;|	all device "A" connections and all signal line "B" connections
+;|	are connected in parallel with all device "B" connections. The
+;|	shield should be connected to the TALKER chassis and should not
+;|	be connected at any LISTENER. However, the shield should be
+;|	continuos (unbroken) between all listeners.
+;|	
+;|	* A continuous DC path between TALKER and LISTENER signal grounds
+;|	* is required as provided for by EIA-422 if EIA-422 receivers are
+;|	* used in IEC applications. This path is generally part of the
+;|	* equipment safety (or chassis) grounding system.
+;|	
+;|	
+;|	3.4 Connector
+;|	
+;|	No standard connector is specified. Wherever possible readily
+;|	available commercial connectors should be used. Manufacturers
+;|	shall provide means for user identification of the connections
+;|	used.
+;|	
+;|	
+;|	3.5 Electrical Signal Characteristics
+;|	
+;|	This section describes the electrical characteristics of trans-
+;|	mitters and receivers.
+;|	
+;|	
+;|	3.5.1 Signal State Definitions
+;|	
+;|	The idle, marking, logical "1", OFF or stop bit state is defined
+;|	by a negative voltage on line "A" with respect to line "B".
+;|	
+;|	The active, spacing, logical"0", ON or start bit state is de-
+;|	fined by a positive voltage on line "A" with respect to line "B".
+;|	
+;|	Note that the above "A" with respect to "B" levels are inverted
+;|	from the voltage input/output requirements of standard UARTs and
+;|	that many line drivers and receivers provide a logical inversion.
+;|	
+;|	                                    Page 05
+;|	 3.5.2 TALKER Drive Circuits
+;|	
+;|	No provision is made for more than a single TALKER to be connect-
+;|	ed to the bus. The drive circuit used to provide the signal "A"
+;|	and the return "B" shall meet, at a minimum, the requirements of
+;|	EIA-422-A (December 1978).
+;|	
+;|	
+;|	3.5.3 LISTENER Receive Circuits
+;|	
+;|	Multiple LISTENERs may be connected to a single TALKER. The
+;|	LISTENER receive circuit shall consist of an optoisolator and
+;|	should have protective circuits to limit current, reverse bias
+;|	and power dissipation at the optodiode as shown in Figure 1.
+;|	Reference is made to example circuits in Section 7.0 of this
+;|	Standard.
+;|	
+;|	The receive circuit shall be designed for operation with a mini-
+;|	mum differential input voltage of 2.0 volts and shall not take
+;|	more than 2.0 mA from the line at that voltage.
+;|	
+;|	For reasons of compatibility with equipment designed to earlier
+;|	versions of this standard, it is noted that the 'idle, marking,
+;|	logical "1", OFF or stop bit state' had previously< been defined
+;|	to be in the range -15 to +0.5 volts. The active, spacing,
+;|	logical "0", ON or start bit state' was defined to be in the
+;|	range +4.0 to +15 volts while sourcing not less than 15mA.
+;|	
+;|	* In places of this optoisolator receive circuit the IEC alternately
+;|	* allows the use of a differential-receiver that meets the require-
+;|	* ments of EIA-422-A (December 1978). This configuration is not
+;|	* compatible with equipment designed to meet previous versions of
+;|	* this standard that made use of single-ended unbalanced drive
+;|	* circuits.
+;|	
+;|	
+;|	                             $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $
+;|	                              -                      OPTO-ISOLATOR
+;|	                             | |  +--------+   -  -  -  -  -  -  -  -
+;|	                                  |        |  |                      |       $
+;|	                  +-----------O---|        |-------+              +------
+;|	                  |               |        |       |              |
+;|	                  |         A| |  |        |  |    |              |  |    L  $
+;|	                  |               |PROTECT-|       |              |       I
+;|	                  |          | |  |        |      _|_             |       S
+;|	                  |               |        |  |  \ | /           /   |    T  $
+;|	                  |          | |  |    IVE |      \|/   \|\    |/         E
+;|	                  |               |        |      ---      \|  |          N
+;|	                  |          | |  |        |  |    |       -   |\|   |    E
+;|	                  |               |        |       |            -\        R  $
+;|	                  |          | |  |        |       |              |
+;|	                  |               |CIRCUITS|  |    |              |  |    #
+;|	                  |         B| |  |        |       |              |       1  $
+;|	                  |               |        |       |              |
+;|	                  |  +--------O---|        |-------+              +------
+;|	                  |  |            |        |  |                      |       $
+;|	                  |  |       | |  +--------+   -  -  -  -  -  -  -  -
+;|	                  |  |        -
+;|	                  |  |       $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $
+;|	 $  $  $  $  $  $ |  |
+;|	                  |  |
+;|	                  |  |
+;|	 $              $ |  |       $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $
+;|	      |\       -  |  |        -                      OPTO-ISOLATOR
+;|	      | \     | |/   |       | |  +--------+   -  -  -  -  -  -  -  -
+;|	 $    |  \      /                 |        |  |                      |       $
+;|	   ---|   -----O--------------O---|        |-------+              +------
+;|	      |  /                        |        |       |              |
+;|	 $    | /    A| |    |      A| |  |        |  |    |              |  |    L  $
+;|	      |/O-+          |            |PROTECT-|       |              |       I
+;|	          |   | |    |       | |  |        |      _|_             |       S
+;|	 $        |          |            |        |  |  \ | /           /   |    T  $
+;|	  EIA-422 |   | |    |       | |  |    IVE |      \|/   \|\    |/         E
+;|	          |          |            |        |      ---      \|  |          N
+;|	          |   | |    |       | |  |        |  |    |       -   |\|   |    E
+;|	          |         /             |        |       |            -\        R  $
+;|	 $        |   | |  /         | |  |        |       |              |
+;|	          |       /               |CIRCUITS|  |    |              |  |    #
+;|	          |  B| |/          B| |  |        |       |              |       2  $
+;|	 $        |     /                 |        |       |              |
+;|	          +----O--------------O---|        |-------+              +------
+;|	              | |                 |        |  |                      |       $
+;|	 $        +----O             | |  +--------+   -  -  -  -  -  -  -  -
+;|	          |   | |SHIELDS      -
+;|	         ---   -             $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $
+;|	 $       \_/    $
+;|	  TALKER
+;|	
+;|	 $  $  $  $  $  $
+;|	                                   (FIGURE 1)
+;|	
+;|	
+;|	                                    Page 06
+;|	 3.5.4 Electrical Isolation
+;|	
+;|	Within a LISTENER there shall be no direct electrical connection
+;|	between the signal line, "A", return line, "B", or shield and
+;|	ship's ground or power. Isolation from ships ground is required.
+;|	
+;|	
+;|	3.5.5 Maximum Voltage on Bus
+;|	
+;|	The maximum applied voltage between signal lines "A" and "B" and
+;|	between either line and Ground will be in accordance with the
+;|	EIA-422 specification.
+;|	
+;|	For protection against miswiring and for use with earlier TALKER
+;|	designes, all receive curcuit devices should be capable of with-
+;|	standing 15 volts between signal lines "A" and "B" and between
+;|	either line and ground for an indefinite period.
+;|	
+;|	
+;|	4. Data Transmission
+;|	
+;|	Data is transmitted in serial asynchronous form in accordance
+;|	with ANSI standards (reference paragraph 1.4.1). The first bit
+;|	is a start bit and is followed by data bits, least-significant-
+;|	bit first as illustrared by Figure 2. The following parameters
+;|	are used:
+;|	
+;|	          Baud rate    4800
+;|	          Data bits    8 (d7 = 0)
+;|	          Parity       None
+;|	          Stop bits    One
+;|	
+;|	
+;|	
+;|	      +----+----+----+----+----+----+----+----+----+
+;|	      |    |    |    |    |    |    |    |    |    |
+;|	      |    | D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 |    |
+;|	  ----+    +----+----+----+----+----+----+----+----+----+--
+;|	
+;|	        |    |                                   |   |
+;|	        |    |<--          DATA BITS          -->|   |
+;|	        |                                            |
+;|	        +--> START BIT                               +--> STOP BIT
+;|	
+;|	
+;|	                                   (FIGURE 2)
+;|	
+;|	
+;|	
+;|	                                    Page 07
+;|	 5. Data Format Protocol
+;|	
+;|	
+;|	5.1 Characters
+;|	
+;|	All transmitted data shall be interpreted as ASCII characters.
+;|	The most significant bit of the 8-bit character shall always be
+;|	transmitted as zero (d7 = 0).
+;|	
+;|	
+;|	5.1.1 Reserved Characters
+;|	
+;|	The reserved character set consist of those ASCII characters
+;|	shown in Section 6.1 (Table 1). These characters are used for
+;|	specific formatting purposes, such as sentence and field delimit-
+;|	ing, and may not be used in data fields.
+;|	
+;|	
+;|	5.1.2 Valid Characters
+;|	
+;|	The valid character set consist of all printable ASCII charac-
+;|	ters (HEX 20 to HEX 7E) except those defined as reserved charc-
+;|	ters. Section 6.1 (Table 2) lists the valid character set.
+;|	
+;|	
+;|	5.1.3 Undefined Characters
+;|	
+;|	ASCII values not specified as either "reserved characters" or
+;|	"valid characters" are excluded and may not be transmitted at any
+;|	time.
+;|	
+;|	
+;|	5.1.4 Character Symbols
+;|	When individual characters are used in this standard to define
+;|	units of measure, indicate the type of data field, type of sen-
+;|	tence, etc. they will be interpreted according to the character
+;|	symbol table in Section 6.1 (Table 3).
+;|	
+;|	
+;|	5.2 Fields
+;|	
+;|	A Field consists of a string of valid characters, or no charac-
+;|	ters (null field), located between two appropriate delimiter
+;|	characters.
+;|	
+;|	
+;|	5.2.1 Address Field
+;|	
+;|	An address field is the first field in a sentence and follows the
+;|	"$" delimiter, it serves to define the sentence. Characters
+;|	within the address field are limited to digits and upper case
+;|	letters. The address field may not be a null field. Only sen-
+;|	tences with the following three types of address fileds may be
+;|	transmitted:
+;|	
+;|	                                    Page 08
+;|	 5.2.1.1 Approved Address Field
+;|	
+;|	Approved address fields consist of five characters defined by
+;|	this standard. The first two characters are the TALKER Identifi-
+;|	er, listed in Section 6.2 (Table 4). The next three characters
+;|	form the Sentence Formatter used to define the format and the
+;|	type of data. Section 6.2 (Table 5) and Appendix I list approved
+;|	Sentence Formatters.
+;|	
+;|	
+;|	5.2.1.2 Query Address Field
+;|	
+;|	The query address consists of five characters and is used for the
+;|	purpose of requesting transmission of a specific sentence on a
+;|	separate bus from an identified TALKER.
+;|	
+;|	The first two characters are the TALKER Identifier of the device
+;|	requesting data, the next two characters are the TALKER Identifi-
+;|	er of the device being addressed and the final character is the
+;|	query character "Q".
+;|	
+;|	
+;|	5.2.1.3 Proprietary Address Field
+;|	
+;|	The proprietary address field consists of the proprietary charc-
+;|	ter "P" followed by a three-character Manufacturer's Mnemonic
+;|	Code, used to identify the TALKER issuing a proprietary sentence,
+;|	and any additional characters as required. A list of valid Manu-
+;|	facturer's Mnemonic Codes is contained in Appendix III.
+;|	
+;|	
+;|	5.2.2 Data Fields
+;|	
+;|	Data Fields in approved sentences follow a "," delimiter and con-
+;|	tain valid characters in accordance with the formats illustrated
+;|	in Section 6.2 (Table 6). Data fields in proprietary sentences
+;|	contain only valid characters but are not defined by this stand-
+;|	ard.
+;|	
+;|	Because of the presence of variable data fields and null fields,
+;|	specific data fileds may only be located within a sentence by ob-
+;|	serving the field delimiters ",". Therefore it is essential for
+;|	the LISTENER to locate fields by counting delimiters rather than
+;|	counting total numbers of characters received from the start of
+;|	the sentence.
+;|	
+;|	
+;|	5.2.2.1 Variable Length Fields
+;|	
+;|	Although some data fields are defined to have fixed length, many
+;|	are of variable lenght in order to allow devices to convey infor-
+;|	mation and to provide data with more or less precission, according
+;|	to the capability or requirements of a particular device.
+;|	
+;|	Variable length fields may be alpha-numeric or numeric fileds.
+;|	Variable numeric fields may contain a decimal point and may con-
+;|	tain leading or trailing "zeros".
+;|	
+;|	                                    Page 09
+;|	 5.2.2.2 Data Field Types
+;|	
+;|	Data fields may be alpha, numeric, alphanumeric, variable length,
+;|	fixed length, fixed/variable (with a portion fixed in length
+;|	while the remainder varies). Some fields are constant, with
+;|	their value dictated by a specific sentence definition. The al-
+;|	lowable field types are summarized in section 6.2 (Table 6),
+;|	Field Type Summary.
+;|	
+;|	
+;|	5.2.2.3 Null Fields
+;|	
+;|	A null field is a field of length zero, i.e. no character are
+;|	transmitted in the field. Null fields shall be used when the
+;|	value is unreliable or not available.
+;|	
+;|	For example, if heading information were not available, sending
+;|	data of "000" is misleading because a user cannot sidtinguish
+;|	between "000" meaning no data and a legitimate heading of "000".
+;|	However, a null field, with no characters at all, clearly indi-
+;|	cates that no data is being transmitted.
+;|	
+;|	Null fileds with their delimiters can have the following
+;|	appearance depending on where they are located in the sentence:
+;|	
+;|	                 ",,"   ",*"   ",<CR><LF>"
+;|	
+;|	The ASCII NULL character (HEX 00) shall not be used as the null
+;|	field.
+;|	
+;|	
+;|	5.2.3 Checksum Field
+;|	
+;|	A checksume filed may optionally be transmitted in any sentence.
+;|	However some approved sentences specifically require the checksum
+;|	field. The checksum field is the last field in a sentence and
+;|	follows the checksum delimiter character "*".
+;|	
+;|	The checksum is the 8-bit exclusive OR (no start or stop bits) of
+;|	all characters in the sentence, including "," delimiters, between
+;|	but not including the "$" and the "*" delimiters.
+;|	
+;|	The hexadecimal value of the most significant and least signifi-
+;|	cant 4 bits of the result are converted to two ASCII characters
+;|	(0-9, A-F) for transmission. The most significant character is
+;|	transmitted first.
+;|	
+;|	
+;|	5.3 Sentences
+;|	
+;|	This section describes the general structure of sentences. De-
+;|	tails of specific sentences may specify restrictions beyond the
+;|	general limitations given in this part of the standard. Such re-
+;|	strictions may include defining some fields as fixed length, nu-
+;|	meric or text only, required to be non-null, transmitted with a
+;|	certain frequency, etc.
+;|	
+;|	                                    Page 10
+;|	 The maximum number of characters in a sentence shall be 82, con-
+;|	sisting of a maximum of79 characters between the starting delim-
+;|	iter "$" and the terminating <CR><LF>.
+;|	
+;|	The minimum number of fields in a sentence is one (1). The first
+;|	field shall be an address field containing the identity of the
+;|	TALKER and the sentence formatter which specifies the number of
+;|	data fields in the sentence, the type of data they contain and
+;|	the order in which the data fields are transmitted. The remain-
+;|	ing portion of the sentence may contain zero or multiple data
+;|	fields.
+;|	
+;|	The maximum number of fields allowed in a single sentence is lim-
+;|	itetd only by the maximum sentence length of 82 characters. Null
+;|	fields may be presented in the sentence and shall always be used if
+;|	data for that field is unavailable.
+;|	
+;|	All sentences bebin with the sentence start delimiter character
+;|	"$" and end with the sentence termination delimiter <CR><LF>.
+;|	
+;|	
+;|	5.3.1 Approved Sentences
+;|	
+;|	Approved sentences are those designed for general use and de-
+;|	tailed in this Standard. Approved sentences are listed in Sec-
+;|	tion 6.3 and Appendix I of the current version of the Standard.
+;|	Preferred sentences are contain in Section 6.3 and these sen-
+;|	tences should be used wherever possible. Appendix I contains
+;|	sentences that may be phased-out of use, are not recommend for
+;|	new designes, but may be met in practise.
+;|	
+;|	An approved sentence contains, in the order shown, the following
+;|	elements:
+;|	
+;|	   "$"                    HEX 24  -  Start of sentence
+;|	   <address  field>       TALKER identifier and sentence formatter
+;|	   [","<data field>]      Zero or more data fields
+;|	         .
+;|	         .
+;|	         .
+;|	   [","<data field>]
+;|	   ["*"<checksum field>]  Optional checksum field
+;|	   <CR><LF>               Hex 0D 0A  - End of sentence
+;|	
+;|	                                    Page 11
+;|	 5.3.1.1 Approved Sentence Structure
+;|	
+;|	The following provides a summary explanation of the approved
+;|	sentence structure:       $aaccc,c--c*hh<CR><LF>
+;|	
+;|	ASCII         HEX     DESCRIPTION
+;|	
+;|	"$"           24      Start of Sentence.
+;|	
+;|	aaccc                 Address Field. Alphanumeric characters
+;|	                      identifying type of TALKER, and Sentence
+;|	                      Formatter. The first two characters iden-
+;|	                      tify the TALKER. The last three are the
+;|	                      Sentence Formatter mnemonic code identify-
+;|	                      ing the data type and the string formt of
+;|	                      the successive Fields. Mnemonics will be
+;|	                      used as far as posible to facilitate
+;|	                      readouts by users.
+;|	
+;|	","           2C      Field delmiter. Starts each Field except
+;|	                      Address and Checksum fields. If it is
+;|	                      followed by a null field, it is all that
+;|	                      remainsto indicate no data in field.
+;|	
+;|	c--c                  Data sentence block. Follows Address
+;|	                      field and is a series of data fields con-
+;|	                      taining all of the data to be transmitted.
+;|	                      Data field sequences is fixed and identified
+;|	                      by 3rd and subsequent characters of the
+;|	                      address field (the "Sentence Formatter").
+;|	                      Data fields may be of variable length and
+;|	                      are preceded by delimiters ",".
+;|	
+;|	"*"           2A      Optional Checksum Delimiter. Follows
+;|	                      last Data field of the sentence. It indi-
+;|	                      cates that the following two alpha-numeric
+;|	                      characters show the HEX value of the CHECK-
+;|	                      SUM.
+;|	
+;|	hh                    Optional Checksum Field. The absolute
+;|	                      value calculatedby exclusive-OR'ing the 8
+;|	                      data bits (no start bits or stop bits) of
+;|	                      each character in the Sentence, between,
+;|	                      but excluding "$" and "*". The hexadecimal
+;|	                      value of the most significant and least
+;|	                      significant 4 bits of the result are con-
+;|	                      verted to two ASCII characters (0-9, A-F)
+;|	                      for transmission. The most significant
+;|	                      character is transmitted first. The
+;|	                      "CHECKSUM" field is optional, except when
+;|	                      indicated as mandatory.
+;|	
+;|	<CR><LF>      0D 0A   Terminates Sentence.
+;|	
+;|	                                    Page 12
+;|	 5.3.2 Query Sentences
+;|	
+;|	Query sentences are intended to request Approved sentences to be
+;|	transmittetd from a TALKER on a seperate bus in a form of two way
+;|	communication.
+;|	
+;|	The approved Query sentence contains, in the order shown, the
+;|	following elements:
+;|	
+;|	  "$"                    HEX 24 - Start of sentence
+;|	  <aa>                   TALKER Identifier or requester
+;|	  <aa>                   TALKER Identifier for device from which
+;|	                         data is being requested
+;|	  "Q"                    Query character identifies Query address
+;|	  ","                    Data field delimiter
+;|	  <ccc>                  Approved sentence formatter of data
+;|	                         being requested
+;|	  ["*"<checksum field>]  Optional checksum field
+;|	  <CR><LF>               HEX 0D 0A - End of sentence
+;|	
+;|	
+;|	5.3.2.1 Reply to Query Sentence
+;|	
+;|	The reply on a seperate bus to a Query sentence is the Approved
+;|	sentence that was requested. The use of Query sentences requires
+;|	cooperation between the devices that are interconnected, a reply
+;|	to a Query sentence is not mandatory and there is no specified
+;|	time delay between the receipt of a query and the reply.
+;|	
+;|	
+;|	5.3.3 Proprietary Sentences
+;|	
+;|	Proprietary sentences provide a means for manufacturers to use
+;|	the sentence structure definitions of this standard to transfer
+;|	data which does not fall within the scope of approved sentences.
+;|	This will generally be for one of the following reasons:
+;|	
+;|	        -Data is intended for another device from the same manu-
+;|	         facturer, is device specific, and not in a form or of a
+;|	         type of interest to the general user;
+;|	
+;|	        -Data is being used for test purposes prior to the adop-
+;|	         tion of approved sentences;
+;|	
+;|	        -Data is not of a type and general usefulness which
+;|	         merits the creation of an approved sentence.
+;|	
+;|	A proprietary sentence contains, in the order shown, the follow-
+;|	ing elements:
+;|	
+;|	         "$"                    Hex 24 - Start of sentence
+;|	         "P"                    Hex 50 - Proprietary sentence ID
+;|	         <aaa>                  Manufacturer's Mnemonic code
+;|	         [<valid characters, manufacturer's data>]
+;|	         ["*"<checksum field>]  Optional checksum field
+;|	         <CR><LF>               Hex 0D 0A - End of sentence
+;|	
+;|	                                    Page 13
+;|	 Beyond limiting overall sentence length are requiring the use of
+;|	only valid characters, details of proprietary data fields will
+;|	not be included in this standard and need not be submitted for
+;|	approval. However it is required that such sentences be pub-
+;|	lished in the manufacturer's manuals for reference.
+;|	
+;|	
+;|	5.3.4 Valid Sentences
+;|	
+;|	Approved sentences, Query sentences and Proprietary sentences are
+;|	the only valid sentences. Sentences of any other form are non-
+;|	valid and shall not be transmitted on the bus.
+;|	
+;|	
+;|	5.3.5 Sentences Transmission Timing
+;|	
+;|	Frequency of sentence transmission when specified shall be in
+;|	accordance with the approved sentence definitions (Section 6.3 and
+;|	Appendix I): When not specified, the rate should be consistent
+;|	with the basic measurement or calculation cycle but generally
+;|	not more frequently than once per second.
+;|	
+;|	It is desirable that sentences be transmitted with minimum inter-
+;|	character spacing, preferably as a near continuous burst, but under
+;|	no circumstance shall the time to complete the transmission of a
+;|	sentence be greater than 1 second.
+;|	
+;|	
+;|	5.3.6 Additions to Approved Sentences
+;|	
+;|	In order to allow for improvements or additions, future revisions
+;|	of this Standard may modify existing sentences by adding new data
+;|	fields after the last data field but before the optional checksum
+;|	delimiter character "*" and checksum field. LISTENERs should
+;|	determine the end of the sentence by recognition of "<CR><LF>"
+;|	and "*" rather than by counting field delimiters. The checksum
+;|	value should be computed on all received characters between, but
+;|	not including, "$" and "*" whether or not the LISTENER recognizes
+;|	all fields.
+;|	
+;|	                                    Page 14
+;|	 6. Data Content
+;|	
+;|	
+;|	6.1 Character Definitions
+;|	
+;|	                    TABLE 1 - RESERVED CHARACTERS
+;|	
+;|	               HEX  DEC
+;|	     <CR>      0D   13        Carriage return } End of sent-
+;|	     <LF>      0A   10        Line feed       } tence delimiter
+;|	     $         24   36        Start of sentence delimiter
+;|	     *         2A   42        Checksum field delimiter
+;|	     ,         2C   44        Field delimiter
+;|	     !         21   33        Reserved for future use
+;|	     \         5C   92        Reserved for future use
+;|	     ^         5E   94        Reserved for future use
+;|	     ~         7E   126       Reserved for future use
+;|	
+;|	
+;|	                    TABLE 2 - VALID CHARACTERS
+;|	
+;|	         HEX  DEC             HEX  DEC            HEX  DEC
+;|	  Space  20   32         @    40   64        `    60   96
+;|	    Reserved             A    41   65        a    61   97
+;|	    "    22   34         B    42   66        b    62   98
+;|	    #    23   35         C    43   67        c    63   99
+;|	    Reserved             D    44   68        d    64   100
+;|	    %    25   37         E    45   69        e    65   101
+;|	    &    26   38         F    46   70        f    66   102
+;|	    '    27   39         G    47   71        g    67   103
+;|	    (    28   40         H    48   72        h    68   104
+;|	    )    29   41         I    49   73        i    69   105
+;|	    Reserved             J    4A   74        j    6A   106
+;|	    +    2B   43         K    4B   75        k    6B   107
+;|	    Reserved             L    4C   76        l    6C   108
+;|	    -    2D   45         M    4D   77        m    6D   109
+;|	    .    2E   46         N    4E   78        n    6E   110
+;|	    /    2F   47         O    4F   79        o    6F   111
+;|	    0    30   48         P    50   80        p    70   112
+;|	    1    31   49         Q    51   81        q    71   113
+;|	    2    32   50         R    52   82        r    72   114
+;|	    3    33   51         S    53   83        s    73   115
+;|	    4    34   52         T    54   84        t    74   116
+;|	    5    35   53         U    55   85        u    75   117
+;|	    6    36   54         V    56   86        v    76   118
+;|	    7    37   55         W    57   87        w    77   119
+;|	    8    38   56         X    58   88        x    78   120
+;|	    9    39   57         Y    59   89        y    79   121
+;|	    :    3A   58         Z    5A   90        z    7A   122
+;|	    ;    3B   59         [    5B   91        {    7B   123
+;|	    <    3C   60         Reserved            |    7C   124
+;|	    =    3D   61         ]    5D   93        }    7D   125
+;|	    >    3E   62         Reserved            Reserved
+;|	    ?    3F   63         _    5F   95        --------
+;|	
+;|	                                    Page 15
+;|	 6.1 Character Definitions
+;|	          (continued)
+;|	
+;|	
+;|	                    TABLE 3 - CHARACTER SYMBOL TABLE
+;|	
+;|	 A       Status symbol; Yes; Data Valid; Warning Flag Clear; Auto
+;|	 a       Alphabet character variable A through Z or a through z
+;|	 B       Bars (pressure, 1000 Mb equal 1 Std. Atm.); Bottom
+;|	 C       Celsius (Degrees); Course-up
+;|	 c       Valid characters; Calculating
+;|	 D       Degrees (of Arc)
+;|	 E       Error; East; Engine
+;|	 F       Fathoms
+;|	 f       Feet
+;|	 G       Great Circle; Green
+;|	 g       Good
+;|	 H       Compass Heading; Head-up; Hertz; Humidity
+;|	 h       Hours; HEX number
+;|	 I       Inches
+;|	 J       Input operation completed
+;|	 K       Kilometers; Km/hour
+;|	 k       Kilograms
+;|	 L       Left; Local; Lost Target
+;|	 l       Latitude; Liters; Liters/second
+;|	 M       Meters; Meters/second; Magnetic; Manual; Cubic Meters
+;|	 m       Minutes; message
+;|	 N       Nautical miles; Knots; North; North-up; Newtons
+;|	 n       Numeral; address
+;|	 P       Purple; Proprietary (only when following "$"); Position
+;|	         sensor; Percent
+;|	 Q       Query; Target-Being-Acquired
+;|	 R       Right; Rhumb line; Red; Relative; Reference; RADAR Tracking
+;|	 S       South; Statue miles; Statute miles/hour; Shaft
+;|	 s       Seconds
+;|	 T       Time difference; True; Track; Tracked-Target
+;|	 t       Test
+;|	 U       Dead Reckoning Estimate
+;|	 u       Sign, if minus "-" (HEX 2D)
+;|	 V       Data invalid; No; Warning Flag Set; Manual
+;|	 W       West; Water
+;|	 x       Numeric Character variable
+;|	 y       Longitude
+;|	 Z       Time
+;|	
+;|	                                    Page 16
+;|	 6.2 Field Definitions
+;|	
+;|	                    TABLE 4 - TALKER IDENTIFIER MNEMONICS
+;|	                            (Address Characters 1 and 2)
+;|	
+;|	        TALKER DEVICE                                        IDENTIFIER
+;|	
+;|	        AUTOPILOT:              General                         *AG
+;|	                                Magnetic                         AP
+;|	        COMMUNICATIONS:         Digital Selective Calling (DSC) *CD
+;|	                                Satellite                       *CS
+;|	                                Radio-Telephone (MF/HF)         *CT
+;|	                                Radio-Telephone (VHF)           *CV
+;|	                                Scanning Receiver               *CX
+;|	        DECCA Navigation                                         DE
+;|	        Direction Finder                                        *DF
+;|	        Electronic Chart Display & Information System (ECDIS)    EC
+;|	        Emergancy Position Indicating Beacon (EPIRB)            *EP
+;|	        Engineroom Monitoring Systems                            ER
+;|	        Global Positioning System (GPS)                          GP
+;|	        HEADING SENSORS:        Compass, Magnetic               *HC
+;|	                                Gyro, North Seeking             *HE
+;|	                                Gyro, Non-North Seeking          HN
+;|	        Integrated Instrumentation                               II
+;|	        Integrated Navigation                                    IN
+;|	        LORAN:                  Loran-A                          LA
+;|	                                Loran-C                          LC
+;|	        OMEGA Navigation System                                  OM
+;|	        Proprietary Code                                         P
+;|	        Radar and/or ARPA                                       *RA
+;|	        Sounder, depth                                          *SD
+;|	        Electronic positioning system, other/general             TR
+;|	        Sounder, scanning                                        SS
+;|	        Turn Rate Indicator                                     *TI
+;|	        TRANSIT Navigation System                                TR
+;|	        VELOCITY SENSORS:       Doppler, other/general          *VD
+;|	                                Speed Log, Water, Magnetic       VM
+;|	                                Speed Log, Water, Mechanical     VW
+;|	        TRANSDUCER                                               YX
+;|	        TIMEKEEPERS, TIME/DATE: Atomic Clock                     ZA
+;|	                                Chronometer                      ZC
+;|	                                Quartz                           ZQ
+;|	                                Radio Update, WWV or WWVH        ZV
+;|	        Weather Instruments                                      WI
+;|	
+;|	
+;|	*
+;|	 Designated by I.E.C. for use with I.M.O. marine electronic
+;|	 devices. This is the minimum requirement for equipment that is
+;|	 specified by I.M.O. to meet S.O.L.A.S. regulations.
+;|	
+;|	                                    Page 17
+;|	 6.2 Field Definitions
+;|	       (continued)
+;|	
+;|	                    TABLE 5 - APPROVED SENTENCE FORMATTERS
+;|	
+;|	        AAM - Waypoint Arrival Alarm............................... 22
+;|	        ALM - GPS Almanac Data..................................... 22
+;|	        APB - Autopilot Sentence "B"............................... 23
+;|	       *ASD - Autopilot System Data................................ 23
+;|	        BEC - Bearing & Distance to Waypoint, Dead Reckoning....... 23
+;|	        BOD - Bearing, Origin to Destination....................... 24
+;|	        BWC - Bearing & Distance to Waypoint, Great Circle......... 24
+;|	        BWR - Bearing & Distance to Waypoint, Rhumb Line........... 24
+;|	        BWW - Bearing, Waypoint to Waypoint........................ 24
+;|	        DBT - Depth Below Transducer............................... 24
+;|	        DCN - Decca Position....................................... 25
+;|	       *DPT - Depth................................................ 25
+;|	       *FSI - Frequency Set Information............................ 25
+;|	        GGA - Global Positioning System Fix Data................... 26
+;|	        GLC - Geographic Position, Loran-C......................... 26
+;|	        GLL - Geographic Position, Latitude/Longitude.............. 27
+;|	        GSA - GPS DOP and Active Satellites........................ 27
+;|	        GSV - GPS Satellites in View............................... 27
+;|	        GXA - TRANSIT Position..................................... 28
+;|	       *HDG - Heading, Deviation & Variation....................... 28
+;|	       *HDT - Heading, True........................................ 28
+;|	        HSC - Heading Steering Command............................. 28
+;|	        LCD - Loran-C Signal Data.................................. 29
+;|	        MTW - Water Temperature.................................... 29
+;|	       *MWV - Wind Speed and Angle................................. 29
+;|	        OLN - Omega Lane Numbers................................... 29
+;|	       *OSD - Own Ship Data........................................ 30
+;|	        RMA - Recommend Minimum Specific Loran-C Data.............. 30
+;|	        RMB - Recommend Minimum Navigation Information............. 31
+;|	        RMC - Recommend Minimum Specific GPS/TRANSIT Data.......... 31
+;|	       *ROT - Rate of Turn......................................... 32
+;|	       *RPM - Revolutions.......................................... 32
+;|	       *RSA - Rudder Sensor Angle.................................. 32
+;|	       *RSD - RADAR System Data.................................... 32
+;|	        RTE - Routes............................................... 33
+;|	       *SFI - Scanning Frequency Information....................... 33
+;|	        STN - Multiple Data ID..................................... 34
+;|	        TRF - TRANSIT Fix Data..................................... 34
+;|	       *TTM - Tracked Target Message............................... 35
+;|	       *VBW - Dual Ground/Water Speed.............................. 35
+;|	        VDR - Set and Drift........................................ 35
+;|	        VHW - Water Speed and Heading.............................. 35
+;|	        VLW - Distance Traveled through the Water.................. 36
+;|	
+;|	                                    Page 18
+;|	 6.2 Field Definitions
+;|	       (continued)
+;|	
+;|	        VPW - Speed, Measured Parallel to Wind..................... 36
+;|	        VTG - Track Made Good and Ground Speed..................... 36
+;|	        WCV - Waypoint Closure Velocity............................ 36
+;|	        WNC - Distance, Waypoint to Waypoint....................... 36
+;|	        WPL - Waypoint Loacation................................... 36
+;|	        XDR - Transducer Measurements.............................. 37
+;|	        XTE - Cross-Track Error, Measured.......................... 37
+;|	        XTR - Cross-Track Error, Dead Reckoning.................... 38
+;|	        ZDA - Time & Date.......................................... 38
+;|	        ZFO - UTC & Time from Origin Waypoint...................... 38
+;|	        ZTG - UTC & Time to Destination Waypoint................... 38
+;|	
+;|	                                    Page 19
+;|	 6.2 Field Definitions
+;|	       (continued)
+;|	
+;|	                    TABLE 6 - FIELD TYPE SUMMARY
+;|	
+;|	 Field Type              Symbol                   Definition
+;|	
+;|	 Special Format Fields:
+;|	
+;|	 Status                     A          Single character field:
+;|	                                       A = Yes, Data Valid, Warning Flag Clear
+;|	                                       V = No, Data Invalid, Warning Flag Set
+;|	
+;|	 Latitude                   llll.ll    Fixed/Variable length field:
+;|	                                       degreed|minutes.decimal - 2 fixed digits
+;|	                                       of degrees, 2 fixed digits of minutes
+;|	                                       and a variable number of digits for
+;|	                                       decimal-fraction of minutes. Leading
+;|	                                       zeros always included for degrees and
+;|	                                       minutes to maintain fixed length. The
+;|	                                       decimal point and associated decimal-
+;|	                                       fraction are optional if full resolution
+;|	                                       is not required.
+;|	
+;|	 Longitude                 yyyyy.yy    Fixed/Variable length field:
+;|	                                       degreed|minutes.decimal - 3 fixed digits
+;|	                                       of degrees, 2 fixed digits of minutes
+;|	                                       and a variable number of digits for
+;|	                                       decimal-fraction of minutes. Leading
+;|	                                       zeros always included for degrees and
+;|	                                       minutes to maintain fixed length. The
+;|	                                       decimal point and associated decimal-
+;|	                                       fraction are optional if full resolution
+;|	                                       is not required.
+;|	
+;|	 Time                     hhmmss.ss    Fixed/Variable length field:
+;|	                                       hours|minutes|seconds.decimal - 2 fixed
+;|	                                       digits of hours, 2 fixed digits of
+;|	                                       minutes, 2 fixed digits of seconds and a
+;|	                                       variable number of digits for decimal-
+;|	                                       fraction of seconds. Leading zeros
+;|	                                       always included for hours, minutes and
+;|	                                       seconds to maintain fixed length. The
+;|	                                       decimal point and associated decimal-
+;|	                                       fraction are optional if full resolution
+;|	                                       is not required.
+;|	
+;|	                                    Page 20
+;|	 6.2 Field Definitions
+;|	       (continued)
+;|	
+;|	                    TABLE 6 - FIELD TYPE SUMMARY
+;|	                               (continued)
+;|	
+;|	 Field Type              Symbol                   Definition
+;|	
+;|	 Defined field                         Some fileds are specified to contain
+;|	                                       pre-defined constants, most often alpha
+;|	                                       characters. Such a field is indicated
+;|	                                       in this standard by the presence of one
+;|	                                       or more valid characters. Excluded from
+;|	                                       the list of allowable characters are the
+;|	                                       following which are used to indicate
+;|	                                       field types within this standard:
+;|	                                       "A", "a", "c", "hh", "hhmmss.ss",
+;|	                                       "llll.ll", "x", "yyyyy.yy"
+;|	
+;|	 Numeric Value Fields:
+;|	 Variable numbers              x.x     Variable length integer or floating
+;|	                                       numeric field. optional leading and
+;|	                                       trailing zeros. The decimal point and
+;|	                                       associated decimal-fraction are optional
+;|	                                       if full resolution is not required.
+;|	                                       (example: 73.10 = 73.1 = 073.1 = 73)
+;|	
+;|	 Fixed HEX field               hh__    Fixed length HEX numbers only, MSB
+;|	                                       on the left
+;|	
+;|	 Information Fields:
+;|	 Variable text                 c--c    Variable length valid character field.
+;|	
+;|	 Fixed alpha field             aa__    Fixed length field of upper-case or
+;|	                                       lower case alpha characters
+;|	
+;|	 Fixed number field            xx__    Fixed length field of numeric characters
+;|	
+;|	 Fixed text field              cc__    Fixed length field of valid characters
+;|	
+;|	
+;|	NOTES:
+;|	
+;|	1. Spaces may only be used in variable text fields.
+;|	
+;|	2. A negative sign "-" (HEX 2D) is the first character in a Filed if
+;|	   the value is negative. The sign is omitted if value is positive.
+;|	
+;|	3. Units of measure fields are appropriate characters from the Symbol
+;|	   Table (table 3) unless a specific unit of measure is indicated.
+;|	
+;|	                                    Page 21
+;|	 6.3 Approved Sentences
+;|	
+;|	                 General format of printed sentence information:
+;|	
+;|	                 {mnemonic} - {name}
+;|	                              {definition paragraph}
+;|	
+;|	                              $--{sentence}
+;|	                               |     |
+;|	                               |     +-{field descriptions}
+;|	                               +-------Start of sentence and Talker ID
+;|	
+;|	*
+;|	 Designated by I.E.C. for use with I.M.O. marine electronic
+;|	 devices. This is the minimum requirement for equipment that is
+;|	 specified by I.M.O. to meet S.O.L.A.S. regulations.
+;|	
+;|	
+;|	
+;|	 AAM - Waypoint Arrival Alarm
+;|	
+;|	        Status of arrival (entering the arrival circle, or passing the
+;|	        perpendicular of the course line) at waypoint c--c.
+;|	
+;|	     $--AAM,A,A,x.x,N,c--c*hh<CR><LF>
+;|	            | |  |  |  |
+;|	            | |  |  |  +---------------Waypoint ID
+;|	            | |  |  +------------------Units of radius, nautical miles
+;|	            | |  +---------------------Arrival circle radius
+;|	            | +------------------------Status: A = perpendicular passed at waypoint
+;|	            +--------------------------Status: A = arrival circled entered
+;|	
+;|	
+;|	
+;|	 ALM - GPS Almanac Data
+;|	
+;|	        Contains GPS week number, satellite health and the complete almanac
+;|	        data for one satellite. Multiple messages may be transmitted, one
+;|	        for each satellite in the GPS constellation, up to maximum of 32
+;|	        messages.
+;|	
+;|	     $--ALM,x.x,x.x,xx,x.x,hh,hhhh,...
+;|	             |   |  |   |  |   |
+;|	             |   |  |   |  |   +-------e, eccentricity [3]
+;|	             |   |  |   |  +-----------SV health, bits 17-24 of each almanac page [2]
+;|	             |   |  |   +--------------GPS week number [1]
+;|	             |   |  +------------------Satellite PRN number, 01 to 32
+;|	             |   +---------------------Message number
+;|	             +-------------------------Total number of messages
+;|	
+;|	
+;|	        hh,hhhh,hhhh,hhhhhh,hhhhhh,...
+;|	        |   |    |     |      |
+;|	        |   |    |     |      +--------Omega, argument of perigee [3]
+;|	        |   |    |     +---------------SQRT(A), root of semi-major axis [3]
+;|	        |   |    +---------------------OMEGADOT, rate of right ascension [3]
+;|	        |   +--------------------------(sigma) index i, inclination angle [3]
+;|	        +------------------------------t index OA, almanac reference time [3]
+;|	
+;|	
+;|	        hhhhhh,hhhhhh,hhh,hhh*hh<CR><LF>
+;|	          |      |     |   |
+;|	          |      |     |   +-----------a index f1, clock parameter [3]
+;|	          |      |     +---------------a index f0, clock parameter [3]
+;|	          |      +---------------------M index O , mean anomaly [3]
+;|	          +----------------------------(OMEGA) index O, longitude of ascension node[3]
+;|	
+;|	
+;|	                                    Page 22
+;|	  Notes:
+;|	
+;|	    [1] Variable lengh integer, 4-digits maximum. Converted from (10) most
+;|	        significant binary bits of Subframe 1, Word 3. Reference Table 20-I,
+;|	        ICD-GPS-200, Rev. B.
+;|	 
+;|	    [2] Reference paragraph 20.3.3.5.1.3, Table 20-VII and Table 20-VIII, ICD-
+;|	        GPS-200, Rev. B.
+;|	
+;|	    [3] Reference Table 20-VI, ICD-GPS-200, Rev. B for scaling factors and
+;|	        units.
+;|	
+;|	
+;|	
+;|	 APB - Autopilot Sentence "B"
+;|	
+;|	        Commonly used by autopilots this sentence contains navigation
+;|	        receiver warning flag status, cross-track-error, waypoint arriv-
+;|	        al status, initial bearing from origin waypoint to the destina-
+;|	        tion, continuous bearing from present position to destination
+;|	        and recommended heading-to-steer to destination waypoint for the
+;|	        active navigation leg of the journey.
+;|	
+;|	     $--APB,A,A,x.x,a,N,A,A,x.x,a,c--c,...
+;|	            | |  |  | | | |  |  |  |
+;|	            | |  |  | | | |  |  |  +---Destination waypoint ID
+;|	            | |  |  | | | |  |  +-----\M/T Magnetic or True
+;|	            | |  |  | | | |  +--------/Bearing origin to destination
+;|	            | |  |  | | | +------------Status: A = perpendicular passed at waypoint
+;|	            | |  |  | | +--------------Status: A = arrival circle entered
+;|	            | |  |  | +----------------XTE units, nautical miles
+;|	            | |  |  +------------------L/R Direction to steer
+;|	            | |  +---------------------Magnitude of XTE (cross-track-error)
+;|	            | +------------------------Status: V = Loran-C Cycle Lock warning flag
+;|	            |                                  A = OK or not used
+;|	            +--------------------------Status: V = Loran-C Blink or SNR warning
+;|	                                               V = general warning flag for other navigation
+;|	                                                   systems when a reliable fix is not available
+;|	
+;|	
+;|	        x.x,a,x.x,a*hh<CR><LF>
+;|	         |  |  |  |
+;|	         |  |  |  +-------------------\M/T Magnetic or True
+;|	         |  |  +----------------------/Heading-to-steer to destination waypoint
+;|	         |  +-------------------------\M/T Magnetic or True
+;|	         +----------------------------/Bearing, Present position to destination
+;|	
+;|	
+;|	*ASD - Autopilot System Data
+;|	
+;|	        I.M.O. Ref. A342 (IX). Autopilot operating parameters, alarm status
+;|	        commanded course and vessel heading.
+;|	
+;|	        (TO BE DETERMINED)
+;|	
+;|	
+;|	
+;|	 BEC - Bearing & Distance to Waypoint - Dead Reckoning
+;|	
+;|	        Time (UTC) and distance & bearing to, and loacation of, a speci-
+;|	        fied waypoint from the dead-reckoned present position.
+;|	
+;|	     $--BEC,hhmmss.ss,llll.ll,a,...
+;|	              |        |      |
+;|	              |        |      +-------\N/S North or South
+;|	              |        +--------------/Waypoint Latitude
+;|	              +------------------------UTC of observation
+;|	
+;|	
+;|	        yyyyy.yy,a,x.x,T,x.x,M,x.x,N,...
+;|	          |      |  |  |  |  |  |  |
+;|	          |      |  |  |  |  |  |  +--\nautical miles
+;|	          |      |  |  |  |  |  +-----/Distance
+;|	          |      |  |  |  |  +--------\degrees Magnetic
+;|	          |      |  |  |  +-----------/Bearing
+;|	          |      |  |  +--------------\E/W East or West
+;|	          |      |  +-----------------/Waypoint longitude
+;|	          |      +--------------------\N/S North or South
+;|	          +---------------------------/Waypoint latitude
+;|	
+;|	
+;|	        c--c*hh<CR><LF>
+;|	         |
+;|	         +-----------------------------Waypoint ID
+;|	
+;|	
+;|	
+;|	                                    Page 23
+;|	 BOD - Bearing - Origin to Destination
+;|	
+;|	        Bearing angle of the line, calculated at the origin waypoint, extend-
+;|	        ing to the destination waypoint from the origin waypoint for the
+;|	        active navigation leg of the journey.
+;|	
+;|	     $--BOD,x.x,T,x.x,M,c--c,c--c*hh<CR><LF>
+;|	             |  |  |  |  |    |
+;|	             |  |  |  |  |    +--------Origin waypoint ID
+;|	             |  |  |  |  +-------------Destination waypoint ID
+;|	             |  |  |  +---------------\degrees Magnetic
+;|	             |  |  +------------------/Bearing
+;|	             |  +---------------------\degrees True
+;|	             +------------------------/Bearing
+;|	
+;|	
+;|	
+;|	 BWC - Bearing & Distance to Waypoint - Great Circle
+;|	 BWR - Bearing & Distance to Waypoint - Rhumb Line
+;|	
+;|	        Time (UTC) and distance & bearing to, and location of, a specified
+;|	        waypoint from present position. '$--BWR' data is calculated along the
+;|	        rhumb line from present position rather than along the great circle
+;|	        path.
+;|	
+;|	     $--BWC,hhmmss.ss,llll.ll,a,...
+;|	              |        |      |
+;|	              |        |      +-------\N/S North or South
+;|	              |        +--------------/Waypoint latitude
+;|	              +------------------------UTC of observation
+;|	
+;|	
+;|	        yyyyy.yy,a,x.x,T,x.x,M,x.x,N,...
+;|	          |      |  |  |  |  |  |  |
+;|	          |      |  |  |  |  |  |  +--\nautical miles
+;|	          |      |  |  |  |  |  +-----/Distance
+;|	          |      |  |  |  |  +--------\degrees Magnetic
+;|	          |      |  |  |  +-----------/Bearing
+;|	          |      |  |  +--------------\degrees True
+;|	          |      |  +-----------------/Bearing
+;|	          |      +--------------------\E/W East or West
+;|	          +---------------------------/longitude
+;|	
+;|	        c--c*hh<CR><LF>
+;|	         |
+;|	         +-----------------------------Waypoint ID
+;|	
+;|	
+;|	
+;|	     $--BWR,hhmmss.ss,llll.ll,a,...
+;|	              |        |      |
+;|	              |        |      +-------\N/S North or South
+;|	              |        +--------------/Waypoint latitude
+;|	              +------------------------UTC of observation
+;|	
+;|	
+;|	        yyyyy.yy,a,x.x,T,x.x,M,x.x,N,...
+;|	          |      |  |  |  |  |  |  |
+;|	          |      |  |  |  |  |  |  +--\nautical miles
+;|	          |      |  |  |  |  |  +-----/Distance
+;|	          |      |  |  |  |  +--------\degrees Magnetic
+;|	          |      |  |  |  +-----------/Bearing
+;|	          |      |  |  +--------------\degrees True
+;|	          |      |  +-----------------/Bearing
+;|	          |      +--------------------\E/W East or West
+;|	          +---------------------------/longitude
+;|	
+;|	        c--c*hh<CR><LF>
+;|	         |
+;|	         +-----------------------------Waypoint ID
+;|	
+;|	
+;|	
+;|	
+;|	 BWW - Bearing - Waypoint to Waypoint
+;|	
+;|	        Bearing angle of the line, between the "TO" and the "FROM" waypoints,
+;|	        calculated at the "FROM" waypoint for any two arbitrary waypoints.
+;|	
+;|	     $--BWW,x.x,T,x.x,M,c--c,c--c*hh<CR><LF>
+;|	             |  |  |  |  |    |
+;|	             |  |  |  |  |    +--------FROM waypoint ID
+;|	             |  |  |  |  +-------------TO   waypoint ID
+;|	             |  |  |  +---------------\degrees Magnetic
+;|	             |  |  +------------------/Bearing
+;|	             |  +---------------------\degrees True
+;|	             +------------------------/Bearing
+;|	
+;|	
+;|	
+;|	 DBT - Depth Below Transducer
+;|	
+;|	        Water depth referenced to the transducer.
+;|	
+;|	     $--DBT,x.x,f,x.x,M,x.x,F*hh<CR><LF>
+;|	             |  |  |  |  |  |
+;|	             |  |  |  |  |  +---------\Fathoms
+;|	             |  |  |  |  +------------/Water depth
+;|	             |  |  |  +---------------\Meters
+;|	             |  |  +------------------/Water depth
+;|	             |  +---------------------\feet
+;|	             +------------------------/Water depth
+;|	
+;|	
+;|	
+;|	                                    Page 24
+;|	  DCN - Decca Position
+;|	
+;|	        Status and lines-of-position for a specified Decca chain.
+;|	
+;|	     $--DCN,xx,cc,x.x,A,cc,x.x,A,...
+;|	            |  |   |  | |   |  |
+;|	            |  |   |  | |   |  +------\
+;|	            |  |   |  | |   +----------GREEN
+;|	            |  |   |  | +-------------/
+;|	            |  |   |  +---------------\       Status: Red-Master line, A = valid
+;|	            |  |   +-------------------RED   :Red Line of position (LOP)
+;|	            |  +----------------------/       Red Zone identifier, number-letter
+;|	            +--------------------------Decca Chain identifier
+;|	
+;|	
+;|	        cc,x.x,A,A,A,A,x.x,N,x*hh<CR><LF>
+;|	        |   |  | | | |  |  | |
+;|	        |   |  | | | |  |  | +---------Fix Data Basis [1]
+;|	        |   |  | | | |  |  +----------\nautical miles
+;|	        |   |  | | | |  +-------------/Position uncertainty
+;|	        |   |  | | | +-----------------Purple-line navigation use, A = valid
+;|	        |   |  | | +-------------------Green -line navigation use, A = valid
+;|	        |   |  | +---------------------Red   -line navigation use, A = valid
+;|	        |   |  +----------------------\
+;|	        |   +--------------------------PURPLE
+;|	        +-----------------------------/
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Fix Data Basis: 1 = Normal pattern
+;|	                        2 = Lane identification pattern
+;|	                        3 = Lane identification transmissions
+;|	
+;|	
+;|	
+;|	*DPT - Depth
+;|	
+;|	        I.M.O. Ref. A224(VII). Water depth relative to the transducer and
+;|	        offset of the measuring transducer. Positive offset numbers provide
+;|	        the distance from the transducer to the waterline. Negative offset
+;|	        numbers provide the distance from the transducer to the part oft the
+;|	        keel of interest.
+;|	
+;|	     $--DPT,x.x,x.x*hh<CR><LF>
+;|	             |   |
+;|	             |   +---------------------Offset from transducer [1], meters:"positive" = distance
+;|	             |                                                             from transducer to
+;|	             |                                                             water-line
+;|	             |                                                            "-" = distance from
+;|	             |                                                             transducer to keel
+;|	             +-------------------------Depth, meters
+;|	
+;|	
+;|	 Motes:
+;|	
+;|	*   [1] For I.E.C applications the offset shall always be applied so as to
+;|	*       provide depth relative to the keel.
+;|	
+;|	
+;|	
+;|	*FSI - Frequency Set Information
+;|	
+;|	        This sentence is used to set frequency, mode of operation and trans-
+;|	        mitter power level of a radiotelephone; to read out frequencies, mode
+;|	        and power ant to acknowledge setting commands.
+;|	
+;|	     $--FSI,xxxxxx,xxxxxx,c,x+hh<CR><LF>
+;|	              |      |    | |
+;|	              |      |    | +----------Power level, 0 = Standby; 1 = lowest; 9 = highest
+;|	              |      |    +------------Mode of operation [1]
+;|	              |      +-----------------Receiving    frequency [2][3]
+;|	              +------------------------Transmitting frequency [2][3]
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Mode of operation:
+;|	        d = F3E/G3E simplex, telephone                  w = F1B/J2B, teleprinter/DSC
+;|	        e = F3E/G3E  duplex, telephone                  x = A1A Morse, tape recorder
+;|	        m = J3E            , telephone                  { = A1A Morse, morse key/head set
+;|	        o = H3E            , telephone                  | = F1C/F2C/F3C, FAX-machine
+;|	        q = F1B/J2B FEC NBDP, TELEX/teleprinter     null for no information
+;|	        s = F1B/J2B ARQ NBDP, TELEX/teleprinter
+;|	        t = F1B/J2B receive only, teleprinter/DSC
+;|	
+;|	                                    Page 25
+;|	     [2] Frequencies to be in 100 Hz increments.
+;|	        MF/HF telephone channels to have first digit 3 followed by ITU channel
+;|	        numbers with leading zeros as required.
+;|	        MF/HF teletype channels to have first digit 4; the second ans
+;|	        third digit frequency bands; and the fourth to sixth digits ITU channel
+;|	        numbers; each with leading zeros as required.
+;|	        VHF channels to have the first digit 9 followed by channel numbers
+;|	        with leading zeros as required
+;|	
+;|	    [3] For paired frequencies zhe transmitting frequency only need to be in-
+;|	        cluded; null for receiving frequency field. For receive frequency only,
+;|	        the transmitting frequency field shall be null.
+;|	
+;|	
+;|	
+;|	 GGA - Global Positioning System Fix Data
+;|	
+;|	        Time, position and fix related data for a GPS receiver.
+;|	
+;|	
+;|	     $--GGA,hhmmss.ss,llll.ll,a,...
+;|	                 |      |     |
+;|	                 |      |     +-------\N/S North or South
+;|	                 |      +-------------/Latitude
+;|	                 +---------------------UTC of position
+;|	
+;|	
+;|	        yyyyy.yy,a,x,xx,x.x,x.x,M,...
+;|	          |      | | |   |   |  |
+;|	          |      | | |   |   |  +-----\Units of antenna altitude, meters
+;|	          |      | | |   |   +--------/Antenna altitude above/below mean-sea-level (geoid)
+;|	          |      | | |   +-------------Horizontal dilution of precision
+;|	          |      | | +-----------------Number of satellites in use, 00-12,
+;|	          |      | |                   may be different from the number in view
+;|	          |      | +-------------------GPS quality indicator [1]
+;|	          |      +--------------------\E/W East or West
+;|	          +---------------------------/Longitude
+;|	
+;|	
+;|	        x.x,M,x.x,xxxx*hh<CR><LF>
+;|	         |  |  |   |
+;|	         |  |  |   +-------------------Differential reference station ID, 0000-1023
+;|	         |  |  +-----------------------Age of Differential GPS data [2]
+;|	         |  +-------------------------\Units of geoidal seperation, meters
+;|	         +----------------------------/Geoidal seperation [3]
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] GPS quality indicator: 0 = fix not available or invalid
+;|	                               1 = GPS fix
+;|	                               2 = Differential GPS fix
+;|	
+;|	    [2] Time in seconds since last SC104 Type 1 or 9 update, null
+;|	        field when DGPS is not used
+;|	
+;|	    [3] Geoidal Seperation: the difference between the WGS-84 earth
+;|	        ellipsoid and mean-sea-level (geoid), "-" = mean-sea-level below
+;|	        ellipsoid.
+;|	
+;|	
+;|	
+;|	 GLC - Geographic Position - Loran-C
+;|	
+;|	        Loran-C GRI, status and Time Difference (TD) lines of position for
+;|	        present vessel position.
+;|	
+;|	     $--GLC,xxxx,x.x,a,x.x,a,x.x,a,...
+;|	             |    |  |  |  |  |  |
+;|	             |    |  |  |  |  |  +----\
+;|	             |    |  |  |  |  +-------/TD2 [2]
+;|	             |    |  |  |  +----------\
+;|	             |    |  |  +-------------/TD1 [2]
+;|	             |    |  +----------------\microseconds
+;|	             |    +-------------------/Master TOA [1]
+;|	             +-------------------------GRI, microseconds/10
+;|	
+;|	
+;|	        x.x,a,x.x,a,x.x,a*hh<CR><LF>
+;|	         |  |  |  |  |  |
+;|	         |  |  |  |  |  +-------------\Signal Status, in order of priority:
+;|	         |  |  |  |  |                   B = blink warning
+;|	         |  |  |  |  |                   C = cycle warning
+;|	         |  |  |  |  |                   S = SNR   warning
+;|	         |  |  |  |  |                   A = valid
+;|	         |  |  |  |  +----------------/TD5 microseconds
+;|	         |  |  |  +-------------------\
+;|	         |  |  +----------------------/TD4 [2]
+;|	         |  +-------------------------\
+;|	         +----------------------------/TD3 [2]
+;|	
+;|	
+;|	                                    Page 26
+;|	  Notes:
+;|	
+;|	    [1] Master TOA provides for direct ranging operation. It may be the
+;|	        actual range to Master in microseconds or be offset and
+;|	        track the arrival of the Master signal.
+;|	
+;|	    [2] Time difference numbers are in the Loran-C Coding Delay order
+;|	        with null fields used when values are unavailable.
+;|	
+;|	
+;|	
+;|	 GLL - Geographic Position - Latitude/Longitude
+;|	
+;|	
+;|	        Latitude and Longitude of present vessel position, time of position
+;|	        fix and status.
+;|	
+;|	     $--GLL,llll.ll,a,yyyyy.yy,a,hhmmss.ss,...
+;|	              |     |   |      |   |
+;|	              |     |   |      |   +---UTC of position
+;|	              |     |   |      +------\E/W East or West
+;|	              |     |   +-------------/Longitude
+;|	              |     +-----------------\N/S North or South
+;|	              +-----------------------/Latitude
+;|	
+;|	
+;|	        A*hh<CR><LF>
+;|	        |
+;|	        +------------------------------Status: A = Data valid
+;|	
+;|	
+;|	
+;|	 GSA - GPS DOP and Active Satellites
+;|	
+;|	        GPS receivers operating mode, satellites used for navigation and
+;|	        DOP values.
+;|	
+;|	     $--GSA,a,x,xx,xx,xx,xx,xx,xx,xx,...
+;|	            | | |  |  |  |  |  |  |
+;|	            | | |  |  |  |  |  |  +---|
+;|	            | | |  |  |  |  |  +------|
+;|	            | | |  |  |  |  +---------|
+;|	            | | |  |  |  +------------|
+;|	            | | |  |  +---------------|
+;|	            | | |  +------------------|PRN numbers of satellites used in
+;|	            | | +---------------------/solution (null for unused fileds)
+;|	            | +------------------------Mode: 1 = Fix not available
+;|	            |                                2 = 2D
+;|	            |                                3 = 3D
+;|	            +--------------------------Mode: M = Manual, forced to operate in 2D or 3D mode
+;|	                                             A = Automatic, allowed to automatically switch 2D/3D
+;|	
+;|	
+;|	        xx,xx,xx,xx,xx,x.x,x.x,x.x*hh<CR><LF>
+;|	        |  |  |  |  |   |   |   |
+;|	        |  |  |  |  |   |   |   +------VDOP
+;|	        |  |  |  |  |   |   +----------HDOP
+;|	        |  |  |  |  |   +--------------PDOP
+;|	        |  |  |  |  +-----------------\
+;|	        |  |  |  +--------------------|
+;|	        |  |  +-----------------------|
+;|	        |  +--------------------------|
+;|	        +-----------------------------|
+;|	
+;|	
+;|	
+;|	 GSV - GPS Satellites in View
+;|	
+;|	        Number of SVs in view, PRN numbers, elevation, azimuth and SNR value.
+;|	        Four satellites maximum per transmission, additional satellite data
+;|	        sent in second or third message. Total number of messages being
+;|	        transmitted and the number of the message being transmitted is indi-
+;|	        cated in the first two fields.
+;|	
+;|	     $--GSV,x,x,xx,xx,xx,xxx,xx __________ ...
+;|	            | | |  |  |   |  |      |
+;|	            | | |  |  |   |  |      |
+;|	            | | |  |  |   |  |      +-2nd - 3rd SV [2]
+;|	            | | |  |  |   |  |
+;|	            | | |  |  |   |  +--------\SNR (C/No) 00-99 dB, null when not tracking
+;|	            | | |  |  |   +-----------|Azimuth,   degrees True, 000 to 359
+;|	            | | |  |  +---------------|Elevation, degrees, 90 deg maximum
+;|	            | | |  +------------------/Satellite PRN number
+;|	            | | +----------------------Total number of satellites in view
+;|	            | +------------------------Message number, 1 to 3   [1]
+;|	            +--------------------------Total number of messages [1]
+;|	
+;|	
+;|	        xx,xx,xxx,xx*hh<CR><LF>
+;|	        |  |   |  |
+;|	        |  |   |  +-------------------\
+;|	        |  |   +----------------------|
+;|	        |  +--------------------------|
+;|	        +-----------------------------/4th SV       [2]
+;|	
+;|	
+;|	                                    Page 27
+;|	  Notes:
+;|	
+;|	    [1] Satellite information may require the transmission of multiple messages.
+;|	        The first field specifies the total number of messages, minimum value 1.
+;|	        The second field identifies the order of this message (message number),
+;|	        minimum value 1.
+;|	
+;|	    [2] A variable number of 'PRN-Elevation-Azimuth-SNR' sets are allowed up to
+;|	        a maximum of four sets per message. Null fields are not required for
+;|	        unused sets when less than four sets are transmitted.
+;|	
+;|	
+;|	
+;|	 GXA - TRANSIT Position
+;|	
+;|	        Location and time of TRANSIT fix at waypoint "c--c":
+;|	
+;|	     $--GXA,hhmmss.ss,llll.ll,a,...
+;|	              |         |     |
+;|	              |         |     +-------\N/S North or South
+;|	              |         +-------------/Latitude
+;|	              +------------------------UTC of position fix
+;|	
+;|	
+;|	        yyyyy.yy,a,c--c,x*hh<CR><LF>
+;|	          |      |  |   |
+;|	          |      |  |   +--------------Satellite number
+;|	          |      |  +------------------Waypoint ID
+;|	          |      +--------------------\E/W East or West
+;|	          +---------------------------/Longitude
+;|	
+;|	
+;|	
+;|	*HDG - Heading, Deviation & Variation
+;|	
+;|	        I.M.O. Ref. A382 (X). Heading (magnetic sensor reading), which if
+;|	        corrected for deviation, will produce Magnetic heading, which if
+;|	        offset by variation will provide True heading.
+;|	
+;|	     $--HDG,x.x,x.x,a,x.x,a*hh<CR><LF>
+;|	             |   |  |  |  |
+;|	             |   |  |  |  +-----------\E/W East or West [2] [3]
+;|	             |   |  |  +--------------/Magnetic variation, degrees
+;|	             |   |  +-----------------\E/W East or West [1] [3]
+;|	             |   +--------------------/Magnetic deviation, degrees
+;|	             +-------------------------Magnetic sensor heading, degrees
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] To obtain Magnetic heading:
+;|	        Add      Easterly deviation (E) to   Magnetic Sensor Reading
+;|	        Subtract Westerly deviation (W) from Magnetic Sensor Reading
+;|	
+;|	    [2] To obtain True Heading:
+;|	        Add      Easterly variation (E) to   Magnetic Heading
+;|	        Subtract Westerly variation (W) from Magnetic Heading
+;|	
+;|	    [3] Variation and deviation fields will be null fields if unknown.
+;|	
+;|	
+;|	
+;|	*HDT - Heading - True
+;|	
+;|	        I.M.O. Ref. A424 (XI). Actual vessel heading in degrees True pro-
+;|	        duced by any device or system producing true heading.
+;|	
+;|	     $--HDT,x.x,T*hh<CR><LF>
+;|	             |  |
+;|	             |  +---------------------\True
+;|	             +------------------------/Heading, degrees
+;|	
+;|	
+;|	
+;|	 HSC - Heading Steering Command
+;|	
+;|	        Command heading to steer vessel.
+;|	
+;|	     $--HSC,x.x,T,x.x,M*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\Magnetic
+;|	             |  |  +------------------/Commanded heading, degrees
+;|	             |  +---------------------\True
+;|	             +------------------------/Commanded heading, degrees
+;|	
+;|	
+;|	                                    Page 28
+;|	  LCD - Loran-C Signal Data
+;|	
+;|	        Signal-to-Noise ratio and pulse shape (ECD) data for Loran-C
+;|	        signals.
+;|	
+;|	     $--LCD,xxxx,xxx,xxx,xxx,xxx,...
+;|	             |    |   |   |   |
+;|	             |    |   |   |   +-------\
+;|	             |    |   |   +-----------/S1 [1]
+;|	             |    |   +---------------\
+;|	             |    +-------------------/Master
+;|	             +-------------------------GRI, microseconds/10
+;|	
+;|	
+;|	        xxx,xxx,xxx,xxx,xxx,xxx,...
+;|	         |   |   |   |   |   |
+;|	         |   |   |   |   |   +--------\
+;|	         |   |   |   |   +------------/S4 [1]
+;|	         |   |   |   +----------------\
+;|	         |   |   +--------------------/S3 [1]
+;|	         |   +------------------------\
+;|	         +----------------------------/S2 [1]
+;|	
+;|	
+;|	        xxx,xxx*hh<CR><LF>
+;|	         |   |
+;|	         |   +------------------------\Secondary5 [1] Relative ECD, 000 to +-999
+;|	         +----------------------------/Secondary5 [1] Relative SNR, 000 to   999
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Data is in the Loran-C Coding Delay order with null fields used
+;|	        when values are unavailable.
+;|	
+;|	
+;|	
+;|	 MTW - Water Temperature
+;|	
+;|	        Water temperature.
+;|	
+;|	     $--MTW,x.x,C*hh<CR><LF>
+;|	             |  |
+;|	             |  +---------------------\degrees C
+;|	             +------------------------/Temperature
+;|	
+;|	
+;|	
+;|	*MWV - Wind Speed and Angle
+;|	
+;|	        When the Reference Field is set to Relative, data is provded giving
+;|	        the wind angle in relation to the vessel's headig and wind speed,
+;|	        both relative to the (moving) vessel.
+;|	        When the Reference Field is set to True, data is provided giving the
+;|	        wind angle relative to the vessel's heading and wind speed, both with
+;|	        reference to the (moving) water. True wind is the vector sum of the
+;|	        Relative (Apparent) wind vector and the vessel's velocity vector
+;|	        along the heading line of the vessel. It represents the wind at the
+;|	        vessel if it were stationary relative to the water and heading in the
+;|	        same direction.
+;|	
+;|	     $--MWV,x.x,a,x.x,a,A*hh<CR><LF>
+;|	             |  |  |  | |
+;|	             |  |  |  | +--------------Status, A = Data Valid
+;|	             |  |  |  +---------------\Wind speed units, K/M/N
+;|	             |  |  +------------------/Wind speed
+;|	             |  +---------------------\Reference: R = Relative
+;|	             |                                    T = True
+;|	             +------------------------/Wind angle, 0 to 360 degrees
+;|	
+;|	
+;|	
+;|	 OLN - Omega Lane Numbers
+;|	
+;|	        Omega Lines of Positions (LOPs).
+;|	
+;|	     $--OLN,aa,xxx,xxx,aa,xxx,xxx,...
+;|	            |   |   |  |   |   |
+;|	            |   |   |  |   |   +------\
+;|	            |   |   |  |   +----------|
+;|	            |   |   |  +--------------/pair 2
+;|	            |   |   +-----------------\
+;|	            |   +---------------------|
+;|	            +-------------------------/pair 1
+;|	
+;|	
+;|	        aa,xxx,xxx*hh<CR><LF>
+;|	        |   |   |
+;|	        |   |   +---------------------\Centilane number
+;|	        |   +-------------------------|Lane number
+;|	        +-----------------------------/pair 3, AB-GH
+;|	
+;|	
+;|	                                    Page 29
+;|	 *OSD - Own Ship Data
+;|	
+;|	        I.M.O. Ref. A477 (XII). Heading, course, speed, set and drift sum-
+;|	        mary. Useful for, but not limited to RADAR/ARPA applications.
+;|	
+;|	     $--OSD,x.x,A,x.x,a,x.x,a,...
+;|	             |  |  |  |  |  |
+;|	             |  |  |  |  |  +---------\Speed  Reference, B/M/W/R/P [1]
+;|	             |  |  |  |  +------------/Vessel speed
+;|	             |  |  |  +---------------\Course Reference, B/M/W/R/P [1]
+;|	             |  |  +------------------/Vessel Course, degrees True
+;|	             |  +---------------------\Heading Status: A = Data valid
+;|	             +------------------------/Heading, degrees True
+;|	
+;|	
+;|	        x.x,x.x,a*hh<CR><LF>
+;|	         |   |  |
+;|	         |   |  +---------------------\Speed units, K/N/S
+;|	         |   +------------------------|Vessel drift (speed)      \ Manually
+;|	         +----------------------------/Vessel set, degrees True  / entered
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Reference system: B = Bottom tracking log
+;|	                          M = Manually entered
+;|	                          W = Water referenced
+;|	                          R = RADAR tracking (of fixed target)
+;|	                          P = Positioning system ground reference
+;|	
+;|	
+;|	
+;|	 RMA - Recommended Minimum Specific Loran-C Data
+;|	
+;|	        Position, course and dpeed data provided by a Loran-C receiver. Time
+;|	        differences A and B are those used in computing latitude/longitude.
+;|	        Checksum is madatory in this entence. This sentence is transmitted
+;|	        at intervals not exceeding 2-seconds and is always accompanied by RMB
+;|	        when a destination waypoint is active. RMA and RMB are the recom-
+;|	        mended minimum data to be provided by a loran receiver. All data
+;|	        fields must be provided, null fields used only when data is tempo-
+;|	        rarily unavailable.
+;|	
+;|	     $--RMA,A,llll.ll,a,yyyyy.yy,a,...
+;|	            |   |     |   |      |
+;|	            |   |     |   |      +----\E/W East or West
+;|	            |   |     |   +-----------/Longitude
+;|	            |   |     +---------------\N/S North or South
+;|	            |   +---------------------/Latitude
+;|	            +--------------------------Status: V = Blink, Cycle or SNR warning
+;|	
+;|	
+;|	        x.x,x.x,x.x,x.x,x.x,a*hh<CR><LF>
+;|	         |   |   |   |   |  | |
+;|	         |   |   |   |   |  | +--------Checksum mandatory for RMA
+;|	         |   |   |   |   |  +---------\E/W East or West
+;|	         |   |   |   |   +------------/Magnetic variation [1], degrees
+;|	         |   |   |   +-----------------Track Made Good, degrees True
+;|	         |   |   +---------------------Speed over ground, knots
+;|	         |   +-------------------------Time difference B, uS
+;|	         +-----------------------------Time difference A, uS
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Easterly variation (E) subtracts from True course
+;|	        Westerly variation (W) adds      to   True course
+;|	
+;|	
+;|	                                    Page 30
+;|	  RMB - Recommended Minimum Navigation Information
+;|	
+;|	        Navigation data from present position to a destination waypoint
+;|	        provided ba a Loran-C, TRANSIT, OMEGA, GPS, DECCA, navigation
+;|	        computer or other integrated navigation system. Checksum is
+;|	        mandatory in this sentence. This semtemce always accompanies RMA or
+;|	        RMC sentences when a destination is active when provided by a Loran-
+;|	        C, TRANSIT or GPS receiver, other systems may transmit $--RMB without
+;|	        $--RMA or $--RMC.
+;|	
+;|	     $--RMB,A,x.x,a,c--c,c--c,...
+;|	            |  |  |  |    |
+;|	            |  |  |  |    +------------Destination waypoint ID
+;|	            |  |  |  +-----------------Origin      waypoint ID
+;|	            |  |  +-------------------\Direction to steer - L/R Left or Right
+;|	            |  +----------------------/Cross track error  - nautical miles [2]
+;|	            +--------------------------Data status: V = Navigation receiver warning
+;|	
+;|	
+;|	        llll.ll,a,yyyyy.yy,a,...
+;|	          |     |   |      |
+;|	          |     |   |      +----------\E/W East or West
+;|	          |     |   +-----------------/Destination wpt. longitude
+;|	          |     +---------------------\N/S North or South
+;|	          +---------------------------/Destination wpt. latitude
+;|	
+;|	
+;|	        x.x,x.x,x.x,A*hh<CR><LF>
+;|	         |   |   |  | |
+;|	         |   |   |  | +----------------Checksum, mandatory for RMB
+;|	         |   |   |  +------------------Arrival status: A = arrivalcircle entered or perpendicular passed
+;|	         |   |   +---------------------Destination closing velocity, knots
+;|	         |   +-------------------------Bearing to destination, degrees True
+;|	         +-----------------------------Range   to destination, nautical miles [1]
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] If range to destination exceeds 999.9  NM, display 999.9
+;|	
+;|	    [2] if cross track error    exceeds   9.99 NM, display   9.99
+;|	
+;|	
+;|	
+;|	 RMC - Recommended Minimum Specific GPS/TRANSIT Data
+;|	
+;|	        Time, date, position, course and speed data provided by a GPS or
+;|	        TRANSIT navigation receiver. Checksum is mandatory in this sen-
+;|	        tence. This sentence is transmitted at intervals not exceeding 2-
+;|	        secondes and is always accompanied by RMB when a destination waypoint
+;|	        is active. RMC and RMB are recommended minimum data to be pro-
+;|	        vided by a GPS or TRANSIT receiver. All data fields must be provid-
+;|	        ed, null fields used only when data is temporarily unavailable.
+;|	
+;|	     $--RMC,hhmmss.ss,A,llll.ll,a,...
+;|	              |       |   |     |
+;|	              |       |   |     +-----\N/S North or South
+;|	              |       |   +-----------/Latitude
+;|	              |       +----------------Status: V = Nav. receiver warning
+;|	              +------------------------UTC of position fix
+;|	
+;|	
+;|	        yyyyy.yy,a,x.x,x.x,xxxxxx,...
+;|	          |      |  |   |    |
+;|	          |      |  |   |    +---------Date: dd|mm|yy
+;|	          |      |  |   +--------------Track made good, degrees True
+;|	          |      |  +------------------Speed over ground, knots
+;|	          |      +--------------------\E/W East or West
+;|	          +---------------------------/Longitude
+;|	
+;|	
+;|	        x.x,a*hh<CR><LF>
+;|	         |  | |
+;|	         |  | +------------------------Checksum, mandatory for RMC
+;|	         |  +-------------------------\E/W East or West [1]
+;|	         +----------------------------/Magnetic variation, degrees
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Easterly variation (E) subtract from True course
+;|	        Westerly variation (W) adds     to   True course
+;|	
+;|	
+;|	
+;|	                                    Page 31
+;|	 *ROT - Rate of Turn
+;|	
+;|	        I.M.O. Ref. A526 (XIII). Rate of turn and direction of turn.
+;|	
+;|	     $--ROT,x.x,A*hh<CR><LF>
+;|	             |  |
+;|	             |  +----------------------Status: A = Data valid
+;|	             +-------------------------Rate of turn, degrees/minute, "-" = bow turns to port
+;|	
+;|	
+;|	
+;|	*RPM - Revolutions
+;|	
+;|	        I.M.O. Ref. (none). Shaft or engine revolution rate and propeller
+;|	        pitch.
+;|	
+;|	     $--RPM,a,x,x.x,x.x,A*hh<CR><LF>
+;|	            | |  |   |  |
+;|	            | |  |   |  +--------------Status: A = Data valid
+;|	            | |  |   +-----------------Propeller pitch, % of max., "-" = astern
+;|	            | |  +---------------------Speed, rev/min, "-" = counter-clockwise
+;|	            | +------------------------Engine or shaft number, numbered from center-
+;|	            |                          line, odd = starboard, even = port, 0 = single
+;|	            |                          or on center-line
+;|	            +--------------------------Source: Shaft/Engine - S/E
+;|	
+;|	
+;|	
+;|	*RSA - Rudder Sensor Angle
+;|	
+;|	        I.M.O. Ref. (none). Relative rudder angle, from rudder angle sensor.
+;|	
+;|	     $--RSA,x.x,A,x.x,A*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\Status A = Valid
+;|	             |  |  +------------------/Port                  rudder sensor [1]
+;|	             |  +---------------------\Status A = Valid
+;|	             +------------------------/Starboard (or single) rudder sensor [1]
+;|	
+;|	
+;|	
+;|	*RSD - RADAR System Data
+;|	
+;|	        I.M.O. Ref. A477 (XII). RADAR screen setting data.
+;|	
+;|	     $--RSD,x.x,x.x,x.x,x.x,x.x,x.x,...
+;|	             |   |   |   |   |   |
+;|	             |   |   |   |   |   +-----Origin2 bearing
+;|	             |   |   |   |   +---------Origin2 range
+;|	             |   |   |   +-------------Bearing Line 1 (EBL1), degrees from 0 deg
+;|	             |   |   +-----------------Variable Range Marker 1 (VRM1), range
+;|	             |   +---------------------Origin1 bearing, degrees from 0 deg
+;|	             +-------------------------Origin1 range  , from own ship
+;|	
+;|	
+;|	        x.x,x.x,x.x,x.x,x.x,a,a*hh<CR><LF>
+;|	         |   |   |   |   |  | |
+;|	         |   |   |   |   |  | +--------Display rotation [1]
+;|	         |   |   |   |   |  +----------Range units, K/N/S
+;|	         |   |   |   |   +-------------Range scale (maximum)
+;|	         |   |   |   +-----------------Cursor bearing, degrees CW from 0 deg.
+;|	         |   |   +---------------------Cursor range, from own ship
+;|	         |   +-------------------------EBL2, degrees
+;|	         +-----------------------------VRM2, range
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Display rotation: C = Course-up, course-over-ground up, degrees True
+;|	                          H = Head  -up, ship's heading (center-line) 0 deg up
+;|	                          N = North -up, True north is 0 deg up
+;|	
+;|	
+;|	
+;|	                                    Page 32
+;|	  RTE - Routes
+;|	
+;|	        Waypoint identifiers, listed in order with starting waypoint first,
+;|	        for the identified route. Two mode of transmission are provided:
+;|	        'c' indicates that the complete list of waypoints in the route are
+;|	        being transmitted; 'w' indicates a working route where the first
+;|	        listed waypoint is always the last waypoint that had been reached
+;|	        (FROM), while the second listed waypoint is always the waypoint that
+;|	        the vessel is currently heading for (TO), the remaining list of
+;|	        waypoints represents the remainder of the route.
+;|	
+;|	     $--RTE,x.x,x.x,a,c--c,c--c,...
+;|	             |   |  |  |    |
+;|	             |   |  |  |    +----------Waypoint identifier
+;|	             |   |  |  +---------------Route identifier
+;|	             |   |  +------------------Message mode: c = complete route, all waypoints
+;|	             |   |                                   w = working route, 1st listed waypoint
+;|	             |   |                                       is 'FROM', 2nd is 'TO' and remain-
+;|	             |   |                                       ing are rest of route
+;|	             |   +---------------------Message number [2]
+;|	             +-------------------------Total   number of messages being transmitted [2]
+;|	
+;|	
+;|	        ______ c--c*hh<CR><LF>
+;|	          |     |
+;|	          |     +----------------------Waypoint 'n' identifier         [1]
+;|	          +----------------------------Additional waypoint identifiers [1]
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] A variable number of waypoint identifiers, up to 'n', may be in
+;|	        included within the limits of allowed sentence length. As there is
+;|	        no specified number of waypoints, null fields are not required for
+;|	        Waypoint Identifier fields.
+;|	
+;|	    [2] A single route may require the transmission of multipe messages.
+;|	        The first field specifies the total number of messages, minimum
+;|	        value = 1. The second field identifies the order of this message
+;|	        (message number), minimum value = 1.
+;|	
+;|	
+;|	
+;|	*SFI - Scanning Frequency Information
+;|	
+;|	        This sentence is used to set frequencies and mode of operation for
+;|	        scanning purposes and to acknowledge setting commands. Scanning
+;|	        frequencies are listed in order of scanning.
+;|	
+;|	        Note:
+;|	        For DSC distress and safety watchkeeping only 6 channels shall be
+;|	        scanned in the same scanning sequence.
+;|	        To indicate a frequency set at the scanning receiver use FSI sen-
+;|	        tence.
+;|	
+;|	     $--SFI,x.x,x.x,xxxxxx,c _______ ...
+;|	             |   |    |    |   |
+;|	             |   |    |    |   +-------2nd - 5th frequency, mode [3]
+;|	             |   |    |    +----------\Mode of operation [1]
+;|	             |   |    +---------------/1st       frequency or ITU channel [2]
+;|	             |   +---------------------Message number [4]
+;|	             +-------------------------Total number of messages being transmitted [4]
+;|	
+;|	
+;|	        xxxxxx,c*hh<CR><LF>
+;|	          |    |
+;|	          |    +----------------------\mode [3]
+;|	          +---------------------------/6th       frequency
+;|	
+;|	
+;|	                                    Page 33
+;|	  Notes:
+;|	
+;|	    [1] Mode of operation:
+;|	        d = F3E/G3E simplex, telephone                  w = F1B/J2B, teleprinter/DSC
+;|	        e = F3E/G3E  duplex, telephone                  x = A1A Morse, tape recorder
+;|	        m = J3E            , telephone                  { = A1A Morse, morse key/head set
+;|	        o = H3E            , telephone                  | = F1C/F2C/F3C, FAX-machine
+;|	        q = F1B/J2B FEC NBDP, TELEX/teleprinter     null for no information
+;|	        s = F1B/J2B ARQ NBDP, TELEX/teleprinter
+;|	        t = F1B/J2B receive only, teleprinter/DSC
+;|	
+;|	    [2] Frequencies to be in 100 Hz increments.
+;|	        MF/HF telephone channels to have first digit 3 followed by ITU
+;|	        channel numbers with leading zeros as required.
+;|	        MF/HF teletype  channels to have first digit 4; the second and
+;|	        third digit frequency bands; and the fourth to sixth digits ITU
+;|	        channel numbers; each with leading zeros as required.
+;|	        VHF channels to have first digit 9 followed by channel number with
+;|	        leading zeros as required.
+;|	
+;|	    [3] A variable number of frequency-mode pair fields are allowed up to a
+;|	        maximum of six pairs. Null fields are not required for unused pairs
+;|	        when less than six pairs are transmitted.
+;|	
+;|	    [4] Scanning frequency information may require the transmision of
+;|	        multiple messages. The first field specifies the total number of
+;|	        messages, minimum value = 1. The second field identifies the order
+;|	        of this message (message number), minimum value = 1.
+;|	
+;|	
+;|	
+;|	 STN - Multiple Data ID
+;|	
+;|	        This sentence is transmitted before each individual sentence where
+;|	        there is a need for the Listener to determine the exact source of
+;|	        data in a system. Examples might include dual-frequency depthsound-
+;|	        ing equipment or equipment that integrates data from a number of
+;|	        sources and produces a single output.
+;|	
+;|	     $--STN,xx*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Talker ID number, 00 to 99
+;|	
+;|	
+;|	
+;|	 TRF - TRANSIT Fix Data
+;|	
+;|	        Time, date, position and information related to a TRANSIT fix.
+;|	
+;|	     $--TRF,hhmmss.ss,xxxxxx,llll.ll,a,...
+;|	              |         |      |     |
+;|	              |         |      |     +\N/S North or South
+;|	              |         |      +------/Latitude
+;|	              |         +--------------Date: dd|mm|yy
+;|	              +------------------------UTC of position fix
+;|	
+;|	
+;|	        yyyyy.yy,a,x.x,x.x,x.x,x.x,...
+;|	          |      |  |   |   |   |
+;|	          |      |  |   |   |   +------Update distance, nautical miles
+;|	          |      |  |   |   +----------Number of Doppler intervals
+;|	          |      |  |   +--------------Number of iterations
+;|	          |      |  +------------------Elevation angle
+;|	          |      +--------------------\E/W East or West
+;|	          +---------------------------/Longitude
+;|	
+;|	
+;|	        xxx,A*hh<CR><LF>
+;|	         |  |
+;|	         |  +--------------------------Data status: warning flag
+;|	         +-----------------------------Satellite ID
+;|	
+;|	
+;|	
+;|	                                    Page 34
+;|	 *TTM - Tracked Target Message
+;|	
+;|	        I.M.O. Ref. A477 (XII). Data associated with a tracked target rela-
+;|	        tive to own ship's position.
+;|	
+;|	     $--TTM,xx,x.x,x.x,a,x.x,x.x,a,...
+;|	            |   |   |  |  |   |  |
+;|	            |   |   |  |  |   |  +----\true/relative - T/R
+;|	            |   |   |  |  |   +-------/Target course, degrees
+;|	            |   |   |  |  +------------Target speed
+;|	            |   |   |  +--------------\true/relative - T/R
+;|	            |   |   +-----------------/Bearing from own ship, degrees
+;|	            |   +----------------------Target distance, from own ship
+;|	            +--------------------------Target number, 00 to 99
+;|	
+;|	
+;|	        x.x,x.x,a,c--c,a,a*hh<CR><LF>
+;|	         |   |  |  |   | |
+;|	         |   |  |  |   | +-------------Reference target = R, null otherwise
+;|	         |   |  |  |   +---------------Target status [1]
+;|	         |   |  |  +-------------------User data (eg. target name)
+;|	         |   |  +----------------------Minutes
+;|	         |   +-------------------------Time to CPA, "-" increasing
+;|	         +-----------------------------Distance of closest-point-of-approach
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Target status: L = Lost, tracked target has been lost
+;|	                       Q = Query, target in the process of acquisition
+;|	                       T = Tracking
+;|	
+;|	
+;|	
+;|	*VBW - Dual Ground/Water Speed
+;|	
+;|	        Water referenced and ground referenced speed data.
+;|	
+;|	     $--VBW,x.x,x.x,A,x.x,x.x,A*hh<CR><LF>
+;|	             |   |  |  |   |  |
+;|	             |   |  |  |   |  +--------Status: Ground speed, A = Data valid
+;|	             |   |  |  |   +-----------Transverse   ground speed [1], knots
+;|	             |   |  |  +---------------Longitudinal ground speed [1], knots
+;|	             |   |  +------------------Status: Water  speed, A = Data valid
+;|	             |   +---------------------Transverse   water  speed [1], knots
+;|	             +-------------------------Longitudinal water  speed [1], knots
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Transverse speed: "-" = port, Longitudinal speed: "-" = astern
+;|	
+;|	
+;|	
+;|	 VDR - Set and Drift
+;|	
+;|	        The direction towards which a current flows (Set) and speed
+;|	        (Drift) of a current.
+;|	
+;|	     $--VDR,x.x,T,x.x,M,x.x,N*hh<CR><LF>
+;|	             |  |  |  |  |  |
+;|	             |  |  |  |  |  +---------\Knots
+;|	             |  |  |  |  +------------/Current speed
+;|	             |  |  |  +---------------\Magnetic
+;|	             |  |  +------------------/Direction, degrees
+;|	             |  +---------------------\True
+;|	             +------------------------/Direction, degrees
+;|	
+;|	
+;|	
+;|	 VHW - Water Speed and Heading
+;|	
+;|	        The compass heading to which the vessel points and the speed of
+;|	        the vessel relative to the water.
+;|	
+;|	     $--VHW,x.x,T,x.x,M,x.x,N,x.x,K*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\km/hr
+;|	             |  |  |  |  |  |  +------/Speed
+;|	             |  |  |  |  |  +---------\knots
+;|	             |  |  |  |  +------------/Speed
+;|	             |  |  |  +---------------\Magnetic
+;|	             |  |  +------------------/Heading, degrees
+;|	             |  +---------------------\True
+;|	             +------------------------/Heading, degrees
+;|	
+;|	
+;|	
+;|	                                    Page 35
+;|	  VLW - Distance Traveld through the Water
+;|	
+;|	        The distance traveled, relative to the water.
+;|	
+;|	     $--VLW,x.x,N,x.x,N*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\nautical miles
+;|	             |  |  +------------------/Distance since reset
+;|	             |  +---------------------\nautical miles
+;|	             +------------------------/Total cumulative distance
+;|	
+;|	
+;|	
+;|	 VPW - Speed Measured Parallel to Wind
+;|	
+;|	        The component of the vessel's velocity vector parallel to the
+;|	        direction of the true wind direction. Sometimes called "speed
+;|	        made good to windward" or "velocity made good to windward".
+;|	
+;|	     $--VPW,x.x,N,x.x,M*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\meters/second
+;|	             |  |  +------------------/Speed, "-" = downwind
+;|	             |  +---------------------\knots
+;|	             +------------------------/Speed, "-" = downwind
+;|	
+;|	
+;|	
+;|	 VTG - Track Made Good and Ground Speed
+;|	
+;|	        The actual track made good and speed relative to the ground.
+;|	
+;|	     $--VTG,x.x,T,x.x,M,x.x,N,x.x,K*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\km/hr
+;|	             |  |  |  |  |  |  +------/Speed
+;|	             |  |  |  |  |  +---------\knots
+;|	             |  |  |  |  +------------/Speed
+;|	             |  |  |  +---------------\Magnetic
+;|	             |  |  +------------------/Track, degrees
+;|	             |  +---------------------\True
+;|	             +------------------------/Track, degrees
+;|	
+;|	
+;|	
+;|	 WCV - Waypoint Closure Velocity
+;|	
+;|	        The component of the velocity vector in the direction of the
+;|	        waypoint, from present position. Sometimes called "speed made
+;|	        made good" or "velocity made good".
+;|	
+;|	     $--WCV,x.x,N,c--c*hh<CR><LF>
+;|	             |  |  |
+;|	             |  |  +-------------------Waypoint identifier
+;|	             |  +---------------------\knots
+;|	             +------------------------/Velocity component
+;|	
+;|	
+;|	
+;|	 WNC - Distance - Waypoint to Waypoint
+;|	
+;|	        Distance between two specified waypoints.
+;|	
+;|	     $--WNC,x.x,N,x.x,K,c--c,c--c*hh
+;|	             |  |  |  |  |    |
+;|	             |  |  |  |  |    +--------'FROM' Waypoint identifier
+;|	             |  |  |  |  +-------------'TO'   Waypoint identifier
+;|	             |  |  |  +---------------\km
+;|	             |  |  +------------------/Distance
+;|	             |  +---------------------\nautical miles
+;|	             +------------------------/Distance
+;|	
+;|	
+;|	
+;|	 WPL - Waypoint Location
+;|	
+;|	        Latitude and longitude of specified waypoint.
+;|	
+;|	     $--WPL,llll.ll,a,yyyyy.yy,a,c--c*hh<CR><LF>
+;|	              |     |   |      |  |
+;|	              |     |   |      |  +----Waypoint identifier
+;|	              |     |   |      +------\E/W East  or West
+;|	              |     |   +-------------/Waypoint longitude
+;|	              |     +-----------------\N/S North or South
+;|	              +-----------------------/Waypoint latitude
+;|	
+;|	
+;|	
+;|	
+;|	
+;|	                                    Page 36
+;|	  XDR - Transducer Measurements
+;|	
+;|	        Measurement data from transducers that measure physical quantities
+;|	        such as temperature, force, pressure, frequency, angular or linear
+;|	        displacement, etc. Data from a variable number transducers measuring
+;|	        the same or different quantities can be mixed in the same sentence.
+;|	        This sentence is designed for use by integrated systems as well as
+;|	        transducers that may be connected in a 'chain' where each transducer
+;|	        receives the sentence as an input and adds its own data fields on
+;|	        before retransmitting the sentence.
+;|	
+;|	     $--XDR,a,x.x,a,c--c, ________ ...
+;|	            |  |  |  |       |
+;|	            |  |  |  |       +---------Data for variable # of transducers
+;|	            |  |  |  +----------------\Transducer #1 ID
+;|	            |  |  +-------------------|Units of measure, Transducer #1 [2]
+;|	            |  +----------------------|Measurement data, Transducer #1
+;|	            +-------------------------/Transducer  type, Transducer #1 [2]
+;|	
+;|	
+;|	        a,x.x,a,c--c*hh<CR><LF>
+;|	        |  |  |  |
+;|	        |  |  |  +--------------------\
+;|	        |  |  +-----------------------|
+;|	        |  +--------------------------|
+;|	        +-----------------------------/Transducer 'n' [1]
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Sets of the four fields 'Type-Data-Units-ID' are allowed for an unde-
+;|	        fined number of transducers. Up to 'n' transducers may be included
+;|	        within the limits of allowed sentence length, null fields are not re-
+;|	        quired except where portions of the 'Type-Data-Units-ID' combination are
+;|	        not available.
+;|	 
+;|	    [2] Allowed transducer types and their units of measure are:
+;|	
+;|	          Transducer        Type Field    Units Field       Comments
+;|	
+;|	        temperature            C          C = degrees Celsius
+;|	        angular displacement   A          D = degrees       "-" = anticlockwise
+;|	        linear  displacement   D          M = meters        "-" = compression
+;|	        frequency              F          H = Hertz
+;|	        force                  N          N = Newtons       "-" = compression
+;|	        pressure               P          B = Bars          "-" = vacuum
+;|	        flow rate              R          l = liters/second
+;|	        tachometer             T          R = RPM
+;|	        humidity               H          P = Percent
+;|	        volume                 V          M = cubic meters
+;|	
+;|	
+;|	
+;|	 XTE - Cross-Track Error - Measured
+;|	
+;|	        Magnitude of the position error perpendicular to the intended track
+;|	        line and the direction to steer to reduce the error.
+;|	
+;|	     $--XTE,A,A,x.x,a,N*hh<CR><LF>
+;|	            | |  |  | |
+;|	            | |  |  | +---------------\Units, nautical miles
+;|	            | |  |  +-----------------|Direction to steer, L/R Left or right
+;|	            | |  +--------------------/Magnitude of Cross-Track-Error
+;|	            | +------------------------Status: V = Loran-C Cycle Lock warning flag
+;|	            |                                  A = OK or not used
+;|	            +--------------------------Status: V = Loran-C Blink or SNR warning
+;|	                                               V = general warning flag for other navigation
+;|	                                                   system when a reliable fix is not available
+;|	
+;|	
+;|	
+;|	                                    Page 37
+;|	  XTR - Cross-Track Error - Dead Reckoning
+;|	
+;|	        Magnitude of the dead reckoned position error perpendicular to
+;|	        the intended track line and the direction to steer to reduce the
+;|	        error.
+;|	
+;|	     $--XTR,x.x,a,N**hh<CR><LF>
+;|	             |  | |
+;|	             |  | +-------------------\Units, nautical miles
+;|	             |  +---------------------|Direction to steer, L/R Left or right
+;|	             +------------------------/Magnitude of Cross-Track-Error
+;|	
+;|	
+;|	
+;|	 ZDA - Time & Date
+;|	
+;|	        UTC, day, month, year and local time zone.
+;|	
+;|	     $--ZDA,hhmmss.ss,xx,xx,xxxx,xx,xx*hh<CR><LF>
+;|	              |       |  |   |   |  |
+;|	              |       |  |   |   |  +--Local zone minutes description, same sign as local hours
+;|	              |       |  |   |   +-----Local zone description [1], 00 to +-13 hrs
+;|	              |       |  |   +---------Year
+;|	              |       |  +-------------Month, 01 to 12
+;|	              |       +----------------Day  , 01 to 31
+;|	              +------------------------UTC
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Zone description is the number of whole hours added to local
+;|	        time to obtain GMT, Zone description is negative for East
+;|	        longitudes.
+;|	
+;|	
+;|	
+;|	 ZFO - UTC & Time from Origin Waypoint
+;|	
+;|	        UTC and elapsed time from origin waypoint.
+;|	
+;|	     $--ZFO,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	              |         |        |
+;|	              |         |        +-----Origin waypoint ID
+;|	              |         +--------------Elapsed time
+;|	              +------------------------UTC of observation
+;|	
+;|	
+;|	
+;|	 ZTG - UTC & Time to Destination Waypoint
+;|	
+;|	        UTC and predicted time-to-go to destination waypoint.
+;|	
+;|	     $--ZTG,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	              |         |        |
+;|	              |         |        +-----Destination waypoint ID
+;|	              |         +--------------Time-to-go
+;|	              +------------------------UTC of observation
+;|	
+;|	
+;|	
+;|	                                    Page 38
+;|	 7. Applications
+;|	
+;|	7.1 Example Sentences
+;|	
+;|	These examples are intended as samples of correct constructed sentences.
+;|	They are representative samples only and show part of the wide range of
+;|	legal variations possible with sentences. They should not necessarily be
+;|	used as templates for sentences.
+;|	
+;|	
+;|	7.1.1 Example #1, Loran-C LAT/LONG
+;|	
+;|	This example gives present position in Lat-Long, as determined by LoranC.
+;|	The 3 character mnemonic in the address, GLL, indicates that the data is
+;|	present position in Lat.-Long. The time (UTC) of the position fix is 09
+;|	hours, 13 minutes and 42 seconds. Decimal seconds are not available and
+;|	the decimal point is optionally omitted. There are no warning flags set in
+;|	the navigation receiver as indicated by Status = 'A'.
+;|	
+;|	    $LCGLL,4728.31,N,12254.25,W,091342,A*21<CR><LF>
+;|	    |  |     |     |   |      |   |    | |    |
+;|	    |  |     |     |   |      |   |    | |    +--Sentence Terminator
+;|	    |  |     |     |   |      |   |    | +-------Checksum 21HEX
+;|	    |  |     |     |   |      |   |    +---------Receiver status: no warnings
+;|	    |  |     |     |   |      |   +--------------Time of position fix
+;|	    |  |     |     |   |      +-----------------\Units Designator (West)
+;|	    |  |     |     |   +------------------------/Long. 122 Degrees, 54.25 Minutes
+;|	    |  |     |     +----------------------------\Units Designator (North)
+;|	    |  |     +----------------------------------/Lat.   47 Degrees, 28.31 Minutes
+;|	    |  +-----------------------------------------Address: LC  = Loran-C
+;|	    |                                                     GLL = Present Position
+;|	    +--------------------------------------------Start of sentence
+;|	
+;|	
+;|	7.1.2 Example #2, Loran-C Arrival Alarm
+;|	
+;|	This example illustrates Arrival Alarm data. The mnemonic code for Arrival
+;|	Alarm is AAM. In this case the address Field is "LCAAM" for Loran-C Arriv-
+;|	al Alarm. The first data field shows "V" indicating the radius of the
+;|	arrival circle HAS NOT been entered, the second data field is "A" showing
+;|	that the perpendicular to the course line, at the destination, HAS been
+;|	crossed. The third and fourth fields show the radius and units of the
+;|	destination waypoint arrival circle ".15,N" for 0.15 nautical miles. Data
+;|	field five is the Waypoint Identifier field of valid characters.
+;|	
+;|	    $LCAAM,V,A,.15,N,CHAT-N6*56<CR><LF>
+;|	    |  |   | |  |  |    |    |    |
+;|	    |  |   | |  |  |    |    |    +--------------Sentence Terminator
+;|	    |  |   | |  |  |    |    +-------------------Checksum 56HEX
+;|	    |  |   | |  |  |    +------------------------Identifier for waypoint "CHAT-N6"
+;|	    |  |   | |  |  +----------------------------\Units  of arrival circle, nautical miles
+;|	    |  |   | |  +-------------------------------/Radius of arrival circle, 0.15
+;|	    |  |   | +-----------------------------------Status: perpendicular has been crossed
+;|	    |  |   +-------------------------------------Status: arrival circle has not been entered
+;|	    |  +-----------------------------------------Address: LC  = Loran-C
+;|	    +--------------------------------------------         AAM = Start of Sentence
+;|	
+;|	
+;|	                                    Page 39
+;|	 7.1.3 Example #3 - Proprietary Sentence
+;|	
+;|	A proprietary sentence has the following general format:
+;|	
+;|	     |<--- 80 character Sentence or less --->|
+;|	     v                                       v
+;|	
+;|	     $Paaa-----------------------------------<CR><LF>
+;|	     || | |                                  |   |
+;|	     || | +--> data, 75 character maximum <--+   +--> End of sentence
+;|	     || |
+;|	     || +----> 3 character manufacturer's mnemonic code
+;|	     ||
+;|	     |+------> Proprietary sentence identifier
+;|	     |
+;|	     +-------> Start of sentence
+;|	
+;|	
+;|	A specific example will have little meaning to someone other than
+;|	the particular manufacturer that designed the sentence:
+;|	
+;|	
+;|	     $PSRDA003[470738][1224523]???RST47,3809,A004*47<CR><LF>
+;|	     || | |                                     | |     |
+;|	     || | +> any serie of valid (non-reserved) <+ |     +--> End of Sentence
+;|	     || | +> characters of manufacturers choice<+ +--------> Checksum  47HEX
+;|	     || |
+;|	     || +--> Unique manufacturer's assigned code
+;|	     ||
+;|	     |+----> Proprietary sentence identifier
+;|	     |
+;|	     +-----> Start of sentence
+;|	
+;|	
+;|	7.1.4 Example #4 - RMA Examples
+;|	
+;|	The following group of sentences show a typical progression of
+;|	output data as a Loran-C receiver acquires stations:
+;|	
+;|	a)   $LCRMA,V,,,,,14162.8,,,,,*0D<CR><LF>
+;|	     Data invalid, only one TD acquired. Fields where data is
+;|	     not yet available are null fields.
+;|	
+;|	b)   $LCRMA,V,,,,,14172.3,26026.7,,,,*2E<CR><LF>
+;|	     Two TDs acquired but not settled, data invalid.
+;|	
+;|	c)   $LCRMA,A,,,,,14182.3,26026.7,,,,*36<CR><LF>
+;|	     Data valid, two TDs cycled but Lat/Lon not yet calculated.
+;|	
+;|	d)   $LCRMA,A,4226.26,N,07125.89,W,14182.3,26026.7,8.5,275.,14.0,W*68<CR><LF>
+;|	     Normal operation
+;|	
+;|	e)   $LCRMA,V,4226.26,N,07125.89,W,14182.3,26026.7,8.5,275.,14.0,W*7F<CR><LF>
+;|	     Data invalid, potential Loran problem.
+;|	
+;|	f)   $LCRMA,A,4226.265,N,07125.890,W,14182.33,26026.71,8.53,275.,14.0,W*53<CR><LF>
+;|	     Loran operating in high resolution mode.
+;|	
+;|	
+;|	                                    Page 40
+;|	 7.1.5 Example #5 - FSI Examples
+;|	
+;|	The following sentences show typical applications for remote
+;|	control of radiotelephones:
+;|	
+;|	a)    $--FSI,020230,026140,m,0*hh<CR><LF>
+;|	      Set transmitter 2023 kHz, receiver 2614 kHz, mode J3E,
+;|	      telephone, standby.
+;|	
+;|	b)    $CTFSI,020230,026140,m,5*11<CR><LF>
+;|	      MF/HF radiotelephone set transmit 2023 kHz, receive
+;|	      2614 kHz, mode J3E, telephone, medium power.
+;|	
+;|	c)    $--FSI,,021820,o,*hh<CR><LF>
+;|	      Set receiver 2182 kHz, mode H3E, telephone.
+;|	
+;|	d)    $CDFSI,900016,,d,9*08<CR><LF>
+;|	      Set VHF transmit and receive channel 16, F3E/G3E
+;|	      simplex, telephone, high power.
+;|	
+;|	e)    $--FSI,300821,,m,9*hh<CR><LF>
+;|	      Set MF/HF radiotelephone to telephone channel 821 e.g.
+;|	      transmit 8 255 kHz, receive 8 779 kHz, mode J3E,
+;|	      telephone, high power.
+;|	
+;|	f)    $--FSI,404001,,w,5*hh<CR><LF>
+;|	      Set MF/HF radiotelephone to telephone channel 1 in 4 MHz
+;|	      band e.g. transmit 4 172.5 kHz, receive 4 210.5 kHz,
+;|	      mode F1B/J2B, teleprinter, medium power.
+;|	
+;|	g)    $CTFSI,416193,,s,0*00<CR><LF>
+;|	      MF/HF radiotelephone tuned to teletype channel 193 in
+;|	      16 MHz band e.g. transmitter 16 784.5 kHz, receiver
+;|	      16 902.5kHz, mode F1B/J2E ARQ, TELEX/teleprinter, standby.
+;|	
+;|	h)    $--FSI,041620,043020,|,9*hh<CR><LF>
+;|	      Set MF/HF radiotelephone transmit 4 162 kHz, receive
+;|	      4 302 kHz, mode F1C/F2C/F3C, FAX-machine, high power.
+;|	
+;|	i)    $CXFSI,,021875,t,*3A<CR><LF>
+;|	      Scanning receiver set 2 187.5 kHz, mode F1B/J2B receive
+;|	      only, teleprinter/DSC.
+;|	
+;|	
+;|	                                    Page 41
+;|	 7.2 Receiver Diagrams
+;|	
+;|	The illustrative diagrams in Figure 3 and Figure 4 show the structure of
+;|	two optoisolator based LISTENER circuits that offer overvoltage, reverse
+;|	voltage and power dissipation protection for the optoisolator and serve-
+;|	limit the current drawn from the line.
+;|	
+;|	
+;|	
+;|	                     N-CHANNEL                       OPTO-ISOLATOR
+;|	                       JFET                    -  -  -  -  -  -  -  -
+;|	                                 ____         |                      |
+;|	           A  O-------+   +-----|____|---*---------+              +------
+;|	                      |   |              |         |              |
+;|	                      -----              |    |    |              |  |
+;|	                        ^                |         |              |
+;|	                        |                |        _|_             |
+;|	                        |               ---   |  \ | /           /   |
+;|	                        -               /|\       \|/   \|\    |/
+;|	                       | |             /_|_\      ---      \|  |
+;|	                       | |               |    |    |       -   |\|   |
+;|	                       | |               |         |            -\
+;|	                       | |               |         |              |
+;|	                        -                |    |    |              |  |
+;|	                        |                |         |              |
+;|	                        |                |         |              |
+;|	           B  O---------*----------------*---------+              +------
+;|	                                              |                      |
+;|	                                               -  -  -  -  -  -  -  -
+;|	
+;|	
+;|	                                   (Figure 3)
+;|	
+;|	
+;|	
+;|	
+;|	
+;|	                                                     OPTO-ISOLATOR
+;|	                                               -  -  -  -  -  -  -  -
+;|	                       ____                   |                      |
+;|	           A  O-------|____|---*---*---------------+              +------
+;|	                               |   |               |              |
+;|	                               |   |          |    |              |  |
+;|	                               |   |               |              |
+;|	                               |   |              _|_             |
+;|	                              ---  |          |  \ | /           /   |
+;|	                              /|\  | NPN          \|/   \|\    |/
+;|	                             /_|_\  \             ---      \|  |
+;|	                               |     \|       |    |       -   |\|   |
+;|	                               |      |-----+      |            -\
+;|	                               |    |/|     |      |              |
+;|	                               |    /-      | |    |              |  |
+;|	                               |   |        |      |              |
+;|	                               |   |  ____  |      |              |
+;|	           B  O----------------*---*-|____|-*------+              +------
+;|	                                              |                      |
+;|	                                               -  -  -  -  -  -  -  -
+;|	
+;|	
+;|	                                   (Figure 4)
+;|	
+;|	
+;|	End of NMEA 0183 Version 2.00
+;|	
+;|	                                    Page 42
+;|	     STANDARD FOR INTERFACING MARINE ELECTRONIC DEVICES
+;|	             NMEA 0183 Version 2.00 Appendix I
+;|	
+;|	
+;|	
+;|	                    NMEA 0183 APPENDIX I
+;|	
+;|	                        Version 2.00
+;|	
+;|	                      Januar 1, 1992
+;|	
+;|	            Sentences Not Recommended for New Designs
+;|	
+;|	
+;|	
+;|	The following identifiers and senteces are scheduled to be phased out
+;|	of use and are no longer recommended for sole use in new or revised
+;|	designs. The senteces are valid sentences, but due to changing
+;|	circumstances it is desirable to delete or replace these sentences as
+;|	indicated below.
+;|	
+;|	Generally in each of the sentence descriptions below reference is made
+;|	to a sentence in the current Version of the standard, manufacturers
+;|	are urged to use the currently recommended sentence in new or revised
+;|	designs. It is desirable that manufacturers provide both new and old
+;|	sentences whenever possible for a period of time that will serve as a
+;|	phase-in period for the new sentences.
+;|	
+;|	
+;|	          TABLE I-1 - TALKER IDENTIFIER MNEMONICS
+;|	
+;|	       TALKER DEVICE                        IDENTIFIER
+;|	
+;|	       COMPUTER
+;|	             Programmed Calc.                   CC
+;|	             Memory data                        CM
+;|	       Microwave Positioning System             MP
+;|	       Distress Alarm System                    OS
+;|	       TRANSDUCERS
+;|	             Temperature                        YC
+;|	             Displacement, Angular or Linear    YD
+;|	             Frequency                          YF
+;|	             Level                              YL
+;|	             Pressure                           YP
+;|	             Flow Rate                          YR
+;|	             Tachometer                         YT
+;|	             Volume                             YV
+;|	
+;|	   TABLE I-2 - SENTENCE FORMATTERS NOT RECOMMENDED FOR NEW DESIGNS
+;|	
+;|	APA - Autopilot Sentence "A"......................................4
+;|	BER - Bearing & Distance to Waypoint, Dead Reckoning, Rhumb Line..4
+;|	BPI - Bearing & Distance to Point of Interest.....................4
+;|	DBK - Depth Below Keel............................................4
+;|	DBS - Depth Below Surface.........................................4
+;|	DRU - DUAL DOPPLER AUXILIARY DATA.................................5
+;|	GDa - Dead Reckoning Positions....................................5
+;|	GLa - Loran-C Positions...........................................5
+;|	
+;|	                                    Page I-01
+;|	 GOa - OMEGA Positions.............................................5
+;|	GXa - TRANSIT Positions...........................................5
+;|	GTD - Geographical Position, Loran-C TDs..........................6
+;|	HCC - Compass Heading.............................................6
+;|	HCD - Heading and Deviation.......................................6
+;|	HDM - Heading, Magnetic...........................................6
+;|	HVD - Magnetic Variation, Automatic...............................7
+;|	HVM - Magnetic Variation, Manually Set............................7
+;|	IMA - Vessel Identification.......................................7
+;|	MHU - Humidity....................................................7
+;|	MMB - Barometer...................................................7
+;|	MTA - Air Temperature.............................................7
+;|	MWD - Wind Direction and Velocity, Surface........................8
+;|	MWH - Wave Height.................................................8
+;|	MWS - Wind & Sea State............................................8
+;|	OLW - Omega Lane Width............................................8
+;|	OMP - OMEGA Pairs.................................................8
+;|	ONZ - Omega Zone Number...........................................8
+;|	Rnn - Routes......................................................8
+;|	SBK - Loran-C Blink Status........................................9
+;|	SCY - Loran-C Cycle Lock Status...................................9
+;|	SCD - Loran-C ECDs................................................9
+;|	SDB - Loran-C Signal Strength.....................................9
+;|	SGD - Position Accuracy Estimate..................................9
+;|	SGR - Loran-C Chain Identifier....................................9
+;|	SIU - Loran-C Stations in Use.....................................9
+;|	SLC - Loran-C Status.............................................10
+;|	SNC - Navigation Calculation Basis...............................10
+;|	SNU - Loran-C SNR Status.........................................10
+;|	SPS - Loran-C Predicted Signal Strength..........................10
+;|	SSF - Position Correction Offset.................................10
+;|	STC - Time Constant..............................................11
+;|	STR - Tracking Reference.........................................11
+;|	SYS - Hybrid System Configuration................................11
+;|	TEC - TRANSIT Satellite Error Code & Doppler Count...............11
+;|	TEP - TRANSIT Satellite Predicted Elevation......................11
+;|	TGA - TRANSIT Satellite Antenna & Geoidal Heights................11
+;|	TIF - TRANSIT Satellite Initial Flag.............................12
+;|	TRP - TRANSIT Satellite Predicted Direction of Rise..............12
+;|	TRS - TRANSIT Satellite Operating Status.........................12
+;|	VCD - Current at Selected Depth..................................12
+;|	VPE - Speed, Dead Reckoned Parallel to True Wind.................12
+;|	VTA - Actual Track...............................................12
+;|	VTI - Intended Track.............................................13
+;|	VWE - Wind Track Efficiency......................................13
+;|	WDC - Distance to Waypoint.......................................13
+;|	WDR - Waypoint Distance, Rhumb Line..............................13
+;|	WFM - Route Following Mode.......................................13
+;|	WNR - Waypoint-to-Waypoint Distance, Rhumb Line..................13
+;|	YWP - Water Propagation Speed....................................14
+;|	YWS - Water Profile..............................................14
+;|	Zaa - Time, Elapsed/Estimated....................................14
+;|	ZCD - Timer......................................................15
+;|	ZEV - Event Timer................................................15
+;|	ZLZ - Time of Day................................................15
+;|	ZZU - Time, UTC..................................................15
+;|	
+;|	                                    Page I-02
+;|	  APA - Autopilot Sentence "A"
+;|	
+;|	        Commonly used by autopilots this sentence contains navigation
+;|	        receiver warning flag status, cross-track-error, waypoint arriv-
+;|	        al status and initial bearing from origin waypoint to the desti-
+;|	        nation waypoint for the active navigation leg of journy.
+;|	
+;|	        Use of $--APB with additional data fields of heading-to-steer
+;|	        and bearing from present position to destination is recommended.
+;|	
+;|	     $--APA,A,A,x.x,a,N,A,A,x.x,M,c--c*hh<CR><LF>
+;|	            | |  |  | | | |  |  |  |
+;|	            | |  |  | | | |  |  |  +---Destination waypoint ID
+;|	            | |  |  | | | |  |  +-----\Magnetic
+;|	            | |  |  | | | |  +--------/Bearing origin to destination
+;|	            | |  |  | | | +------------Status: perpendicular passed at waypoint
+;|	            | |  |  | | +--------------Status: arrival circle entered
+;|	            | |  |  | +---------------\XTE units, Nautical miles
+;|	            | |  |  +-----------------|Direction to steer, L/R
+;|	            | |  +--------------------/Magnitude of XTE (cross-track-error)
+;|	            | +------------------------Data status: Loran-C Cycle Lock warning flag
+;|	            +--------------------------Data status: "OR" of Loran-C Blink and SNR warning flags
+;|	
+;|	
+;|	
+;|	 BER - Bearing & Distance to Waypoint, Dead Reckoning, Rhumb Line
+;|	 BPI - Bearing & Distance to Point of Interest
+;|	
+;|	        Time (UTC) and distance & bearing to, and locationof, a speci-
+;|	        fied waypoint from present position:
+;|	
+;|	            BER: Calculated along the rhumb line from dead reckoned
+;|	                 present position. The use of $--BEC using great circle
+;|	                 calculations is recommended.
+;|	
+;|	            BPI: Calculated along a great circle path from measured
+;|	                 present position. Redundant with BWC, the use of
+;|	                 $--BWC is recommended.
+;|	
+;|	     $--BER,hhmmss.ss,llll.ll,a,...
+;|	     $--BPI,... |      |      |       
+;|	                |      |      +-------\N/S North or South
+;|	                |      +--------------/Waypoint latitude
+;|	                +----------------------UTC of observation
+;|	
+;|	
+;|	        yyyyy.yy,a,x.x,T,x.x,M,x.x,N,...
+;|	          |      |  |  |  |  |  |  |
+;|	          |      |  |  |  |  |  |  +--\nautical miles
+;|	          |      |  |  |  |  |  +-----/Distance
+;|	          |      |  |  |  |  +--------\degrees Magnetic
+;|	          |      |  |  |  +-----------/Bearing
+;|	          |      |  |  +--------------\degrees True
+;|	          |      |  +-----------------/Bearing
+;|	          |      +--------------------\E/W East  or West
+;|	          +---------------------------/Waypoint longitude
+;|	
+;|	
+;|	        c--c*hh<CR><LF>
+;|	         |
+;|	         +-----------------------------Waypoint ID
+;|	
+;|	
+;|	
+;|	 DBK - Depth Below Keel
+;|	 DBS - Depth Below Surface
+;|	
+;|	        Water depth referenced to the vessel's keel (DBK) or to the
+;|	        water surface (DBS).
+;|	
+;|	        The use of $--DPT is recommended in place of either of these.
+;|	
+;|	     $--DBK,x.x,f,x.x,M,x.x,F*hh<CR><LF>
+;|	     $--DBS,x.x,f,x.x,M,x.x,F*hh<CR><LF>
+;|	             |  |  |  |  |  |
+;|	             |  |  |  |  |  +---------\Fathoms
+;|	             |  |  |  |  +------------/Water depth
+;|	             |  |  |  +---------------\Meters
+;|	             |  |  +------------------/Water depth
+;|	             |  +---------------------\feet
+;|	             +------------------------/Water depth
+;|	
+;|	
+;|	
+;|	                                    Page I-03
+;|	  DRU - DUAL DOPPLER AUXILIARY DATA
+;|	
+;|	        Depth, turn rate and % RPM in support of Doppler velocity sys-
+;|	        tems.
+;|	
+;|	        The use of $--DPT is recommended for depth data, $--RPM for
+;|	        shaft rotation and $--ROT for rate of turn.
+;|	
+;|	     $--DRU,x.x,A,x.x,A,x.x*hh<CR><LF>
+;|	             |  |  |  |  |
+;|	             |  |  |  |  +-------------Propeller shaft rotation, % of maximum
+;|	             |  |  |  +---------------\Status: Rate of turn
+;|	             |  |  +------------------/Rate of turn, degrees per minute, "-" = port
+;|	             |  +---------------------\Status: Depth
+;|	             +------------------------/Depth
+;|	
+;|	
+;|	
+;|	 GDa - Dead Reckoning Positions
+;|	 GLa - Loran-C Positions
+;|	 GOa - OMEGA   Positions
+;|	 GXa - TRANSIT Positions
+;|	
+;|	        Location and time at waypoint "c--c":
+;|	            $--aaF:  predicted or estimated time
+;|	            $--aaP:  present position and time
+;|	            $--aaA:  past position and time
+;|	
+;|	        The use of waypoint location $--WPL (for past positions) or
+;|	        $--GLL (for present position) followed by time tag $--ZDA is
+;|	        recommended for reporting past or present waypoint times; $--WPL
+;|	        followed by $--ZTG is recommended for estimated time.
+;|	
+;|	    Dead reckoned positions:
+;|	    $--GDF,hhmmss.ss,llll.ll,a,...
+;|	    $--GDP,...|        |     |
+;|	    $--GDA,...|        |     +--------\N/S North or South
+;|	              |        +--------------/Latitude
+;|	              +------------------------UTC of position fix
+;|	
+;|	
+;|	       yyyyy.yy,a,c--c*hh<CR><LF>
+;|	         |      |  |
+;|	         |      |  +-------------------Waypoint ID
+;|	         |      +---------------------\E/W East  or West
+;|	         +----------------------------/Longitude
+;|	
+;|	
+;|	
+;|	    Loran-C determined positions:
+;|	    $--GLF,...
+;|	    $--GLP,...
+;|	    $--GLA,...
+;|	
+;|	
+;|	
+;|	    Omega determined positions:
+;|	    $--GOF,...
+;|	    $--GOP,...
+;|	    $--GOA,...
+;|	
+;|	
+;|	
+;|	    TRANSIT determined positions:
+;|	    $--GXF,hhmmss.ss,llll.ll,a,...
+;|	    $--GXP,...|        |     |
+;|	              |        |     +--------\N/S North or South
+;|	              |        +--------------/Latitude
+;|	              +------------------------UTC of position fix
+;|	
+;|	
+;|	       yyyyy.yy,a,c--c,x*hh<CR><LF>
+;|	         |      |  |   |
+;|	         |      |  |   +---------------Satellite number
+;|	         |      |  +-------------------Waypoint ID
+;|	         |      +---------------------\E/W East  or West
+;|	         +----------------------------/Longitude
+;|	
+;|	
+;|	
+;|	                                    Page I-04
+;|	  GTD - Geographical Position, Loran-C TDs
+;|	
+;|	        Loran-C Time Difference (TD) lines of position for present
+;|	        vessel position.
+;|	
+;|	        The use of $--GLC is recommended.
+;|	
+;|	     $--GTD,x.x,x.x,x.x,x.x,x.x*hh<CR><LF>
+;|	             |   |   |   |   |
+;|	             |   |   |   |   +---------TD 5, micro-seconds
+;|	             |   |   |   +-------------TD 4, micro-seconds
+;|	             |   |   +-----------------TD 3, micro-seconds
+;|	             |   +---------------------TD 2, micro-seconds
+;|	             +-------------------------TD 1, micro-seconds
+;|	
+;|	
+;|	
+;|	 HCC - Compass Heading
+;|	
+;|	        Vessel compass heading, which differs from magnetic heading by
+;|	        the amount of uncorrected magnetic variation.
+;|	
+;|	        The use of $--HDG is recommended.
+;|	
+;|	     $--HCC,x.x*hh<CR><LF>
+;|	             |
+;|	             +-------------------------Compass heading, degrees
+;|	
+;|	
+;|	
+;|	 HCD - Heading and Deviation
+;|	
+;|	        Actual Vessel magnetic heading, indicated compass heading and
+;|	        the difference (deviation) between them.
+;|	
+;|	        The use of $--HDG is recommended.
+;|	
+;|	     $--HCD,x.x,M,x.x,H,x.x,a*hh<CR><LF>
+;|	             |  |  |  |  |  |
+;|	             |  |  |  |  |  +---------\degrees E/W [1]
+;|	             |  |  |  |  +------------/Magnetic deviation
+;|	             |  |  |  +---------------\Compass,  degrees
+;|	             |  |  +------------------/Heading
+;|	             |  +---------------------\Magnetic, degrees
+;|	             +------------------------/Heading
+;|	
+;|	
+;|	 Note:
+;|	
+;|	   [1] Easterly deviation (E) subtracts from Compass Heading
+;|	       Westerly deviation (W) adds      to   Compass Heading
+;|	
+;|	
+;|	
+;|	 HDM - Heading, Magnetic
+;|	
+;|	        Actual vessel heading in degrees Magnetic.
+;|	
+;|	        The use of $--HDG is recommended.
+;|	
+;|	     $--HDM,x.x,M*hh<CR><LF>
+;|	             |  |
+;|	             |  +---------------------\degrees Magnetic
+;|	             +------------------------/Heading
+;|	
+;|	
+;|	
+;|	                                    Page I-05
+;|	  HVD - Magnet Variation, Automatic
+;|	 HVM - Magnet Variation, Manually Set
+;|	
+;|	        Magnetic Variation, automatically derived (calculated or taken
+;|	        from a data base) (HDV), or manually entered (HVM).
+;|	
+;|	        The use of $--HDG is recommended.
+;|	
+;|	     $--HVD,x.x,a*hh<CR><LF>
+;|	     $--HVM,x.x,a*hh<CR><LF>
+;|	             |  |
+;|	             |  +---------------------\degrees E/W [1]
+;|	             +------------------------/Magnetic variation
+;|	
+;|	
+;|	 Note:
+;|	
+;|	   [1] Easterly variation (E) subtracts from True Heading
+;|	       Westerly variation (W) adds      to   True Heading
+;|	
+;|	
+;|	
+;|	 IMA - Vessel Identification
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--IMA,aaaaaaaaaaaa,aaaxxxx,...
+;|	                 |          |
+;|	                 |          +----------Radio call sign
+;|	                 +---------------------12 character vessel name
+;|	
+;|	
+;|	        llll.ll,a,yyyyy.yy,a,x.x,T,...
+;|	          |     |   |      |  |  |
+;|	          |     |   |      |  |  +----\degrees True
+;|	          |     |   |      |  +-------/Heading
+;|	          |     |   |      +----------\E/W East  or West
+;|	          |     |   +-----------------/Longitude
+;|	          |     +---------------------\N/S North or South
+;|	          +---------------------------/Latitude
+;|	
+;|	
+;|	        x.x,M,x.x,N*hh<CR><LF>
+;|	         |  |  |  |
+;|	         |  |  |  +-------------------\knots
+;|	         |  |  +----------------------/Speed
+;|	         |  +-------------------------\degrees Magnetic
+;|	         +----------------------------/Heading
+;|	
+;|	
+;|	
+;|	 MDA - Meteorological Composite
+;|	
+;|	        Barometric pressure, air and water temperature, humidity, dew
+;|	        point and wind speed and direction relative to the surface of the
+;|	        earth.
+;|	
+;|	        The use of $--MTW, $--MWV and $--XDR is recommended.
+;|	
+;|	     $--MDA,x.x,I,x.x,B,x.x,C,x.x,C,...
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\degrees C
+;|	             |  |  |  |  |  |  +------/Water temperature
+;|	             |  |  |  |  |  +---------\degrees C
+;|	             |  |  |  |  +------------/Air   temperature
+;|	             |  |  |  +---------------\bars
+;|	             |  |  +------------------/Barometric pressure
+;|	             |  +---------------------\inches of mercury
+;|	             +------------------------/Barometric pressure
+;|	
+;|	
+;|	        x.x,x.x,x.x,C,x.x,T,x.x,M,...
+;|	         |   |   |  |  |  |  |  |
+;|	         |   |   |  |  |  |  |  +-----\degrees Magnetic
+;|	         |   |   |  |  |  |  +--------/Wind direction
+;|	         |   |   |  |  |  +-----------\degrees True
+;|	         |   |   |  |  +--------------/Wind direction
+;|	         |   |   |  +-----------------\degrees C
+;|	         |   |   +--------------------/Dew point
+;|	         |   +-------------------------Absolute humidity, percent
+;|	         +-----------------------------Relative humidity, percent
+;|	
+;|	
+;|	        x.x,N,x.x,M*hh<CR><LF>
+;|	         |  |  |  |
+;|	         |  |  |  +-------------------\meters/second
+;|	         |  |  +----------------------/Wind speed
+;|	         |  +-------------------------\knots
+;|	         +----------------------------/Wind speed
+;|	
+;|	
+;|	
+;|	                                    Page I-06
+;|	  MHU - Humidity
+;|	
+;|	        The use of $--XDR is recommended.
+;|	
+;|	     $--MHU,x.x,x.x,x.x,C*hh<CR><LF>
+;|	             |   |   |  |
+;|	             |   |   |  +-------------\degrees C
+;|	             |   |   +----------------/Dew point
+;|	             |   +---------------------Absolute humidity, percent
+;|	             +-------------------------Relative humidity, percent
+;|	
+;|	
+;|	
+;|	 MMB - Barometer
+;|	
+;|	        The use of $--XDR is recommended.
+;|	
+;|	     $--MMB,x.x,I,x.x,B*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\bars
+;|	             |  |  +------------------/Barometric pressure
+;|	             |  +---------------------\inches of mercury
+;|	             +------------------------/Barometric pressure
+;|	
+;|	
+;|	
+;|	 MTA - Air   Temperature
+;|	 MTW - Water Temperature
+;|	
+;|	        The use of $--XDR is recommended.
+;|	
+;|	     $--MTA,x.x,C*hh<CR><LF>
+;|	     $--MTW,x.x,C*hh<CR><LF>
+;|	             |  |
+;|	             |  +-----------\degrees C
+;|	             +--------------/Temperature
+;|	
+;|	
+;|	
+;|	 MWD - Wind Direction and Velocity, Surface
+;|	
+;|	        The use of $--MWV is recommended.
+;|	
+;|	     $--MWD,x.x,T,x.x,M,x.x,N,x.x,M*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\meters/second
+;|	             |  |  |  |  |  |  +------/Wind speed
+;|	             |  |  |  |  |  +---------\knots
+;|	             |  |  |  |  +------------/Wind speed
+;|	             |  |  |  +---------------\degrees Magnetic
+;|	             |  |  +------------------/Wind direction
+;|	             |  +---------------------\degrees True
+;|	             +------------------------/Wind direction
+;|	
+;|	
+;|	
+;|	 MWH - Wave Height
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--MWH,x.x,f,x.x,M*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\meters
+;|	             |  |  +------------------/Wave height
+;|	             |  +---------------------\feet
+;|	             +------------------------/Wave height
+;|	
+;|	
+;|	
+;|	 MWS - Wind & Sea State
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--MWS,xx,xx*hh<CR><LF>
+;|	            |  |
+;|	            |  +-----------------------Beaufort Sea  State Code
+;|	            +--------------------------Beaufort Wind Force Code
+;|	
+;|	
+;|	
+;|	 OLW - Omega Lane Width
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--OLW,x.x,N,xxxx,M*hh<CR><LF>
+;|	             |  |  |   |
+;|	             |  |  |   +--------------\meters
+;|	             |  |  +------------------/Lane width
+;|	             |  +---------------------\nautical miles
+;|	             +------------------------/Lane width
+;|	
+;|	
+;|	
+;|	                                    Page I-07
+;|	  OMP - OMEGA Pairs
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--OMP,1,aa,2,aa,3,aa*hh<CR><LF>
+;|	            | |  | |  | |
+;|	            | |  | |  | +-------------\AB-GH
+;|	            | |  | |  +---------------/Pair 3
+;|	            | |  | +------------------\AB-GH
+;|	            | |  +--------------------/Pair 2
+;|	            | +-----------------------\AB-GH
+;|	            +-------------------------/Pair 1,
+;|	
+;|	
+;|	
+;|	 ONZ - Omega Zone Number
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--ONZ,a*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Station identifier, A-H
+;|	
+;|	
+;|	
+;|	 Rnn - Routes
+;|	
+;|	        Waypoint identifiers, listed in order with starting waypoint first
+;|	        for route number "nn".
+;|	
+;|	     $--Rnn,c--c,c--c----,c--c*hh<CR><LF>
+;|	         |   |            |
+;|	         |   |     ...    +-----------\
+;|	         |   +------------------------/14 field sequence of route waypoint IDs
+;|	         +-----------------------------nn = Route number
+;|	
+;|	
+;|	
+;|	 SBK - Loran-C Blink Status
+;|	 SCY - Loran-C Cycle Lock Status
+;|	
+;|	        Loran-C warning flags for Blink (SBK) and Cycle Lock (SCY)
+;|	        indicating that one or more Loran-C stations being used to
+;|	        produce Lat/Lon and other navigation data are unreliable.
+;|	
+;|	        The use of $--GLC is recommended.
+;|	
+;|	     $--SBK,A*hh<CR><LF>
+;|	     $--SCY,A*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Warning Flag
+;|	
+;|	
+;|	
+;|	 SCD - Loran-C ECDs
+;|	
+;|	        The use of $--LCD is recommeded.
+;|	
+;|	     $--SCD,0,xxx,1,xxx,2,xxx,3,xxx,...
+;|	            |  |  |  |  |  |  |  |
+;|	            |  |  |  |  |  |  |  +----\
+;|	            |  |  |  |  |  |  +-------/Secondary 3
+;|	            |  |  |  |  |  +----------\ECD
+;|	            |  |  |  |  +-------------/Secondary 2
+;|	            |  |  |  +----------------\ECD
+;|	            |  |  +-------------------/Secondary 1
+;|	            |  +----------------------\ECD
+;|	            +-------------------------/Master signal
+;|	
+;|	
+;|	        4,xxx,5,xxx*hh<CR><LF>
+;|	        |  |  |  |
+;|	        |  |  |  +--------------------\ECD
+;|	        |  |  +-----------------------/Secondary 5
+;|	        |  +--------------------------\ECD
+;|	        +-----------------------------/Secondary 4
+;|	
+;|	
+;|	
+;|	 SDB - Loran-C Signal Strength
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--SDB,x.x*hh<CR><LF>
+;|	             |
+;|	             +-------------------------Signal strength, dB
+;|	
+;|	
+;|	
+;|	                                    Page I-08
+;|	  SGD - Position Accuracy Estimate
+;|	
+;|	        Estimate of position accuracy based on geometric of
+;|	        precision (GDOP) and system noise, in feet and nauticl miles.
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--SGD,x.x,N,x.x,f*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\feet
+;|	             |  |  +------------------/Accuracy
+;|	             |  +---------------------\nautical miles
+;|	             +------------------------/Accuracy
+;|	
+;|	
+;|	
+;|	 SGR - Loran-C Chain Identifier
+;|	
+;|	        The unique Loran-C Chain identifier, representing Group Repeti-
+;|	        tion Interval (GRI) in tens of microseconds (Group Repetition
+;|	        Interval = [Chain ID]*10, microseconds).
+;|	
+;|	        The use of $--GLC is recommended.
+;|	
+;|	     $--SGR,xxxx*hh<CR><LF>
+;|	             |
+;|	             +-------------------------GRI, tens of microseconds
+;|	
+;|	
+;|	
+;|	 SIU - Loran-C Stations in Use
+;|	
+;|	        The use of $--GLC is recommended.
+;|	
+;|	     $--SIU,1,2,3,4,5,6,7,8*hh<CR><LF>
+;|	            |             |
+;|	            |     ...     +-----------\
+;|	            +-------------------------/Stations in use, null fields for stations not in use
+;|	
+;|	
+;|	
+;|	 SLC - Loran-C Status
+;|	
+;|	        Blink, Cycle and SNR warning status and SNR value for all
+;|	        stations. Stations used in Lat/Lon conversion are identified.
+;|	
+;|	        The use of $--GLC and/or $--LCD is recommended.
+;|	
+;|	     $--SLC,A,A,A,xxx,A,A,A,A,xxx,...
+;|	            | | |  |  | | | |  |
+;|	            | | |  |  | | | |  +------\SNR value, 000 to 999          , Secondary #1
+;|	            | | |  |  | | | +---------|Status: SNR        Warning Flag, Secondary #1
+;|	            | | |  |  | | +-----------|Status: Cycle Lock Warning Flag, Secondary #1
+;|	            | | |  |  | +-------------|Status: Blink      Warning Flag, Secondary #1
+;|	            | | |  |  +---------------/Status: Secondary #1 used in Lat/lon calculation
+;|	            | | |  +-------------------SNR value, 000 to 999          , Master
+;|	            | | +----------------------Status: SNR        Warning Flag, Master
+;|	            | +------------------------Status: Cycle Lock Warning Flag, Master
+;|	            +--------------------------Status: Blink      Warning Flag, Master
+;|	
+;|	
+;|	        A,A,A,A,xxx,A,A,A,A,xxx,...
+;|	        | | | |  |  | | | |  |
+;|	        | | | |  |  | | | |  +--------\
+;|	        | | | |  |  | | | +-----------|
+;|	        | | | |  |  | | +-------------|Secondary #3
+;|	        | | | |  |  | +---------------|
+;|	        | | | |  |  +-----------------/
+;|	        | | | |  +--------------------\
+;|	        | | | +-----------------------|
+;|	        | | +-------------------------|Secondary #2
+;|	        | +---------------------------|
+;|	        +-----------------------------/
+;|	
+;|	
+;|	        A,A,A,A,xxx,A,A,A,A,xxx*hh<CR><LF>
+;|	        | | | |  |  | | | |  |
+;|	        | | | |  |  | | | |  +--------\
+;|	        | | | |  |  | | | +-----------|
+;|	        | | | |  |  | | +-------------|Secondary #5
+;|	        | | | |  |  | +---------------|
+;|	        | | | |  |  +-----------------/
+;|	        | | | |  +--------------------\
+;|	        | | | +-----------------------|
+;|	        | | +-------------------------|Secondary #4
+;|	        | +---------------------------|
+;|	        +-----------------------------/
+;|	
+;|	
+;|	
+;|	 SNC - Navigation Calculation Basis
+;|	
+;|	        Basis for navigation calculations, Great Circle or Rhumb Line.
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--SNC,a*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Great Circle or Rhumb Line, G/R
+;|	
+;|	
+;|	
+;|	                                    Page I-09
+;|	  SNU - Loran-C SNR Status
+;|	
+;|	        Loran-C warning flag for Signal-To-Noise-Ratio indicating that
+;|	        one or more Loran-C stations being used to produce Lat/Lon and
+;|	        other navigation data are unreliable.
+;|	
+;|	        The use of $--GLC is recommended.
+;|	
+;|	     $--SNU,A*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Warning Flag
+;|	
+;|	
+;|	
+;|	 SPS - Loran-C Predicted Signal Strength
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--SPS,xx*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Signal strength, dB
+;|	
+;|	
+;|	
+;|	 SSF - Position Correction Offset
+;|	
+;|	        Amount of offset, and direction of offset, applied to measured
+;|	        position Lat/Lon to produce a displayed position Lat/Lon.
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--SSF,x.x,a,x.x,a*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\E/W East  or West
+;|	             |  |  +------------------/Longitude offset, minutes
+;|	             |  +---------------------\N/S North or South
+;|	             +------------------------/Latitude  offset, minutes
+;|	
+;|	
+;|	
+;|	 STC - Time Constant
+;|	
+;|	        Time constant specified manually for use in navigation calcula-
+;|	        tions.
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--STC,xxx*hh<CR><LF>
+;|	             |
+;|	             +-------------------------Time constant, 000 to 999 seconds
+;|	
+;|	
+;|	
+;|	 STR - Tracking Reference
+;|	
+;|	        Transmitted prior to a sentence containing velocity-based data
+;|	        to indicate when velocity is measured over-the-ground or rela-
+;|	        tive to the water.
+;|	
+;|	        The use of appropriate ground or water-referenced approved
+;|	        sentences such as $--VBW, $--VHW or $--VTG is recommended.
+;|	
+;|	     $--STR,a*hh<CR><LF>
+;|	            |
+;|	            +--------------------------A = Ground reference, V = Water reference
+;|	
+;|	
+;|	
+;|	 SYS - Hybrid System Configuration
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--SYS,L,O,T,G,D*hh<CR><LF>
+;|	            | | | | |
+;|	            | | | | +------------------DECCA     \
+;|	            | | | +--------------------GPS        \
+;|	            | | +----------------------TRANSIT      Null fields for systems not in use
+;|	            | +------------------------OMEGA      /
+;|	            +--------------------------LORAN-C   /
+;|	
+;|	
+;|	
+;|	                                    Page I-10
+;|	  TEC - TRANSIT Satellite Error & Doppler Count
+;|	
+;|	        The use of $--TRF is recommended.
+;|	
+;|	     $--TEC,A,A,A*hh<CR><LF>
+;|	            | | |
+;|	            | | +----------------------Status: Iteration number
+;|	            | +------------------------Status: Doppler count
+;|	            +--------------------------Status: Maximum angle
+;|	
+;|	
+;|	
+;|	 TEP - TRANSIT Satellite Predicted Elevation
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--TEP,x.x,D*hh<CR><LF>
+;|	             |  |
+;|	             |  +---------------------\degrees
+;|	             +------------------------/Elevation
+;|	
+;|	
+;|	
+;|	 TGA - TRANSIT Satellite Antenna & Geoidal Heigths
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--TGA,x.x,M,x.x,M,x.x,M*hh<CR><LF>
+;|	             |  |  |  |  |  |
+;|	             |  |  |  |  |  +---------\meters
+;|	             |  |  |  |  +------------/Antenna + geoidal height
+;|	             |  |  |  +---------------\meters
+;|	             |  |  +------------------/Geoidal height
+;|	             |  +---------------------\meters
+;|	             +------------------------/Antenna height
+;|	
+;|	
+;|	
+;|	 TIF - TRANSIT Satellite Initial Flag
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--TIF,a*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Normal operation             = A
+;|	                                       Set initialization data      = V
+;|	                                       Initialization data complete = J
+;|	
+;|	
+;|	
+;|	 TRP - TRANSIT Satellite Predicted Direction of Rise
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--TRP,aa*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Southeasterly = SE, southwesterly = SW
+;|	
+;|	
+;|	
+;|	 TRS - TRANSIT Satellite Operating Status
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--TRS,a*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Acquiring      = A
+;|	                                       Calculating    = c
+;|	                                       Error          = e
+;|	                                       Message        = m
+;|	                                       Test           = T
+;|	                                       Dead reckoning = U
+;|	
+;|	
+;|	
+;|	                                    Page I-11
+;|	  VCD - Current at Selected Depth
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--VCD,x.x,f,x.x,M,x.x,N,x.x,M*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\meters/second
+;|	             |  |  |  |  |  |  +------/Current
+;|	             |  |  |  |  |  +---------\knots
+;|	             |  |  |  |  +------------/Current
+;|	             |  |  |  +---------------\meters
+;|	             |  |  +------------------/Depth
+;|	             |  +---------------------\feet
+;|	             +------------------------/Depth
+;|	
+;|	
+;|	
+;|	 VPE - Speed, Dead Reckoned Parallel to True Wind
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--VPE,x.x,N,x.x,M*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\meters/second
+;|	             |  |  +------------------/Speed, "-" = downwind
+;|	             |  +---------------------\knots
+;|	             +------------------------/Speed, "-" = downwind
+;|	
+;|	
+;|	
+;|	 VTA - Actual Track
+;|	
+;|	        Limited utility, possible use of $--VTG for a portion of the data.
+;|	
+;|	     $--VTA,x.x,T,x.x,M,x.x,N,x.x,N*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\nautical miles
+;|	             |  |  |  |  |  |  +------/Distance made good
+;|	             |  |  |  |  |  +---------\knots
+;|	             |  |  |  |  +------------/Speed made good
+;|	             |  |  |  +---------------\degrees Magnetic
+;|	             |  |  +------------------/Track made good
+;|	             |  +---------------------\degrees True
+;|	             +------------------------/Track made good
+;|	
+;|	
+;|	
+;|	 VTI - Intended Track
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--VTI,x.x,T,x.x,M,x.x,N,x.x,N*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\nautical miles
+;|	             |  |  |  |  |  |  +------/Distance made good
+;|	             |  |  |  |  |  +---------\knots
+;|	             |  |  |  |  +------------/Speed made good
+;|	             |  |  |  +---------------\degrees Magnetic
+;|	             |  |  +------------------/Intended Track
+;|	             |  +---------------------\degrees True
+;|	             +------------------------/Intended Track
+;|	
+;|	
+;|	
+;|	 VWE - Wind Track Efficiency
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--VWE,x.x*hh<CR><LF>
+;|	             |
+;|	             +-------------------------Efficiency, percent
+;|	
+;|	
+;|	
+;|	 VWR - Relative (Apparent) Wind Speed and Angle
+;|	
+;|	        Wind angle in relation to the vessel's heading and wind speed meas-
+;|	        ured relative to the moving vessel.
+;|	
+;|	        The use of $--MWV is recommended.
+;|	
+;|	     $--VWR,x.x,a,x.x,N,x.x,M,x.x,K*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\Km/Hr
+;|	             |  |  |  |  |  |  +------/Wind speed
+;|	             |  |  |  |  |  +---------\meters/second
+;|	             |  |  |  |  +------------/Wind speed
+;|	             |  |  |  +---------------\knots
+;|	             |  |  +------------------/Measured wind Speed
+;|	             |  +---------------------\L/R Left or Right of vessel heading
+;|	             +------------------------/Measured wind angle relative to the vessel, 0 to 180 deg
+;|	
+;|	
+;|	
+;|	                                    Page I-12
+;|	  VWT - True Wind Speed and Angle
+;|	
+;|	        True wind angle in relation to the vessel's heading and true wind
+;|	        speed referenced to the water. True wind is the vector sum of the
+;|	        Relative (Apparent) wind vector and the vessel's velocity vector
+;|	        relative to the water along the heading line of the vessel. It
+;|	        represents the wind at the vessel if it were stationary relative to
+;|	        the water and heading in the same direction.
+;|	
+;|	        The use of $--MWV is recommended.
+;|	
+;|	     $--VWT,x.x,a,x.x,N,x.x,M,x.x,K*hh<CR><LF>
+;|	             |  |  |  |  |  |  |  |
+;|	             |  |  |  |  |  |  |  +---\Km/Hr
+;|	             |  |  |  |  |  |  +------/Wind speed
+;|	             |  |  |  |  |  +---------\meters/second
+;|	             |  |  |  |  +------------/Wind speed
+;|	             |  |  |  +---------------\knots
+;|	             |  |  +------------------/Calculated wind Speed
+;|	             |  +---------------------\L/R Left or Right of vessel heading
+;|	             +------------------------/Calculated wind angle relative to the vessel, 0 to 180 deg
+;|	
+;|	
+;|	
+;|	 WDC - Distance & Waypoint
+;|	
+;|	        Distance from present position to the specified waypoint.
+;|	
+;|	        The use of $--BWC is recommended.
+;|	
+;|	     $--WDC,x.x,N,c--c*hh<CR><LF>
+;|	             |  |  |
+;|	             |  |  +-------------------Waypoint identifier
+;|	             |  +---------------------\nautical miles
+;|	             +------------------------/Distance
+;|	
+;|	
+;|	
+;|	 WDR - Waypoint Distance, Rhumb Line
+;|	
+;|	        The use of $--WDC using great circle calculations is recommend-
+;|	        ed.
+;|	
+;|	     $--WDR,x.x,N,c--c*hh<CR><LF>
+;|	             |  |  |
+;|	             |  |  +-------------------Waypoint identifier
+;|	             |  +---------------------\nautical miles
+;|	             +------------------------/Distance
+;|	
+;|	
+;|	
+;|	 WFM - Route Following Mode
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--WFM,a*hh<CR><LF>
+;|	            |
+;|	            +--------------------------Mode: "A" = automatic, "V" = manual
+;|	
+;|	
+;|	
+;|	 WNR - Waypoint-to-Waypoint Distance, Rhumb Line
+;|	
+;|	        The use of $--WNC using great circle calculations is recommend-
+;|	        ed.
+;|	
+;|	     $--WNR,x.x,N,x.x,K,c--c,c--c*hh<CR><LF>
+;|	             |  |  |  |  |    |
+;|	             |  |  |  |  |    +--------
+;|	             |  |  |  |  +-------------
+;|	             |  |  |  +---------------\
+;|	             |  |  +------------------/
+;|	             |  +---------------------\
+;|	             +------------------------/
+;|	
+;|	
+;|	
+;|	                                    Page I-13
+;|	  YWP - Water Propagation Speed
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--YWP,x.x,f,x.x,M*hh<CR><LF>
+;|	             |  |  |  |
+;|	             |  |  |  +---------------\meters/second
+;|	             |  |  +------------------/Speed
+;|	             |  +---------------------\feet/second
+;|	             +------------------------/Speed
+;|	
+;|	
+;|	
+;|	 YWS - Water Profile
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--YWS,x.x,x.x,x.x,C,x.x,f,x.x,M*hh<CR><LF>
+;|	             |   |   |  |  |  |  |  |
+;|	             |   |   |  |  |  |  |  +-\meters
+;|	             |   |   |  |  |  |  +----/Depth
+;|	             |   |   |  |  |  +-------\feet
+;|	             |   |   |  |  +----------/Depth
+;|	             |   |   |  +-------------\degrees C
+;|	             |   |   +----------------/Temperature at depth
+;|	             |   +---------------------Chlorinity, parts/thousand
+;|	             +-------------------------Salinity,   parts/thousand
+;|	
+;|	
+;|	
+;|	 Zaa - Time, Elapsed/Estimated
+;|	
+;|	        Elapsed time from point-of-interest.
+;|	        The use of $--ZFO is recommended.
+;|	
+;|	     $--ZFI,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	              |         |        |
+;|	              |         |        +-----Waypoint ID
+;|	              |         +--------------Elapsed time from waypoint
+;|	              +------------------------UTC
+;|	
+;|	
+;|	        Arrival time at point-of-interest.
+;|	        The use of $--ZTG is recommended.
+;|	
+;|	     $--ZPI,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	              |         |        |
+;|	              |         |        +-----Waypoint ID
+;|	              |         +--------------Arrival time at waypoint
+;|	              +------------------------UTC
+;|	
+;|	
+;|	        Estimated time of arrival at waypoint.
+;|	        The use of $--ZTG is recommended.
+;|	
+;|	     $--ZTA,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	              |         |        |
+;|	              |         |        +-----Waypoint ID
+;|	              |         +--------------Estimated time at waypoint
+;|	              +------------------------UTC
+;|	
+;|	
+;|	        Estimated time to event/point-of-interest.
+;|	        The use of $--ZTG is recommended.
+;|	
+;|	     $--ZTE,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	     $--ZTI,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	              |         |        |
+;|	              |         |        +-----Waypoint ID
+;|	              |         +--------------Estimated time-to-go to waypoint
+;|	              +------------------------UTC
+;|	
+;|	
+;|	        Arrival time at waypoint.
+;|	        The use of $--ZTG is recommended.
+;|	
+;|	     $--ZWP,hhmmss.ss,hhmmss.ss,c--c*hh<CR><LF>
+;|	              |         |        |
+;|	              |         |        +-----Waypoint ID
+;|	              |         +--------------Arrival time at waypoint
+;|	              +------------------------UTC
+;|	
+;|	
+;|	
+;|	                                    Page I-14
+;|	  ZCD - Timer
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--ZCD,xxxxxx,a*hh<CR><LF>
+;|	              |    |
+;|	              |    +-------------------Control: "+" = count up
+;|	              |                                 "-" = count down
+;|	              |                                 "V" = stop  count
+;|	              +------------------------Timer initial value, seconds
+;|	
+;|	
+;|	
+;|	 ZEV - Event Timer
+;|	
+;|	        Limited utility, no recommended replacement.
+;|	
+;|	     $--ZEV,hhmmss.ss,hhmmss.ss,a,c--c*hh<CR><LF>
+;|	              |         |       |  |
+;|	              |         |       |  +---Waypoint ID
+;|	              |         |       +------Control: "+" = count up
+;|	              |         |                       "-" = count down
+;|	              |         |                       "V" = stop  count
+;|	              |         +--------------Timer initial value, seconds
+;|	              +------------------------UTC
+;|	
+;|	
+;|	
+;|	 ZLZ - Time of Day
+;|	
+;|	        Time of day in hours-minutes-seconds, both with respect to
+;|	        (UTC) and the local time zone.
+;|	
+;|	        The use of $--ZDA is recommended.
+;|	
+;|	     $--ZEV,hhmmss.ss,hhmmss.ss,xx*hh<CR><LF>
+;|	              |         |       |
+;|	              |         |       +------Local zone description [1], -12 to +12
+;|	              |         +--------------Local time
+;|	              +------------------------UTC
+;|	
+;|	
+;|	 Notes:
+;|	
+;|	    [1] Zone description is the number of whole hours added to local
+;|	        time to obtain GMT, Zone description is negative for East
+;|	        longitudes.
+;|	
+;|	
+;|	
+;|	 ZZU - Time, UTC
+;|	
+;|	        The use of $--ZDA is recommended.
+;|	
+;|	     $--ZZU,hhmmss.ss*hh<CR><LF>
+;|	              |
+;|	              +------------------------UTC
+;|	
+;|	
+;|	
+;|	 End of Appendix I
+;|	
+;|	
+;|	                                    Page I-15
+;|	 
+;|	
+;|	                              NMEA 0183 APPENDIX II
+;|	
+;|	                                   Version 2.00
+;|	
+;|	                                 January 1, 1992
+;|	
+;|	
+;|	
+;|	
+;|	                           IMO List of Equipment and Notes
+;|	
+;|	
+;|	
+;|	                                (To Be Determined)
+;|	
+;|	
+;|	                                    Page II-1
+;|	                               NMEA 0183 APPENDIX III
+;|	
+;|	                                   Version 2.00
+;|	
+;|	                                 January 1, 1992
+;|	
+;|	
+;|	                           Manufacturer's Mnemonic Codes
+;|	
+;|	
+;|	
+;|	
+;|	
+;|	
+;|	        AAR  ASIAN AMERICAN RESOURCES
+;|	        ACE  AUTO-COMM ENGINEERING CORP.
+;|	        ACR  ACR ELECTRONICS, INC.
+;|	        ACS  ARCO SOLAR, INC.
+;|	        ACT  ADVANCED CONTROL TECHNOLOGY
+;|	        AGI  AIRGUIDE INSTRUMENT CO.
+;|	        AHA  AUTOHELM OF AMERICA
+;|	        AIP  AIPHONE CORP.
+;|	        ALD  ALDEN ELECTRONICS, INC.
+;|	        AMR  AMR SYSTEMS
+;|	        AMT  AIRMAR TECHNOLOGY
+;|	        ANS  ANTENNA SPECIALISTS
+;|	        ANX  ANALYTYXS ELECTRONIC SYSTEMS
+;|	        ANZ  ANSCHUTZ OF AMERICA
+;|	        APC  APELCO
+;|	        APN  AMERICAN PIONEER, INC.
+;|	        APX  AMPEREX, INC.
+;|	        AQC  AQUA-CHEM, INC.
+;|	        AQD  AQUADYNAMICS, INC.
+;|	        AQM  AQUA METER INSTRUMENT CO.
+;|	        ASP  AMERICAN SOLAR POWER
+;|	        ATE  AETNA ENGENEERING
+;|	        ATM  ATLANTIC MARKETING COMPANY, INC.
+;|	        ATR  AIRTRON
+;|	        ATV  ACTIVATION, INC.
+;|	        AVN  ADVANCED NAVIGATION, INC.
+;|	        AWA  AWA NEW ZEALAND, LTD.
+;|	
+;|	        BBL  BBL INDUSTRIES, INC.
+;|	        BBR  BBR AND ASSOCIATES
+;|	        BDV  BRISSON DEVELOPMENT, INC.
+;|	        BEC  BOAT ELECTRIC CO.
+;|	        BGS  BARRINGER GEOSERVICE
+;|	        BGT  BROOKES AND GATEHOUSE, INC.
+;|	        BHE  BH ELECTRONICS
+;|	        BHR  BAHR TECHNOLOGIES, INC.
+;|	        BLB  BAY LABORATORIES
+;|	        BMC  BMC
+;|	        BME  BARTEL MARINE ELECTRONICS
+;|	
+;|	
+;|	                                            Page III-1
+;|	         BNI  NEIL BROWN INSTRUMENT SYSTEMS
+;|	        BNS  BOWDITCH NAVIGATION SYSTEMS
+;|	        BRM  MEL BARR COMPANY
+;|	        BRY  BYRD INDUSTRIES
+;|	        BTH  BENTHOS, INC.
+;|	        BTK  BALTEK CORP.
+;|	        BTS  BOAT SENTRY, INC.
+;|	        BXA  BENDIX-AVALEX, INC.
+;|	
+;|	        CAT  CATEL
+;|	        CBN  CYBERNET MARINE PRODUCTS
+;|	        CCA  COPAL CORPORATION OF AMERICA
+;|	        CCC  COASTEL COMMUNICATIONS COMPANY
+;|	        CCL  COASTAL CLIMATE COMPANY
+;|	        CCM  COASTAL COMMUNICATIONS
+;|	        CDC  CORDIC COMPANY
+;|	        CEC  CECO COMMUNICATIONS, INC.
+;|	        CHI  CHARLES INDUSTRIES, LTD.
+;|	        CKM  CINKEL MARINE ELECTRONICS INDUSTRIES
+;|	        CMA  SOCIETE NOUVELLE D'EQUIPEMENT DU CALVADOS
+;|	        CMC  COE MANUFACTURING CO.
+;|	        CME  CUSHMAN ELECTRONICS, INC.
+;|	        CMP  C-MAP, s.r.l.
+;|	        CMS  COASTAL MARINE SALES COMPANY
+;|	        CMV  COURSEMASTER USA, INC.
+;|	        CNV  COASTAL NAVIGATOR
+;|	        CNX  CYNEX MANUFACTURING COMPANY
+;|	        CPL  COMPUTROL, INC.
+;|	        CPN  COMPUNAV
+;|	        CPS  COLUMBUS POSITIONING, LTD.
+;|	        CPT  CPT, INC.
+;|	        CRE  CRYSTAL ELECTRONICS, LTD.
+;|	        CRO  THE CARO GROUP
+;|	        CRY  CRYSTEK CRYSTALS CORP.
+;|	        CSM  COMSAT MARITIME SERVICES
+;|	        CST  CAST, INC.
+;|	        CSV  COMBINED SERVICES
+;|	        CTA  CURRENT ALTERNATIVES
+;|	        CTB  CETEC BENMAR
+;|	        CTC  CELL-TECH COMMUNICATIONS
+;|	        CTE  CASTLE ELECTRONICS
+;|	        CTL  C-TECH, LTD.
+;|	        CNI  CONTINENTAL INSTRUMENTS
+;|	        CWD  CUBIC WESTERN DATA
+;|	        CWV  CELWACE R.F., INC.
+;|	        CYZ  CYZ, INC.
+;|	
+;|	        DCC  DOLPHIN COMPONENTS CORP.
+;|	        DEB  DEBEG GMBH
+;|	        DFI  DEFENDER INDUSTRIES, INC.
+;|	        DGC  DIGICOURSE, INC.
+;|	        DME  DIGITAL MARINE ELECTRONICS CORP.
+;|	        DMI  DATAMARINE INTERNATIONAL, INC.
+;|	
+;|	
+;|	                                            Page III-2
+;|	         DNS  DORNIER SYSTEM GMBH
+;|	        DNT  DEL NORTE TECHNOLOGY, INC.
+;|	        DPS  DANAPLUS, INC.
+;|	        DRL  R.L.DRAKE COMPANY
+;|	        DSC  DYNASCAN CORP.
+;|	        DYN  DYNAMOTE CORPORATION
+;|	        DYT  DYTEK LABORATORIES, INC.
+;|	
+;|	        EBC  EMERGENCY BEACON CORP.
+;|	        ECT  ECHOTEC, INC.
+;|	        EEV  EEV, INC.
+;|	        EFC  EFCOM COMMUNICATION SYSTEMS
+;|	        ELD  ELECTRONIC DEVICES, INC.
+;|	        EMC  ELECTRIC MOTION COMPANY
+;|	        EMS  ELECTRO MARINE SYSTEMS, INC.
+;|	        ENA  ENERGY ANALYSTS, INC.
+;|	        ENC  ENCRON, INC.
+;|	        EPM  EPSCO MARINE
+;|	        EPT  EASTPRINT, INC.
+;|	        ERC  THE ERICSSON CORPORATION
+;|	        ESA  EUROPEAN SPACE AGENCY
+;|	
+;|	        FDN  FLUIDDYNE
+;|	        FHE  FISH HAWK ELECTRONICS
+;|	        FJN  JON FLUKE CO.
+;|	        FMM  FIRST MATE MARINE AUTOPILOTS
+;|	        FNT  FRANKLIN NET AND TWINE, LTD.
+;|	        FRC  THE FREDERICKS COMPANY
+;|	        FTG  T.G.FARIA CORPORATION
+;|	        FUJ  FUJITSU TEN CORPORATION OF AMERICA
+;|	        FEC  FURUNO ELECTRIC CO.
+;|	        FUR  FURUNO, USA. INC.
+;|	
+;|	        GAM  GRE AMERICA, INC.
+;|	        GCA  GULF CELLULAR ASSOCIATES
+;|	        GES  GEOSTAR CORPORATION
+;|	        GFC  GRAPHIC CONTROLS, CORP.
+;|	        GIS  GALAX INTEGRATED SYSTEMS
+;|	        GPI  GLOBAL POSITIONING INSTRUMENT CORP.
+;|	        GRM  GARMIN CORPORATION
+;|	        GSC  GOLD STAR COMPANY, LTD.
+;|	        GTO  GRO ELECTRONICS
+;|	        GVE  GUEST CORPORATION
+;|	        GVT  GREAT VALLEY TECHNOLOGY
+;|	
+;|	        HAL  HAL COMMUNICATIONS CORPORATION
+;|	        HAR  HARRIS CORPORATION
+;|	        HIG  HY-GAIN
+;|	        HIT  HI-TEC
+;|	        HPK  HEWLETT-PACKARD
+;|	        HRC  HARCO MANUFACTURING COMPANY
+;|	        HRT  HART SYSTEMS, INC.
+;|	        HTI  HEART INTERFACE, INC.
+;|	
+;|	
+;|	                                            Page III-3
+;|	         HUL  HULL ELECTRONICS COMPANY
+;|	        HWM  HONEYWELL MARINE SYSTEMS
+;|	
+;|	        ICO  ICOM OF AMERICA, INC.
+;|	        IFD  INTERNATIONAL FISHING DEVICES
+;|	        IFI  INSTRUMENTS FOR INDUSTRY
+;|	        IME  IMPERIAL MARINE EQUIPMENT
+;|	        IMI  I.M.I.
+;|	        IMM  ITT MACKAY MARINE
+;|	        IMP  IMPULSE MANUFACTURING, INC.
+;|	        IMT  INTERNATIONAL MARKETING AND TRADING, INC.
+;|	        INM  INMAR ELECTRONIC AND SALES, INC.
+;|	        INT  INTECH, INC.
+;|	        IRT  INTERA TECHNOLOGIES, LTD.
+;|	        IST  INNERSPACE TECHNOLOGY, INC.
+;|	        ITM  INTERMARINE ELECTRONICS, INC.
+;|	        ITR  ITERA, LTD.
+;|	
+;|	        JAN  JAN CRYSTALS
+;|	        JFR  RAY JEFFERSON
+;|	        JMT  JAPAN MARINE TELECOMMUNICATIONS
+;|	        JRC  JAPAN RADIO COMPANY, LTD.
+;|	        JRI  J-R INDUSTRIES, INC.
+;|	        JTC  J-TECH ASSOCIATES, INC.
+;|	        JTR  JOTRON RADIOSEARCH, LTD.
+;|	
+;|	        KBE  KB ELECTRONICS, LTD.
+;|	        KBM  KENNEBEC MARINE COMPANY
+;|	        KLA  KLEIN ASSOCIATES, INC.
+;|	        KMR  KING MARINE RADIO CORP.
+;|	        KNG  KING RADIO CORPORATION
+;|	        KOD  KODEN ELECTRONICS COMPANY, LTD.
+;|	        KRP  KRUPP INTERNATIONAL, INC.
+;|	        KVH  KVH COMPANY
+;|	        KYI  KYOCERA INTERNATIONAL, INC.
+;|	
+;|	        LAT  LATITUDE CORPORATION
+;|	        LEC  LORAIN ELECTRONICS CORP.
+;|	        LMM  LAMARCHE MANUFACTURING CO.
+;|	        LRD  LORAD
+;|	        LSE  LITTLEMORE SCIENTIFIC ENGINEERING
+;|	        LSP  LASER PLOT, INC.
+;|	        LTF  LITTLEFUSE, INC.
+;|	        LWR  LOWRANCE ELECTRONICS CORP.
+;|	
+;|	        MCL  MICROLOGIC, INC.
+;|	        MDL  MEDALLION INSTRUMENTS, INC.
+;|	        MEC  MARINE ENGINE CENTER, INC.
+;|	        MEG  MARITEC ENGINEERING GMBH
+;|	        MFR  MODERN PRODUCTS, LTD.
+;|	        MFW  FRANK W. MURPHY MANUFACTURING
+;|	        MGS  MG ELECTRONIC SALES CORP.
+;|	        MIE  MIECO, INC.
+;|	
+;|	
+;|	                                            Page III-4
+;|	         MIM  MARCONI INTERNATIONAL MARINE CO.
+;|	        MLE  MARTHA LAKE ELECTRONICS
+;|	        MLN  MATLIN COMPANY
+;|	        MLP  MARLIN PRODUCTS
+;|	        MLT  MILLER TECHNOLOGIES
+;|	        MMB  MARSH-MCBIRNEY, INC.
+;|	        MME  MARKS MARINE ENGINEERING
+;|	        MMP  METAL MARINE PILOT, INC.
+;|	        MMS  MARS MARINE SYSTEMS
+;|	        MNI  MICRO-NOW INSTRUMENT COMPANY
+;|	        MNT  MARINE TECHNOLOGY
+;|	        MNX  MARINEX
+;|	        MOT  MOTOROLA COMMUNICATIONS AND ELECTRONICS
+;|	        MPN  MEMPHIS NET AND TWINE COMPANY, INC.
+;|	        MQS  MARQUIS INDUSTRIES, INC.
+;|	        MRC  MARINECOMP, INC.
+;|	        MRE  MORAD ELECTRONICS CORP.
+;|	        MRP  MOORING PRODUCTS OF NEW ZEALAND
+;|	        MRR  II MORROW, INC.
+;|	        MRS  MARINE RADIO SERVICE
+;|	        MSB  MITSUBISHI ELECTRIC COMPANY, LTD.
+;|	        MSE  MASTER ELECTRONICS
+;|	        MSM  MASTER MARINER, INC.
+;|	        MST  MESOTECH SYSTEMS, LTD.
+;|	        MTA  MARINE TECHNICAL ASSOCIATES
+;|	        MTG  MARINE TECHNICAL ASSISTANCE GROUP
+;|	        MTK  MARTECH, INC.
+;|	        MTR  MITRE CORPORATION, THE
+;|	        MTS  METS, INC.
+;|	        MUR  MURATA ERIE NORTH AMERICA
+;|	        MVX  MAGNAVOX ADVANCED PRODUCTS AND SYSTEMS CO.
+;|	        MXX  MAXXIMA MARINE
+;|	        MES  MARINE ELECTRONICS SERV. INC.
+;|	
+;|	        NAT  NAUTECH, LTD.
+;|	        NEF  NEW ENGLAND FISHING GEAR, INC.
+;|	        NMR  NEWMAR
+;|	        NGS  NAVIGATION SCIENCES, INC.
+;|	        NOM  NAV-COM, INC.
+;|	        NOV  NOVATEL COMMUNICATIONS, LTD.
+;|	        NSM  NORTHSTAR MARINE
+;|	        NTK  NOVATECH DESIGNS, LTD.
+;|	        NVC  NAVICO
+;|	        NVS  NAVSTAR
+;|	        NVO  NAVIONICS, S.P.A.
+;|	
+;|	        OAR  O.A.R. CORPORATION
+;|	        ODE  OCEAN DATA EQUIPMENT CORP.
+;|	        ODN  ODIN ELECTRONICS, INC.
+;|	        OIN  OCEAN INSTRUMENTS, INC.
+;|	        OKI  OKI ELECTRIC INDUSTRY COMPANY
+;|	        OLY  NAVSTAR LTD. (POLYTECHNIC ELECTRONICS)
+;|	        OMN  OMNETICS
+;|	
+;|	
+;|	                                            Page III-5
+;|	         ORE  OCEAN RESEARCH
+;|	        OTK  OCEAN TECHNOLOGY
+;|	
+;|	        PCE  PACE
+;|	        PDM  PRODELCO MARINE SYSTEMS
+;|	        PLA  PLATH, C. DIV OF LITTON
+;|	        PLI  PILOT INSTRUMENTS
+;|	        PMI  PERNICKA MARINE INSTRUMENTS
+;|	        PMP  PACIFIC MARINE PRODUCTS
+;|	        PRK  PERKO, INC.
+;|	        PSM  PEARCE-SIMPSON
+;|	        PTC  PETRO-COM
+;|	        PTG  P.T.I./GUEST
+;|	        PTH  PATHCOM, INC.
+;|	
+;|	        RAC  RACAL MARINE, INC.
+;|	        RAE  RCA ASTRO-ELECTRONICS
+;|	        RAY  RAYTHEON MARINE COMPANY
+;|	        RCA  RCA SERVICE COMPANY
+;|	        RCH  ROACH ENGINEERING
+;|	        RCI  ROCHESTER INSTRUMENTS, INC.
+;|	        RDI  RADAR DEVICES
+;|	        RDM  RAY-DAR MANUFACTURING COMPANY
+;|	        REC  ROSS ENGINEERING CO.
+;|	        RFP  ROLFITE PRODUCTS, INC.
+;|	        RGC  RCA GLOBAL COMMUNICATIONS, INC.
+;|	        RGY  REGENCY ELECTRONICS, INC.
+;|	        RMR  RCA MISSILE AND SURFACE RADAR
+;|	        RSL  ROSS LABORATORIES, INC.
+;|	        RSM  ROBERTSON-SHIPMATE, USA.
+;|	        RWI  ROCKWELL INTERNATIONAL
+;|	        RME  RACAL MARINE ELECTRONICS
+;|	        RTN  ROBERTSON TRITECH NYASKAIEN A/S
+;|	
+;|	        SAI  SAI, INC.
+;|	        SBR  SEA-BIRD ELECTRONICS, INC.
+;|	        SCR  SIGNALCRAFTERS, INC.
+;|	        SEA  SEA
+;|	        SEC  SERCEL ELECTRONICS OF CANADA
+;|	        SEP  STEEL AND ENGINE PRODUCTS, LTD.
+;|	        SFN  SEAFARER NAVIGATION INTERNATIONAL, LTD.
+;|	        SGC  SGC, INC.
+;|	        SIG  SIGNET, INC.
+;|	        SIM  SIMRAD, INC.
+;|	        SKA  SKANTEK CORPORATION
+;|	        SKP  SKIPPER ELECTRONICS A/S
+;|	        SME  SHAKESPEARE MARINE ELECTRONICS
+;|	        SMF  SEATTLE MARINE AND FISHING SUPPLY CO.
+;|	        SML  SIMERL INSTRUMENTS
+;|	        SMI  SPERRY MARINE, INC.
+;|	        SNV  STARNAV CORPORATION
+;|	        SOM  SOUND MARINE ELECTRONICS, INC.
+;|	        SOV  SELL OVERSEAS AMERICA
+;|	
+;|	
+;|	                                            Page III-6
+;|	         SPL  SPELMAR
+;|	        SPT  SOUND POWERED TELEPHONE
+;|	        SRD  SRD LABS
+;|	        SRS  SCIENTIFIC RADIO SYSTEMS, INC.
+;|	        SRT  STANDARD RADIO AND TELEFON AB
+;|	        SSI  SEA SCOUT INDUSTRIES
+;|	        STC  STANDARD COMMUNICATIONS
+;|	        STI  SEA-TEMP INSTRUMENT CORP.
+;|	        STM  SI-TEX MARINE ELECTRONICS
+;|	        SVY  SAVOY ELECTRONICS
+;|	        SWI  SWOFFER MARINE INSTRUMENTS, INC.
+;|	        SRS  SHIPMATE, RAUFF & SORENSEN, A/S
+;|	
+;|	        TBB  THOMPSON BROTHERS BOAT MANUFACTURING CO.
+;|	        TCN  TRADE COMMISSION OF NORWAY, THE
+;|	        TDL  TIDELAND SIGNAL
+;|	        THR  THRANE AND THRANE A/A
+;|	        TLS  TELESYSTEMS
+;|	        TMT  TAMTECH, LTD.
+;|	        TNL  TRIMBLE NAVIGATION
+;|	        TRC  TRACTOR, INC.
+;|	        TSI  TECHSONIC INDUSTRIES, INC.
+;|	        TTK  TALON TECHNOLOGY CORPORATION
+;|	        TTS  TRANSTECTOR SYSTEMS
+;|	        TWC  TRANSWORLD COMMUNICATIONS, INC.
+;|	        TXI  TEXAS INSTRUMENTS, INC.
+;|	
+;|	        UME  UMEC
+;|	        UNI  UNIDEN CORPORATION OF AMERICA
+;|	        UNP  UNIPAS, INC.
+;|	        UNF  UNIFORCE ELECTRONICS COMPANY
+;|	
+;|	        VAN  VANNER, INC.
+;|	        VAR  VARIAN EIMAC ASSOCIATES
+;|	        VCM  VIDEOCOM
+;|	        VEX  VEXILAR
+;|	        VIS  VESSEL INFORMATION SYSTEMS, INC.
+;|	        VMR  VAST MARKETING CORP.
+;|	
+;|	        WAL  WALPORT U.S.A.
+;|	        WBG  WESTBERG MANUFACTURING, INC.
+;|	        WBR  WESBAR CORPORATION
+;|	        WEC  WESTINGHOUSE ELECTRIC CORP.
+;|	        WHA  W-H AUTOPILOTS
+;|	        WMM  WAIT MANUFACTURING AND MARINE SALES CO.
+;|	        WMR  WESMAR ELECTRONICS
+;|	        WNG  WINEGARD COMPANY
+;|	        WSE  WILSON ELECTRONICS CORPORATION
+;|	        WTC  WATERCOM
+;|	        WST  WEST ELECTRONICS LIMITED
+;|	
+;|	        YAS  YAESU ELECTRONICS
+;|	
+;|	
+;|	                                            Page III-7
+;|	 
+;|	
+;|	                              NMEA 0183 APPENDIX IV
+;|	
+;|	                                   Version 2.00
+;|	
+;|	                                 January 1, 1992
+;|	
+;|	
+;|	                                     GLOSSARY
+;|	
+;|	
+;|	
+;|	
+;|	
+;|	accuracy - in navigation, a measure of the error between the
+;|	 point desired and the point achieved, or between the position in-
+;|	 dicated by measurement and the true position [compare with preci-
+;|	 sion].
+;|	
+;|	address field - for sentences in this standard, the fixed length
+;|	 field following the beginning sentence delimiter "$" (HEX 24).
+;|	 For approved sentences, composed of a two character talker iden-
+;|	 tifier and a three character sentence formatter. For proprietary
+;|	 sentences, composed of the charcter "P" (HEX 50) followed by a
+;|	 three character manufacturer identification code.
+;|	
+;|	additional secondary factor - in Loran-C, a correction in addi-
+;|	 tion to the secondary phase factor correction for the additional
+;|	 time (or phase delay) for transmission of a low frequency signal
+;|	 over a composite land-seawater path when the signal transit time
+;|	 is based on the free-space velocity.
+;|	
+;|	apparent wind - (see 'relative wind').
+;|	
+;|	approved sentence - a sentence which has been approved for gener-
+;|	 al use by the NMEA general assembly and is listed in this stand-
+;|	 ard and attached Appendices.
+;|	
+;|	arrival alarm - an alarm signal issued by a voyage tracking unit
+;|	 which indicates arrival at or at a pre-determined distance from a
+;|	 waypoint. - (see 'arrival circle')
+;|	
+;|	arrival circle - an artificial boundary placed around the desti-
+;|	 nation waypoint of the present navigation leg, the entering of
+;|	 which will signal an arrival alarm.
+;|	
+;|	arrival perpendicular - crossing of the line which is perpendicu-
+;|	 lar to the course line and which passes through the destination
+;|	 waypoint.
+;|	
+;|	azimuth - the horizontal direction of a celestial point from a
+;|	 terrestrial point, expressed as the angular distance from a ref-
+;|	 erence direction, usually measured from 000deg at the reference di-
+;|	 rection clockwise through 360deg.
+;|	
+;|	
+;|	                                            Page IV-1
+;|	 ASCII - American Standard Code for Information Interchange. A 7
+;|	 bit wide serial code describing numbers, upper and lower case al-
+;|	 pha, characters, special and non-printing charcters. See Ameri-
+;|	 can National Standards Institute documents ANSI X 3.15, ANSI X
+;|	 3.16 and ANSI X 3.4.
+;|	
+;|	atomic time - time obtained by counting the cycles of a signal in
+;|	 resonance with certain kinds of atoms.
+;|	
+;|	autopilot - an automatic device for steering a vessel so as to
+;|	 maintain its heading in an intended direction. Mechanical means
+;|	 are used to steer the rudder. A radio navigation system is often
+;|	 connected to correct for track errors, or to select new destina-
+;|	 tions.
+;|	
+;|	bearing - the horizontal direction of one terrestrial point from
+;|	 another, expressed as the angular distance from a reference di-
+;|	 rection, usually measured from 000deg at the reference direction
+;|	 clockwise through 360deg.
+;|	
+;|	Beaufort wind scale - a numerical scale for indicating wind
+;|	 speed. Beaufort numbers (or forces) range from force 0 (calm) to
+;|	 force 12 (hurricane).
+;|	
+;|	blink - in Loran-C, a signal used to indicate that a station is
+;|	 malfunctioning. Intended to prevent use of that signal for navi-
+;|	 gation.
+;|	
+;|	checksum - for this standard, a validity check performed on the
+;|	 data contained in the sentence, calculated by the talker, ap-
+;|	 pended to the message, when recalculated by the listener for com-
+;|	 parison to determine if the message was received correctly. Re-
+;|	 quired for some sentences, optional for all others.
+;|	
+;|	communication protocoll - a method established for message trans-
+;|	 fer between a talker and a listener which includes the message
+;|	 format and the sequence in which the message are to be trans-
+;|	 ferred. Also includes the signaling requirements such as baud
+;|	 rate, stop bits, parity, and bits per character.
+;|	
+;|	course - the horizontal direction in which a vessel is steered or
+;|	 intended to be steered, expressed as angular distance from north,
+;|	 usually from 000deg at north, clockwise through 360deg. Strictly,
+;|	 the term applies to direction through the water, not the direc-
+;|	 tion intended to be made good over the ground (see 'track'). Dif-
+;|	 fers from heading.
+;|	
+;|	course over ground (COG) - term used to refer to the direction of
+;|	 the path over ground actually followed by a vessel [a misnomer in
+;|	 that courses are directions steered or intended to be steered
+;|	 through the water with respect to a reference meridian].
+;|	
+;|	cross track error (XTE) - the distance from the vessel's present
+;|	 position to the closest point on a line between the origin and
+;|	 destination waypoints of the navigation leg being travelled.
+;|	
+;|	
+;|	                                            Page IV-2
+;|	 cycle lock - in Loran-C, the comparison, in time difference, be-
+;|	 tween corresponding carrier cycles contained in the rise times of
+;|	 a master and slave station pulse is called cycle match. This
+;|	 value when refined to a determination of the phase difference be-
+;|	 tween these two cycles results in cycle lock. (See also 'en-
+;|	 velope-to-cycle distortion').
+;|	
+;|	data field - in an NMEA 0183 sentence, a field which contains a
+;|	 data value.
+;|	
+;|	dead reckoning - the process of determining the position of a
+;|	 vessel at any instant by applying to the last well-determined po-
+;|	 sition (point of departure or subsequent fix) the run that has
+;|	 since been made, usually based on the recent history of speed and
+;|	 heading measurements.
+;|	
+;|	Decca chain - a group of associated stations of the Decca Naviga-
+;|	 tor System. A Decca chain normally consists of a master and
+;|	 three slave stations. Each slave station is called by the color
+;|	 of associated pattern of hyperbolic lines as printed on the
+;|	 chart, i.e., red slave, green slave, purple slave.
+;|	
+;|	Decca Navigator System - a short to medium range low frequency
+;|	(70-130 kHz) radionavigation system by which a hyperbolic line of
+;|	 position of high accuracy is obtained. The system is an arrange-
+;|	 ment of fixed, phase locked, continuous wave transmitters operat-
+;|	 ing on harmonically related frequencies and special receiving
+;|	 equipment located on a vessel.
+;|	
+;|	delimiter - in this standard, a character or characters used to
+;|	 separate fields or sentences. The following delimiters are used
+;|	 in this standard:
+;|	
+;|	      field delimiters    - ASCII "$" (HEX 24) for address  fields
+;|	                          - ASCII "," (HEX 2C) for data     fields
+;|	                          - ASCII "*" (HEX 2A) for checksum field
+;|	
+;|	      sentence delimiters - carriage return <CR> and line feed
+;|	                            <LF> (HEX 0D0A)
+;|	           [note: a <CR><LF> is not required preceding the first
+;|	                  sentence transmitted]
+;|	
+;|	depth sounder - an instrument which determines the depth of water
+;|	 by measuring the time interval between the emissions of a sound
+;|	 and the return of its echo from the bottom.
+;|	
+;|	destination - the immediate geographic point of interest to
+;|	 which a vessel is navigating. It may be the next waypoint along
+;|	 a route of waypoints or the final destination of a voyage.
+;|	
+;|	deviation - the angle between the magnetic meridian and the axis
+;|	 of a compass card, expressed in degrees east or west to indicate
+;|	 direction in which the northern end of the compass card is offset
+;|	 from magnetic north.
+;|	
+;|	
+;|	                                            Page IV-3
+;|	 Doppler speed log - an instrument which measures the relative mo-
+;|	 tion between a vessel and the reflective sea bottom (for bottom
+;|	 return mode) or suspended particulate matter in the seawater it-
+;|	 self (for water return mode) by measuring the frequency shifts
+;|	 between a transmitted and subsequently echoed acoustic or elec-
+;|	 tromagnetic signal.
+;|	
+;|	drift - the speed of a current.
+;|	
+;|	echo sounder - (see 'depth sounder').
+;|	
+;|	envelope-to-cycle distortion (ECD) - the time relationship be-
+;|	 tween the phase of the Loran-C carrier and the time origin of the
+;|	 envelope waveform.
+;|	
+;|	field - in this standard, a character or string of characters im-
+;|	 mediately preceded by a field delimiter (see 'delimiters').
+;|	
+;|	fixed field - in this standard, a field in which the number of
+;|	 characters is fixed. For data fields, such fields are shown in
+;|	 the sentence definitions with no decimal point. Other fields
+;|	 which fall into this category are the address field and the
+;|	 checksum field (if present).
+;|	
+;|	geoid - a surface along whith the gravity potential is everywhere
+;|	 equal (equipotential surface) and to which the direction of
+;|	 gravity is always perpendicular.
+;|	
+;|	geometric dilution of precision (GDOP) - a value representing all
+;|	 geometric factors that degrade the accuracy of a position fix
+;|	 which has been derived from a navigation system.
+;|	
+;|	Global Positioning System (GPS) - (full name NAVSTAR Global Posi-
+;|	 tioning System) an all-weather, continuous satellite navigation
+;|	 system being developed by the Department of Defense under Air
+;|	 Force management. The fully deployed operational system is in-
+;|	 tended to provide highly accurate position and velocity informa-
+;|	 tion in three dimensions and precise time and time interval on a
+;|	 global basis, to an unlimited number of authorized users. Al-
+;|	 though developed primarily for military missions, current policy
+;|	 calls for civil availability with a degradation in system accura-
+;|	 cy in order to protect U.S. national security interests.
+;|	
+;|	great circle - the intersection of the surface of a sphere and a
+;|	 plane through its center.
+;|	
+;|	great circle chart - a chart on which a great circle appears as a
+;|	 straight line or approximately so.
+;|	
+;|	great circle direction - horizontal direction of a great circle,
+;|	 expressed as angular distance from a reference direction.
+;|	
+;|	group repetition interval (GRI) - of a particular Loran-C chain,
+;|	 the specified time interval for all stations of the chain to
+;|	 transmit their pulse groups. For each chain a minimum group
+;|	
+;|	                                            Page IV-4
+;|	 repetition interval is selected of sufficient duration to provide
+;|	 time for each station to transmit its pulse group and additional
+;|	 time between each pulse group so that signals from two or more
+;|	 stations cannot overlap in time anywhere within the coverage
+;|	 area.
+;|	
+;|	gyrocompass - a compass having one or more gyroscopes as the di-
+;|	 rective element, and which is north-seeking. Its operation de-
+;|	 pends upon four natural phenomena: gyroscopic inertia, gyroscop-
+;|	 ic precession, the earth's rotation, and gravity.
+;|	
+;|	gyropilot - an automatic device for steering a vessel by means of
+;|	 control signals received from gyrocompass (see 'autopilot').
+;|	
+;|	gyroscope - a rapidly rotating mass free to move about one or
+;|	 both axes perpendicular to the axis of rotation and to each oth-
+;|	 er.
+;|	
+;|	heading - the horizontal direction in which a ship actually
+;|	 points or heads at any instant, expressed in angular units from a
+;|	 reference direction, usually from 000deg at the reference direction
+;|	clockwise through 360deg. (See 'true heading' and 'magnetic heading')
+;|	
+;|	
+;|	heading-to-steer - the difference between the bearing to destina-
+;|	 tion (from present position) and track-made-good, applied to the
+;|	 bearing to the destination to produce a heading that will guide
+;|	 the vessel to the destination.
+;|	
+;|	horizontal dilution of precision (HDOP) - similar to GDOP, except
+;|	 elevation factors are ignored.
+;|	
+;|	keel - a longitudinal timber or plate extending along the center
+;|	 of the bottom of a ship and often projecting from the bottom.
+;|	
+;|	line of position (LOP) - in Loran or Decca navigation systems, a
+;|	 vector obtained by measurement of the time difference between the
+;|	 receipt of the master and slave signals which is then used to se-
+;|	 lected a corresponding LOP from a chart or table, Two or more
+;|	 intersecting LOP's are required to obtain a position fix.
+;|	
+;|	listener - in this standard, the recipient of message across
+;|	 the interconnecting link.
+;|	
+;|	log - an instrument for measuring the speed or distance or both
+;|	 traveled by a vessel.
+;|	
+;|	Loran - the general designation of one group of radionavigation
+;|	 systems by which a hyperbolic line of position is determined
+;|	 through measuring the difference in the times of reception of
+;|	 synchronized pulse signals from two fixed transmitters.
+;|	
+;|	magnetic bearing - bearing relative to magnetic north; compass
+;|	 bearing corrected for deviation.
+;|	
+;|	
+;|	                                            Page IV-5
+;|	 magnetic heading - heading relative to magnetic north.
+;|	
+;|	
+;|	manufacturer identification code - in this standard, a three
+;|	 character manufacturer identifier, usually an acronym derived
+;|	 from the company name, which has been approved and is listed in
+;|	 Appendix III, for use by a manufacturer as part of the address
+;|	 field in formulation of proprietary sentences.
+;|	
+;|	Mercator map projection - a conformal cylindrical map projection
+;|	 in which the surface of a sphere or spheroid, such as earth, is
+;|	 conceived as developed on a cylinder tangent along the equator.
+;|	 Meridias appear as equally spaced vertical lines and parallels
+;|	 as horizontal lines drawn farther apart as the latitude and
+;|	 longitude scales at any point is maintained. Also known as Mer-
+;|	 cator map projection.
+;|	
+;|	Navigation Leg - the portion of a voyage upon which the vessel
+;|	 currently travels. Each leg consists of two waypoints, an ORIGIN,
+;|	 a DESTINATION, and a line between between them, upon which the vessel
+;|	 travels.
+;|	
+;|	Navy Navigation Satellite System (TRANSIT) - an operational
+;|	 satellite navigation system of the united States conceived and
+;|	 developed by the Applied Physics Laboratory of John Hopkins
+;|	 University for the U.S. Navy. It is an all-weather, worldwide,
+;|	 and passive system used primarily for the navigation of surface
+;|	 ships and submarines. Also known by the acronyms NAVSAT or
+;|	 TRANSIT, it consists of a constellation of orbiting satellites, a
+;|	 ground system of tracking stations, and any number of user sta-
+;|	 tions (navigators). The user stations are radionavigation de-
+;|	 vices composed of a receiver, a frequency cycle-counter, and a
+;|	 computer. The minimum constellation for system operation is four
+;|	 satellites (five satellites in orbit provide redundancy). The
+;|	 satellite orbits are controlled by the tracking stations. Satel-
+;|	 lites broadcast current known positions while orbiting the earth.
+;|	 The NAVSAT system utilizes the Doppler shift of radio signals
+;|	 transmitted from the satellite to measure the relative velocity
+;|	 between the satellite and the navigator. Knowing the satellite
+;|	 orbit precisely, the navigator's absolute position can be accu-
+;|	 rately determined from this time rate of change of range to the
+;|	 satellite.
+;|	
+;|	null field - in this standard, indicates that data is not avail-
+;|	 able for the field. Indicated by two ASCII commas, i.e., ",,"
+;|	 (HEX 2C2C), or, for the last data field in a sentence, one comma
+;|	 followed by either the checksum delimiter "*" (HEX 2A) or the
+;|	 sentce delimiters <CR><LF> (HEX 0D0A). [Note: the ASCII Null
+;|	 character (HEX 00) is not to be used for null fields!]
+;|	
+;|	Omega Navigation System - a worldwide, continuous, radionaviga-
+;|	 tion system of medium accuracy which provides hyperbolic lines of
+;|	 position through phase comparisons of VLF (10-14kHz) continuous
+;|	 wave signals transmitted on a common frequency on a time-shared
+;|	 basis. The fully implemented system is comprised of only eight
+;|	 transmitting stations.
+;|	
+;|	
+;|	                                            Page IV-6
+;|	 one-way communication protocol - a protocol established between a
+;|	 talker and a listener in which only the talker may send messages
+;|	 [compare to 'two-way communication protocol'].
+;|	
+;|	origin waypoint - the starting point of the present navigation
+;|	 leg.
+;|	
+;|	precision - a measure of how close the outcome of a series of ob-
+;|	 servations or measurements cluster about some estimated value of
+;|	 a desired quantity, such as the average value of a series of ob-
+;|	 servations of a quantity. Precision implies repeatability of
+;|	 the observations within some specified limit and depends upon the
+;|	 random errors encountered due to the quality of the observing
+;|	 equipment, the skill of the observer and randomly fluctuating
+;|	 conditions such as temperature, pressure, refraction, ect. [com-
+;|	 pare with 'accuracy'].
+;|	
+;|	proprietary sentence - a sentence to be sent across the intercon-
+;|	 necting link which is not included in the List of Approved Sen-
+;|	 tences of this standard. All proprietary sentences sent over the
+;|	 interconnecting link shall contain a unique talker identifier
+;|	 which bwgins with a "P" (HEX 50) followed by a three character
+;|	 manufacturer identification code.
+;|	
+;|	relative bearing - bearing relative to heading or to vessel.
+;|	
+;|	relative wind - the speed and relative direction from which the
+;|	 wind appears to blow with reference to a moving point (also
+;|	 called apparent wind).
+;|	
+;|	rhumb line - a line on the surface of the earth making the same
+;|	 oblique angle with allmeridians. A rhumb line is a straight
+;|	 line on a rhumb (or Mercator) projection.
+;|	
+;|	rhumb direction - the horizontal direction of a rhumb line, ex-
+;|	 pressed as angular distance from a refernce direction. Also
+;|	 known as Mercator direction. (See Mercator map projection).
+;|	
+;|	RMa sentence - Recommended Minimum Acceptable sentence, a compos-
+;|	 ite sentence recommended by this standard to insure interopera-
+;|	 bility between talkers and listeners and to insure that all data
+;|	 considered necessary for navigation is sent by a particular navi-
+;|	 gation unit.
+;|	
+;|	route - a planned course of travel, usually composed of more than
+;|	 one navigation leg.
+;|	
+;|	route system - any system of one or more routes and/or routing
+;|	 measures aimed at reducing the risk of casualties schemes, rec-
+;|	 ommended tracks, restricted areas, inshore traffic zones, etc.
+;|	
+;|	semi-fixed field - data fields having a base other than 10, but
+;|	 use base 10 to express precision of the final term (such as
+;|	 minutes expressed as units with a decimal trailer instead of sec-
+;|	
+;|	                                            Page IV-7
+;|	  onds in a base 60 field, or seconds expressed with a decimal
+;|	 trailer).
+;|	
+;|	
+;|	selected waypoint - the waypoint currently selected to be the
+;|	 point toward which the vessel is travelling. Also called "TO"
+;|	 Waypoint, destination or destination waypoint.
+;|	
+;|	
+;|	sentence formatter - in this standard, a three charcter sentence
+;|	 identifier which follows the talker identifier ans is included as
+;|	 part of the address field. The sentence formatters are an inte-
+;|	 gral part of the sentence definitions provided by this standard
+;|	 and attached appendices.
+;|	
+;|	set - the direction towards which a current flows.
+;|	
+;|	speed log - an instrument for measuring a vessel's speed through
+;|	 water and/or speed over ground. Asingle axis speed log normally
+;|	 measures speed along the longitudinal (fore/aft) axis of the ves-
+;|	 sel, while a dual axis speed log measures speed along the trans-
+;|	 verse (port/starboeard) axis as well. (Also see 'Doppler speed
+;|	 log').
+;|	
+;|	speed made good - the adjusted speed which takes into account
+;|	 factors such as drift and wind speed. Can be estimated or comput-
+;|	 ed ny a navigation receiver.
+;|	
+;|	speed over ground (SOG) - the speed of a vessel along the actual
+;|	 path of travel over the ground.
+;|	
+;|	signal-to-noise ratio (SNR) - the ratio of the magnitude of a
+;|	 signal to that of the noise (interference), often expressed in
+;|	 decibels.
+;|	
+;|	talker - in the NMEA 0183 Standard, the originator of messages
+;|	 across an NMEA 0183 link.
+;|	
+;|	talker identifier - the first two characters following the "$"
+;|	 (HEX 24) in an NMEA 0183 sentence (address character 1 and 2);
+;|	 selected from Table - Talker Identifier, Mnemonics of the NMEA
+;|	 0183 Standard.
+;|	
+;|	time difference (TD) - in Loran-C, the time difference measured
+;|	 from the time of reception of the master station signal to the
+;|	 time of reception of the slave station signal.
+;|	
+;|	track - the intended or desired horizontal direction of travel
+;|	 with respect to the earth. The track expressed in degrees of the
+;|	 compass may differ from the course due to allowence made in the
+;|	 course for such factors as sea and weather conditions in order to
+;|	 resume the desired track (see 'track made good').
+;|	
+;|	track made good - the single resultant direction from a point of
+;|	 departure to a point of arrival at any given time.
+;|	
+;|	
+;|	                                            Page IV-8
+;|	 transducer - a device that converts one type of energy to anoth-
+;|	 er, as a loudspeaker that changes electrical energy into acousti-
+;|	 cal energy.
+;|	
+;|	true bearing - bearing relative to true north; compass bearing
+;|	 corrected for compass error.
+;|	
+;|	true heading - heading relative to true north.
+;|	
+;|	to-way-communication protocol - a protocol established between a
+;|	 talker and a listener in which the listener may also issue re-
+;|	 quests to the talker when required [compare to 'one-way communica-
+;|	 tion protocol].
+;|	
+;|	UART - Universal Asynchronous Receiver/Transmitter which produces
+;|	 an electrical signal and timing for transmission of data over a 
+;|	 communication path, and circuitry for detection and capture of
+;|	 such data transmitted from another UART.
+;|	
+;|	Iniversal Time Coordinated (UTC) - a time scale based on the ro-
+;|	 tation of the earth which is disseminated by most broadcast time
+;|	 services [compare with 'atomic time'].
+;|	
+;|	variable field - in NMEA 0183 sentences, a data field which may
+;|	 or may not contain a decimal point depending on the requirements
+;|	 and the accuracy of the measuring device (talker).
+;|	
+;|	variation - the angle between the magnetic and geographic merid-
+;|	 ians at any place, expressed in degrees and minutes east or west
+;|	 to indicate the direction of magnetic north from true north.
+;|	
+;|	waypoint - a reference point on a track.
+;|	
+;|	
+;|	
+;+-----------------------------------------------------------------------------------------
+#ifndef	__NMEA__
+	
+	#define	__NMEA__
+	;>----------------------<
+	;| NEED INCLUDES	|
+	;>----------------------<
+	#ifndef	__INTEGER_MUL_U32U32X10__
+		.INCLUDE	"MATH\INTEGER\MUL_U32U32X10\MUL_U32U32X10.INC"	;Multiply by 10 unsigned 32 bits
+	#endif
+	
+	#ifndef	__INTEGER_DIV_U32U32U32__
+		.INCLUDE	"MATH\INTEGER\DIV_U32U32U32\DIV_U32U32U32.INC"	;Divide unsigned 32 by 32 bits
+	#endif
+	.message "+---------------------+"
+	.message "|                     |"
+	.message "| NMEA PROTOCOL	|"
+	.message "|                     |"
+	.message "+---------------------+"
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA 					|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: This object implements some functions(methods)	|
+	;|		do handdle NMEA  protocol			|
+	;>--------------------------------------------------------------<
+	;>----------------------<
+	;| OBJECT DEFINITIONS	|
+	;>----------------------<
+	;
+	;-------------------------< CONSTANT DEFINITONS >------------------------
+	;
+	.EQU	_NMEA_LINES			= 2			;default number of lines to NMEA messages
+	.EQU	_NMEA_LINE_SIZE			= 80+3			;3 more since *,Cr,Lf
+	;
+	;sentences values
+	;
+	.EQU	_NMEA_SENTENCE_INVALID		= 0		;invalid NMEA sentence
+	.EQU	_NMEA_SENTENCE_AAM		= 1		;Waypoint Arrival Alarm
+        .EQU	_NMEA_SENTENCE_ALM		= 2		;GPS Almanac Data
+        .EQU	_NMEA_SENTENCE_APB		= 3		;Autopilot Sentence "B"
+        .EQU	_NMEA_SENTENCE_ASD		= 4		;Autopilot System Data
+        .EQU	_NMEA_SENTENCE_BEC		= 5		;Bearing & Distance to Waypoint, Dead Reckoning
+        .EQU	_NMEA_SENTENCE_BOD		= 6		;Bearing, Origin to Destination
+        .EQU	_NMEA_SENTENCE_BWC		= 7		;Bearing & Distance to Waypoint, Great Circle
+        .EQU	_NMEA_SENTENCE_BWR		= 8		;Bearing & Distance to Waypoint, Rhumb Line
+        .EQU	_NMEA_SENTENCE_BWW		= 9		;Bearing, Waypoint to Waypoint
+        .EQU	_NMEA_SENTENCE_DBT		=10		;Depth Below Transducer
+        .EQU	_NMEA_SENTENCE_DCN		=11		;Decca Position
+        .EQU	_NMEA_SENTENCE_DPT		=12		;Depth
+        .EQU	_NMEA_SENTENCE_FSI		=13		;Frequency Set Information
+        .EQU	_NMEA_SENTENCE_GGA		=14		;Global Positioning System Fix Data
+        .EQU	_NMEA_SENTENCE_GLC		=15		;Geographic Position, Loran-C
+        .EQU	_NMEA_SENTENCE_GLL		=16		;Geographic Position, Latitude/Longitude
+        .EQU	_NMEA_SENTENCE_GSA		=17		;GPS DOP and Active Satellites
+        .EQU	_NMEA_SENTENCE_GSV		=18		;GPS Satellites in View
+        .EQU	_NMEA_SENTENCE_GXA		=19		;TRANSIT Position
+        .EQU	_NMEA_SENTENCE_HDG		=20		;Heading, Deviation & Variation
+        .EQU	_NMEA_SENTENCE_HDT		=21		;Heading, True
+        .EQU	_NMEA_SENTENCE_HSC		=22		;Heading Steering Command
+        .EQU	_NMEA_SENTENCE_LCD		=23		;Loran-C Signal Data
+        .EQU	_NMEA_SENTENCE_MTW		=24		;Water Temperature
+        .EQU	_NMEA_SENTENCE_MWV		=25		;Wind Speed and Angle
+        .EQU	_NMEA_SENTENCE_OLN		=26		;Omega Lane Numbers
+        .EQU	_NMEA_SENTENCE_OSD		=27		;Own Ship Data
+        .EQU	_NMEA_SENTENCE_RMA		=28		;Recommend Minimum Specific Loran-C Data
+        .EQU	_NMEA_SENTENCE_RMB		=29		;Recommend Minimum Navigation Information
+        .EQU	_NMEA_SENTENCE_RMC		=30		;Recommend Minimum Specific GPS/TRANSIT Data
+        .EQU	_NMEA_SENTENCE_ROT		=31		;Rate of Turn
+        .EQU	_NMEA_SENTENCE_RPM		=32		;Revolutions
+        .EQU	_NMEA_SENTENCE_RSA		=33		;Rudder Sensor Angle
+        .EQU	_NMEA_SENTENCE_RSD		=34		;RADAR System Data
+        .EQU	_NMEA_SENTENCE_RTE		=35		;Routes
+        .EQU	_NMEA_SENTENCE_SFI		=36		;Scanning Frequency Information
+        .EQU	_NMEA_SENTENCE_STN		=37		;Multiple Data ID
+        .EQU	_NMEA_SENTENCE_TRF		=38		;TRANSIT Fix Data
+        .EQU	_NMEA_SENTENCE_TTM		=39		;Tracked Target Message
+        .EQU	_NMEA_SENTENCE_VBW		=40		;Dual Ground/Water Speed
+        .EQU	_NMEA_SENTENCE_VDR		=41		;Set and Drift
+        .EQU	_NMEA_SENTENCE_VHW		=42		;Water Speed and Heading
+        .EQU	_NMEA_SENTENCE_VLW		=43		;Distance Traveled through the Water
+        .EQU	_NMEA_SENTENCE_VPW		=44		;Speed, Measured Parallel to Wind
+        .EQU	_NMEA_SENTENCE_VTG		=45		;Track Made Good and Ground Speed
+        .EQU	_NMEA_SENTENCE_WCV		=46		;Waypoint Closure Velocity
+        .EQU	_NMEA_SENTENCE_WNC		=47		;Distance, Waypoint to Waypoint
+        .EQU	_NMEA_SENTENCE_WPL		=48		;Waypoint Loacation
+        .EQU	_NMEA_SENTENCE_XDR		=49		;Transducer Measurements
+        .EQU	_NMEA_SENTENCE_XTE		=50		;Cross-Track Error, Measured
+        .EQU	_NMEA_SENTENCE_XTR		=51		;Cross-Track Error, Dead Reckoning
+        .EQU	_NMEA_SENTENCE_ZDA		=52		;Time & Date
+        .EQU	_NMEA_SENTENCE_ZFO		=53		;UTC & Time from Origin Waypoint
+        .EQU	_NMEA_SENTENCE_ZTG		=54		;UTC & Time to Destination Waypoint
+	.EQU	_NMEA_SENTENCE_PROPRIETARY	=255		;proprietary talker
+	.EQU	_NMEA_SENTENCES			=_NMEA_SENTENCE_ZTG-_NMEA_SENTENCE_AAM+1
+	;
+	;-------------------------< SRAM VARIABLES >-----------------------------
+	;
+	.DSEG
+		_NMEA_EVENT_ADDRESS:		.BYTE	_WORD		;event calling routine address
+		_NMEA_HEADER_START:
+		;--------------------------------------------------------------------------------------------------
+		_NMEA_DOLLAR:			.BYTE	_BYTE		;storage area for $ sign
+		_NMEA_CR:			.BYTE	_BYTE		;storage area for carriage return code
+		_NMEA_LF:			.BYTE	_BYTE		;storage area for line feed code 
+		_NMEA_ASTERISK:			.BYTE	_BYTE		;storage area for * sign
+		_NMEA_CHECKSUM_COMPUTED:	.BYTE	_BYTE		;NMEA check sum 
+		_NMEA_CHECKSUM_GOTTEN:		.BYTE	_BYTE		;NMEA check gotten
+		_NMEA_BUFFER_LINE:		.BYTE	_BYTE		;number of actual line buffer in use
+		_NMEA_BUFFER_CHARPTR:		.BYTE	_BYTE		;line buffer character pointer
+		_NMEA_BUFFER:			.BYTE	_NMEA_LINE_SIZE*_NMEA_LINES	;reserve buffer space
+		;--------------------------------------------------------------------------------------------------
+		_NMEA_HEADER_END:
+	.CSEG
+	;>-------------------------------<
+	;| NMEA APPROVED SENTENCES TABLE |
+	;>-------------------------------<
+	_NMEA_SENTENCES_TABLE:
+	        .DB	"AAM",_NMEA_SENTENCE_AAM
+		.DB	"ALM",_NMEA_SENTENCE_ALM
+		.DB	"APB",_NMEA_SENTENCE_APB
+		.DB	"ASD",_NMEA_SENTENCE_ASD
+	        .DB	"BEC",_NMEA_SENTENCE_BEC
+		.DB	"BOD",_NMEA_SENTENCE_BOD
+		.DB	"BWC",_NMEA_SENTENCE_BWC
+		.DB	"BWR",_NMEA_SENTENCE_BWR
+	        .DB	"BWW",_NMEA_SENTENCE_BWW
+		.DB	"DBT",_NMEA_SENTENCE_DBT
+		.DB	"DCN",_NMEA_SENTENCE_DCN
+		.DB	"DPT",_NMEA_SENTENCE_DPT
+	        .DB	"FSI",_NMEA_SENTENCE_FSI
+		.DB	"GGA",_NMEA_SENTENCE_GGA
+		.DB	"GLC",_NMEA_SENTENCE_GLC
+		.DB	"GLL",_NMEA_SENTENCE_GLL
+	        .DB	"GSA",_NMEA_SENTENCE_GSA
+		.DB	"GSV",_NMEA_SENTENCE_GSV
+		.DB	"GXA",_NMEA_SENTENCE_GXA
+		.DB	"HDG",_NMEA_SENTENCE_HDG
+	        .DB	"HDT",_NMEA_SENTENCE_HDT
+		.DB	"HSC",_NMEA_SENTENCE_HSC
+		.DB	"LCD",_NMEA_SENTENCE_LCD
+		.DB	"MTW",_NMEA_SENTENCE_MTW
+	        .DB	"MWV",_NMEA_SENTENCE_MWV
+		.DB	"OLN",_NMEA_SENTENCE_OLN
+		.DB	"OSD",_NMEA_SENTENCE_OSD
+		.DB	"RMA",_NMEA_SENTENCE_RMA
+	        .DB	"RMB",_NMEA_SENTENCE_RMB
+		.DB	"RMC",_NMEA_SENTENCE_RMC
+		.DB	"ROT",_NMEA_SENTENCE_ROT
+		.DB	"RPM",_NMEA_SENTENCE_RPM
+	        .DB	"RSA",_NMEA_SENTENCE_RSA
+		.DB	"RSD",_NMEA_SENTENCE_RSD
+		.DB	"RTE",_NMEA_SENTENCE_RTE
+		.DB	"SFI",_NMEA_SENTENCE_SFI
+	        .DB	"STN",_NMEA_SENTENCE_STN
+		.DB	"TRF",_NMEA_SENTENCE_TRF
+		.DB	"TTM",_NMEA_SENTENCE_TTM
+		.DB	"VBW",_NMEA_SENTENCE_VBW
+	        .DB	"VDR",_NMEA_SENTENCE_VDR
+		.DB	"VHW",_NMEA_SENTENCE_VHW
+		.DB	"VLW",_NMEA_SENTENCE_VLW
+		.DB	"VPW",_NMEA_SENTENCE_VPW
+	        .DB	"VTG",_NMEA_SENTENCE_VTG
+		.DB	"WCV",_NMEA_SENTENCE_WCV
+		.DB	"WNC",_NMEA_SENTENCE_WNC
+		.DB	"WPL",_NMEA_SENTENCE_WPL
+	        .DB	"XDR",_NMEA_SENTENCE_XDR
+		.DB	"XTE",_NMEA_SENTENCE_XTE
+		.DB	"XTR",_NMEA_SENTENCE_XTR
+		.DB	"ZDA",_NMEA_SENTENCE_ZDA
+	        .DB	"ZFO",_NMEA_SENTENCE_ZFO
+		.DB	"ZTG",_NMEA_SENTENCE_ZTG
+	;
+	;-------------------------< M A C R O S  >-------------------------------
+	;
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Initialize					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_INIT:
+		push	Temp
+		pushaw							;save useds
+		pushw	Z
+		ldiw	Z,_NMEA_HEADER_START				;clear all buffers and parameters
+		ldiaw	_NMEA_HEADER_END-_NMEA_HEADER_START		;header size
+		ldi	Temp,0						;character to clear buffer
+	_NMEA_10:
+		st	Z+,Temp						;clear with zero
+		subiaw	1						;header size--
+		brne	_NMEA_10					;until all clear
+		ldiaw	_NMEA_EVENT_ADDRESS_DEFAULT			;set default event address routine
+		stsaw	_NMEA_EVENT_ADDRESS
+		popw	Z
+		popaw
+		pop	Temp
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Set event NMEA addres routine			|
+	;>--------------------------------------------------------------<
+	;| INPUT      : AccH:Acc	Address				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_SET_EVENT_ADDRESS:
+		push	Temp
+		in	Temp,SREG					;save SREG
+		cli							;disable interrupts
+		stsaw	_NMEA_EVENT_ADDRESS
+		out	SREG,Temp					;restore SREG
+		pop	Temp
+	_NMEA_EVENT_ADDRESS_DEFAULT:
+		ret
+		
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get event NMEA addres routine			|
+	;>--------------------------------------------------------------<
+	;| INPUT      : None						|
+	;| OUTPUT     :	AccH:Acc	Address				|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_GET_EVENT_ADDRESS:
+		ldsaw	_NMEA_EVENT_ADDRESS
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Interrupt Process				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Acc	new NMEA character to be plased into	|
+	;|			NMEA line				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	This routine has developed to use in a recep-	|
+	;|		tion RS232, or other type of communication de-	|
+	;|		vice interrupt handdle that harware generated	|
+	;|		when a NMEA device is received. Follow below	|
+	;|		code example:					|
+	;|								|
+	;|		push	reg0		;save register		|
+	;|		in	reg0,SREG	;get SREG		|
+	;|		push	reg0		;save SAVE		|
+	;|								|
+	;|		;push other need registers			|
+	;|								|
+	;|		;get character from communication device	|
+	;|		;place into Acc register 			|
+	;|		;then call _NMEA_INTERRUPT_PROCESS		|
+	;|		 						|
+	;|		;pop other need register			|
+	;|								|
+	;|		pop	reg0		;restore SREG		|
+	;|		out	SREG,Acc				|
+	;|		pop	reg0		;restore register	|
+	;|		reti			;return from interrupt	|
+	;|								|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_INTERRUPT_PROCESS:
+		push	r0
+		push	r1
+		push	Temp
+		pushaw
+		pushw	X
+		pushw	Z
+		sei							;enable interrupts at this point to allow
+									;reception of NMEA chars
+		lds	Temp,_NMEA_DOLLAR				;get '$' ?
+		cpi	Temp,'$'					;$ already received?
+		breq	_NMEA_INTERRUPT_PROCESS_10			;yes, branch
+		cpi	Acc,'$'						;'$' sign received ?
+		lbrne	_NMEA_INTERRUPT_PROCESS_EXIT			;no, exit
+		sts	_NMEA_DOLLAR,Acc				;else set DOLLAR<-'$'
+		rcall	_NMEA_INTERRUPT_PROCESS_SET_DEFAULT		;set default parameters
+		rjmp	_NMEA_INTERRUPT_PROCESS_EXIT			;exit
+		;+-----------------------------------
+		;| COMPUTE CHARACTER BUFFER POINTER 
+		;+-----------------------------------		
+	_NMEA_INTERRUPT_PROCESS_10:
+ 		ldiw	Z,_NMEA_BUFFER					;Z-->buffer(line)
+		lds	AccH,_NMEA_BUFFER_LINE				;get line
+		ldi	Temp,_NMEA_LINE_SIZE				;get line size
+		mul	AccH,Temp
+		add	ZL,r0
+		adc	ZH,r1
+		clr	r0
+		lds	AccH,_NMEA_BUFFER_CHARPTR			;get character pointer
+		add	ZL,AccH						;Z-->buffer(line+charpos)
+		adc	ZH,r0
+		;+-----------------------------------
+		;| CHECK FOR SPECIAL CHARACTERS
+		;+-----------------------------------		
+		cpi	Acc,_CR						;CR?
+		brne	_NMEA_INTERRUPT_PROCESS_20			;no, branch
+		sts	_NMEA_CR,Acc					;CR<-_CR
+		rjmp	_NMEA_INTERRUPT_PROCESS_CHECKEND		;check end
+	_NMEA_INTERRUPT_PROCESS_20:
+		cpi	Acc,_LF						;LF?
+		brne	_NMEA_INTERRUPT_PROCESS_30			;no, branch
+		sts	_NMEA_LF,Acc					;LF<-_LF
+		rjmp	_NMEA_INTERRUPT_PROCESS_CHECKEND		;check end
+	_NMEA_INTERRUPT_PROCESS_30:
+		;+-----------------------------------
+		;| CHECK FOR VALID CHARACTERS ' ' TO '~'
+		;+-----------------------------------	
+		cpi	Acc,' '						;below space
+		lbrlo	_NMEA_INTERRUPT_PROCESS_EXIT			;yes, exit
+		cpi	Acc,'~'+1					;great '~'
+		lbrsh	_NMEA_INTERRUPT_PROCESS_EXIT			;yes, exit
+		;+-----------------------------------
+		;| CHECK IF HAD CHECKSUM
+		;+-----------------------------------	
+		cpi	Acc,'*'						;*?
+		brne	_NMEA_INTERRUPT_PROCESS_40			;no, branch
+		sts	_NMEA_ASTERISK,Acc				;ASTERISK<-'*'
+		st	Z,Acc						;*Z<-'*'
+		inc	AccH
+		sts	_NMEA_BUFFER_CHARPTR,AccH			;charptr++
+		rjmp	_NMEA_INTERRUPT_PROCESS_EXIT			;exit
+	_NMEA_INTERRUPT_PROCESS_40:
+		;+-----------------------------------
+		;| INSERT NEW CHARACTER IN NMEA BUFFER
+		;+-----------------------------------
+		st	Z,Acc						;*Z<-char
+		inc	AccH						;charptr++
+		sts	_NMEA_BUFFER_CHARPTR,AccH
+		lds	Temp,_NMEA_ASTERISK				;have checksum?
+		cpi	Temp,'*'
+		breq	_NMEA_INTERRUPT_PROCESS_50			;yes, branch	
+		lds	AccH,_NMEA_CHECKSUM_COMPUTED			;compute checksum
+		eor	AccH,Acc					;checksum^=char
+		sts	_NMEA_CHECKSUM_COMPUTED,AccH
+		rjmp	_NMEA_INTERRUPT_PROCESS_EXIT			;exit
+		;+-----------------------------------
+		;| GET CHECK SUM
+		;+-----------------------------------
+	_NMEA_INTERRUPT_PROCESS_50:
+		lds	AccH,_NMEA_CHECKSUM_GOTTEN			;checksum_gotten<-checksum_gotten*16+toHex(char)
+		swap	AccH						;AccH*16
+		andi	AccH,0xf0
+		cpi	Acc,'9'+1					;0..9
+		brlo	_NMEA_INTERRUPT_PROCESS_60			;yes, branch
+		andi	Acc,~(1<<5)					;convert to upper case A..F
+		subi	Acc,7
+	_NMEA_INTERRUPT_PROCESS_60:
+		andi	Acc,0x0f					;mask lower nibble
+		add	AccH,Acc					;AccH*16+toHex(char)
+		sts	_NMEA_CHECKSUM_GOTTEN,AccH			;store back
+		rjmp	_NMEA_INTERRUPT_PROCESS_EXIT			;EXIT
+		;+-----------------------------------
+		;| CHECK IF END OF NMEA STRING
+		;+-----------------------------------
+	_NMEA_INTERRUPT_PROCESS_CHECKEND:
+		lds	Acc,_NMEA_DOLLAR				;get $
+		cpi	Acc,'$'						;$?
+		lbrne	_NMEA_INTERRUPT_PROCESS_EXIT			;no, EXIT
+		lds	Acc,_NMEA_CR					;get CR
+		cpi	Acc,_CR						;CR?
+		lbrne	_NMEA_INTERRUPT_PROCESS_EXIT			;no, EXIT
+		lds	Acc,_NMEA_LF					;get LF
+		cpi	Acc,_LF						;LF?
+		lbrne	_NMEA_INTERRUPT_PROCESS_EXIT			;no, EXIT
+		;+-----------------------------------
+		;| CHECK IF CHECKSUM HAD SENT
+		;+-----------------------------------
+		lds	Acc,_NMEA_ASTERISK				;checksum?
+		cpi	Acc,'*'
+		brne	_NMEA_INTERRUPT_PROCESS_CHECKEND_10		;no, branch
+		lds	Acc,_NMEA_CHECKSUM_COMPUTED			;check if valid checksum
+		lds	AccH,_NMEA_CHECKSUM_GOTTEN
+		cp	Acc,AccH
+		breq	_NMEA_INTERRUPT_PROCESS_CHECKEND_10		;valid, branch
+		rcall	_NMEA_INTERRUPT_PROCESS_SET_DEFAULT		;set default values
+		ldi	Acc,0
+		sts	_NMEA_DOLLAR,Acc				;set to wait another $
+		rjmp	_NMEA_INTERRUPT_PROCESS_EXIT			;exit
+		;+-----------------------------------
+		;| POINT TO NEXT LINE
+		;+-----------------------------------
+	_NMEA_INTERRUPT_PROCESS_CHECKEND_10:
+		lds	Acc,_NMEA_BUFFER_LINE				;buffer line++
+		push	Acc						;save actual buffer line
+		inc	Acc
+		cpi	Acc,_NMEA_LINES					;reach last line?
+		brlo	_NMEA_INTERRUPT_PROCESS_CHECKEND_20		;no, branch
+		ldi	Acc,0						;else clear line count
+	_NMEA_INTERRUPT_PROCESS_CHECKEND_20:
+		sts	_NMEA_BUFFER_LINE,Acc				;store back
+		ldi	Acc,0
+		sts	_NMEA_DOLLAR,Acc				;set to wait another $
+		st	Z,Acc						;set end off line with 0
+		rcall	_NMEA_INTERRUPT_PROCESS_SET_DEFAULT		;set to initial parameters
+		;+-----------------------------------
+		;|
+		;| CALL EVENT ADDRESS NMEA ROUTINE
+		;|
+		;| Acc=Event Code Id
+		;|   X=NMEA received sentence and fields address
+		;|
+		;+-----------------------------------
+		pop	Acc						;restore buffer line
+		ldiw	X,_NMEA_BUFFER					;X->NMEA BUFFER
+		ldi	Temp,_NMEA_LINE_SIZE
+		mul	Acc,Temp
+		add	XL,r0
+		adc	XH,r1						;X->NMEA BUFFER(LINE)
+		rcall	_NMEA_GET_SENTENCE_CODE				;get nmea sentense code
+		;+-----------------------------------
+		;| CALL EVENT ROUTINE
+		;+-----------------------------------
+		_M_PUSH_ALL_REGS					;save all registers
+		ldsw	Z,_NMEA_EVENT_ADDRESS				;load event address routine
+		icall							;call a event
+		_M_POP_ALL_REGS						;restore all registers
+		;+-----------------------------------
+		;| EXIT FROM INTERRUPT PROCESS
+		;+-----------------------------------
+	_NMEA_INTERRUPT_PROCESS_EXIT:
+		popw	Z
+		popw	X
+		popaw
+		pop	Temp
+		pop	r1
+		pop	r0
+		ret
+		;+-----------------------------------
+		;| SET INITIAL PARAMETERS VALUES
+		;+-----------------------------------
+	_NMEA_INTERRUPT_PROCESS_SET_DEFAULT:
+		ldi	Acc,0						;no buffer charptr<-0
+		sts	_NMEA_BUFFER_CHARPTR,Acc
+		sts	_NMEA_CHECKSUM_COMPUTED,Acc			;clear checksuns
+		sts	_NMEA_CHECKSUM_GOTTEN,Acc
+		sts	_NMEA_CR,Acc					;CR<-0
+		sts	_NMEA_LF,Acc					;LF<-0
+		sts	_NMEA_ASTERISK,Acc				;*<-0
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get Sentence code				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Acc	buffer line				|
+	;| OUTPUT     :	Acc	sentence code				|
+	;|		cy=0	if a valid sentence			|
+	;| DESTROYED  :	Z						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	used internally, dont' call directly		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_GET_SENTENCE_CODE:
+		push	r2						;save useds
+		push	r3
+		push	r4
+		push	r5
+		push	r6
+		push	AccH
+		pushawt
+		ldiw	Z,_NMEA_BUFFER					;Z-->NMEA BUFFER
+		ldi	Temp,_NMEA_LINE_SIZE				;get line size
+		mul	Acc,Temp
+		add	ZL,r0
+		adc	ZH,r1						;Z-->NMEA BUFFER(LINE)
+		ld	AccH,Z						;get talker
+		cpi	AccH,'P'					;proprietary command ?
+		brne	_NMEA_GET_SENTENCE_CODE_10			;no, branch
+		;+------------------------------
+		;| SET PROPRIETARY SENTENCE
+		;+------------------------------
+		ldi	Acc,_NMEA_SENTENCE_PROPRIETARY			;set proprietary code
+		rjmp	_NMEA_GET_SENTENCE_CODE_EXIT			;exit
+		;+------------------------------
+		;| FIND CODE
+		;+------------------------------
+	_NMEA_GET_SENTENCE_CODE_10:
+		adiw	ZL,2						;Z-->SENTENCE
+		ld	r1,Z+						;r3:r2:r1=SENTENCE RECEIVED
+		ld	r2,Z+
+		ld	r3,Z+
+		ldi	AccTH,6						;loop count
+		ldi	Acc,0						;Lo=0
+		ldi	AccH,_NMEA_SENTENCES				;Hi=_NMEA_SENTENCES
+	_NMEA_GET_SENTENCE_CODE_20:
+		;+------------------------------
+		;| mid=(Hi+Lo)/2
+		;+------------------------------
+		mov	AccT,AccH					;mid=AccT=(Hi+lo)/2
+		add	AccT,Acc
+		lsr	AccT						;mid=AccT
+		;+------------------------------
+		;| get sentence pointer
+		;+------------------------------
+		ldiw	Z,_NMEA_SENTENCES_TABLE*2			;Z-->sentences
+		mov	Temp,AccT					;Temp=mid*2
+		lsl	Temp
+		lsl	Temp
+		add	ZL,Temp						;Z-->sentence(mid)
+		ldi	Temp,0
+		adc	ZH,Temp
+		;+------------------------------
+		;| data(mid)=data ?
+		;+------------------------------
+		lpm	r4,Z+						;r6:r5:r4=table(SENTENCE)
+		lpm	r5,Z+
+		lpm	r6,Z+
+		cp	r6,r3						;data(mid)=data?
+		cpc	r5,r2
+		cpc	r4,r1
+		breq	_NMEA_GET_SENTENCE_CODE_FOUND			;found , branch
+		brlo	_NMEA_GET_SENTENCE_CODE_25			;table(sentence)<sentence?, branch if yes
+		mov	AccH,AccT					;else Hi=mid
+		rjmp	_NMEA_GET_SENTENCE_CODE_30
+	_NMEA_GET_SENTENCE_CODE_25:
+		mov	Acc,AccT					;else Lo=mid
+	_NMEA_GET_SENTENCE_CODE_30:
+		dec	AccTH						;pump loop count
+		brne	_NMEA_GET_SENTENCE_CODE_20			;until 	
+		ldi	Acc,_NMEA_SENTENCE_INVALID
+		sec							;set carry
+		rjmp	_NMEA_GET_SENTENCE_CODE_EXIT			;exit
+	_NMEA_GET_SENTENCE_CODE_FOUND:
+		lpm	Acc,Z						;get code
+		clc							;clear carry
+	_NMEA_GET_SENTENCE_CODE_EXIT:
+		popawt
+		pop	AccH
+		pop	r6
+		pop	r5
+		pop	r4
+		pop	r3
+		pop	r2
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get Talker string				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : X	Address NMEA buffer with sentence and	|
+	;|			fields					|
+	;|		Z	Address Address to receiver Talker 	|
+	;|			string with 0 terminate			|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Take care to reserve enough space to receiver	|
+	;|		Talker string, total 3 char (2 Talker identify+	|
+	;|		1 (zero) terminator)				|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_GET_TALKER_STRING:
+		pushw	X						;save useds
+		pushw	Z
+		push	Temp
+	_NMEA_GET_TALKER_STRING_10:
+		ld	Temp,X+						;get Talker string
+		st	Z+,Temp
+		ld	Temp,X+
+		st	Z+,Temp
+		ldi	Temp,0						;zero terminator
+		st	Z,Temp
+		pop	Temp						;restore useds
+		popw	Z
+		popw	X
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get Sentence string				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : X	Address NMEA buffer with sentece and 	|
+	;|			fields					|
+	;|		Z	Address Address to receiver sentence 	|
+	;|			string with 0 terminate			|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Take care to reserve enough space to receiver	|
+	;|		sentence string, total 4 char (3 sentence 	|
+	;|		identify + 1 (zero) terminator)			|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_GET_SENTENCE_STRING:
+		pushw	X						;save useds
+		pushw	Z
+		push	Temp
+		adiw	XL,2						;X-->sentence
+		ld	Temp,X+						;get sentence string
+		st	Z+,Temp
+		rjmp	_NMEA_GET_TALKER_STRING_10			;store the rest
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get Field string				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Acc	Field number				|
+	;|		X	Address NMEA buffer with sentece and 	|
+	;|			fields					|
+	;|		Z	Address Address to receiver sentence 	|
+	;|			string with 0 terminate			|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Take care to reserve enough space to receiver	|
+	;|		field string more + 1 (zero) terminator)	|
+	;|		interrupts are disabled during string transfer	|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_NMEA_GET_FIELD_STRING:
+		push	r0						;save SREG
+		in	r0,SREG
+		cli							;disable interrupts
+		push	r0
+		pushw	X						;save useds
+		pushw	Z
+		push	Temp
+		push	TempH
+		push	AccH
+		ldi	TempH,0						;character count
+		ldi	AccH,0						;field count
+		;+----------------------------------------
+		;| start search of field delimieter ","
+		;+----------------------------------------
+	_NMEA_GET_FIELD_STRING_10:
+		ld	Temp,X+						;get NMEA char
+		cpi	Temp,','					;delimiter?
+		breq	_NMEA_GET_FIELD_STRING_15			;yes, branch
+		cpi	Temp,_CR					;CR found?
+		breq	_NMEA_GET_FIELD_STRING_30			;yes, exit
+		cpi	Temp,_LF					;LF found?
+		breq	_NMEA_GET_FIELD_STRING_30
+		inc	TempH						;charcount++
+		cpi	TempH,_NMEA_LINE_SIZE				;end buffer reach ?
+		brsh	_NMEA_GET_FIELD_STRING_30			;if buffer boundary reach , exit
+		rjmp	_NMEA_GET_FIELD_STRING_10
+	_NMEA_GET_FIELD_STRING_15:
+		inc	AccH						;field++
+		cp	Acc,AccH					;required field?
+		brne	_NMEA_GET_FIELD_STRING_10			;no, continue searching
+		;+----------------------------------------
+		;| start field transfer
+		;+----------------------------------------
+	_NMEA_GET_FIELD_STRING_20:
+		ld	Temp,X+						;get source field
+		cpi	Temp,','					;end field by delimiter?
+		breq	_NMEA_GET_FIELD_STRING_30			;yes, branch
+		cpi	Temp,'*'					;end field by asterisk *?
+		breq	_NMEA_GET_FIELD_STRING_30			;yes, branch
+		cpi	Temp,_CR					;end field by CR?
+		breq	_NMEA_GET_FIELD_STRING_30			;yes, branch
+		cpi	Temp,_LF					;end field by LF?"not probable to occur"
+		breq	_NMEA_GET_FIELD_STRING_30			;yes, branch
+		inc	TempH						;char count++
+		cpi	TempH,_NMEA_LINE_SIZE				;end buffer reach ?
+		brsh	_NMEA_GET_FIELD_STRING_30			;yes, end with error
+		st	Z+,Temp						;store in destination
+		rjmp	_NMEA_GET_FIELD_STRING_20
+		;+----------------------------------------
+		;| store end delimiter
+		;+----------------------------------------
+	_NMEA_GET_FIELD_STRING_30:
+		ldi	Temp,0						;store in destination end delemiter
+		st	Z+,Temp
+	_NMEA_GET_FIELD_STRING_EXIT:
+		pop	AccH
+		pop	TempH
+		pop	Temp						;restore useds
+		popw	Z
+		popw	X
+		pop	r0						;restore SREG
+		out	SREG,r0
+		pop	r0
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Convert NMEA LATITUDE to DECIMAL LONG VARIABLE	|
+	;|		LATITUDE					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Z	--> string Latitude formatted 0 end	|
+	;| OUTPUT     :	r3:r2:r1:r0 Decimal Degree Long Latitude	|
+	;|		cy=1	if any error occur during conversion	|
+	;|			and must be not considerad		|
+	;| DESTROYED  :	Flags,r4..r11					|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	;|	NMEA LATITUDE
+	;|
+	;|		DDMM.MMMM...
+	;|
+	;|	LONG LATIDUDE
+	;|
+	;|		BYTE 0	BYTE 1	BYTE 2	BYTE 3
+	;|		0..7	8..15	16..23	24..31
+	;|		
+	;|		BYTE 0 = LSB
+	;|		BYTE 3 = MSB (BIT 31=SIGNAL)(0-POSITIVE)(1-NEGATIVE)(2 COMPLEMENT)
+	;|
+	;|	48o53.456'-->NMEA-->4853.456--->DECIMAL LONG--->488,909,333
+	;|	
+	_NMEA_LATITUDE_STODECLONG:
+		push	Temp
+		pushaw
+		pushawt
+		rcall	_NMEA_GET_DIGIT					;get decimal degree digit
+		lbrcs	_NMEA_LATITUDE_STODECLONG_ERROR			;set error, because a digit expected
+		ldi	AccH,10						;digit x 10
+		mul	Acc,AccH
+		rcall	_NMEA_GET_DIGIT					;get unit degree digit
+		lbrcs	_NMEA_LATITUDE_STODECLONG_ERROR			;set error, because a digit expected
+		add	r0,Acc
+		mov	Temp,r0						;Temp=degree
+	_NMEA_LATITUDE_STODECLONG_00:
+		clr	r0						;clear minuts accumulator
+		clr	r1
+		clr	r2
+		clr	r3
+		rcall	_NMEA_GET_DIGIT					;get decimal minuts digit
+		brcs	_NMEA_LATITUDE_STODECLONG_ERROR			;set error, because a digit expected
+		ldi	AccT,1						;minuts digits count
+		add	r0,Acc						;accumulate digit
+		rcall	_NMEA_GET_DIGIT					;get unit minuts digit
+		brcs	_NMEA_LATITUDE_STODECLONG_ERROR			;set error, because a digit expected
+		inc	AccT						;minuts digit count++
+		rcall	_MUL_U32U32X10
+		add	r0,Acc						;accumulate digit
+		rcall	_NMEA_GET_DIGIT					;expected a "."
+		cpi	Acc,'.'
+		brne	_NMEA_LATITUDE_STODECLONG_FINISH		;no, finish with capture values
+	_NMEA_LATITUDE_STODECLONG_10:
+		rcall	_NMEA_GET_DIGIT					;get digit
+		brcs	_NMEA_LATITUDE_STODECLONG_FINISH		;no, finish with capture values
+		inc	AccT						;minuts digit count++
+		rcall	_MUL_U32U32X10
+		add	r0,Acc
+		ldi	Acc,0
+		adc	r1,Acc
+		adc	r2,Acc
+		adc	r3,Acc
+		rjmp	_NMEA_LATITUDE_STODECLONG_10			;until terminator found
+	_NMEA_LATITUDE_STODECLONG_FINISH:
+		cpi	AccT,8						;max digits caputed ?
+		breq	_NMEA_LATITUDE_STODECLONG_FINISH_10		;no, branch
+		rcall	_MUL_U32U32X10					;else value x 10
+		inc	AccT
+		rjmp	_NMEA_LATITUDE_STODECLONG_FINISH
+	_NMEA_LATITUDE_STODECLONG_FINISH_10:
+		rcall	_NMEA_DIV6					;divide minuts by 6
+		movw	Acc,r0						;save minuts
+		movw	AccT,r2
+		mov	r0,Temp						;r0=degree
+		clr	r1
+		clr	r2
+		clr	r3
+		ldi	Temp,7						;degree x 10.000.000
+	_NMEA_LATITUDE_STODECLONG_FINISH_20:
+		rcall	_MUL_U32U32X10					;adjust
+		dec	Temp
+		brne	_NMEA_LATITUDE_STODECLONG_FINISH_20		;until in correct position
+		add	r0,Acc						;degree+degree decimal
+		adc	r1,AccH
+		adc	r2,AccT
+		adc	r3,AccTH
+		clc							;set no error
+		rjmp	_NMEA_LATITUDE_STODECLONG_EXIT			;exit
+	_NMEA_LATITUDE_STODECLONG_ERROR:
+		sec							;set error
+	_NMEA_LATITUDE_STODECLONG_EXIT:
+		popawt
+		popaw
+		pop	Temp
+		ret
+			
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Convert NMEA LONGITUDE to DECIMAL LONG VARIABLE	|
+	;|		LATITUDE					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Z	--> string Longitude formatted 0 end	|
+	;| OUTPUT     :	r3:r2:r1:r0 Decimal Degree Long Latitude	|
+	;|		cy=1	if any error occur during conversion	|
+	;|			and must be not considerad		|
+	;| DESTROYED  :	Flags,r4..r11					|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	;|	NMEA LONGITUDE
+	;|
+	;|		DDMM.MMMM...
+	;|
+	;|	LONG LONGITUDE
+	;|
+	;|		BYTE 0	BYTE 1	BYTE 2	BYTE 3
+	;|		0..7	8..15	16..23	24..31
+	;|		
+	;|		BYTE 0 = LSB
+	;|		BYTE 3 = MSB (BIT 31=SIGNAL)(0-POSITIVE)(1-NEGATIVE)(2 COMPLEMENT)
+	;|
+	;|	48o53.456'-->NMEA-->4853.456--->DECIMAL LONG--->488,909,333
+	;|	
+	_NMEA_LONGITUDE_STODECLONG:
+		push	Temp						;save useds
+		pushaw
+		pushawt
+		rcall	_NMEA_GET_DIGIT					;get cents degree digit
+		brcs	_NMEA_LATITUDE_STODECLONG_ERROR			;set error, because a digit expected
+		mov	r0,Acc						;r0=digit
+		rcall	_NMEA_GET_DIGIT					;get decimal degree digit
+		brcs	_NMEA_LATITUDE_STODECLONG_ERROR			;set error, because a digit expected
+		ldi	AccH,10
+		mul	r0,AccH						;r0x10+digit
+		add	r0,Acc
+		rcall	_NMEA_GET_DIGIT					;get unit degree digit
+		brcs	_NMEA_LATITUDE_STODECLONG_ERROR			;set error, because a digit expected
+		mul	r0,AccH						;r0x10+digit
+		add	r0,Acc
+		mov	Temp,r0						;Temp=degree
+		rjmp	_NMEA_LATITUDE_STODECLONG_00
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Convert Field String  to Integer Variable	|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Z	  --> NMEA String 0 terminator		|
+	;| OUTPUT     :	AccH:Acc  Value Integer				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	if digits after decimal pointer great than or	|
+	;|		5 value is rounded, if a invalid character read |
+	;|		the actual computed value is returned		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_NMEA_STOINT:
+		push	r0						;save useds
+		push	r1
+		push	Temp
+		pushawt
+		ldiawt	0						;clear accumulador
+	_NMEA_STOINT_10:
+		rcall	_NMEA_GET_DIGIT					;get NMEA digit *<NOCHANGE>*
+		brcs	_NMEA_STOINT_20					;branch if invalid
+		lsl	AccT						;accumulator*10+digit
+		rol	AccTH
+		mov	r0,AccT
+		mov	r1,AccTH
+		lsl	AccT
+		rol	AccTH
+		lsl	AccT
+		rol	AccTH
+		add	AccT,r0
+		adc	AccTH,r1
+		add	AccT,Acc
+		ldi	AccH,0
+		adc	AccTH,AccH
+		rjmp	_NMEA_STOINT_10					;get next digit *<NOCHANGE>*
+	_NMEA_STOINT_20:
+		cpi	Acc,0						;terminator ?
+		brne	_NMEA_STOINT_25					;no, branch
+		movw	Acc,AccT					;AccH:Acc=accumulator
+		rjmp	_NMEA_STOINT_EXIT				;exit *<NOCHANGE>*
+	_NMEA_STOINT_25:
+		cpi 	Acc,'.'						;decimal point '.'?
+		breq	_NMEA_STOINT_30					;yes, branch
+		movw	Acc,AccT					;invalid result AccH:Acc=accumulator
+		rjmp	_NMEA_STOINT_EXIT				;exit *<NOCHANGE>*
+	_NMEA_STOINT_30:
+		rcall	_NMEA_GET_DIGIT					;get Decimal digit *<NOCHANGE>*
+		brcc	_NMEA_STOINT_40					;valid , branch
+		movw	Acc,AccT					;set invalid conversion AccH:Acc=accumulator
+		rjmp	_NMEA_STOINT_EXIT				;exit *<NOCHANGE>*
+	_NMEA_STOINT_40:
+		cpi	Acc,5						;decimal digit >= 5?
+		movw	Acc,AccT					;AccH:Acc=accumulator
+		brlo	_NMEA_STOINT_EXIT				;no, branch
+		addiaw	1						;round
+	_NMEA_STOINT_EXIT:				
+		popawt							;restore useds
+		pop	Temp
+		pop	r1
+		pop	r0
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Convert NMEA ANGLE to Integer Variable		|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Z	  --> string angle 0 terminator		|
+	;| OUTPUT     :	AccH:Acc  Integer angle				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	if digits after decimal pointer great than or	|
+	;|		5 angle is rounded to next angle, and if angle	|
+	;|		great than 359 then angle<-angle-360, if a 	|
+	;|		invalid character read the actual computed value|
+	;|		is returned					|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_NMEA_ANGLE_STOINT:
+		push	Temp
+		rcall	_NMEA_STOINT					;convert to integer
+	_NMEA_ANGLE_STOINT_10:	
+		cpiaw	360						;>=360?
+		brlo	_NMEA_ANGLE_STOINT_EXIT				;no, branch
+		subiaw	360						;AccH:Acc-=360
+		rjmp	_NMEA_ANGLE_STOINT_10				;*<NOCHANGE>*
+	_NMEA_ANGLE_STOINT_EXIT:				
+		pop	Temp
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get decimal ASCII digit 0..9 and convert to 	|
+	;|		binary						|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Z	--> string of digits with 0 terminator	|
+	;| OUTPUT     :	Acc	Digit 0..9				|
+	;|		cy=0 if valid digit 1 otherwise			|
+	;|		Z++	;next digits in memory			|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_NMEA_GET_DIGIT:
+		ld	Acc,Z+						;get digit
+		cpi	Acc,'0'						;<0 ?
+		brlo	_NMEA_GET_DIGIT_10				;yes, branch
+		cpi	Acc,'9'+1					;>9?
+		brsh	_NMEA_GET_DIGIT_10				;yes, branch
+		andi	Acc,0x0f					;convert to binary
+		clc							;set ok						
+		ret
+	_NMEA_GET_DIGIT_10:
+		sec							;set not a digits
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Convert Knots(Nautic) to Km/h 			|
+	;>--------------------------------------------------------------<
+	;| INPUT      : AccH:Acc  Knots					|
+	;| OUTPUT     :	AccH:Acc  Km/h					|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Used formulae is Km=Knots*1.852			|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_NMEA_KNOTS_TO_KM:
+		push	r0			;save useds
+		push	r1
+		push	Temp
+		pushawt
+		ldiawt	0XED0E			;1.852(I1Q15)
+		ldi	Temp,16			;bit count
+		clr	r0			;ac=0
+		clr	r1
+	_NMEA_KNOTS_TO_KM_10:
+		ror	AccTH			;get fraction bit
+		ror	AccT
+		brcc	_NMEA_KNOTS_TO_KM_20	;zero, branch
+		adc	r0,Acc			;else ac+=value
+		adc	r1,AccH
+	_NMEA_KNOTS_TO_KM_20:
+		ror	r1			;ac>1
+		ror	r0
+		dec	Temp			;next bit
+		brne	_NMEA_KNOTS_TO_KM_10	
+		lsl	r0			;adjust result
+		rol	r1
+		movw	Acc,r0			;put into correct registers
+		pop	Temp
+		popawt
+		pop	r1
+		pop	r0
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : divide Long / 6					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : r3:r2:r1:r0  Value				|
+	;| OUTPUT     :	r3:r2:r1:r0  Value/6				|
+	;| DESTROYED  :	Flags,r4..r11					|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_NMEA_DIV6:
+		push	Temp
+		ldi	Temp,6			;divisor=6
+		mov	r4,Temp
+		ldi	Temp,0
+		mov	r5,Temp
+		mov	r6,Temp
+		mov	r7,Temp
+		rcall	_DIV_U32U32U32
+		pop	Temp
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _NMEA						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : long multiply by -1				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Z --> long value in memory			|
+	;| OUTPUT     :	Z --> long value in memory multiplied by -1	|
+	;| DESTROYED  :	Flags,r0,r1,r2,r3				|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_NMEA_NEG:
+		push	Temp
+		ld	r0,Z+			;get long
+		ld	r1,Z+
+		ld	r2,Z+
+		ld	r3,Z+
+		com	r0			;complement
+		com	r1
+		com	r2
+		com	r3
+		ldi	Temp,1
+		add	r0,Temp
+		ldi	Temp,0
+		adc	r1,Temp
+		adc	r2,Temp
+		adc	r3,Temp
+		st	-Z,r3
+		st	-Z,r2
+		st	-Z,r1
+		st	-Z,r0
+		pop	Temp
+		ret
+#endif
+.EXIT
+

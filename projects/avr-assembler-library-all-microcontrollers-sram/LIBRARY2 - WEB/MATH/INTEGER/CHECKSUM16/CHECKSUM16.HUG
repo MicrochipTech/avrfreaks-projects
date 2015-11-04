@@ -1,0 +1,94 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATE:7/12/2005 VERSION 1.0							|
+;>------------------------------------------------------------------------------<
+;| I N T E G E R  R O U T I N E S	     					|
+;| C H E C K S U M 1 6 B I T S  						|
+;+------------------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM				|
+;+------------------------------------------------------------------------------+
+;+----------------------------------------------------------------------+
+;| CHECKSUM16								|
+;| Compute 16 checksum of data pointed by Z register		 	|
+;|								  	|
+;| Input  : Z--> DATA to be computed checksum16			  	|
+;|	    AccH:Acc number of bytes					|
+;| Output : AccH:Acc 						  	|
+;| Destroy: Flags,Z							|
+;| Obs:									|
+;|	if user use this routine only for check purpose the return value|
+;|	must be 0xffff but if used to compute new checksum field the	|
+;|	returned value must be complemented using 1 complement		|
+;+----------------------------------------------------------------------+
+#ifndef	__INTEGER_CHECKSUM16__
+	#define __INTEGER_CHECKSUM16__
+	.message "[ (MATH) INTEGER CHECKSUM16 ]"
+	_CHECKSUM16:
+		push	Temp
+		pushw	X
+		clrw	X
+		push	Acc						;save bytes count
+		push	AccH
+		lsr	AccH						;convert byte size to word size
+		ror	Acc
+	_CHECKSUM16_00:
+		ld	Temp,Z+						;get low byte
+		add	XL,Temp						;compute
+		ld	Temp,Z+						;get high byte
+		adc	XH,Temp						;compute
+		brcc	_CHECKSUM16_10
+		ldi	Temp,0
+		adc	XL,Temp
+		adc	XH,Temp
+	_CHECKSUM16_10:
+		sbiw	Acc,1						;next word
+		brne	_CHECKSUM16_00					;until done
+		pop	AccH						;restore bytes count
+		pop	Acc
+		lsr	Acc						;see if odd bytes count
+		brcc	_CHECKSUM16_20					;no, branch
+		ld	Temp,Z+						;else add one more byte
+		add	XL,Temp						;compute
+		ldi	Temp,0
+		adc	XH,Temp						;compute
+		brcc	_CHECKSUM16_20
+		ldi	Temp,0
+		adc	XL,Temp
+		adc	XH,Temp
+	_CHECKSUM16_20:
+		mov	Acc,XL						;move to appropriate register
+		mov	AccH,XH
+		popw	X
+		pop	Temp
+		ret
+#endif
+.exit
+
+

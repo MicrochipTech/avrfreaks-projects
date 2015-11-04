@@ -1,0 +1,285 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| DATE:24/05/2001 VERSION 1.0				|
+;>------------------------------------------------------<
+;| D O U B L E   F L O A T  P O I N T  R O U T I N E S	|
+;| A L L  M A T H  D O U B L E  F U N C T I O N S	|
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+;+------------------------------------------------------+
+;+--------------------------------------------------------------------------+
+;!                                                                          !
+;!      Float point memory formating					    !
+;!                                                                          !
+;!      BITS --->       7 6 5 4 3 2 1 0                                     !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+0       !m!m!m!m!m!m!m!m!  Lsb of mantisa                    !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+1       !m!m!m!m!m!m!m!m!                                    !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+2       !m!m!m!m!m!m!m!m!                                    !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+3       !m!m!m!m!m!m!m!m!                                    !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+4       !m!m!m!m!m!m!m!m!                                    !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+5       !m!m!m!m!m!m!m!m!                                    !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+6       !s!m!m!m!m!m!m!m!  Msb of mantisa                    !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!      Byte M+7       !k!e!e!e!e!e!e!e!  Exponent                          !
+;!                     +-+-+-+-+-+-+-+-+                                    !
+;!                                                                          !
+;!      m - mantisa                                                         !
+;!      s - mantisa signal 0-positive 1-negative                            !
+;!      k - exponent signal 0-positive 1-negative                           !
+;!      e - exponent + BIAS = 81h(129) so that representation of zero       !
+;!          be made just for a zero in the exponent byte                    !
+;!                                                                          !
+;!      this notation allowed the storage of the following values range	    !
+;!                                                                          !
+;!      Maximum positive  1,7014118346046923e+38 		            !
+;!      Minimum positive  5,8774717541114375e-39                            !
+;!      Maximum negative -1,7014118346046923e+38                            !
+;!      Mininum positive -5,8774717541114375e-39                            !
+;!                                                                          !
+;!      reached precision is 16 digits		                            !
+;!   									    |
+;+--------------------------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;+------------------------------------------------------+---------------------------------------+
+;| STACKED CALL FUNCTIONS									|
+;+----------------------------------------------------------------------------------------------+
+;|
+;| LOAD CONSTANS
+;|
+;|* _FDBL_LD_0		load zero to stack
+;|* _FDBL_LD_1		load one to stack
+;|* _FDBL_LD_2		load two to stack
+;|* _FDBL_LD_10		load two to stack
+;|* _FDBL_LD_PI		load PI to stack
+;|* _FDBL_LD_2PI	load 2*PI to stack
+;|* _FDBL_LD_PI2	load PI/2 to stack
+;|* _FDBL_LD_PI4	load PI/4 to stack
+;|* _FDBL_LD_3PI2	load 3*PI/2 to stack
+;|* _FDBL_LD_E		load E(natural logaritm base) to stack
+;|* _FDBL_LD_SQRT2	load square root of 2 to stack
+;|* _FDBL_LD_SQRT2M1	load square root of 2 minus 1 to stack
+;|* _FDBL_LD_SQRT2P1	load square root of 2 plus 1 to stack
+;|
+;| LOAD VARIABLES
+;|
+;|* _FDBL_LDB		load byte to stack
+;|* _FDBL_LDI		load integer to stack
+;|* _FDBL_LDL		load long to stack
+;|* _FDBL_LDF		load float to stack
+;|* _FDBL_LDD		load double to stack
+;|
+;| STORE VARIABLES
+;|
+;|* _FDBL_STB		store byte from stack
+;|* _FDBL_STI		store integer from stack
+;|* _FDBL_STL		store long from stack
+;|* _FDBL_STF		store float from stack
+;|* _FDBL_STD		store double from stack
+;|* _FDBL_STBP		store byte from stack and pop
+;|* _FDBL_STIP		store integer from stack and pop
+;|* _FDBL_STLP		store long from stack and pop
+;|* _FDBL_STFP		store float from stack and pop
+;|* _FDBL_STDP		store double from stack and pop
+;|
+;| ALGEBRA FUNCTIONS
+;|
+;|* _FDBL_ADD		double addition
+;|* _FDBL_SUB		double subtraction
+;|* _FDBL_MUL		double multiply
+;|* _FDBL_MUL2		double multiply by 2
+;|* _FDBL_DIV		double divide
+;|* _FDBL_DIV2		double divide by 2
+;|* _FDBL_ABS		double absolute
+;|* _FDBL_CHS		double change signal
+;|* _FDBL_INV		double reciprocal 1/x
+;| _FDBL_INT		double integer
+;| _FDBL_FRAC		double fraction
+;|* _FDBL_SQR		double square
+;|* _FDBL_SQRT		double square root
+;|
+;| TRIGONOMETRIC FUNCTIONS
+;|
+;|* _FDBL_SERSIN	double partial sine
+;|* _FDBL_SIN		double sine
+;|* _FDBL_COS		double co-sine
+;|* _FDBL_TAN		double tangent
+;|* _FDBL_SERATN	double partial arc tangent
+;|* _FDBL_ATAN		double arc tangent
+;|* _FDBL_ASIN		double arc sine
+;|* _FDBL_ACOS		double arc co-sine
+;|
+;| GENERAL
+;|
+;| _FDBL_INIT	initialize float point engine and stack math pointer
+;|
+;| .EQU	_FDOUBLE_STACK_SIZE	= 4
+;+------------------------------------------------------+---------------------------------------+
+;| DIRECT CALL FUNCTIONS									|
+;+------------------------------------------------------+---------------------------------------+
+;|												|
+;| _DFINIT	Float Point Initialize		 						|
+;|												|
+;| Obs:		Use this function to initialize double float point routines			|
+;+----------------------------------------------------------------------------------------------+
+;| _DFUNDER	Set Fload Point Accumulator to zero and return Acc=_FEUNDER 			|
+;+----------------------------------------------------------------------------------------------+
+;| _DFOVER	Set Float Point Accumulator to max number positive or negative According a value|
+;|		Return Acc=_FEOVER								|
+;+----------------------------------------------------------------------------------------------+
+;| _DFDIV0	Set Float Point Accumulator to max number positive or negative according a value|
+;|		Return Acc=_FEDIV0								|
+;+----------------------------------------------------------------------------------------------+
+;| _DFNORM	Normalize Float Point Accumulator 						|
+;+----------------------------------------------------------------------------------------------+
+;| _DFLTOF	Convert long integer signed number to float point				|
+;|												|
+;| 		Input  : Acc:AccH:AccT:AccTH signed long integer  				|
+;|		Output : Floating Accumulator		     					|
+;|	    		 Acc=FPok or FUndeflow		     					|
+;| 		Destroy: Flags	                             					|
+;+----------------------------------------------------------------------------------------------+
+;| _DFITOF	Convert integer signed number to float point					|
+;|												|
+;| 		Input  : Acc:AccH signed integer		  				|
+;|		Output : Floating Accumulator		     					|
+;|	    		 Acc=FPok or FUndeflow		     					|
+;| 		Destroy: Flags	                             					|
+;+----------------------------------------------------------------------------------------------+
+;| _DFATOF	Convert signed byte number to float point					|
+;| _DFBTOF											|
+;| 		Input  : Acc signed byte			  				|
+;|		Output : Floating Accumulator		     					|
+;|	    		 Acc=FPok or FUndeflow		     					|
+;| 		Destroy: Flags	                             					|
+;+----------------------------------------------------------------------------------------------+
+;| _DFFTOL	Convert float point to signed long integer number				|
+;| 												|
+;| 		Input  : Floating Accumulator			  				|
+;|		Output : Acc:AccH:AccT:AccTH long integer     					|
+;|	    		 Acc=FPok or FUndeflow		     					|
+;| 		Destroy: Flags,Float Op1                            				|
+;+----------------------------------------------------------------------------------------------+
+;| _DFMUL	Float point multiply Op1 by Op2							|
+;| _DFMMUL (MACRO)										|
+;| 		Input  : Op1,Op2 Float number to multiply	  				|
+;|		Output : Float Accumulator		     					|
+;|	    		 Acc=Exception code		     					|
+;| 		Destroy: Op1,Op2,Acc,AccH,Flags                        				|
+;|		Operation: FAcc=Op1*Op2								|
+;+----------------------------------------------------------------------------------------------+
+;| _DFDIV	Float point divide Op1 by Op2							|
+;| _DFMDIV (MACRO)										|
+;| 		Input  : Op1,Op2 Float number to divide		  				|
+;|		Output : Float Accumulator		     					|
+;|	    		 Acc=Exception code		     					|
+;| 		Destroy: Op1,Op2,Acc,AccH,Flags                        				|
+;|		Operation: FAcc=Op1/Op2								|
+;+----------------------------------------------------------------------------------------------+
+;| _DFMUL2	Float point multiply Float Accumulator by 2					|
+;| _DFMMUL2 (MACRO)										|
+;| 		Input  : Float Accumulator			  				|
+;|		Output : Float Accumulator		     					|
+;|	    		 Acc=Exception code		     					|
+;| 		Destroy: Op1,Op2,Acc,AccH,Flags                        				|
+;|		Operation: FAcc=FAcc*2								|
+;+----------------------------------------------------------------------------------------------+
+;| _DFDIV2	Float point divide Float Accumulator by 2					|
+;| _DFMDIV2 (MACRO)										|
+;| 		Input  : Float Accumulator			  				|
+;|		Output : Float Accumulator		     					|
+;|	    		 Acc=Exception code		     					|
+;| 		Destroy: Op1,Op2,Acc,AccH,Flags                        				|
+;|		Operation: FAcc=FAcc/2								|
+;+----------------------------------------------------------------------------------------------+
+;| _DFADD	Float point add Op1 with Op2							|
+;| _DFMADD (MACRO)										|
+;| 		Input  : Op1,Op2 Float number to add		  				|
+;|		Output : Float Accumulator		     					|
+;|	    		 Acc=Exception code		     					|
+;| 		Destroy: Op1,Op2,Acc,AccH,Flags                        				|
+;|		Operation: FAcc=Op1+Op2								|
+;+----------------------------------------------------------------------------------------------+
+;| _DFSUB	Float point subtract Op2 from Op1						|
+;| _DFMSUB (MACRO)										|
+;| 		Input  : Op1,Op2 Float number to subtract	  				|
+;|		Output : Float Accumulator		     					|
+;|	    		 Acc=Exception code		     					|
+;| 		Destroy: Op1,Op2,Acc,AccH,Flags                        				|
+;|		Operation: FAcc=Op1-Op2								|
+;+----------------------------------------------------------------------------------------------+
+#ifndef __MATH_FLOAT_HEADER__
+	#define __MATH_FLOAT_HEADER__
+	#ifndef __MATH_DEFINITIONS__
+		.message "/-----------------------------\"
+		.message "| MATH DEFINITIONS NOT LOADED |"
+		.message "\--------=--------------------/"
+	#endif
+	.message "+--------------------+"
+	.message "|                    |"
+	.message "| MATH FLOAT HEADERS |"
+	.message "|                    |"
+	.message "+--------------------+"
+	;+-----------------------+
+	;| INCLUDE MATH LIBRARYS |
+	;+-----------------------+
+	.INCLUDE	"MATH\FLOAT_DOUBLE\INFINIT_RESULT\DFINF.INC"	;Infinit normalization routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\NORMALIZE\DFNORM.INC"	;Normalization routine
+	.INCLUDE	"MATH\FLOAT_DOUBLE\LONG_TO_FLOAT\DFLTOF.INC"	;Integer to Float conversion routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\FLOAT_TO_LONG\DFFTOL.INC"	;Float to Integer conversion routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\MULDIV\DFMULDIV.INC"		;Float Multiply and Divide routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\ADDSUB\DFADDSUB.INC"		;Float Addiction and Subtraction routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\LOAD_STORE\DFLDXSTX.INC"	;Float load and store variables routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\STRING_TO_FLOAT\DFSTOF.INC"	;String to Float routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\FLOAT_TO_BCD\DFFTOBCD.INC"	;Float to BCD
+	.INCLUDE	"MATH\FLOAT_DOUBLE\BCD_TO_STRING\DFBCDTOS.INC"	;Float BCD to String routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\COMPARE\DFCPM.INC"		;Float to Compare routines
+	.INCLUDE	"MATH\FLOAT_DOUBLE\SQUARE_ROOT\DFSQRT.INC"	;Float square root routine
+	.INCLUDE	"MATH\FLOAT_DOUBLE\SERIES\SINE\SERIE_SINE.INC"	;Float partial sine routine
+	.INCLUDE	"MATH\FLOAT_DOUBLE\SERIES\ATN\SERIE_ATN.INC"	;Float partial arc tangent routine
+	.INCLUDE	"MATH\FLOAT_DOUBLE\UNARY\UNARY.INC"		;unary operations
+	.INCLUDE	"MATH\FLOAT_DOUBLE\INT\INT.INC"			;INT and FIX operations
+	.INCLUDE	"MATH\FLOAT_DOUBLE\SINE\SINE.INC"		;Float general sine function
+	.INCLUDE	"MATH\FLOAT_DOUBLE\COSINE\COSINE.INC"		;Float general co-sine function
+	.INCLUDE	"MATH\FLOAT_DOUBLE\TAN\TAN.INC"			;Float general tangent function
+	.INCLUDE	"MATH\FLOAT_DOUBLE\ATAN\ATAN.INC"		;Float general arc tangent function
+	.INCLUDE	"MATH\FLOAT_DOUBLE\ASINE\ASIN.INC"		;Float general arc sine function
+	.INCLUDE	"MATH\FLOAT_DOUBLE\ACOS\ACOS.INC"		;Float general arc co-sine function
+;	.INCLUDE	"MATH\FLOAT_DOUBLE\ATAN2PTS\ATAN2PTS.INC"	;Float general arc tangent between two point
+	.INCLUDE	"MATH\FLOAT_DOUBLE\STACK\STACK.INC"		;Float function with stack
+#endif
+.exit
+

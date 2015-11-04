@@ -1,0 +1,992 @@
+
+AVRASM ver. 1.21  DPDRV1.INC Wed Oct 31 22:40:41 2001
+
+
+         ;+------------------------------------------------------+
+         ;| HOSPITAL SARAH BRASILIA				|
+         ;| DISPLAY DRIVE FOR T6963C TOSHIBA CHIP		|
+         ;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+         ;| DATE:12/12/2000 VERSION 1.0				|
+         ;>------------------------------------------------------<
+         ;| D I S P L A Y  D R I V E  1 6 0  X  1 2 8 		|
+         ;+------------------------------------------------------+
+         ;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+         ;+------------------------------------------------------+
+         ;| PART II ROUTINES IMPLEMENTATIONS			|
+         ;+------------------------------------------------------+
+         
+         ;+----------------------------------------------------------------------+
+         ;| LCD DISPLAY ROTINES FOR T6963C MICROCONTROLES USING 160X128 PIXELS	|
+         ;| DUAL PLANE 8X8 CHARACTER SIZE					|
+         ;+----------------------------------------------------------------------+
+         
+         ;+--------------+
+         ;| INIT DISPLAY |
+         ;+==============+===============================================================================
+         
+          .EQU	_DISP_GRAPH_ADDR		= _DISP_GRAPH_ADDRESS-0X800
+         
+          .DSEG
+000060      _DP_GPAGE:		.BYTE 1		;because that display use a two pages
+          .CSEG
+         
+          _INIT_DISPLAY:
+         
+          _DISP_INIT:						;THIS LINE INSERTED ONLY FOR COMPATIBILITY
+000000       	push	AccH
+error : Illegal argument type or count
+000001       	in	AccH,SREG
+error : Illegal argument type or count
+000002 94f8      	cli
+000003       	in	Acc,_DISP_PORT_CMD_DIR			;get actual direction of display command port
+error : Illegal argument type or count
+         							;set display commands bits as output level one
+000004       	ori	Acc,(1<<_DISP_BIT_WR) | (1<<_DISP_BIT_RD) | (1<<_DISP_BIT_CE) | (1<<_DISP_BIT_CD) | (1<<_DISP_BIT_RESET)
+error : Illegal argument type or count
+         							;send display command initialization
+000005       	out	_DISP_PORT_CMD_DIR,Acc
+error : Undefined variable referenced
+000006       	ser	Acc
+error : Illegal argument type or count
+000007       	out	_DISP_PORT_CMD_OUT,Acc			;set all bits high level
+error : Undefined variable referenced
+000008       	clr	Acc					
+error : Illegal argument type or count
+000009       	out	_DISP_PORT_DATA_DIR,Acc			;set display data port as input
+error : Undefined variable referenced
+         
+00000a       	out	SREG,AccH
+error : Undefined variable referenced
+00000b       	pop	AccH
+error : Illegal argument type or count
+00000c d02e      	rcall	_DISPLAY_RESET				;reset a display
+         ;-----------------------------------------------------------------------------------------------
+         
+         ;SET TEXT HOME ADDRESS
+         
+00000d       	push	Acc				;save useds
+error : Illegal argument type or count
+00000e       	ldi	Acc,low(_DISP_TEXT_ADDRESS)	;text home address
+error : Illegal argument type or count
+00000f d069      	rcall	_DISP_DATA
+000010       	ldi	Acc,high(_DISP_TEXT_ADDRESS)
+error : Illegal argument type or count
+000011 d067      	rcall	_DISP_DATA
+000012       	ldi	Acc,SETCONTROLWORD+TEXTHOMEADDR
+error : Illegal argument type or count
+000013 d060      	rcall	_DISP_CMD
+         
+         ;SET TEXT AREA
+         
+000014       	ldi	Acc,_DISP_HARD_COLUNMS		;set columns
+error : Illegal argument type or count
+000015 d063      	rcall	_DISP_DATA
+000016       	ldi	Acc,0
+error : Illegal argument type or count
+000017 d061      	rcall	_DISP_DATA
+000018       	ldi	Acc,SETCONTROLWORD+TEXTAREA
+error : Illegal argument type or count
+000019 d05a      	rcall	_DISP_CMD
+         
+         ;SET GRAPH HOME ADDRESS
+         
+00001a       	ldi	Acc,low(_DISP_GRAPH_ADDR)	;graph home address
+error : Illegal argument type or count
+00001b d05d      	rcall	_DISP_DATA
+00001c       	ldi	Acc,high(_DISP_GRAPH_ADDR)
+error : Illegal argument type or count
+00001d d05b      	rcall	_DISP_DATA
+00001e       	ldi	Acc,SETCONTROLWORD+GRAPHHOMEADDR
+error : Illegal argument type or count
+00001f d054      	rcall	_DISP_CMD
+         
+         ;SET GRAPH AREA
+         
+000020       	ldi	Acc,_DISP_HARD_COLUNMS		;set columns
+error : Illegal argument type or count
+000021 d057      	rcall	_DISP_DATA
+000022       	ldi	Acc,0
+error : Illegal argument type or count
+000023 d055      	rcall	_DISP_DATA
+000024       	ldi	Acc,SETCONTROLWORD+GRAPHAREA
+error : Illegal argument type or count
+000025 d04e      	rcall	_DISP_CMD
+         
+         ;SET MODE SET
+         
+000026       	ldi	Acc,MODESET+CGROM+ORMODE	;internal caracter generator 
+error : Illegal argument type or count
+000027 d04c      	rcall	_DISP_CMD
+         
+         ;SET ADDRESS POINTER
+         
+000028       	ldi	Acc,0				;address pointer start at 0
+error : Illegal argument type or count
+000029 d04f      	rcall 	_DISP_DATA
+00002a       	ldi	Acc,0
+error : Illegal argument type or count
+00002b d04d      	rcall	_DISP_DATA
+00002c       	ldi	Acc,REGISTERSSETTING+ADDRESSPOINTER
+error : Illegal argument type or count
+00002d d046      	rcall	_DISP_CMD
+         
+         ;SET OFFSET
+         
+00002e       	ldi	Acc,0				;offset at zero
+error : Illegal argument type or count
+00002f d049      	rcall	_DISP_DATA
+000030       	ldi	Acc,0
+error : Illegal argument type or count
+000031 d047      	rcall	_DISP_DATA
+000032       	ldi	Acc,REGISTERSSETTING+OFFSETREGISTER
+error : Illegal argument type or count
+000033 d040      	rcall	_DISP_CMD
+         	
+         ;SET TEXT ON,GRAPHICS OFF,CURSOR OFF
+         
+000034       	ldi	Acc,DISPLAYMODE+TEXTON+GRAPHON+CURSOROFF+BLINKOFF
+error : Illegal argument type or count
+000035 d03e      	rcall	_DISP_CMD
+         
+         ;CLEAR SCREEN TEXT AND GRAPHICS
+         
+000036       	ldi	Acc,' '
+error : Illegal argument type or count
+000037 d0b0      	rcall	_DISP_CLS_TEXT
+000038 d0e0      	rcall	_DISP_CLS_GRAPH
+000039       	pop	Acc
+error : Illegal argument type or count
+00003a 9508      	ret
+         
+         ;+---------------------+
+         ;| DIPLAY RESET	       |
+         ;+=====================+========================================================================
+         
+          _DISPLAY_RESET:
+00003b       	push	Acc
+error : Illegal argument type or count
+00003c       	push	AccH
+error : Illegal argument type or count
+00003d 920f      	push	r0
+00003e d008      	rcall	_DISP_R1M
+00003f       	cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RESET	;active RESET
+error : Undefined variable referenced
+000040 d006      	rcall	_DISP_R1M
+000041       	sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RESET	;deactive RESET
+error : Undefined variable referenced
+000042 d004      	rcall	_DISP_R1M
+000043 900f      	pop	r0
+000044       	pop	AccH
+error : Illegal argument type or count
+000045       	pop	Acc
+error : Illegal argument type or count
+000046 9508      	ret
+         
+         ;+----------------------
+         ;| 1 milesecond delay
+         ;+----------------------
+         
+          .EQU	_DISP_RESET_TIME	= (1*AVR_CLOCK)/6000	;calculus for 1ms
+         
+          _DISP_R1M:
+000047       	ldi	Acc,low(_DISP_RESET_TIME)
+error : Illegal argument type or count
+000048       	ldi	AccH,high(_DISP_RESET_TIME)
+error : Illegal argument type or count
+000049 2400      	clr	r0
+          _DISP_R100:
+00004a       	subi	Acc,1
+error : Illegal argument type or count
+00004b       	sbci	AccH,0
+error : Illegal argument type or count
+00004c       	cp	Acc,r0
+error : Illegal argument type or count
+00004d       	cpc	AccH,r0
+error : Illegal argument type or count
+00004e f7d9      	brne	_DISP_R100
+00004f 9508      	ret
+         	
+         ;+---------------------+
+         ;| DIPLAY STATUS READ  |
+         ;| output: Acc status  |	
+         ;+=====================+========================================================================
+         
+          _DISP_STATUS_READ:
+000050       	sbi 	_DISP_PORT_CMD_OUT,_DISP_BIT_CD		;cd=command
+error : Undefined variable referenced
+          _DISP_GETS:
+000051       	cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_CE		;ce=low
+error : Undefined variable referenced
+000052       	cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RD		;rd=low
+error : Undefined variable referenced
+000053 0000      	nop						;time to read
+000054 0000      	nop
+000055       	in	Acc,_DISP_PORT_DATA_IN			;status in Acc
+error : Illegal argument type or count
+000056       	sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RD		;rd=high
+error : Undefined variable referenced
+000057       	sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_CE		;ce=high
+error : Undefined variable referenced
+         ;	LDI	ACC,0X0F
+000058 9508      	ret	
+         
+         ;+-------------------+
+         ;| DIPLAY DATA READ  |
+         ;| output: Acc data  |	
+         ;+===================+==========================================================================
+         
+          _DISP_DATA_READ:
+000059       	cbi 	_DISP_PORT_CMD_OUT,_DISP_BIT_CD		;cd=data
+error : Undefined variable referenced
+00005a cff6      	rjmp	_DISP_GETS
+         
+         ;+----------------------+
+         ;| DIPLAY COMMAND WRITE |
+         ;| input: Acc data   	|	
+         ;+======================+=======================================================================
+         
+          _DISP_COMMAND_WRITE:
+00005b       	out	_DISP_PORT_DATA_OUT,Acc			;set data to be write
+error : Undefined variable referenced
+00005c       	ser	Acc
+error : Illegal argument type or count
+00005d       	out	_DISP_PORT_DATA_DIR,Acc			;set PORT as output
+error : Undefined variable referenced
+00005e       	sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_CD		;cd=command
+error : Undefined variable referenced
+          _DISP_PUTD:
+00005f       	cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_CE		;ce=low
+error : Undefined variable referenced
+000060       	cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_WR		;wr=low
+error : Undefined variable referenced
+000061 0000      	nop						;time to write
+000062 0000      	nop
+000063       	sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_WR		;wr=high
+error : Undefined variable referenced
+000064       	sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_CE		;ce=high
+error : Undefined variable referenced
+000065       	clr	Acc
+error : Illegal argument type or count
+000066       	out	_DISP_PORT_DATA_DIR,Acc			;set PORT as input, my normal mode
+error : Undefined variable referenced
+000067       	ser	Acc
+error : Illegal argument type or count
+000068       	out	_DISP_PORT_DATA_OUT,Acc			;PORT B with pull up
+error : Undefined variable referenced
+000069 9508      	ret
+         
+         ;+-------------------+
+         ;| DIPLAY DATA WRITE |
+         ;| input: Acc data   |
+         ;+===================+==========================================================================
+         
+          _DISP_DATA_WRITE:
+00006a       	out	_DISP_PORT_DATA_OUT,Acc			;set data to be write
+error : Undefined variable referenced
+00006b       	ser	Acc
+error : Illegal argument type or count
+00006c       	out	_DISP_PORT_DATA_DIR,Acc			;set PORT as output
+error : Undefined variable referenced
+00006d       	cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_CD		;cd=data
+error : Undefined variable referenced
+00006e cff0      	rjmp	_DISP_PUTD
+         
+         ;+----------------+
+         ;| CAN READ/WRITE |
+         ;+================+=============================================================================
+         
+          _DISP_CANRW:
+00006f dfe0      	rcall	_DISP_STATUS_READ	;get display status
+000070       	andi	Acc,(_DISP_STA0M+_DISP_STA1M) ;only status to check
+error : Illegal argument type or count
+000071       	cpi	Acc,(_DISP_STA0M+_DISP_STA1M) ;good to write ?
+error : Illegal argument type or count
+000072 f7e1      	brne	_DISP_CANRW
+000073 9508      	ret	
+         	
+         ;+---------------------+
+         ;| DIPLAY SEND COMMAND |
+         ;| input: Acc data     |	
+         ;+=====================+========================================================================
+         
+          _DISP_CMD:
+000074       	push 	Acc			;save command to be send
+error : Illegal argument type or count
+000075 dff9      	rcall	_DISP_CANRW		;verify if can write
+000076       	pop 	Acc			;restore command
+error : Illegal argument type or count
+000077 dfe3      	rcall	_DISP_COMMAND_WRITE	;write command
+000078 9508      	ret
+         
+         ;+---------------------+
+         ;| DIPLAY SEND ONE DATA|
+         ;| input: Acc data     |	
+         ;+=====================+========================================================================
+         
+          _DISP_DATA:
+000079       	push 	Acc			;save data to be send
+error : Illegal argument type or count
+00007a dff4      	rcall	_DISP_CANRW		;verify if can write
+00007b       	pop 	Acc			;restore command
+error : Illegal argument type or count
+00007c dfed      	rcall	_DISP_DATA_WRITE		;write data
+00007d 9508      	ret
+         
+         ;+---------------------+
+         ;| DIPLAY AUTO WRITE   |
+         ;| input: Acc data     |	
+         ;+=====================+========================================================================
+         
+          _DISP_AUTOWRITE:
+00007e       	push	Acc
+error : Illegal argument type or count
+          _DISP_A00:
+00007f dfd0      	rcall	_DISP_STATUS_READ
+000080       	andi	Acc,_DISP_STA3M
+error : Illegal argument type or count
+000081       	cpi	Acc,_DISP_STA3M
+error : Illegal argument type or count
+000082 f7e1      	brne	_DISP_A00
+000083       	pop	Acc
+error : Illegal argument type or count
+000084 dfe5      	rcall	_DISP_DATA_WRITE
+000085 9508      	ret
+         
+         ;+---------------------+
+         ;| DIPLAY AUTO READ    |
+         ;| Output:Acc data     |	
+         ;+=====================+========================================================================
+         
+          _DISP_AUTOREAD:
+000086 dfc9      	rcall	_DISP_STATUS_READ
+000087       	andi	Acc,_DISP_STA2M
+error : Illegal argument type or count
+000088       	cpi	Acc,_DISP_STA2M
+error : Illegal argument type or count
+000089 f7e1      	brne	_DISP_AUTOREAD
+00008a dfce      	rcall	_DISP_DATA_READ
+00008b 9508      	ret
+         
+         ;+---------------------------------------+
+         ;| SET ADDRESS AT (LINE,COLUNM) POSITION |
+         ;| input: XL --> colunm 		 |
+         ;|	  YL --> line 			 |
+         ;+=======================================+======================================================
+         
+         ; warning , this routine must be change according display number colunms
+         
+          _DISP_SET_LC:
+00008c       	push	YL
+error : Illegal argument type or count
+00008d       	dec	YL
+error : Illegal argument type or count
+00008e       	push	Acc
+error : Illegal argument type or count
+00008f       	ldi	Acc,_DP_PAGE0
+error : Illegal argument type or count
+000090       	cpi	YL,8
+error : Illegal argument type or count
+000091 f010      	brlo	DSL00
+000092       	ldi	Acc,_DP_PAGE1
+error : Illegal argument type or count
+000093       	subi	YL,8
+error : Illegal argument type or count
+          DSL00:
+000094       	sts	_DP_GPAGE,Acc
+error : Illegal argument type or count
+000096       	pop	Acc
+error : Illegal argument type or count
+000097       	push	XL			;save registers
+error : Illegal argument type or count
+000098       	push	XH
+error : Illegal argument type or count
+000099       	push	YL
+error : Illegal argument type or count
+00009a       	push 	YH
+error : Illegal argument type or count
+00009b       	push	Acc
+error : Illegal argument type or count
+00009c       	push	AccH
+error : Illegal argument type or count
+00009d       	dec	XL
+error : Illegal argument type or count
+         ;--------------------------------------------------------------
+00009e       	ldi	YH,0			;Y*32+X 
+error : Illegal argument type or count
+00009f       	ldi	XH,0
+error : Illegal argument type or count
+0000a0       	lsl	YL
+error : Illegal argument type or count
+0000a1       	rol	YH
+error : Illegal argument type or count
+0000a2       	lsl	YL
+error : Illegal argument type or count
+0000a3       	rol	YH
+error : Illegal argument type or count
+0000a4       	lsl	YL
+error : Illegal argument type or count
+0000a5       	rol	YH
+error : Illegal argument type or count
+0000a6       	lsl	YL
+error : Illegal argument type or count
+0000a7       	rol	YH
+error : Illegal argument type or count
+0000a8       	lsl	YL
+error : Illegal argument type or count
+0000a9       	rol	YH
+error : Illegal argument type or count
+0000aa       	add	YL,XL
+error : Illegal argument type or count
+0000ab       	adc	YH,XH
+error : Illegal argument type or count
+         ;--------------------------------------------------------------
+0000ac       	mov	Acc,YL			;set address pointer
+error : Illegal argument type or count
+0000ad dfcb      	rcall 	_DISP_DATA
+0000ae       	mov	Acc,YH
+error : Illegal argument type or count
+0000af       	lds	AccH,_DP_GPAGE
+error : Illegal argument type or count
+0000b0       	or	Acc,AccH		;set page
+error : Illegal argument type or count
+0000b1 dfc7      	rcall	_DISP_DATA
+0000b2       	ldi	Acc,REGISTERSSETTING+ADDRESSPOINTER
+error : Illegal argument type or count
+0000b3 dfc0      	rcall	_DISP_CMD
+0000b4       	pop	AccH
+error : Illegal argument type or count
+0000b5       	pop	Acc
+error : Illegal argument type or count
+0000b6       	pop	YH			;restore registers
+error : Illegal argument type or count
+0000b7       	pop	YL
+error : Illegal argument type or count
+0000b8       	pop	XH
+error : Illegal argument type or count
+0000b9       	pop	XL
+error : Illegal argument type or count
+0000ba       	pop	YL
+error : Illegal argument type or count
+0000bb 9508      	ret
+         
+         ;+-------------------------------+
+         ;| SET ADDRESS AT (X,Y) POSITION |
+         ;| input: XL --> X	 	 |
+         ;|	  YL --> Y 		 |
+         ;+===============================+==============================================================
+         
+         ; warning , this routine must be change according display number colunms
+         
+          _DISP_SET_XY:
+0000bc       	push	XL					;save registers
+error : Illegal argument type or count
+0000bd       	push	XH
+error : Illegal argument type or count
+0000be       	push	YL
+error : Illegal argument type or count
+0000bf       	push 	YH
+error : Illegal argument type or count
+0000c0       	push	Acc
+error : Illegal argument type or count
+0000c1       	push	AccH
+error : Illegal argument type or count
+         ;-------------------------------------------------------------
+0000c2       	lsr	XL					;translate X to colunm X=X/8
+error : Illegal argument type or count
+0000c3       	lsr	XL
+error : Illegal argument type or count
+0000c4       	lsr	XL
+error : Illegal argument type or count
+0000c5       	ldi	YH,0					;Y*32+X 
+error : Illegal argument type or count
+0000c6       	ldi	XH,0
+error : Illegal argument type or count
+0000c7       	lsl	YL
+error : Illegal argument type or count
+0000c8       	rol	YH
+error : Illegal argument type or count
+0000c9       	lsl	YL
+error : Illegal argument type or count
+0000ca       	rol	YH
+error : Illegal argument type or count
+0000cb       	lsl	YL
+error : Illegal argument type or count
+0000cc       	rol	YH
+error : Illegal argument type or count
+0000cd       	lsl	YL
+error : Illegal argument type or count
+0000ce       	rol	YH
+error : Illegal argument type or count
+0000cf       	lsl	YL
+error : Illegal argument type or count
+0000d0       	rol	YH
+error : Illegal argument type or count
+0000d1       	add	YL,XL
+error : Illegal argument type or count
+0000d2       	adc	YH,XH
+error : Illegal argument type or count
+         ;-------------------------------------------------------------
+0000d3       	ldi	Acc,low(_DISP_GRAPH_ADDR) 		;add graph offset
+error : Illegal argument type or count
+0000d4       	add	YL,Acc
+error : Illegal argument type or count
+0000d5       	ldi	Acc,high(_DISP_GRAPH_ADDR)
+error : Illegal argument type or count
+0000d6       	lds	AccH,_DP_GPAGE
+error : Illegal argument type or count
+0000d7       	or	Acc,AccH				;set page 
+error : Illegal argument type or count
+0000d8       	adc	YH,Acc
+error : Illegal argument type or count
+0000d9       	mov	Acc,YL					;set address pointer
+error : Illegal argument type or count
+0000da df9e      	rcall 	_DISP_DATA
+0000db       	mov	Acc,YH
+error : Illegal argument type or count
+0000dc df9c      	rcall	_DISP_DATA
+0000dd       	ldi	Acc,REGISTERSSETTING+ADDRESSPOINTER
+error : Illegal argument type or count
+0000de df95      	rcall	_DISP_CMD
+0000df       	pop	AccH
+error : Illegal argument type or count
+0000e0       	pop	Acc
+error : Illegal argument type or count
+0000e1       	pop	YH					;restore registers
+error : Illegal argument type or count
+0000e2       	pop	YL
+error : Illegal argument type or count
+0000e3       	pop	XH
+error : Illegal argument type or count
+0000e4       	pop	XL
+error : Illegal argument type or count
+0000e5 9508      	ret
+         
+         ;+---------------------------------------+
+         ;| CLEAR SCREEN TEXT  			 |
+         ;| input: Acc character to fill screen   |
+         ;+=======================================+======================================================
+         
+          _DISP_CLS_TEXT:
+0000e6       	push	Acc
+error : Illegal argument type or count
+0000e7       	ldi	Acc,_DP_PAGE0
+error : Illegal argument type or count
+0000e8       	sts	_DP_GPAGE,Acc
+error : Illegal argument type or count
+0000ea       	pop	Acc
+error : Illegal argument type or count
+0000eb d009      	rcall	_DISP_CLS_TEXT_PAGE
+0000ec       	push	Acc
+error : Illegal argument type or count
+0000ed       	ldi	acc,_DP_PAGE1
+error : Illegal argument type or count
+0000ee       	sts	_DP_GPAGE,Acc
+error : Illegal argument type or count
+0000f0       	pop	Acc
+error : Illegal argument type or count
+0000f1 d003      	rcall	_DISP_CLS_TEXT_PAGE
+0000f2 9508      	ret
+         
+          _DISP_CLS_TEXT_PAGE:
+0000f3       	push	XL				;save registers
+error : Illegal argument type or count
+0000f4       	push	XH
+error : Illegal argument type or count
+0000f5       	push	YL
+error : Illegal argument type or count
+0000f6       	push 	YH
+error : Illegal argument type or count
+0000f7       	push	Acc
+error : Illegal argument type or count
+0000f8       	push	AccH
+error : Illegal argument type or count
+0000f9       	push	AccT
+error : Illegal argument type or count
+0000fa       	ldi	XL,1				;set first colunm
+error : Illegal argument type or count
+0000fb       	ldi	YL,1				;set first line
+error : Illegal argument type or count
+          _DISPCA0:
+0000fc df8f      	rcall	_DISP_SET_LC
+0000fd       	push	Acc
+error : Illegal argument type or count
+0000fe       	ldi	Acc,DATAAUTO+DATAAUTOWRITE	;set auto write
+error : Illegal argument type or count
+0000ff df74      	rcall	_DISP_CMD
+000100       	pop 	Acc
+error : Illegal argument type or count
+000101       	ldi	AccH,_DISP_SHOW_COLUNMS		;number off characters to be clead
+error : Illegal argument type or count
+          _DISP_C00:
+000102       	push	Acc
+error : Illegal argument type or count
+000103       	subi	Acc,0x20			;to convert to non ascii code
+error : Illegal argument type or count
+000104 df79      	rcall	_DISP_AUTOWRITE			;write data
+000105       	pop	Acc
+error : Illegal argument type or count
+000106       	dec	AccH				;next position
+error : Illegal argument type or count
+000107 f7e1      	brne	_DISP_C00			;until all characters into line filled
+000108       	push	Acc
+error : Illegal argument type or count
+000109       	ldi	Acc,DATAAUTO+AUTORESET		;reset auto write
+error : Illegal argument type or count
+00010a df69      	rcall	_DISP_CMD
+00010b       	pop	Acc
+error : Illegal argument type or count
+00010c       	inc	YL				;next line
+error : Illegal argument type or count
+00010d       	cpi	YL,(_DISP_HARD_LINES*2)+2		;x2 because a dual display
+error : Illegal argument type or count
+00010e f378      	brlo	_DISPCA0			;until all lines filled
+00010f       	pop	AccT
+error : Illegal argument type or count
+000110       	pop	AccH
+error : Illegal argument type or count
+000111       	pop	Acc
+error : Illegal argument type or count
+000112       	pop	YH				;restore registers
+error : Illegal argument type or count
+000113       	pop	YL
+error : Illegal argument type or count
+000114       	pop	XH
+error : Illegal argument type or count
+000115       	pop	XL
+error : Illegal argument type or count
+000116 9508      	ret
+         
+         ;+---------------------------------------+
+         ;| CLEAR SCREEN GRAPH  			 |
+         ;| GPAGE : grafics page active		 |
+         ;+=======================================+======================================================
+         
+          _DISP_CLS_GRAPH:
+000117       	push	Acc
+error : Illegal argument type or count
+000118       	ldi	Acc,_DP_PAGE0
+error : Illegal argument type or count
+000119       	sts	_DP_GPAGE,Acc
+error : Illegal argument type or count
+00011b d008      	rcall	_DISP_CLS_GRAPH_PAGE
+00011c       	ldi	Acc,_DP_PAGE1
+error : Illegal argument type or count
+00011d       	sts	_DP_GPAGE,Acc
+error : Illegal argument type or count
+00011f d004      	rcall	_DISP_CLS_GRAPH_PAGE
+000120       	pop	Acc
+error : Illegal argument type or count
+000121 9508      	ret
+         
+          _DISP_CLS_GRAPH_PAGE:
+000122       	push	XL				;save registers
+error : Illegal argument type or count
+000123       	push	XH
+error : Illegal argument type or count
+000124       	push	YL
+error : Illegal argument type or count
+000125       	push 	YH
+error : Illegal argument type or count
+000126       	push	Acc
+error : Illegal argument type or count
+000127       	push	AccH
+error : Illegal argument type or count
+000128       	push 	AccT
+error : Illegal argument type or count
+000129       	ldi	Acc,low(_DISP_GRAPH_ADDR)	;set address pointer to graph area
+error : Illegal argument type or count
+00012a df4e      	rcall 	_DISP_DATA
+00012b       	ldi	Acc,high(_DISP_GRAPH_ADDR)
+error : Illegal argument type or count
+00012c       	lds	AccH,_DP_GPAGE
+error : Illegal argument type or count
+00012d       	or	acc,AccH			;add page offset 
+error : Illegal argument type or count
+00012e df4a      	rcall	_DISP_DATA
+00012f       	ldi	Acc,REGISTERSSETTING+ADDRESSPOINTER
+error : Illegal argument type or count
+000130 df43      	rcall	_DISP_CMD
+000131       	ldi	Acc,DATAAUTO+DATAAUTOWRITE	;set auto write
+error : Illegal argument type or count
+000132 df41      	rcall	_DISP_CMD
+000133       	ldi	AccH,_DISP_HARD_LINES*8		;number off characters in graph mode to be clead
+error : Illegal argument type or count
+          _DISP_CG00:
+000134       	ldi	AccT,_DISP_HARD_COLUNMS
+error : Illegal argument type or count
+          _DISP_CG01:
+000135       	ldi	Acc,0x00
+error : Illegal argument type or count
+000136 df47      	rcall	_DISP_AUTOWRITE			;write data
+000137       	dec	AccT				;next position
+error : Illegal argument type or count
+000138 f7f9      	brne	_DISP_CG01
+000139       	dec	AccH				;next position
+error : Illegal argument type or count
+00013a f7e1      	brne	_DISP_CG00			;until all display filled
+00013b       	ldi	Acc,DATAAUTO+AUTORESET		;reset auto write
+error : Illegal argument type or count
+00013c df37      	rcall	_DISP_CMD
+00013d       	pop	AccT
+error : Illegal argument type or count
+00013e       	pop	AccH
+error : Illegal argument type or count
+00013f       	pop	Acc
+error : Illegal argument type or count
+000140       	pop	YH				;restore registers
+error : Illegal argument type or count
+000141       	pop	YL
+error : Illegal argument type or count
+000142       	pop	XH
+error : Illegal argument type or count
+000143       	pop	XL
+error : Illegal argument type or count
+000144 9508      	ret
+         
+         ;+---------------------------------------+
+         ;| Output data to display with autowrite |
+         ;| input: Acc data to be output 	 |
+         ;+=======================================+=======================================================
+          _DISP_DATAAUTO:
+000145       	push	Acc
+error : Illegal argument type or count
+000146       	ldi	Acc,DATAAUTO+DATAAUTOWRITE	;set auto write
+error : Illegal argument type or count
+000147 df2c      	rcall	_DISP_CMD
+000148       	pop	Acc
+error : Illegal argument type or count
+000149       	push	Acc
+error : Illegal argument type or count
+00014a       	subi	Acc,0x20			;translate ASCII to TOSHIBA
+error : Illegal argument type or count
+00014b df32      	rcall	_DISP_AUTOWRITE			;write data	
+00014c       	ldi	Acc,DATAAUTO+AUTORESET		;reset auto write
+error : Illegal argument type or count
+00014d df26      	rcall	_DISP_CMD
+00014e       	pop	Acc
+error : Illegal argument type or count
+00014f 9508      	ret
+         
+         ;+--------------------------------+
+         ;| Display send string   	  |
+         ;| input: Z --> string into FLASH |
+         ;+--------------------------------+-----------------------------------------
+         
+          _DISP_SEND_STR:
+000150 920f      	push	r0				;save used
+000151       	push	Acc
+error : Illegal argument type or count
+          _DISP_SEND00:
+000152 95c8      	lpm					;get data from program memory
+000153       	mov	Acc,r0				;end string ?
+error : Illegal argument type or count
+000154       	cpi	Acc,0
+error : Illegal argument type or count
+000155 f031      	breq	_DISP_SEND_DONE			;yes , done
+000156 dff1      	rcall	_DISP_DATAAUTO			;send data to display
+000157       	adiw	ZL,1
+error : Illegal argument type or count
+000158 cffc      	rjmp	_DISP_SEND00
+          _DISP_SEND_DONE:
+000159       	pop	Acc				;restore used
+error : Illegal argument type or count
+00015a 900f      	pop	r0
+00015b 9508      	ret
+         
+         ;+--------------------------------+
+         ;| Display send string   	  |
+         ;| input: Z --> string into SRAM  |
+         ;+--------------------------------+-----------------------------------------
+         
+          _DISP_SEND_STR_S:
+00015c       	push	Acc				;save used
+error : Illegal argument type or count
+          _DISP_SENDM00:
+00015d       	ld	Acc,Z+				;get data from program memory
+error : Illegal argument type or count
+00015e       	cpi	Acc,0				;end string ?
+error : Illegal argument type or count
+00015f f029      	breq	_DISP_SENDM_DONE			;yes , done
+000160 dfe7      	rcall	_DISP_DATAAUTO			;send data to display
+000161 cffe      	rjmp	_DISP_SENDM00
+          _DISP_SENDM_DONE:
+000162       	pop	Acc				;restore used
+error : Illegal argument type or count
+000163 9508      	ret
+         
+         ;+--------------------+
+         ;| Display locate     |
+         ;| input: Acc line    |
+         ;|        AccH column |
+         ;+--------------------+------------------------------------------------------
+          _DISP_LOCATE:
+000164       	push	XL				;save useds
+error : Illegal argument type or count
+000165       	push	YL
+error : Illegal argument type or count
+000166       	mov	YL,Acc
+error : Illegal argument type or count
+000167       	mov	XL,AccH
+error : Illegal argument type or count
+000168 df23      	rcall	_DISP_SET_LC			;call function
+000169       	pop	YL	
+error : Illegal argument type or count
+00016a       	pop	XL
+error : Illegal argument type or count
+00016b 9508      	ret
+         
+         ;+---------------------------------------+
+         ;| Put pixel	 			 |
+         ;| input: XL = X coordinate	 	 |
+         ;|	  YL = Y coordinate		 |
+         ;|	  Acc 0 reset 0xff set pixel	 |
+         ;+---------------------------------------+
+         
+         ; warning , this routine must be change according display number colunms
+         
+          _DISP_PSET:
+00016c       	push	YL
+error : Illegal argument type or count
+00016d       	cpi	XH,high(_DISP_WIDTH)	;x in range ?
+error : Illegal argument type or count
+00016e f4e9      	brne	_DISP_EXIT
+00016f       	cpi	XL,low(_DISP_WIDTH)
+error : Illegal argument type or count
+000170 f4d8      	brsh	_DISP_EXIT
+000171       	cpi	YH,high(_DISP_HEIGHT)	;y in range ?
+error : Illegal argument type or count
+000172 f4c9      	brne	_DISP_EXIT
+000173       	cpi	YL,low(_DISP_HEIGHT)
+error : Illegal argument type or count
+000174 f4b8      	brsh	_DISP_EXIT
+000175       	push	Acc
+error : Illegal argument type or count
+000176       	ldi	Acc,_DP_PAGE0
+error : Illegal argument type or count
+000177       	cpi	YL,64
+error : Illegal argument type or count
+000178 f028      	brlo	_DISP_P00
+000179       	ldi	Acc,_DP_PAGE1
+error : Illegal argument type or count
+00017a       	subi	YL,64
+error : Illegal argument type or count
+          _DISP_P00:
+00017b       	sts	_DP_GPAGE,Acc
+error : Illegal argument type or count
+00017d       	pop	Acc
+error : Illegal argument type or count
+00017e df3e      	rcall	_DISP_SET_XY		;set address
+00017f       	push	XL
+error : Illegal argument type or count
+000180       	push	Acc
+error : Illegal argument type or count
+000181       	com	XL			;because counting bit is right to left
+error : Illegal argument type or count
+000182       	andi	XL,7			;extract bit to be set
+error : Illegal argument type or count
+000183       	andi	Acc,BITSET		;select operation set/reset pixel
+error : Illegal argument type or count
+000184       	or	Acc,XL			;join with bit to be set
+error : Illegal argument type or count
+000185       	ori	Acc,BITSETRESET
+error : Illegal argument type or count
+000186 deed      	rcall	_DISP_CMD		;issue set/reset bit command
+000187       	pop	Acc
+error : Illegal argument type or count
+000188       	pop	XL
+error : Illegal argument type or count
+          _DISP_EXIT:	
+000189       	pop	YL
+error : Illegal argument type or count
+00018a 9508      	ret
+         
+         ;+---------------------------------------+
+         ;| Get pixel	 			 |
+         ;| input: XL = X coordinate	 	 |
+         ;|	  YL = Y coordinate		 |
+         ;| Output:				 |
+         ;|	  Acc 0 reset 0xff pixel set	 |
+         ;+---------------------------------------+
+         
+         ; warning , this routine must be change according display number colunms
+         
+          _DISP_POINT:
+00018b       	push	YL
+error : Illegal argument type or count
+00018c       	cpi	XH,high(_DISP_WIDTH)	;x in range ?
+error : Illegal argument type or count
+00018d f549      	brne	POINT_EXIT
+00018e       	cpi	XL,low(_DISP_WIDTH)
+error : Illegal argument type or count
+00018f f538      	brsh	POINT_EXIT
+000190       	cpi	YH,high(_DISP_HEIGHT)	;y in range ?
+error : Illegal argument type or count
+000191 f529      	brne	POINT_EXIT
+000192       	cpi	YL,low(_DISP_HEIGHT)
+error : Illegal argument type or count
+000193 f518      	brsh	POINT_EXIT
+000194       	push	Acc
+error : Illegal argument type or count
+000195       	ldi	Acc,_DP_PAGE0
+error : Illegal argument type or count
+000196       	cpi	YL,64
+error : Illegal argument type or count
+000197 f028      	brlo	POINT_P00
+000198       	ldi	Acc,_DP_PAGE1
+error : Illegal argument type or count
+000199       	subi	YL,64
+error : Illegal argument type or count
+          POINT_P00:
+00019a       	sts	_DP_GPAGE,Acc
+error : Illegal argument type or count
+00019c       	pop	Acc
+error : Illegal argument type or count
+00019d       	push	AccH
+error : Illegal argument type or count
+00019e       	push	XL
+error : Illegal argument type or count
+00019f df1d      	rcall	_DISP_SET_XY		;set address
+0001a0       	ldi	Acc,DATAAUTO+DATAAUTOREAD	;set auto read
+error : Illegal argument type or count
+0001a1 ded2      	rcall	_DISP_CMD
+0001a2       	com	XL
+error : Illegal argument type or count
+0001a3       	andi	XL,7
+error : Illegal argument type or count
+0001a4 dee1      	rcall	_DISP_AUTOREAD		;read a graph data
+0001a5       	ldi	AccH,0b00000001		;mask bits
+error : Illegal argument type or count
+          POINT00:
+0001a6       	tst	XL			;bit 0 ?
+error : Illegal argument type or count
+0001a7 f031      	breq	POINT10			;yes , done
+0001a8       	lsl	AccH
+error : Illegal argument type or count
+0001a9       	dec	XL
+error : Illegal argument type or count
+0001aa cffe      	rjmp	POINT00
+          POINT10:
+0001ab       	and	Acc,AccH
+error : Illegal argument type or count
+0001ac f021      	breq	POINT20	
+0001ad       	ldi	Acc,0xFF
+error : Illegal argument type or count
+          POINT20:
+0001ae       	push	Acc
+error : Illegal argument type or count
+0001af       	ldi	Acc,DATAAUTO+AUTORESET		;reset auto write
+error : Illegal argument type or count
+0001b0 dec3      	rcall	_DISP_CMD
+0001b1       	pop	Acc
+error : Illegal argument type or count
+0001b2       	pop	XL
+error : Illegal argument type or count
+0001b3       	pop	AccH
+error : Illegal argument type or count
+          POINT_EXIT:	
+0001b4       	pop	YL
+error : Illegal argument type or count
+0001b5 9508      	ret
+         
+          .EXIT
+Assembly complete with 303 errors

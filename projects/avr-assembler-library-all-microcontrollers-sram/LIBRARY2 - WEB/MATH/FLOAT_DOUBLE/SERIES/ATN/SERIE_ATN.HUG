@@ -1,0 +1,231 @@
+;+------------------------------------------------------------------------------+
+;| DOUBLE PRECISION FLOAT POINT 	I					|
+;| DATE:07/08/2003 VERSION 1.0							|
+;>--------------------------------------------------------------+---------------<
+;| D O U B L E   F L O A T  P O I N T  R O U T I N E S		|
+;| P A R T I A L  P A R T I A L  A R C  T A N G E N T		|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+
+
+;+--------------------------------------------------------------------------------------+	
+;| DOUBLE FLOAT POINT PARTIAL ARC TANGENT						|
+;|											|
+;| Input  : Float Acc X	value must in range -(sqrt(2)-1) to (sqr(2)-1)			|
+;| Output : Float Acc partial arc tangent of X,Acc Exception code			|
+;| Destroy: Flags									|
+;| Method : use Taylor serie								|
+;| 											|
+;|											|
+;| Below a taylor serie to calculate arc tangent function. values out -(sqrt(2)-1) to   |
+;| sqrt(2)-1) lost precision.								|
+;|											|
+;| original taylor serie for arc tangent function					|
+;|											|
+;|		          3     5     7     9     11					|
+;|	       	         x     x     x     x     x					|
+;|	(1) atn x = x - --- + --- - --- + --- - --- ...					|
+;|		         3     5     7     9     11					|
+;|											|
+;| but because speed reason the equation (1) is rewriten as following			|
+;|			  								|
+;|    argsq = arg * arg									|
+;|    v = ((((p4 * argsq + p3) * argsq + p2) * argsq + p1) * argsq + p0)		|
+;|    v = v / (((((argsq + q4) * argsq + q3) * argsq + q2) * argsq + q1) * argsq + q0)	|
+;|    atn x = v * arg									|
+;|											|
+;| numerador coefficients								|
+;|											|
+;| p4	 =   16,1536412982230228262							|
+;| p3	 =  268,42548195503973794141							|
+;| p2	 = 1153,0293515404850115428136							|
+;| p1	 = 1780,40631643319697105464587							|
+;| p0	 =  896,78597403663861959987488							|
+;|											|
+;| quotient coefficients								|		
+;|											|
+;| q4	 =   58,95697050844462222791							|
+;| q3	 =  536,265374031215315104235							|
+;| q2	 = 1666,7838148816337184521798							|
+;| q1	 = 2079,33497444540981287275926							|
+;| q0	 =  896,78597403663861962481162							|
+;|											|
+;| coefficients are #5077 from Hart & Cheney. (19.56D)					|
+;|											|
+;+--------------------------------------------------------------------------------------+
+
+#ifndef __MATH_FLOAT_ARC_TANGENT_SERIE__
+
+	#define __MATH_FLOAT_ARC_TANGENT_SERIE__
+
+	.message "[ (MATH) FLOAT ARC TANGENT SERIE ]"
+
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+
+	#ifndef __MATH_FLOAT_INFINIT__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\INFINIT_RESULT\DFINF.hug"
+	#endif
+
+	#ifndef __MATH_FLOAT_NORMALIZE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\NORMALIZE\DFNORM.hug"
+	#endif
+
+	#ifndef __MATH_FLOAT_ADDSUB__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\ADDSUB\DFADDSUB.hug"
+	#endif
+
+	#ifndef __MATH_FLOAT_MULDIV__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\MULDIV\DFMULDIV.hug"
+	#endif
+
+	#ifndef __MATH_FLOAT_UNARY__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\UNARY\UNARY.hug"
+	#endif
+
+	#ifndef __MATH_FLOAT_LOAD_STORE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\LOAD_STORE\DFLDXSTX.hug"
+	#endif
+
+	#ifndef __MATH_FLOAT_COMPARE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\COMPARE\DFCPM.hug"
+	#endif
+
+	.EQU	_DFMACS_ADDR_ATN_OP2_0	= 8	;address of op2_0 ; must be altered if op2_0 definitions change
+
+	.MACRO	_DFATN_COEFF_MULADD
+		call 	_DFATNMULARG
+		ldi	Zl,low(@0*2)				;op2=p(N-1)
+		ldi	ZH,high(@0*2)
+		call 	_DFSERA_GETCONSTANT			
+		call 	_DFADD					;acc=argsq*pN+p(N-1)
+	.ENDMACRO
+
+
+	_DFSERATN:
+		push	ZL					;save Z
+		push	ZH
+		push	YL					;save Y
+		push	YH
+		push	_acc_0					;save arg
+		push	_acc_1
+		push	_acc_2
+		push	_acc_3
+		push	_acc_4
+		push	_acc_5
+		push	_acc_s
+		push	_acc_e
+		call 	_DFACCOP1				;mov op1=op2=X
+		call 	_DFACCOP2
+		call 	_DFMUL					;acc=x*x
+		_DFSTACC	_DF_P10				;argsq=_DF_P10
+		ldi	Zl,low(_DFATNS_P4*2)			;op2=p4
+		ldi	ZH,high(_DFATNS_P4*2)
+		call 	_DFSERA_GETCONSTANT
+		call 	_DFOP2ACC				;acc=op2
+
+		_DFATN_COEFF_MULADD	_DFATNS_P3		;perform p3 accumulation
+		_DFATN_COEFF_MULADD	_DFATNS_P2		;perform p2 accumulation
+		_DFATN_COEFF_MULADD	_DFATNS_P1		;perform p1 accumulation
+		_DFATN_COEFF_MULADD	_DFATNS_P0		;perform p0 accumulation
+
+		_DFSTACC	_DF_MAC				;v=_DF_MAC
+
+		ldi	Zl,low(_DFATNS_Q4*2)			;op2=p4
+		ldi	ZH,high(_DFATNS_Q4*2)
+		call 	_DFSERA_GETCONSTANT
+		ldi	ZL,low(_DF_P10)				;op1=argsq
+		ldi	ZH,high(_DF_P10)
+		call 	_DFLDOP1Z
+		call 	_DFADD					;acc=p4+argsq
+
+		_DFATN_COEFF_MULADD	_DFATNS_Q3		;perform q3 accumulation
+		_DFATN_COEFF_MULADD	_DFATNS_Q2		;perform q2 accumulation
+		_DFATN_COEFF_MULADD	_DFATNS_Q1		;perform q1 accumulation
+		_DFATN_COEFF_MULADD	_DFATNS_Q0		;perform q0 accumulation
+
+		_DFLDOP1	_DF_MAC				;op1=Pns	
+		call 	_DFACCOP2				;op2=Qns
+		call 	_DFDIV					;acc=Pns/Qns				
+		call 	_DFACCOP1
+		pop	_op2_e					;op2=arg
+		pop	_op2_s
+		pop	_op2_5
+		pop	_op2_4
+		pop	_op2_3
+		pop	_op2_2
+		pop	_op2_1
+		pop	_op2_0
+		call 	_DFMUL					;acc=Pns/Qns*arg
+		ldi	Acc,_FPOK
+		pop	YH					;restore Y
+		pop	YL
+		pop	ZH					;restore Z
+		pop	ZL
+		ret
+	
+	;+----------------------------------------------+
+	;| MULTIPLY OP1*ARGSQ AND PUT RESULT INTO OP1	|
+	;+----------------------------------------------+
+	_DFATNMULARG:
+		call 	_DFACCOP1				;op1=pN
+		ldi	ZL,low(_DF_P10)				;op2=argsq
+		ldi	ZH,high(_DF_P10)
+		call 	_DFLDOP2Z
+		call 	_DFMUL					;acc=argsq*pN
+		call 	_DFACCOP1				;op1=argsq*pN
+		ret
+
+	;+----------------------------------------------+
+	;| GET CONSTANT POINTED BY REGISTER Z AND STORE |
+	;| INTO SRAM POINTED BY REGISTER Y		|
+	;+----------------------------------------------+
+	_DFSERA_GETCONSTANT:
+		mov	AccH,r0					;save r0
+		ldi	YL,low(_DFMACS_ADDR_ATN_OP2_0)		;y->op2
+		ldi	YH,high(_DFMACS_ADDR_ATN_OP2_0)
+		ldi	Acc,8					;byte counter
+	_DFSERA_G00:
+		lpm						;get data from constant data into flash
+		st	Y+,r0					;store into sram
+		adiw	ZL,1
+		dec	Acc					;next data
+		brne	_DFSERA_G00				;until done
+		mov	r0,AccH					;restore r0
+		ret
+	
+	;+----------------------------------------------+
+	;| DOUBLE PRECISION COEFFICIENTS TABLE		|
+	;+----------------------------------------------+
+	_DFATNS_COEFF_TABLE:
+	;
+	;	     lsb        mantisa           msb   exp
+	;.........../---------------------------------\/--\
+
+	_DFATNS_P4:
+		.DB 0x82,0x76,0xf9,0x49,0xa8,0x3a,0x01,0x85	; p4	 =   16,1536412982230228262
+	_DFATNS_P3:
+		.DB 0x87,0xf7,0x54,0x31,0x76,0x36,0x06,0x89	; p3	 =  268,42548195503973794141
+	_DFATNS_P2:
+		.DB 0x0d,0x4f,0xa4,0x72,0xf0,0x20,0x10,0x8b	; p2	 = 1153,0293515404850115428136
+	_DFATNS_P1:
+		.DB 0x11,0x0d,0x52,0x8b,0x00,0x8d,0x5e,0x8b	; p1	 = 1780,40631643319697105464587
+	_DFATNS_P0:
+		.DB 0x8c,0xb7,0x0b,0x66,0x4d,0x32,0x60,0x8a	; p0	 =  896,78597403663861959987488
+	_DFATNS_Q4:
+		.DB 0x4b,0x06,0xb4,0x13,0xf0,0xd3,0x6b,0x86	; q4	 =   58,95697050844462222791
+	_DFATNS_Q3:
+		.DB 0xc2,0x51,0x5c,0xe3,0xfb,0x10,0x06,0x8a	; q3	 =  536,265374031215315104235
+	_DFATNS_Q2:
+		.DB 0x85,0x57,0xf2,0x02,0x15,0x59,0x50,0x8b	; q2	 = 1666,7838148816337184521798
+	_DFATNS_Q1:
+		.DB 0x7e,0x00,0x2a,0x0e,0x5c,0xf5,0x01,0x8c	; q1	 = 2079,33497444540981287275926
+	_DFATNS_Q0:
+		.DB 0x8d,0xb7,0x0b,0x66,0x4d,0x32,0x60,0x8a	; q0	 =  896,78597403663861962481162
+
+#endif
+
+.exit
+

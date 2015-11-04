@@ -1,0 +1,379 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATA:22/03/2001					|
+;>------------------------------------------------------<
+;| I 2 C  P R O T O C O L  R O U T I N E S 		|
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+;+------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;+------------------------------------------------------+---------------------------------------+
+;| _I2C_INIT		INITIALIZE I2C LINE							|
+;|												|
+;|.EQU	_I2C_BIT_SCL	= 0			;I2C CLOCK BIT					|
+;|.EQU	_I2C_BIT_SDA	= 1			;I2C DATA BIT					|
+;|												|
+;|.EQU	_I2C_PORT_OUT	= PORTB			;I2C OUTPUT PORT				|
+;|.EQU	_I2C_PORT_IN	= PINB			;I2C INPUT PORT					|
+;|.EQU	_I2C_PORT_DIR	= DDRB			;I2C DIRECTION					|
+;|												|
+;|			call 	_I2C_INIT	;AFTER THIS POINT ALL I2C ROUTINES WORKING 	|
+;|						;AT PORTB					|
+;|----------------------------------------------------------------------------------------------|
+;| _I2C_START		ISSUE I2C START PROTOCOL						|
+;|												|
+;|			call 	_I2C_START	;COMMANDS ARE ISSUED AFTER THIS POINT		|
+;|----------------------------------------------------------------------------------------------|
+;| _I2C_STOP		ISSUE I2C STOP PROTOCOL							|
+;|												|
+;|			call 	_I2C_STOP	;COMMANDS NO ACCEPTABLE MORE			|
+;|----------------------------------------------------------------------------------------------|
+;| _I2C_BIT_OUT		SEND A BIT TO I2C LINE							|
+;|												|
+;|			SEC			;SET C=1 TO SEND BIT 1 IN LINE			|
+;|			call 	_I2C_BIT_OUT	;OUT BIT					|
+;|----------------------------------------------------------------------------------------------|
+;| _I2C_BIT_IN		GET A BIT FROM I2C LINE							|
+;|												|
+;|			call 	_I2C_BIT_IN	;GET BIT					|
+;|						;BIT READ INTO C FLAG				|
+;|----------------------------------------------------------------------------------------------|
+;| _I2C_BYTE_OUT	PLACE COMMAND/BYTE IN A I2C LINE					|
+;|												|
+;|			LDI	ACC,0XF3	;SET ANY COMMAND IN THIS CASE 0XF3		|
+;|			call 	_I2C_BYTE_OUT	;SEND COMMAND					|
+;|----------------------------------------------------------------------------------------------|
+;| _I2C_BYTE_IN		READ COMMAND/BYTE FROM A I2C LINE					|
+;|												|
+;|			call 	_I2C_BYTE_IN	;READ COMMAND/DATA				|
+;|						;DATA READ INTO ACC 				|
+;|----------------------------------------------------------------------------------------------|
+;| _I2C_ACK_IN		READ ACK BIT STATUS							|
+;|												|
+;|			call 	_I2C_ACK_IN	;GET ACK STATUS					|
+;|						;ACK STATUS INTO C FLAG				|
+;+----------------------------------------------------------------------------------------------+
+;+------------------------------------------------------------------------------------------------------+
+;| HARDWARE DEFINITIONS	  										|
+;|													|
+;| BEFORE USE THIS DRIVE SET FOLLOWING PARAMETERS							|
+;|													|
+;| I2C_PORT_OUT			TO DEFINE AVR PORT TO SEND DATA AND CLOCK TO I2C LINE			|
+;| I2C_PORT_IN												|
+;| I2C_PORT_DIR												|
+;|													|
+;| I2C_BIT_SCL			I2C CLOCK LINE BIT							|
+;| I2C_BIT_SDA			I2C DATA LINE BIT							|
+;|													|
+;| SCL and SDA line must be pulled up with resistor of 4k7						|
+;|													|
+;| EXAMPLE:												|
+;|													|
+;|.EQU	_I2C_BIT_SCL	= 0			;I2C CLOCK BIT						|
+;|.EQU	_I2C_BIT_SDA	= 1			;I2C DATA BIT						|
+;|													|
+;|.EQU	_I2C_PORT_OUT	= PORTB			;I2C OUTPUT PORT					|
+;|.EQU	_I2C_PORT_IN	= PINB			;I2C INPUT PORT						|
+;|.EQU	_I2C_PORT_DIR	= DDRB			;I2C DIRECTION						|
+;|													|
+;+------------------------------------------------------------------------------------------------------+
+#ifndef __I2C__
+	#define __I2C__
+	
+	.message "+---------+"
+	.message "|   I2C   |" 
+	.message "+---------+"
+		
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   I2C INITIALIZE		  |
+	;|  				  |
+	;|\			          |
+	;| | Input  : None	          |
+	;|/  Output : None	          |
+	;|   Destroy: None	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;				/
+	;				| Obs:  After this initialization SCL and SDA are in high level
+	;			        |       SLC as output, SDA as input 
+	;				\_______________________________________________________________________
+	_I2C_INIT:
+		push	Acc
+		in	Acc,SREG					;Save SREG state
+		cli							;to handdling ports correctly
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;SCL high
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SDA	;SDA high too
+		sbi	_I2C_PORT_DIR,_I2C_BIT_SCL	;SCL output
+		cbi	_I2C_PORT_DIR,_I2C_BIT_SDA	;SDA input
+		out	SREG,Acc					;Restore SREG state
+		pop	Acc
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   I2C MACRO to make a Delay    |
+	;|   during SLC high or low       |
+	;|\			          |
+	;| | Input  : None	          |
+	;|/  Output : None	          |
+	;|   Destroy: Acc	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;				/
+	;				| Obs:  This macro introduce a error that reduce according AVR frequency
+	;			        |       increase.
+	;				|	50% at 1Mhz, 12% at 4Mhz
+	;				\_______________________________________________________________________
+	.MACRO	_I2C_DELAY
+		ldi	Acc,((4*_AVR_CLOCK)/3000000)+1	
+	_I2C_D00:
+		dec	Acc
+		brne	_I2C_D00
+	.ENDMACRO
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   ISSUE I2C START CONDITION	  |
+	;|   				  |
+	;|\			          |
+	;| | Input  : None	          |
+	;|/  Output : None	          |
+	;|   Destroy: Acc	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;				/
+	;				| Timing
+	;			        |
+	;				| SDA	.....--------+			T=~2 uS 
+	;				|		     |
+	;				|		     +---------......
+	;				| SCL	.....-----------------+ 
+	;				|			      |
+	;				|			      |......
+	;				|	     \-- T --/\-- T --/
+	;				\_______________________________________________________________________
+	_I2C_START:
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SDA	;First SDA high
+		sbi	_I2C_PORT_DIR,_I2C_BIT_SDA	;Put SDA line as output
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;Second SCL high
+		_I2C_DELAY				;wait T time
+		cbi	_I2C_PORT_OUT,_I2C_BIT_SDA	;Time to SDA low
+		_I2C_DELAY				;wait T time
+		cbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;Time to SCL low
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   ISSUE I2C STOP CONDITION	  |
+	;|   				  |
+	;|\			          |
+	;| | Input  : None	          |
+	;|/  Output : None	          |
+	;|   Destroy: Acc	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;				/
+	;				| Timing
+	;			        |
+	;				| SDA		     +---------.....	T=~2 uS 
+	;				|		     |
+	;				|	.....________+
+	;				| SCL	     +-----------------.....
+	;				|	     |
+	;				|	     |
+	;				|	.....\-- T --/\-- T --/
+	;				\_______________________________________________________________________
+	_I2C_STOP:
+		cbi	_I2C_PORT_OUT,_I2C_BIT_SDA	;First SDA low
+		sbi	_I2C_PORT_DIR,_I2C_BIT_SDA	;Put SDA line as output
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;Second SCL high
+		_I2C_DELAY				;wait T time
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SDA	;Time to SDA high
+		_I2C_DELAY				;wait T time
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   I2C BIT DATA OUTPUT	  |
+	;|   				  |
+	;|\			          |
+	;| | Input  : C bit to be send    |
+	;|/  Output : None	          |
+	;|   Destroy: Acc	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;				/
+	;				| Timing
+	;			        |
+	;				| SDA	.....+-------------------------+.....	T=~2 uS 
+	;				|	     | Data bit stabilished    |	
+	;				|	.....+-------------------------+.....
+	;				| SCL	    	     +--------+
+	;				|	     	     |	      |	
+	;				|	.....--------+	      +--------+.....
+	;				|	     \-- T --/\-- T --/\-- T --/
+	;				\_______________________________________________________________________
+	_I2C_BIT_OUT:
+		sbi	_I2C_PORT_DIR,_I2C_BIT_SDA	;be sure SDA as output
+		brcs	_I2C_B10			;branch if data bit = 1
+		cbi	_I2C_PORT_OUT,_I2C_BIT_SDA	;set SDA line = 0
+		jmp 	_I2C_B20			;branch
+	_I2C_B10:
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SDA	;set SDA line = 1
+	_I2C_B20:
+		_I2C_DELAY				;wait T time
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;time to SCL high
+		_I2C_DELAY
+		cbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;time to SCL low
+		_I2C_DELAY
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   I2C BIT DATA INPUT		  |
+	;|   				  |
+	;|\			          |
+	;| | Input  : None		  |
+	;|/  Output : C bit read          |
+	;|   Destroy: Acc	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;				/
+	;				| Timing
+	;			        |
+	;				| SDA	.....+-------------------------+.....	T=~2 uS 
+	;				|	     | Data bit stabilished    |	
+	;				|	.....+-------------------------+.....
+	;				| SCL	    	     +--------+
+	;				|	     	     |	      |	
+	;				|	.....--------+	      +--------+.....
+	;				|	     \-- T --/\-- T --/\-- T --/
+	;				\_______________________________________________________________________
+	_I2C_BIT_IN:
+		cbi	_I2C_PORT_DIR,_I2C_BIT_SDA	;be sure SDA as input
+		_I2C_DELAY				;wait T time
+		sbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;set SCL high
+		clc					;assume C=0
+		sbic	_I2C_PORT_IN,_I2C_BIT_SDA	;skip if yes
+		sec					;else C=1
+		_I2C_DELAY				;wait T time
+		cbi	_I2C_PORT_OUT,_I2C_BIT_SCL	;set SCL low
+		_I2C_DELAY				;wait T time
+		ret
+		
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   I2C DATA OUTPUT		  |
+	;|   				  |
+	;|\			          |
+	;| | Input  : Acc data to be send |
+	;|/  Output : None	          |
+	;|   Destroy: None	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_I2C_BYTE_OUT:
+		push	Acc				;Save useds
+		push	AccH
+		ldi	AccH,8				;Number of bit to be send
+	_I2C_DT00:
+		lsl	Acc				;C=actual bit 
+		push	Acc				;save Acc
+		call 	_I2C_BIT_OUT			;send bit
+		pop	Acc
+		dec	AccH				;pump bit count
+		brne	_I2C_DT00			;until all sended
+		pop	AccH				;Restore useds
+		pop	Acc
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   I2C DATA INPUT		  |
+	;|   				  |
+	;|\			          |
+	;| | Input  : None		  |
+	;|/  Output : Acc data read       |
+	;|   Destroy: None	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_I2C_BYTE_IN:
+		push	AccH				;Save useds
+		push	AccTH
+		ldi	AccH,8				;Number of bit to be read
+	_I2C_DTI00:
+		call 	_I2C_BIT_IN			;read bit
+		rol	AccTH				;(AccTH<<1)<-C
+		dec	AccH				;pump bit count
+		brne	_I2C_DTI00			;until all sended
+		mov	Acc,AccTH			;Acc=byte read
+		pop	AccTH				;Restore useds
+		pop	AccH
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   I2C GET ACK BIT		  |
+	;|   				  |
+	;|\			          |
+	;| | Input  : None		  |
+	;|/  Output : C Ack bit read      |
+	;|   Destroy: Acc	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;				/
+	;				| Timing
+	;			        |
+	;				| SDA	.....+-------------------------+.....	T=~2 uS 
+	;				|	     | Ack Bit stabilished     |	
+	;				|	.....+-------------------------+.....
+	;				| SCL	    	     +--------+
+	;				|	     	     |	      |	
+	;				|	.....--------+	      +--------+.....
+	;				|	     \-- T --/\-- T --/\-- T --/
+	;				\_______________________________________________________________________
+	_I2C_ACK_IN:
+		jmp 	_I2C_BIT_IN
+#endif
+.exit
+
+

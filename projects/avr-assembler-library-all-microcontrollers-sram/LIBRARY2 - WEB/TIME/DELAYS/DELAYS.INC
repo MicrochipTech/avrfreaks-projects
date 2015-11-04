@@ -1,0 +1,128 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATA:14/03/2001					|
+;>------------------------------------------------------<
+;| T I M E  R O U T I N E S	 			|
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+;+------------------------------------------------------+
+#ifndef __TIME_DELAYS__
+	#define __TIME_DELAYS__
+	.message "+-------------+"
+	.message "|             |"
+	.message "| TIME DELAYS |"
+	.message "|             |"
+	.message "+-------------+"
+	;>------------------------------------------------------<
+	;| I M P L E M E N T E D  F U N C T I O N S 		|
+	;+------------------------------------------------------+-----------------------------------------------+
+	;| _DELAY_MILLISECONDS	Wait N MILLIseconds passed by Acc:AccH register pair				|
+	;|			Sample using _DelayMILLI to wait a 15ms						|
+	;|													|
+	;|			LDI	ACCT,LOW(15)		;ACC:ACCH=Time Contante in this case 15ms	|
+	;|			LDI	ACCTH,HIGH(15)								|
+	;|			RCALL	_DELAY_MILLISECONDS	;Make a delay					|
+	;+------------------------------------------------------------------------------------------------------+
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|  Make a Microseconds Delay MACRO 		 |
+	;|\			          		 |
+	;| | Destroy : AccH:Acc				 |
+	;|/  			          		 |
+	;|   	        		  		 |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\_________________________________________________________
+	.MACRO	_M_DELAY_MICROSECONDS
+		ldiaw	(@0*(_AVR_CLOCK/1000))/4000
+		subi	Acc,1
+		sbci	AccH,0
+		brne	PC-2
+	.ENDMACRO
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|  Make a MILLIseconds Delay MACRO 		 |
+	;|\			          		 |
+	;| | Destroy : None				 |
+	;|/  			          		 |
+	;|   	        		  		 |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\_________________________________________________________
+	.MACRO	_M_DELAY_MILLISECONDS
+		pushaw
+		ldiaw	@0
+		rcall	_DELAY_MILLISECONDS
+		popaw
+	.ENDMACRO
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|  Make a Milliseconds Delay	  		 |
+	;|  				  		 |
+	;|\			          		 |
+	;| | Input  : Acc,AccH MILLIseconds Delay	 |
+	;|/  Output : None	          		 |
+	;|   Destroy: None	          		 |
+	;|   			       	  		 |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\______________________
+	;				/
+	;				| A Milliseconds Equation Time
+	;				| T=3+2+4*N-1+2
+	;				| Resolving N for T=1ms we have
+	;				| N=(F-6000)/4000
+	;				\____________________________________
+	_DELAY_MILLISECONDS:
+		#ifdef __DEBUG_MODE__				;if DEBUG MODE
+			ret
+		#endif
+		pushaw
+		push	AccT
+		in	AccT,SREG				;save SREG state
+		pushawt
+		addiaw	1
+	_DELAY_M00:
+		subiaw	1					;time finished?
+		breq	_DELAY_M20				;yes, branch to the end
+		ldiawt	(_AVR_CLOCK-6000)/4000			;1ms delay constant
+	_DELAY_M10:
+		subiawt	1
+		brne	_DELAY_M10
+		rjmp	_DELAY_M00
+	_DELAY_M20:
+		popawt
+		out	SREG,AccT				;restore SREG state
+		pop	AccT
+		popaw
+		ret
+#endif
+.exit
+

@@ -1,0 +1,315 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+
+;|								|
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA				|
+;| DATA:22/03/2001						|
+;>--------------------------------------------------------------<
+;| F L A S H , E E P R O M  A N D  F U S E S  P R O G R A M  -	|
+;| M M I N G  R O U T I N E S					|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+#ifndef __AVR_SPI__
+	#define __AVR_SPI__
+	
+	.message "+---------+"
+	.message "| AVR SPI |" 
+	.message "+---------+"
+	
+	.DSEG
+		_AVR_SCK_TIME:	.BYTE	1			;define duration of SCK line
+	.CSEG
+	
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   AVR PROGRAMMING INIT	  |
+	;|  				  |
+	;| 			          |
+	;|   Input  : None		  |
+	;|\  Output : None		  |
+	;| | Destroy: None		  |
+	;|/	    			  |
+	;|	          		  |
+	;|			          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_AVR_PROG_INIT:
+		push	Acc				;save SREG
+		in	Acc,SREG
+		push	Acc
+		cli					;disable interrupts during initialization
+		call 	_AVR_PROG_INTERFACE_OFF		;disable interface
+		ldi	Acc,1				;initialize SCK TIME
+		sts	_AVR_SCK_TIME,Acc				
+	_AVR_PROG_SREG_ACC_RESTORE:	
+		pop	Acc
+		out	SREG,Acc			;restore SREG
+		pop	Acc				
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   AVR INTERFACE ON		  |
+	;|  				  |
+	;| 			          |
+	;|   Input  : None		  |
+	;|\  Output : None		  |
+	;| | Destroy: None		  |
+	;|/	    			  |
+	;|	          		  |
+	;|			          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________	
+	_AVR_PROG_INTERFACE_ON:
+		;//////////////////////////////////////////
+		;// all lines high 
+		;//////////////////////////////////////////
+		sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set sck is high
+		sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MISO	;set as this port as input with pull up
+		sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MOSI	;set mosi as high
+		sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;set reset as high
+		;//////////////////////////////////////////
+		;// clock=output,miso=input,mosi=output,reset=output
+		;//////////////////////////////////////////
+		sbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_SCK		;sck as output
+		cbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_MISO		;miso as input
+		sbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_MOSI		;mosi as output
+		sbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_RESET		;reset as output
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   AVR INTERFACE OFF		  |
+	;|  				  |
+	;| 			          |
+	;|   Input  : None		  |
+	;|\  Output : None		  |
+	;| | Destroy: None		  |
+	;|/	    			  |
+	;|	          		  |
+	;|			          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________	
+	_AVR_PROG_INTERFACE_OFF:
+		;//////////////////////////////////////////
+		;// all line input
+		;//////////////////////////////////////////
+		cbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_SCK		;sck as output
+		cbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_MISO		;miso as input
+		cbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_MOSI		;mosi as output
+		cbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_RESET		;reset as output
+		;//////////////////////////////////////////
+		;// all lines high 
+		;//////////////////////////////////////////
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set sck is high
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MISO	;set as this port as input with pull up
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MOSI	;set mosi as high
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;set reset as high
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   AVR PROGRAMMING ENABLE	  |
+	;|  				  |
+	;| 			          |
+	;|   Input  : None		  |
+	;|\  Output : None		  |
+	;| | Destroy: None		  |
+	;|/	    			  |
+	;|	          		  |
+	;|			          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	;   /	
+	;   | Enable SPI interface timing
+	;   |  
+	;   |          +--+                    +--+  
+	;   |  RESET      |                    |  |  
+	;   |             +--------------------+  +---------------------
+	;   |
+	;   |          +-----------+ 
+	;   |  SCK                 |
+	;   |                      +------------------------------------
+	_AVR_PROG_ENABLE:
+		push	Acc
+		in	Acc,SREG
+		push	Acc					;save sreg
+		cli							;disable interrupts
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;turn SCK HIGH
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;set reset as high
+		_M_DELAY_MILLISECONDS	20				;wait 1ms
+		sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;turn low again
+		_M_DELAY_MILLISECONDS	1				;wait 10ms
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;turn RESET LOW
+		_M_DELAY_MILLISECONDS	20				;wait 10ms
+		jmp 	_AVR_PROG_SREG_ACC_RESTORE			;restore SREG
+		
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   AVR WRITE/READ 4 BYTES	  	      |
+	;|  				  	      |
+	;| 			          	      |
+	;|   Input  : r0,r1,r2,r3 bytes to be write   |
+	;|\  Output : r4,r5,r6,r7 bytes to be read    |
+	;| | Destroy: None		  	      |
+	;|/	    			  	      |
+	;|	          		  	      |
+	;|			          	      |
+	;|   			       	  	      |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________________________
+		
+	_AVR_PROG_WRITE_READ_FOUR:
+		push	Acc
+		in	Acc,SREG					;save SREG state and Disable interrupts
+		cli
+		push	Acc
+		mov	Acc,r0
+		call 	_AVR_PROG_WRITE_READ_ONE			;write first 1st byte and read 1st byte
+		mov	r4,Acc
+		mov	Acc,r1
+		call 	_AVR_PROG_WRITE_READ_ONE			;write first 2st byte and read 2st byte
+		mov	r5,Acc
+		mov	Acc,r2
+		call 	_AVR_PROG_WRITE_READ_ONE			;write first 3st byte and read 3st byte
+		mov	r6,Acc
+		mov	Acc,r3
+		call 	_AVR_PROG_WRITE_READ_ONE			;write first 4st byte and read 4st byte
+		mov	r7,Acc
+		pop	Acc						;restore SREG state and restore interrupts
+		out	SREG,Acc
+		pop	Acc
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   AVR WRITE/READ 1 BYTE	  	      |
+	;|  				  	      |
+	;| 			          	      |
+	;|   Input  : Acc byte to be write   	      |
+	;|\  Output : Acc byte to be read	      |
+	;| | Destroy: None		  	      |
+	;|/	    			  	      |
+	;|	          		  	      |
+	;|			          	      |
+	;|   			       	  	      |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________________________
+	;   /	
+	;   | SPI interface timing
+	;   |  
+	;   |          +--+  +--+  +--+  +--+  +--+  +--+  +--+  +--+       +--+  +--+  +--+  +--+  +--+  +--+  +--+  +--+
+	;   |  SCK     |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |       |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   |       +--+  +--+  +--+  +--+  +--+  +--+  +--+  +--+  +-------+  +--+  +--+  +--+  +--+  +--+  +--+  +--+  +------ ...
+	;   |
+	;   |       +-----+-----+-----+-----+-----+-----+-----+-----+       +-----+-----+-----+-----+-----+-----+-----+-----+
+	;   |  MOSI | D7  | D6  | D5  | D4  | D3  | D2  | D1  | D0  |-------| D7  | D6  | D5  | D4  | D3  | D2  | D1  | D0  |--- ...
+	;   |       +-----+-----+-----+-----+-----+-----+-----+-----+       +-----+-----+-----+-----+-----+-----+-----+-----+
+	;   |
+	;   |       +-----+-----+-----+-----+-----+-----+-----+-----+----------+-----+-----+-----+-----+-----+-----+-----+------ ...
+	;   |  MISO |  X  |  X  |  X  |  X  |  X  |  X  |  X  |  X  |    D7    | D6  | D5  | D4  | D3  | D2  | D1  | D0  |  D7
+	;   |       +-----+-----+-----+-----+-----+-----+-----+-----+----------+-----+-----+-----+-----+-----+-----+-----+------ ...
+	;   |       \______________________________________________/\___________________________________________________/\______ ...
+	;   |                         BYTE 1                                                       BYTE 2
+	.MACRO	_M_SETUP_TIME
+		lds	AccTH,_AVR_SCK_TIME
+		dec	AccTH
+		brne	PC-1
+	.ENDM
+	_AVR_PROG_WRITE_READ_ONE:
+		push	AccH
+		push	AccT
+		push	AccTH
+		ldi	AccT,8
+	_AVR_PROG_ONE_00:
+		;+------------------------
+		;| SCK = LOW
+		;+------------------------
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set SCK to low
+		;+------------------------
+		;| Put MOSI bit
+		;+------------------------
+		rol	Acc						;get bit to be send					
+		brcc	_AVR_PROG_ONE_10					;branch if zero
+		sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MOSI	;else MOSI=1
+		jmp 	_AVR_PROG_ONE_20
+	_AVR_PROG_ONE_10:
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MOSI	;MOSI=0
+	_AVR_PROG_ONE_20:
+		;call 	_AVR_PROG_SETUP_TIME				;Setup time
+		_M_SETUP_TIME
+		;+------------------------
+		;| Get MISO bit
+		;+------------------------
+		sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set SCK to high
+		sec							;Assume MISO is high
+		sbis	_AVR_PROG_PORT_INPUT,_AVR_PROG_BIT_MISO		;Skip if so
+		clc							;Else MISO is low
+		rol	AccH						;Put into appropriate register	
+		;+------------------------
+		;| SCK = HIGH
+		;+------------------------
+		;call 	_AVR_PROG_SETUP_TIME				;Setup time
+		_M_SETUP_TIME
+		dec	AccT						;Pump next bit
+		brne	_AVR_PROG_ONE_00				;Until all bits done
+		cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set SCK to low
+		mov	Acc,AccH					;Acc = MISO bits
+		pop	AccTH
+		pop	AccT
+		pop	AccH
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   AVR DEFINE SCK DURATION 		      |
+	;|  				  	      |
+	;| 			          	      |
+	;|   Input  : Acc Time in 3*N*_AVR_CLOCK      |
+	;|\  Output : None			      |
+	;| | Destroy: None		  	      |
+	;|/	    			  	      |
+	;|	          		  	      |
+	;|			          	      |
+	;|   			       	  	      |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________________________
+		
+	_AVR_SET_SCK_TIME:
+		sts	_AVR_SCK_TIME,Acc
+		ret
+#endif
+
+

@@ -1,0 +1,254 @@
+;+--------------------------------------------------------------+
+;| SERIAL AVR FLASH,EEPROM AND FUSES PROGRAMMING		|
+;| NEED FILES 							|
+;|								|
+;|	FILE		DIRECTORY				|
+;|								|
+;|	GLOBDEFS.INC	Avr\Library\Defs\GlobDefs.Inc 		|
+;|	TIME.INC	Avr\Library\Time\Time.Inc		|
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA				    |
+;|								    |
+;|	ESTAS ROTINAS FORAM DESENVOLVIDAS A MÉDIDAS QUE FORAM SENDO |
+;| NECESSITADAS DURANTE AO LONGO DE ALGUNS ANOS. ELAS  SÃO  DE  USO |
+;| LIVRE E QUAISQUER ALTERAÇÕES SERÃO PERMITIDAS, DESDE QUE O  NOME |
+;| DO AUTOR FIGURE NO INÍCIO DE CADA PROGRAMA E QUE CASO, O USO DELAS|
+;| PROVOQUE MAL FUNCIONAMENTO, OU PREJUÍZO A TERCEIROS O AUTOR FICA |
+;| LIVRE DESTAS. TODAS AS ROTINAS FORAM TESTADAS E ESTÃO EM  USO EM |
+;| SISTEMAS ONDE NENHUM PROBLEMA FOI RELATADO, TODAS FORAM FEITAS DA|
+;| FORMA MAIS PRÓXIMA DA PROGRAMAÇÃO ORIENTADA A OBJETO (OOP) SEM A |
+;| IMPLEMENTAÇÃO DE INSTANCIAMENTO 				    |
+;|								    |
+;| QUAISQUER DÚVIDAS MEU EMAIL E: dartagnanmath@hotmail.com 	    |
+;| A MEDIDA DO POSSÍVEL RESPONDEREI A TODOS OS EMAILS.		    |
+;+------------------------------------------------------------------+
+;|								    |
+;|	THIS ROUTINES THEY WERE DEVELOPED AT SAME TIME THAT WERE    |
+;| NEEDED ALONG OF SOME YEARS. THEY ARE FOR USE FREE AND ANY        |
+;| ALTERATIONS WILL BE PERMITED SINCE THAT AUTHOR NAME APPEAR AT    |
+;| BEGINNER OF EACH PROGRAM, AND IF INCORRECT USE PRODUCE           |
+;| MALFUNCIONS OR DAMAGE TO THIRD PARTIES THE AUTHOR STAY FREE.	    |
+;| ALL ROTINES WERE TESTED AND STILL IN USE AT MANY SYSTEM AND NO   |
+;| PROBLEM WERE RELATED. ALL ROTINES WERE MAKED AT CLOSED "ORIENTED |
+;| OBJECT PROGRAMING" (OOP) WITHOUT INSTANCE IMPLEMENTATIONS:	    |
+;|								    |
+;| ANY QUESTIONS MY EMAIL IS dartagnanmath@hotmail.com		    |
+;| SOON AS POSSIBLE AS ANSWER ALL EMAILS			    |
+;+--------------------------------------------------------------+---+
+;|								|
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA				|
+;| DATA:22/03/2001						|
+;>--------------------------------------------------------------<
+;| F L A S H , E E P R O M  A N D  F U S E S  P R O G R A M  -	|
+;| M M I N G  R O U T I N E S					|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;+------------------------------------------------------+---------------------------------------+
+;| _AT24C64_BYTE_WRITE	WRITE A BYTE INTO EEPROM						|
+;|			SAMPLE USING BYTE_WRITE TO WRITE A BYTE INTO ADDRESS 1000 DATA 33	|
+;|			AT CHIP ADDRESS 5							|
+;|												|
+;|			LDI	ACC,33			;DATA TO BE WRITE			|
+;|			LDI	ACCH,5			;CHIP ADDRESS NUMBER 5			|
+;|			LDI	ACCT,LOW(1000)		;ACCT:ACCTH=ADDRESS=1000		|
+;|			LDI	ACCTH,HIGH(1000)						|
+;|			call 	_AT24C64_BYTE_WRITE 	;WRITE DATA				|
+;|----------------------------------------------------------------------------------------------|
+;| _AT24C64_BYTE_READ	READ A BYTE FROM EEPROM							|
+;|			SAMPLE USING BYTE_READ TO READ A BYTE INTO ADDRESS 1000			|
+;|			AT CHIP ADDRESS 5							|
+;|												|
+;|			LDI	ACCH,5			;CHIP ADDRESS NUMBER 5			|
+;|			LDI	ACCT,LOW(1000)		;ACCT:ACCTH=ADDRESS=1000		|
+;|			LDI	ACCTH,HIGH(1000)						|
+;|			call 	_AT24C64_BYTE_READ 	;AFTER THIS POINT ACC=DATA		|
+;|----------------------------------------------------------------------------------------------|
+
+
+;   |  |  |  |  |  |  |  |  |  |
+;+--+--+--+--+--+--+--+--+--+--+--+
+;|   AVR PROGRAMMING INIT	  |
+;|  				  |
+;| 			          |
+;|   Input  : None		  |
+;|\  Output : None		  |
+;| | Destroy: None		  |
+;|/	    			  |
+;|	          		  |
+;|			          |
+;|   			       	  |
+;+--+--+--+--+--+--+--+--+--+--+--+ 
+;   |  |  |  |  |  |  |  |  |  |
+;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+
+_AVR_PROG_INIT:
+	push	Acc				;save SREG
+	in	Acc,SREG
+	cli					;disable interrupts during initialization
+	
+	sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set sck is high
+	sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MISO	;set as this port as input with pull up
+	sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MOSI	;set mosi as high
+	sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;set reset as high
+
+	sbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_SCK		;sck as output
+	cbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_MISO		;miso as input
+	sbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_MOSI		;mosi as output
+	sbi	_AVR_PROG_PORT_DIR,_AVR_PROG_BIT_RESET		;reset as output
+_AVR_PROG_SREG_ACC_RESTORE:	
+	out	SREG,Acc			;restore SREG
+	pop	Acc				
+	ret
+	
+;   |  |  |  |  |  |  |  |  |  |
+;+--+--+--+--+--+--+--+--+--+--+--+
+;|   AVR PROGRAMMING ENABLE	  |
+;|  				  |
+;| 			          |
+;|   Input  : None		  |
+;|\  Output : None		  |
+;| | Destroy: None		  |
+;|/	    			  |
+;|	          		  |
+;|			          |
+;|   			       	  |
+;+--+--+--+--+--+--+--+--+--+--+--+ 
+;   |  |  |  |  |  |  |  |  |  |
+;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+
+_AVR_PROG_ENABLE:
+	push	Acc
+	in	Acc,SREG					;save sreg
+	cli							;disable interrupts
+	cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;turn SCK LOW
+	_M_DELAY_MILESECONDS	1				;wait a 1 ms
+	sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;set reset as high
+	_M_DELAY_MILESECONDS	20				;wait 20ms
+	cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_RESET	;turn low again
+	_M_DELAY_MILESECONDS	20				;wait 20ms
+	jmp 	_AVR_PROG_SREG_ACC_RESTORE			;restore SREG
+	
+;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+;|   AVR WRITE/READ 4 BYTES	  	      |
+;|  				  	      |
+;| 			          	      |
+;|   Input  : r0,r1,r2,r3 bytes to be write   |
+;|\  Output : r4,r5,r6,r7 bytes to be read    |
+;| | Destroy: None		  	      |
+;|/	    			  	      |
+;|	          		  	      |
+;|			          	      |
+;|   			       	  	      |
+;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+;   \__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________________________
+	
+_AVR_PROG_WRITE_READ_FOUR:
+	push	Acc
+	in	Acc,SREG					;save SREG state and Disable interrupts
+	cli
+	push	Acc
+	mov	Acc,r0
+	call 	_AVR_PROG_WRITE_READ_ONE			;write first 1st byte and read 1st byte
+	mov	r4,Acc
+	mov	Acc,r1
+	call 	_AVR_PROG_WRITE_READ_ONE			;write first 2st byte and read 2st byte
+	mov	r5,Acc
+	mov	Acc,r2
+	call 	_AVR_PROG_WRITE_READ_ONE			;write first 3st byte and read 3st byte
+	mov	r6,Acc
+	mov	Acc,r3
+	call 	_AVR_PROG_WRITE_READ_ONE			;write first 4st byte and read 4st byte
+	mov	r7,Acc
+	pop	Acc						;restore SREG state and restore interrupts
+	out	SREG,Acc
+	pop	Acc
+	ret
+
+;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+;|   AVR WRITE/READ 1 BYTE	  	      |
+;|  				  	      |
+;| 			          	      |
+;|   Input  : Acc byte to be write   	      |
+;|\  Output : Acc byte to be read	      |
+;| | Destroy: None		  	      |
+;|/	    			  	      |
+;|	          		  	      |
+;|			          	      |
+;|   			       	  	      |
+;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+;   \__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________________________
+	
+_AVR_PROG_WRITE_READ_ONE:
+	push	AccH
+	push	AccT
+	ldi	AccT,8
+_AVR_PROG_ONE_00:
+	rol	Acc						;get fist digit to be send
+	brcc	_AVR_PROG_ONE_10				;branch if zero
+	sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MOSI	;set MOSI=1
+	jmp 	_AVR_PROG_ONE_20				;branch
+_AVR_PROG_ONE_10:
+	cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_MOSI	;set MOSI=0
+_AVR_PROG_ONE_20:
+;	call 	_AVR_PROG_SETUP_TIME				;setup time
+	nop
+	nop
+;	nop
+;	nop
+	sbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set SCK=1
+;	call 	_AVR_PROG_SETUP_TIME				;setup time
+;	nop
+;	nop
+	nop
+	nop
+	clc							;assume read bit=0
+	sbic	_AVR_PROG_PORT_INPUT,_AVR_PROG_BIT_MISO		;read a bit
+	sec							;else read bit=1
+	rol	AccH
+;	call 	_AVR_PROG_SETUP_TIME				;setup time
+;	nop
+;	nop
+	nop
+	nop
+	cbi	_AVR_PROG_PORT_OUTPUT,_AVR_PROG_BIT_SCK		;set SCK=0
+;	call 	_AVR_PROG_SETUP_TIME				;setup time
+;	nop
+;	nop
+	nop
+	nop
+	dec	AccT
+	brne	_AVR_PROG_ONE_00				;until all done
+	mov	Acc,AccH					;plase read byte into Acc
+	pop	AccT
+	pop	AccH
+	ret
+	
+;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+;|   AVR SETUP TIME TO WARANTY MINIMAL TIME   |
+;|  				  	      |
+;| 			          	      |
+;|   Input  : None   	      		      |
+;|\  Output : None			      |
+;| | Destroy: None		  	      |
+;|/	    			  	      |
+;|	          		  	      |
+;|			          	      |
+;|   			       	  	      |
+;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+;   \__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________________________
+	
+_AVR_PROG_SETUP_TIME:
+	nop							;in this case i use 8 clocks 3(call)+1(nop)+4(ret)
+	nop
+	ret
+

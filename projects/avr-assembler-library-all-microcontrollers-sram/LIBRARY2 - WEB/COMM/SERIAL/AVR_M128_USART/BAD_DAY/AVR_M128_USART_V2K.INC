@@ -1,0 +1,1321 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATA:21/10/2002					|
+;>------------------------------------------------------<
+;| A V R   M 1 2 8  U A R T  R O U T I N E S	  	|
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+;+------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;+------------------------------------------------------+---------------------------------------+
+;| _USART_INIT		INITIALIZE REQUIRED COMM PORT						|
+;|												|
+;|	.EQU	_USART_BUFFER_SIZE_COMM0	= 0	;define size of buffer only use		|
+;|	.EQU	_USART_BUFFER_SIZE_COMM1	= 0	;buffered reception mode		|
+;|												|
+;|			LDI	ACC,COMM1		;DEFINE COMMUNICATION PORT1		|
+;|			LDIAWT	9600			;DEFINE BAUD RATE TO 9600		|
+;|			call 	_USART_INIT							|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_MODE	SET MODE OF RECEPTION							|
+;|			_USART_MODE_NORMAL		;normal mode dont use buffers		|
+;|			_USART_MODE_BUFFERED_SRAM	;use internal or external SRAM as buffer|
+;|			_USART_MODE_BUFFERED_DEVICE	;use external device as buffer		|
+;|												|
+;|												|
+;|			ldi	Acc,_USART_MODE_BUFFRED_SRAM	;set buffered mode SRAM		|
+;|			call 	_USART_SET_MODE							|
+;|												|
+;| * when set buffered mode set size and address using _USART_SET_RX_BUFFER,_USART_SET_TX_BUFFER|
+;|  and _USART_SET_DEVICE_SRAM if buffered device used, before use these modes			|									|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_RX_BUFFER	SET ADDRESS OF RX BUFFER AND SIZE FOR BUFFERED OPERATION		|
+;|												|
+;|			ldiaw	RX_BUFFER_SIZE		;AccH:Acc buffer rx size		|
+;|			ldiw	Z,RX_BUFFER		;Z-->buffer address			|
+;|			call 	_USART_SET_RX_BUFFER						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_TX_BUFFER	SET ADDRESS OF TX BUFFER AND SIZE FOR BUFFERED OPERATION		|
+;|												|
+;|			ldiaw	TX_BUFFER_SIZE		;AccH:Acc buffer tx size		|
+;|			ldiw	Z,TX_BUFFER		;Z-->buffer address			|
+;|			call 	_USART_SET_TX_BUFFER						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_TIMEOUT	SET TIMEOUT OF REQUIRED COMM PORT					|
+;|												|
+;|			LDIAW	100			;SET TIMEOUT TO 100MS			|
+;|			call 	_USART_SET_TIMEOUT						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_GET_TIMEOUT	GET TIMEOUT OF REQUIRED COMM PORT					|
+;|												|
+;|			call 	_USART_GET_TIMEOUT	:ACCH:Acc timeout in mileseconds	|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_COMM_PORT	DEFINE COMM PORT							|
+;|												|
+;|			LDI	ACC,COMM1		;DEFINE COMMUNICATION PORT1		|
+;|			call 	_USART_SET_COMM_PORT						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_GET_COMM_PORT	GET ACTUAL COMM PORT							|
+;|												|
+;|			call 	_USART_GET_COMM_PORT	;AFTER THIS CALL ACC=COMM PORT	 	|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_NORMAL_SPEED  SET USART NORMAL SPEED 						|
+;|												|
+;|			call 	_USART_SET_NORMAL_SPEED	;NOW USART IN NORMAL SPEED	 	|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_DOUBLE_SPEED  SET USART DOUBLE SPEED 						|
+;|												|
+;|			call 	_USART_SET_DOUBLE_SPEED	;NOW USART IN DOUBLE SPEED	 	|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_SET_BAUD_RATE DEFINE USART BAUD RATE	 						|
+;|												|
+;|			LDIAW	9600			;SET USART FOR 9600 BAUDS		|
+;|			call 	_USART_SET_BAUD_RATE	;NOW USART OPERATING IN 9600 BAUDS	|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_TX_ENABLE	ENABLE/DISABLE TX							|
+;|												|
+;|			LDI	ACC,_ON		;ENABLE TX					|
+;|			call 	_USART_TX_ENABLE						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_RX_ENABLE	ENABLE/DISABLE RX							|
+;|												|
+;|			LDI	ACC,_ON		;ENABLE RX					|
+;|			call 	_USART_RX_ENABLE						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_TX_INT_ENABLE	ENABLE/DISABLE TX INTERRUPT 						|
+;|												|
+;|			LDI	ACC,_ON		;ENABLE TX					|
+;|			call 	_USART_TX_ENABLE						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_RX_INT_ENABLE	ENABLE/DISABLE RX INTERRUPT						|
+;|												|
+;|			LDI	ACC,_ON		;ENABLE RX					|
+;|			call 	_USART_RX_ENABLE						|
+;|----------------------------------------------------------------------------------------------|
+;| _USART_TX		SEND A BYTE TO USART							|
+;|												|
+;|			LDI	ACC,'A'		;send a ascii 'A'				|
+;|			call 	_USART_TX							|
+;|												|
+;| OBS: This routine wait last transmission done before send a new byte				|
+;+----------------------------------------------------------------------------------------------+
+;| _USART_RX		WAIT A BYTE FROM USART							|
+;|												|
+;|			LDIAWT	100		;wait 100ms for receive a byte			|
+;|						;set this register to -1 to infinit wait	|
+;|			call 	_USART_RX							|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+#ifndef __AVR_M128_USART__
+	#define __AVR_M128_USART__
+	.message "+----------------+"
+	.message "|                |"
+	.message "| AVR M128 USART |"
+	.message "|                |"
+	.message "+----------------+"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef __INTEGER_DIV_U32U32U32__
+		.INCLUDE "MATH\INTEGER\DIV_U32U32U32\DIV_U32U32U32.inc"
+	#endif
+	;+-------------------------------
+	;| USART CONSTANTS
+	;| don't change functions definitions number
+	;+-------------------------------
+	.EQU	_USART_FUNC_SET_TIMEOUT		= 0			;set timeout
+	.EQU	_USART_FUNC_GET_TIMEOUT		= 1			;get timeout
+	.EQU	_USART_FUNC_SET_NORMAL_SPEED	= 2			;set normal speed
+	.EQU	_USART_FUNC_SET_DOUBLE_SPEED	= 3			;set double speed
+	.EQU	_USART_FUNC_TX_ENABLE		= 4			;enable/disable TX
+	.EQU	_USART_FUNC_TX_INT_ENABLE	= 5			;enable/disable INT TX
+	.EQU	_USART_FUNC_RX_ENABLE		= 6			;enable/disable RX
+	.EQU	_USART_FUNC_RX_INT_ENABLE	= 7			;enable/disable INT RX
+	.EQU	_USART_FUNC_TX			= 8			;TX
+	.EQU	_USART_FUNC_SET_MODE		= 9			;set rx mode
+	.EQU	_USART_FUNC_SET_RX_BUFFER	= 10			;set rx buffer and size
+	.EQU	_USART_FUNC_SET_TX_BUFFER	= 11			;set tx buffer and size
+	.EQU	_USART_MODE_NORMAL		= 0			;normal mode
+	.EQU	_USART_MODE_BUFFERED_SRAM	= 1			;buffered mode using internal or external SRAM
+	.EQU	_USART_MODE_BUFFERED_DEVICE	= 2			;buffered mode using external device
+	.EQU	_USART_FLAG_EMPTY		= 1			;rx buffer empty
+	.EQU	_USART_FLAG_FULL		= 2			;rx buffer full
+	;+-------------------------------
+	;| USART VARIABLES
+	;+-------------------------------
+	.DSEG
+		_USART_COMM_PORT:	 	.BYTE 1			;USART COMM PORT 0,1
+		_USART_TIMEOUT_COMM0:	 	.BYTE 2			;USART TIMEOUT FOR COMM0
+		_USART_TIMEOUT_COMM1:	 	.BYTE 2			;USART TIMEOUT FOR COMM1
+		_USART_MODE_COMM0:	 	.BYTE 1			;USART MODE NORMAL/BUFFERED FOR COMM0
+		_USART_MODE_COMM1:	 	.BYTE 1			;USART MODE NORMAL/BUFFERED FOR COMM1
+		_USART_BUFFER_RX_PTR_COMM0: 	.BYTE 2			;USART BUFFER POINTER FOR BUFFERRED RECEPTION ON COMM0
+		_USART_BUFFER_RX_SIZE_COMM0: 	.BYTE 2			;USART BUFFER SIZE FOR BUFFERRED TRANSMISSION COMM0
+		_USART_BUFFER_TX_PTR_COMM0: 	.BYTE 2			;USART BUFFER POINTER FOR BUFFERRED TRANSMISSION COMM0
+		_USART_BUFFER_TX_SIZE_COMM0: 	.BYTE 2			;USART BUFFER SIZE FOR BUFFERRED TRANSMISSION COMM0
+		_USART_GPTR_COMM0:	 	.BYTE 2			;GET POINTER FOR COMM0
+		_USART_PPTR_COMM0:	 	.BYTE 2			;PUT POINTER FOR COMM0
+		_USART_FLAGS_COMM0:	 	.BYTE 1			;USART RECEPTION BUFFER OF COMM0
+		_USART_BUFFER_RX_PTR_COMM1: 	.BYTE 2			;USART BUFFER POINTER FOR BUFFERRED RECEPTION ON COMM1
+		_USART_BUFFER_RX_SIZE_COMM1: 	.BYTE 2			;USART BUFFER SIZE FOR BUFFERRED TRANSMISSION COMM0
+		_USART_BUFFER_TX_PTR_COMM1: 	.BYTE 2			;USART BUFFER POINTER FOR BUFFERRED TRANSMISSION ON COMM1
+		_USART_BUFFER_TX_SIZE_COMM1: 	.BYTE 2			;USART BUFFER SIZE FOR BUFFERRED TRANSMISSION COMM0
+		_USART_GPTR_COMM1:	 	.BYTE 2			;GET POINTER FOR COMM1
+		_USART_PPTR_COMM1:	 	.BYTE 2			;PUT POINTER FOR COMM1
+		_USART_FLAGS_COMM1:	 	.BYTE 1			;USART RECEPTION BUFFER OF COMM0
+		_USART_Y_PARM:			.BYTE 2			;Y parm temporary storage
+		_USART_Z_PARM:			.BYTE 2			;Z parm temporary storage
+		_USART_DEVICE_SRAM_WRITE_ADDR:	.BYTE 2			;device sram write function address
+		_USART_DEVICE_SRAM_READ_ADDR:	.BYTE 2			;device sram read function address
+	.CSEG
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART INITIALIZE		  |
+	;|  				  |
+	;|\  Input : Acc comm port	  |
+	;| |         AccTH:AccT baud rate |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	;					| Defalt initialization
+	;					| set normal speed
+	;					| enable of required ports tx and rx
+	;					| set timeout value to 100ms for required port
+	;					| set baud rate for required port
+	;					| set mode normal
+	_USART_INIT:
+		push	Acc
+		push	AccH
+		pushw	X
+		rcall 	_USART_SET_COMM_PORT	;set required comm port
+		mov	Acc,AccT
+		mov	AccH,AccTH
+		rcall 	_USART_SET_BAUD_RATE	;set baud rade
+		ldiaw	100
+		rcall 	_USART_SET_TIMEOUT	;set timeout to 100ms
+		clrw	X
+		stsw	_USART_GPTR_COMM0,X	;clear pointers
+		stsw	_USART_PPTR_COMM0,X
+		stsw	_USART_GPTR_COMM1,X
+		stsw	_USART_PPTR_COMM1,X	;clear pointers
+		ldi	Acc,_USART_FLAG_EMPTY	;set usarts buffer empty
+		sts	_USART_FLAGS_COMM0,Acc
+		sts	_USART_FLAGS_COMM1,Acc
+		nop				;<<<<<<<<<<<<<<<<< THIS NOPS WAS INCLUED BECAUSE THIS DRIVE FAIL
+		nop				;		   I SURVEY FOR LONG TIME AND NO FIND THEN PROBLEM 10/12/2005 09:00
+		nop
+		nop
+		nop
+		nop
+		ldi	Acc,_ON
+		rcall 	_USART_TX_ENABLE	;enable tx
+		ldi	Acc,_ON
+		rcall 	_USART_RX_ENABLE	;enable rx
+		ldi	Acc,_USART_MODE_NORMAL 
+		rcall	_USART_SET_MODE		;set normal mode
+		popw	X
+		pop	AccH
+		pop	Acc
+		ret
+		
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART SET COMM PORT	  |
+	;|  				  |
+	;|\  Input : Acc COMM 0 or 1      |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_SET_COMM_PORT:
+		sts	_USART_COMM_PORT,Acc
+		ret	
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART GET COMM PORT	  |
+	;|  				  |
+	;|\  Input : None		  |
+	;| | Output: Acc comm port	  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_GET_COMM_PORT:
+		lds	Acc,_USART_COMM_PORT
+		ret	
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART SET COMM PORT MODE	  |
+	;|  				  |
+	;|\  Input : None		  |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	;					| MODE may be 
+	;					|_USART_MODE_NORMAL 		normal mode
+	;					|_USART_MODE_BUFFERED_SRAM	buffered mode using internal or external SRAM
+	;					|_USART_MODE_BUFFERED_DEVICE	buffered mode using external device
+	_USART_SET_MODE:
+		push	Temp
+		ldi	Temp,_USART_FUNC_SET_MODE		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART SET COMM RX BUFFER	  |
+	;|  				  |
+	;|\  Input : AccH:Acc buffer Rx size |
+	;| |	     Z--> buffer address  |
+	;| | Output: None		  |
+	;|/  Destroy:Acc comm port	  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_SET_RX_BUFFER:
+		push	Temp
+		stsw	_USART_Z_PARM,Z				;store Z parm
+		ldi	Temp,_USART_FUNC_SET_RX_BUFFER		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART SET COMM TX BUFFER	  |
+	;|  				  |
+	;|\  Input : AccH:Acc buffer tx size |
+	;| |	     Z--> buffer address  |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_SET_TX_BUFFER:
+		push	Temp
+		stsw	_USART_Z_PARM,Z				;store Z parm
+		ldi	Temp,_USART_FUNC_SET_TX_BUFFER		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART SET DEVICE SRAM	  |
+	;|  				  |
+	;|\  Input : Y--> device SRAM write function address |
+	;| |	     Z--> device SRAM read  function address |
+	;| | Output: None		  |
+	;|/  Destroy:Acc comm port	  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	;					| Setting function must be accept parameter address into Z register
+	;					| and data to write on read inc Acc register and must be preserved flags and other registers
+	_USART_SET_DEVICE_SRAM:
+		stsw	_USART_DEVICE_SRAM_WRITE_ADDR,Y
+		stsw	_USART_DEVICE_SRAM_READ_ADDR,Z
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART DEVICE SRAM WRITE	  |
+	;|  				  |
+	;|\  Input : Z--> device address  |
+	;| |         Acc data to be write |
+	;| | Output: None		  |
+	;|/  Destroy:r0,r1		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_DEVICE_SRAM_WRITE:
+		mov	r0,ZL			;r1:r0=address
+		mov	r1,ZH
+		ldsw	Z,_USART_DEVICE_SRAM_WRITE_ADDR		;get write function address
+		pushw	Z					;save address into stack
+		mov	ZL,r0					;restore address
+		mov	ZH,r1
+		ret						;jump to write function
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART DEVICE SRAM READ	  |
+	;|  				  |
+	;|\  Input : Z--> device address  |
+	;| | Output: Acc data read	  |
+	;|/  Destroy:r0,r1		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_DEVICE_SRAM_READ:
+		mov	r0,ZL					;r1:r0=address
+		mov	r1,ZH
+		ldsw	Z,_USART_DEVICE_SRAM_READ_ADDR		;get write function address
+		pushw	Z					;save address into stack
+		mov	ZL,r0					;restore address
+		mov	ZH,r1
+		ret						;jump to write function
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART SET TIMEOUT		  |
+	;|  				  |
+	;|\  Input : AccH:Acc timeout	  |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_SET_TIMEOUT:
+		push	Temp
+		ldi	Temp,_USART_FUNC_SET_TIMEOUT		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART GET TIMEOUT		  |
+	;|  				  |
+	;|\  Input : None		  |
+	;| | Output: AccH:Acc timeout	  |
+	;|/  Destroy:None		  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_GET_TIMEOUT:
+		push	Temp
+		ldi	Temp,_USART_FUNC_GET_TIMEOUT		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART SET NORMAL SPEED	  |
+	;|  				  |
+	;|\  Input : None		  |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_SET_NORMAL_SPEED:
+		push	Temp
+		ldi	Temp,_USART_FUNC_SET_NORMAL_SPEED	;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   USART SET DOUBLE SPEED	  |
+	;|  				  |
+	;|\  Input : None		  |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	_USART_SET_DOUBLE_SPEED:
+		push	Temp
+		ldi	Temp,_USART_FUNC_SET_DOUBLE_SPEED	;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART BAUD RATE		  |
+	;|  				  |
+	;|\  Input : AccH:Acc BAUD RATE   |
+	;| | Output: None		  |
+	;|/  Destroy:Flags,r0..r11	  |
+	;|   obs: assume normal speed	  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_______
+	;				       \
+	;					+---------------------------------------+
+	;					| BAUD rate equation 			|
+	;					|					|
+	;					|		AVR_CLOCK		|
+	;					| BAUD = ---------------------		|
+	;					|		16(UBRR+1)		|
+	;					|					|
+	;					| Resolvin in UBRR,			|
+	;					|					|
+	;					|		AVR_CLOCK		|
+	;					| UBRR = ------------------ - 1		|
+	;					|		16.BAUD			|
+	;					+---------------------------------------+
+	_USART_SET_BAUD_RATE:
+		push	Acc
+		push	AccH
+		mov	r4,Acc							;move baud rate to appropriate registers
+		mov	r5,AccH
+		clr	r6
+		clr	r7
+		ldi	Acc,4							;multiply by 16
+	_USART_SET_BAU00:
+		lsl	r4
+		rol	r5
+		rol	r6
+		rol	r7
+		dec	Acc
+		brne	_USART_SET_BAU00
+		ldi	Acc,low(lwrd(_AVR_CLOCK))				;get avr clock
+		mov	r0,Acc
+		ldi	Acc,high(lwrd(_AVR_CLOCK))				;get avr clock
+		mov	r1,Acc
+		ldi	Acc,low(hwrd(_AVR_CLOCK))				;get avr clock
+		mov	r2,Acc
+		ldi	Acc,high(hwrd(_AVR_CLOCK))				;get avr clock
+		mov	r3,Acc
+		call	_DIV_U32U32U32						;AVR_CLOCK/16*BAUD
+		ldi	Acc,-1
+		add	r0,Acc							;AVR_CLOCK/(16*BAUD)-1
+		adc	r1,Acc
+		adc	r2,Acc
+		adc	r3,Acc
+		lds	Acc,_USART_COMM_PORT
+		cpi	Acc,0							;COMM 0 ?
+		breq	_USART_SET_BAU20					;yes, branch
+		cpi	Acc,1							;COMM 1 ?
+		breq	_USART_SET_BAU30					;yes, branch
+	_USART_SET_BAU10:
+		pop	AccH
+		pop	Acc
+		ret
+	_USART_SET_BAU20:
+		;COMM 0
+		out	UBRR0L,r0						;set baud rate to comm 0
+		sts	UBRR0H,r1
+		jmp 	_USART_SET_BAU10
+		;COMM 1
+	_USART_SET_BAU30:
+		sts	UBRR1L,r0						;set baud rate to comm 1
+		sts	UBRR1H,r1
+		jmp 	_USART_SET_BAU10
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART ENABLE/DISABLE TX	  |
+	;|  				  |
+	;|\  Input : Acc ON/OFF	          |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_________________________________________________________________________
+	_USART_TX_ENABLE:
+		push	Temp
+		ldi	Temp,_USART_FUNC_TX_ENABLE		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART ENABLE/DISABLE TX INTERRUPT   |
+	;|  				  	|
+	;|\  Input : Acc ON/OFF	          	|
+	;| | Output: None		  	|
+	;|/  Destroy:None		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_________________________________________________________________________
+	_USART_TX_INT_ENABLE:
+		push	Temp
+		ldi	Temp,_USART_FUNC_TX_INT_ENABLE		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART ENABLE/DISABLE RX	  |
+	;|  				  |
+	;|\  Input : Acc ON/OFF	          |
+	;| | Output: None		  |
+	;|/  Destroy:None		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_________________________________________________________________________
+	_USART_RX_ENABLE:
+		push	Temp
+		ldi	Temp,_USART_FUNC_RX_ENABLE		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART ENABLE/DISABLE RX INTERRUPT	|
+	;|  				 	|
+	;|\  Input : Acc ON/OFF	          	|
+	;| | Output: None		  	|
+	;|/  Destroy:None		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\_________________________________________________________________________
+	_USART_RX_INT_ENABLE:
+		push	Temp
+		ldi	Temp,_USART_FUNC_RX_INT_ENABLE		;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART TX DIRECT		  |
+	;|  				  |
+	;|\  Input : Acc byte to be send  |
+	;| | Output: None		  |	
+	;|/  Destroy:none		  |
+	;|   				  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_USART_TX:
+		push	Temp
+		ldi	Temp,_USART_FUNC_TX			;load function number
+		rcall	_USART_EXECUTE_FUNCTION			;execute function
+		pop	Temp
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART RX BUFFER FULL		|
+	;|  					|
+	;|\  Input : None			|
+	;| | Output: Acc _ON if full else _OFF	|
+	;|/  Destroy:none		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\____________________________________________________________________
+	;					/
+	_USART_RX_FULL:
+		lds	Acc,_USART_COMM_PORT				;get comm port
+		cpi	Acc,0						;comm0 ?
+		breq	_USART_RX_FULL_00				;yes, branch
+		cpi	Acc,1						;comm1 ?
+		breq	_USART_RX_FULL_20
+		ldi	Acc,_OFF					;else set not full and return
+		ret
+	_USART_RX_FULL_00:
+		lds	Acc,_USART_MODE_COMM0				;get mode
+		cpi	Acc,_USART_MODE_NORMAL				;normal mode ?
+		brne	_USART_RX_FULL_10				;no, branch
+		;+---------------------------------
+		;| RETURN FLAG FOR NORMAL MODE COMM 0
+		;+---------------------------------
+		ldi	Acc,_ON						;assume data received
+		sbis	UCSR0A,RXC0
+	_USART_RX_FULL_05:
+		ldi	Acc,_OFF					;else none
+		ret
+	_USART_RX_FULL_10:
+		;+---------------------------------
+		;| RETURN FLAG FOR BUFFERED MODE COMM 0		<====NOT IMPLEMENTED YET
+		;+---------------------------------
+		pushw	X						;save X,Y
+		pushw	Y
+		ldsw	X,_USART_GPTR_COMM0				;get comm1 get pointer
+		ldsw	Y,_USART_PPTR_COMM0				;get comm1 put pointer
+		cpw	X,Y						;GPTR=PPTR ?
+		ldi	Acc,_OFF					;assume not iguals
+		breq	_USART_RX_FULL_15				;branch if buffer empty
+		ldi	Acc,_ON						;else set full
+	_USART_RX_FULL_15:
+		popw	Y						;restore X,Y
+		popw	X
+		ret
+	_USART_RX_FULL_20:
+		lds	Acc,_USART_MODE_COMM1				;get mode
+		cpi	Acc,_USART_MODE_NORMAL				;normal mode ?
+		brne	_USART_RX_FULL_30				;no, branch
+		;+---------------------------------
+		;| RETURN FLAG FOR NORMAL MODE COMM 1
+		;+---------------------------------
+		lds	Acc,UCSR1A
+		sbrs	Acc,RXC1					
+		jmp 	_USART_RX_FULL_05
+		ldi	Acc,_ON
+		ret
+	_USART_RX_FULL_30:
+		;+---------------------------------
+		;| RETURN FLAG FOR BUFFERED MODE COMM 1		<====NOT IMPLEMENTED YET
+		;+---------------------------------
+		pushw	X						;save X,Y
+		pushw	Y
+		ldsw	X,_USART_GPTR_COMM1				;get comm1 get pointer
+		ldsw	Y,_USART_PPTR_COMM1				;get comm1 put pointer
+		cpw	X,Y						;GPTR=PPTR ?
+		ldi	Acc,_OFF					;assume not iguals
+		breq	_USART_RX_FULL_40				;branch if buffer empty
+		ldi	Acc,_ON						;else set full
+	_USART_RX_FULL_40:
+		popw	Y						;restore X,Y
+		popw	X
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART GET DATA			|
+	;|  					|
+	;|\  Input : None			|
+	;| | Output: Acc data			|
+	;|/  Destroy:none		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\____________________________________________________________________
+	;					/
+	_USART_GET_DATA:
+		lds	Acc,_USART_COMM_PORT				;get comm port
+		cpi	Acc,0						;comm0 ?
+		breq	_USART_GET_DATA_00				;yes, branch
+		rjmp	_USART_GET_DATA_20				;else comm1
+	_USART_GET_DATA_00:
+		lds	Acc,_USART_MODE_COMM0				;get mode
+		cpi	Acc,_USART_MODE_NORMAL				;normal mode ?
+		breq	_USART_GET_DATA_02				;yes,branch
+		cpi	Acc,_USART_MODE_BUFFERED_SRAM			;buffered into sram?
+		breq	_USART_GET_DATA_10
+		rjmp	_USART_GET_DATA_05				;else buffered device sram
+		;+---------------------------------
+		;| RETURN DATA FOR NORMAL MODE COMM 0
+		;+---------------------------------
+	_USART_GET_DATA_02:
+		in	Acc,UDR0					;get data from comm0
+		ret
+		;+---------------------------------
+		;| RETURN DATA FOR BUFFERED MODE DEVICE COMM 0
+		;+---------------------------------
+	_USART_GET_DATA_05:
+		pushw	Z						;save Z,Y
+		pushw	Y
+		pushw	X
+		ldsw	Z,_USART_BUFFER_RX_PTR_COMM0			;Z-->COMM0 BUFFER
+		ldsw	Y,_USART_GPTR_COMM0				;get get pointer
+		addw	Z,Y						;Z-->buffer(GPTR)
+		call	_USART_DEVICE_SRAM_READ
+		rjmp	_USART_GET_DATA_12
+		;+---------------------------------
+		;| RETURN DATA FOR BUFFERED MODE SRAM COMM 0
+		;+---------------------------------
+	_USART_GET_DATA_10:
+		pushw	Z						;save Z,Y
+		pushw	Y
+		pushw	X
+		ldsw	Z,_USART_BUFFER_RX_PTR_COMM0			;Z-->COMM0 BUFFER
+		ldsw	Y,_USART_GPTR_COMM0				;get get pointer
+		addw	Z,Y						;Z-->buffer(GPTR)
+		ld	Acc,Z						;get data
+	_USART_GET_DATA_12:
+		adiw	YL,1						;GPTR++
+		ldsw	X,_USART_BUFFER_RX_SIZE_COMM0			;X=buffer size
+		cpw	Y,X						;GPTR>BUFFER_SIZE?
+		brlo	_USART_GET_DATA_15				;no, branch
+		clrw	Y						;else GPTR=0
+	_USART_GET_DATA_15:
+		stsw	_USART_GPTR_COMM0,Y
+		rjmp	_USART_GET_DATA_50				;restore register and return
+	_USART_GET_DATA_20:
+		lds	Acc,_USART_MODE_COMM1				;get mode
+		cpi	Acc,_USART_MODE_NORMAL				;normal mode ?
+		breq	_USART_GET_DATA_22				;yes, branch
+		cpi	Acc,_USART_MODE_BUFFERED_SRAM			;buffered sram ?
+		breq	_USART_GET_DATA_30				;yes branch
+		rjmp	_USART_GET_DATA_25				;else get from device sram
+		;+---------------------------------
+		;| RETURN DATA FOR NORMAL MODE COMM 1
+		;+---------------------------------
+	_USART_GET_DATA_22:
+		lds	Acc,UDR1					;get data from comm1
+		ret
+		;+---------------------------------
+		;| RETURN DATA FOR BUFFERED SRAM MODE COMM 1 
+		;+---------------------------------
+	_USART_GET_DATA_25:
+		pushw	Z						;save Z,Y
+		pushw	Y
+		pushw	X		
+		ldsw	Z,_USART_BUFFER_RX_PTR_COMM1			;Z-->COMM1 BUFFER
+		ldsw	Y,_USART_GPTR_COMM1				;get get pointer
+		addw	Z,Y						;Z-->buffer(GPTR)
+		rcall	_USART_DEVICE_SRAM_READ
+		rjmp	_USART_GET_DATA_35
+		;+---------------------------------
+		;| RETURN DATA FOR BUFFERED SRAM MODE COMM 1 
+		;+---------------------------------
+	_USART_GET_DATA_30:
+		pushw	Z						;save Z,Y
+		pushw	Y
+		pushw	X		
+		ldsw	Z,_USART_BUFFER_RX_PTR_COMM1			;Z-->COMM1 BUFFER
+		ldsw	Y,_USART_GPTR_COMM1				;get get pointer
+		addw	Z,Y						;Z-->buffer(GPTR)
+		ld	Acc,Z						;get data
+	_USART_GET_DATA_35:
+		adiw	YL,1						;GPTR++
+		ldsw	X,_USART_BUFFER_RX_SIZE_COMM1			;X=buffer size
+		cpw	Y,X						;GPTR>BUFFER_SIZE?
+		brlo	_USART_GET_DATA_40				;no, branch
+		clrw	Y						;else GPTR=0
+	_USART_GET_DATA_40:
+		stsw	_USART_GPTR_COMM1,Y
+	_USART_GET_DATA_50:
+		popw	X
+		popw	Y						;restore Z,Y
+		popw	Z
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART RX DIRECT			|
+	;|  					|
+	;|\  Input : None			|
+	;| | Output: cy=1 if time out occur 	|
+	;| |	     Acc byte received		|
+	;|/  Destroy:none		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\____________________________________________________________________
+	;					/
+	;					| Obs: if Time Out = 65535 then this routine no exit until
+	;					|      UDR not receive a byte]
+	;					\_________________________________________________________________
+	_USART_RX:
+		push	AccT			;save useds
+		push	AccTH
+		lds	AccT,_USART_TIMEOUT_COMM0+0
+		lds	AccTH,_USART_TIMEOUT_COMM0+1
+		lds	Acc,_USART_COMM_PORT	;get comm port
+		cpi	Acc,0			;comm0 ?
+		breq	_USART_RXM10
+		lds	AccT,_USART_TIMEOUT_COMM1+0
+		lds	AccTH,_USART_TIMEOUT_COMM1+1
+		cpi	Acc,1			;comm1 ?
+		breq	_USART_RXM10
+	_USART_RXM10:
+		cpi	AccT,0xFF		;see if time out = 65535
+		brne	_USART_RX30		;no, branch to timeout receive
+		cpi	AccTH,0xFF
+		brne	_USART_RX30		;no, branch to timeout receive
+	_USART_RX00:
+		rcall	_USART_RX_FULL		;data empty
+		cpi	Acc,_ON
+		brne	_USART_RX00		;yes, wait
+	_USART_RX10:
+		rcall	_USART_GET_DATA		;get reseived data
+		clc				;set no time out 
+	_USART_RX20:
+		pop	AccTH			;restore useds
+		pop	AccT
+		ret
+	_USART_RX30:
+		subi	AccT,1			;decrement mileseconds time counter
+		sbci	AccTH,0
+		brcs	_USART_RX20		;time expired? branch if yes
+		push	AccT			;save AccT:AccTH
+		push	AccTH
+		ldi	AccT,low((_AVR_CLOCK-2000)/6000)		;load constant for 1ms delay
+		ldi	AccTH,high((_AVR_CLOCK-2000)/6000)
+		#ifdef __DEBUG_MODE__
+			ldi	AccT,1
+			ldi	AccTH,0
+		#endif
+	_USART_RX40:
+		subi	AccT,1			;1ms delay expired ?
+		sbci	AccTH,0
+		brcs	_USART_RX50		;yes, brach
+		rcall	_USART_RX_FULL		;else see if data received
+		cpi	Acc,_ON
+		brne 	_USART_RX40		;no, wait data and process time out
+		pop	AccTH			;received, restore AccT:AccTH and get data
+		pop	AccT
+		jmp 	_USART_RX10
+	_USART_RX50:
+		pop	AccTH			;restore AccT:AccTH
+		pop	AccT
+		jmp 	_USART_RX30		;decrement mileseconds time counter
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART FUNCTIONS			|
+	;|  					|
+	;|\  Input : Temp Function selected	|
+	;| |	     *				|
+	;| | Output: * 				|
+	;|/  Destroy:none		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\____________________________________________________________________
+	;					/
+	;					| Obs: Input and output register depend of type of function
+	;					\_________________________________________________________________
+	_USART_EXECUTE_FUNCTION:
+		pushw	Z					;save useds
+		pushw	Y
+		push	r0
+		ldiw	Z,_USART_ENTRY_POINT_FUNCTIONS*2	;Z-->ENTRY POINT FUNCTION
+		clr	YH
+		lds	YL,_USART_COMM_PORT			;get comm port number
+		andi	YL,1					;only comm ports 0,1
+		lsl	YL					;x2 because entry have 8 entry points word
+		lsl	YL					;x16 because 8 functions
+		lsl	YL
+		lsl	YL
+		lsl	YL
+		add	ZL,YL					;compute entry point
+		adc	ZH,YH					;Z-->entry point acoording comm port
+		andi	Temp,15					;only 8 functions
+		lsl	Temp					;compute entry for function
+		add	ZL,Temp
+		ldi	Temp,0
+		add	ZH,Temp					;Z-->entry point according comm port by function
+		lpm	YL,Z+					;get function address
+		lpm	YH,Z+
+		mov	ZL,YL					;z=function address
+		mov	ZH,YH
+		icall						;call function
+		pop	r0
+		popw	Y					;return
+		popw	Z
+		ret
+		;+----------------------------
+		;| FUNCTIONS ENTRY POINTS
+		;+----------------------------
+	_USART_ENTRY_POINT_FUNCTIONS:
+		;+----------------------------
+		;|COMM 0 functions
+		;+----------------------------
+		.DW	_USART_SET_TIMEOUT_COMM0_ENTRY		;comm0 set timeout
+		.DW	_USART_GET_TIMEOUT_COMM0_ENTRY		;comm0 get timeout
+		.DW	_USART_SET_NORMAL_SPEED_COMM0_ENTRY	;comm0 set normal speed
+		.DW	_USART_SET_DOUBLE_SPEED_COMM0_ENTRY	;comm0 set double speed
+		.DW	_USART_TX_ENABLE_COMM0_ENTRY		;comm0 tx enable/disable
+		.DW	_USART_TX_INT_ENABLE_COMM0_ENTRY	;comm0 tx int enable/disable
+		.DW	_USART_RX_ENABLE_COMM0_ENTRY		;comm0 rx enable/disable
+		.DW	_USART_RX_INT_ENABLE_COMM0_ENTRY	;comm0 rx int enable/disable
+		.DW	_USART_TX_COMM0_ENTRY			;comm0 tx
+		.DW	_USART_SET_MODE_COMM0_ENTRY		;comm0 set mode
+		.DW	_USART_SET_RX_BUFFER_COMM0_ENTRY	;comm0 set rx buffer
+		.DW	_USART_SET_TX_BUFFER_COMM0_ENTRY	;comm0 set tx buffer
+		.DW	_USART_SET_NONE				;none function
+		.DW	_USART_SET_NONE				;none function
+		.DW	_USART_SET_NONE				;none function
+		.DW	_USART_SET_NONE				;none function
+		;+----------------------------
+		;|COMM 1 functions
+		;+----------------------------
+		.DW	_USART_SET_TIMEOUT_COMM1_ENTRY		;comm1 set timeout
+		.DW	_USART_GET_TIMEOUT_COMM1_ENTRY		;comm1 get timeout
+		.DW	_USART_SET_NORMAL_SPEED_COMM1_ENTRY	;comm1 set normal speed	
+		.DW	_USART_SET_DOUBLE_SPEED_COMM1_ENTRY	;comm1 set double speed
+		.DW	_USART_TX_ENABLE_COMM1_ENTRY		;comm1 tx enable/disable
+		.DW	_USART_TX_INT_ENABLE_COMM1_ENTRY	;comm1 tx int enable/disable
+		.DW	_USART_RX_ENABLE_COMM1_ENTRY		;comm1 rx enable/disable
+		.DW	_USART_RX_INT_ENABLE_COMM1_ENTRY	;comm1 rx int enable/disable
+		.DW	_USART_TX_COMM1_ENTRY			;comm1 tx
+		.DW	_USART_SET_MODE_COMM1_ENTRY		;comm1 set mode
+		.DW	_USART_SET_RX_BUFFER_COMM1_ENTRY	;comm1 set rx buffer
+		.DW	_USART_SET_TX_BUFFER_COMM1_ENTRY	;comm1 set tx buffer
+		.DW	_USART_SET_NONE				;none function
+		.DW	_USART_SET_NONE				;none function
+		.DW	_USART_SET_NONE				;none function
+		.DW	_USART_SET_NONE				;none function
+	_USART_SET_NONE:
+		ret
+		;+----------------------------
+		;|USART FUNCTIONS FOR COMM0
+		;+----------------------------
+	_USART_SET_TIMEOUT_COMM0_ENTRY:
+		sts	_USART_TIMEOUT_COMM0+0,Acc		;set timeout value for COMM0
+		sts	_USART_TIMEOUT_COMM0+1,AccH
+		ret
+	_USART_GET_TIMEOUT_COMM0_ENTRY:
+		lds	Acc,_USART_TIMEOUT_COMM0+0		;get timeout value for COMM0
+		lds	AccH,_USART_TIMEOUT_COMM0+1
+		ret
+	_USART_SET_NORMAL_SPEED_COMM0_ENTRY:			;set normal speed for COMM0
+		in	Acc,UCSR0A
+		andi	Acc,~(1<<U2X0)
+		out	UCSR0A,Acc
+		ret
+	_USART_SET_DOUBLE_SPEED_COMM0_ENTRY:			;set double speed for COMM0
+		in	Acc,UCSR0A
+		ori	Acc,(1<<U2X0)
+		out	UCSR0A,Acc
+		ret
+	_USART_TX_ENABLE_COMM0_ENTRY:				;tx enable/disable for COMM0
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_TX_ENABLE_COMM0_00		;no, branch
+			in	Acc,UCSR0B			;enable tx comm 0
+			ori	Acc,(1<<TXEN0)
+			out	UCSR0B,Acc
+			ret
+		_USART_TX_ENABLE_COMM0_00:
+			in	Acc,UCSR0B			;disable tx comm 0
+			andi	Acc,~(1<<TXEN0)
+			out	UCSR0B,Acc
+			ret
+	_USART_TX_INT_ENABLE_COMM0_ENTRY:			;tx int enable/disable for COMM0
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_TX_INT_ENABLE_COMM0_00		;no, branch
+			in	Acc,UCSR0B			;enable tx int comm 0
+			ori	Acc,(1<<TXCIE0)
+			out	UCSR0B,Acc
+			ret
+		_USART_TX_INT_ENABLE_COMM0_00:
+			in	Acc,UCSR0B			;disable tx int comm 0
+			andi	Acc,~(1<<TXCIE0)
+			out	UCSR0B,Acc
+			ret
+	_USART_RX_ENABLE_COMM0_ENTRY:				;rx enable/disable for COMM0
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_RX_ENABLE_COMM0_00		;no, branch
+			in	Acc,UCSR0B			;enable rx comm 0
+			ori	Acc,(1<<RXEN0)
+			out	UCSR0B,Acc
+			ret
+		_USART_RX_ENABLE_COMM0_00:
+			in	Acc,UCSR0B			;disable rx comm 0
+			andi	Acc,~(1<<RXEN0)
+			out	UCSR0B,Acc
+			ret
+	_USART_RX_INT_ENABLE_COMM0_ENTRY:			;rx int enable/disable for COMM0
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_RX_INT_ENABLE_COMM0_00		;no, branch
+			in	Acc,UCSR0B			;enable rx int comm 0
+			ori	Acc,(1<<RXCIE0)
+			out	UCSR0B,Acc
+			ret
+		_USART_RX_INT_ENABLE_COMM0_00:
+			in	Acc,UCSR0B			;disable rx int comm 0
+			andi	Acc,~(1<<RXCIE0)
+			out	UCSR0B,Acc
+			ret
+	_USART_TX_COMM0_ENTRY:					;TX for comm 0
+		sbis	UCSR0A,UDRE0				;wait last transmission done
+		rjmp	_USART_TX_COMM0_ENTRY			;*<NOCHANGE>*
+		out	UDR0,Acc				;set data to be sent
+		ret
+	_USART_SET_MODE_COMM0_ENTRY:				;set mode for comm0
+		sts	_USART_MODE_COMM0,Acc			;store mode
+		cpi	Acc,_USART_MODE_NORMAL			;normal mode ?
+		brne	_USART_SET_MODE_COMM0_00		;no, branch
+			ldi	Acc,_OFF			;else disable rx interrupt
+			rcall	_USART_RX_INT_ENABLE
+			ret
+		_USART_SET_MODE_COMM0_00:
+			_SET_HANDDLE _HDC_URXC0_VECT,_USART_PROCESS_COMM0	;set process to comm0
+			ldi	Acc,_ON				;enable rx interrupt
+			rcall	_USART_RX_INT_ENABLE
+			ret
+	_USART_SET_RX_BUFFER_COMM0_ENTRY:
+		stsaw	_USART_BUFFER_RX_SIZE_COMM0		;set size
+		ldsw	Z,_USART_Z_PARM				;get parm z
+		stsw	_USART_BUFFER_RX_PTR_COMM0,Z		;set pointer
+		ret
+	_USART_SET_TX_BUFFER_COMM0_ENTRY:
+		stsaw	_USART_BUFFER_TX_SIZE_COMM0		;set size
+		ldsw	Z,_USART_Z_PARM				;get parm z
+		stsw	_USART_BUFFER_TX_PTR_COMM0,Z		;set pointer
+		ret
+		;+----------------------------
+		;|USART FUNCTIONS FOR COMM1
+		;+----------------------------
+	_USART_SET_TIMEOUT_COMM1_ENTRY:
+		sts	_USART_TIMEOUT_COMM1+0,Acc		;set timeout value for COMM1
+		sts	_USART_TIMEOUT_COMM1+1,AccH
+		ret
+	_USART_GET_TIMEOUT_COMM1_ENTRY:
+		lds	Acc,_USART_TIMEOUT_COMM1+0		;get timeout value for COMM1
+		lds	AccH,_USART_TIMEOUT_COMM1+1
+		ret
+	_USART_SET_NORMAL_SPEED_COMM1_ENTRY:			;set normal speed for COMM1
+		lds	Acc,UCSR1A
+		andi	Acc,~(1<<U2X1)
+		sts	UCSR1A,Acc
+		ret
+	_USART_SET_DOUBLE_SPEED_COMM1_ENTRY:			;set double speed for COMM1
+		lds	Acc,UCSR1A
+		ori	Acc,(1<<U2X1)
+		sts	UCSR1A,Acc
+		ret
+	_USART_TX_ENABLE_COMM1_ENTRY:				;tx enable/disable  for COMM1
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_TX_ENABLE_COMM1_00		;no, branch
+			lds	Acc,UCSR1B			;enable tx comm 1
+			ori	Acc,(1<<TXEN1)
+			sts	UCSR1B,Acc
+			ret
+		_USART_TX_ENABLE_COMM1_00:
+			lds	Acc,UCSR1B			;disable tx comm 1
+			andi	Acc,~(1<<TXEN1)
+			sts	UCSR1B,Acc
+			ret
+	_USART_TX_INT_ENABLE_COMM1_ENTRY:			;tx int enable/disable for COMM1
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_TX_INT_ENABLE_COMM1_00		;no, branch
+			lds	Acc,UCSR1B			;enable tx int comm 1
+			ori	Acc,(1<<TXCIE1)
+			sts	UCSR1B,Acc
+			ret
+		_USART_TX_INT_ENABLE_COMM1_00:
+			lds	Acc,UCSR1B			;disable tx comm 1
+			andi	Acc,~(1<<TXCIE1)
+			sts	UCSR1B,Acc
+			ret
+	_USART_RX_ENABLE_COMM1_ENTRY:				;rx enable/disable for COMM1
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_RX_ENABLE_COMM1_00		;no, branch
+			lds	Acc,UCSR1B			;enable rx comm 1
+			ori	Acc,(1<<RXEN1)
+			sts	UCSR1B,Acc
+			ret
+		_USART_RX_ENABLE_COMM1_00:
+			lds	Acc,UCSR1B			;disable rx comm 1
+			andi	Acc,~(1<<RXEN1)
+			sts	UCSR1B,Acc
+			ret
+	_USART_RX_INT_ENABLE_COMM1_ENTRY:			;rx int enable/disable for COMM1
+		cpi	Acc,_ON					;ON ?
+		brne	_USART_RX_INT_ENABLE_COMM1_00		;no, branch
+			lds	Acc,UCSR1B			;enable rx int comm 1
+			ori	Acc,(1<<RXCIE1)
+			sts	UCSR1B,Acc
+			ret
+		_USART_RX_INT_ENABLE_COMM1_00:
+			lds	Acc,UCSR1B			;disable rx int comm 1
+			andi	Acc,~(1<<RXCIE1)
+			sts	UCSR1B,Acc
+			ret
+	_USART_TX_COMM1_ENTRY:					;tx for comm1
+		lds	r0,UCSR1A
+		sbrs	r0,UDRE1				;wait last transmission done
+		rjmp 	_USART_TX_COMM1_ENTRY			;*<NOCHANGE>*
+		sts	UDR1,Acc				;set data to be sent
+		ret
+	_USART_SET_MODE_COMM1_ENTRY:				;set mode for comm1
+		sts	_USART_MODE_COMM1,Acc			;store mode
+		cpi	Acc,_USART_MODE_NORMAL			;normal mode ?
+			brne	_USART_SET_MODE_COMM1_00	;no, branch
+			ldi	Acc,_OFF			;else disable rx interrupt
+			rcall	_USART_RX_INT_ENABLE
+			ret
+		_USART_SET_MODE_COMM1_00:
+			_SET_HANDDLE _HDC_URXC1_VECT,_USART_PROCESS_COMM1	;set process to comm1
+			ldi	Acc,_ON				;enable rx interrupt
+			rcall	_USART_RX_INT_ENABLE
+			ret
+	_USART_SET_RX_BUFFER_COMM1_ENTRY:
+		stsaw	_USART_BUFFER_RX_SIZE_COMM1		;set size
+		ldsw	Z,_USART_Z_PARM				;get parm z
+		stsw	_USART_BUFFER_RX_PTR_COMM1,Z		;set pointer
+		ret
+	_USART_SET_TX_BUFFER_COMM1_ENTRY:
+		stsaw	_USART_BUFFER_TX_SIZE_COMM1		;set size
+		ldsw	Z,_USART_Z_PARM				;get parm z
+		stsw	_USART_BUFFER_TX_PTR_COMM1,Z		;set pointer
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART PROCESS FOR COMM0		|
+	;|  					|
+	;|\  Input : none			|
+	;| |	     				|
+	;| | Output: none			|
+	;|/  Destroy:none		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\____________________________________________________________________
+	;					/
+	;					| Obs: this process is called when buffered mode activade
+	;					\_________________________________________________________________
+	_USART_PROCESS_COMM0:
+		push	r0
+		push	r1
+		push	Acc					;save Acc
+		in	Acc,SREG
+		push	Acc					;save SREG
+		push	AccH					;save Others
+		push	Temp
+		pushw	X
+		pushw	Y
+		pushw	Z
+		ldsw	X,_USART_GPTR_COMM0			;get get pointer
+		ldsw	Y,_USART_PPTR_COMM0			;get put pointer
+		sbiw	XL,1					;GPTR--
+		brpl	_USART_PROCESS_COMM0_00			;branch if >=0
+		ldsw	X,_USART_BUFFER_RX_SIZE_COMM0		;else GPTR=BUFFER_SIZE-1
+		sbiw	XL,1
+	_USART_PROCESS_COMM0_00:
+		cpw	X,Y					;GPTR=PPTR ?
+		breq	_USART_PROCESS_COMM0_20			;branch if buffer full, no flags to set yet
+		in	Acc,UDR0				;else get data from comm0
+		ldsw	Z,_USART_BUFFER_RX_PTR_COMM0		;Z--> COMM0 data buffer
+		addw	Z,Y					;Z-->buffer(PPTR)
+		lds	Temp,_USART_MODE_COMM0
+		cpi	Temp,_USART_MODE_BUFFERED_SRAM		;sram ?
+		brne	_USART_PROCESS_COMM0_04			;no, branch
+		st	Z,Acc					;else store data sram
+	_USART_PROCESS_COMM0_04:
+		cpi	Temp,_USART_MODE_BUFFERED_DEVICE	;device ?
+		brne	_USART_PROCESS_COMM0_08
+		call	_USART_DEVICE_SRAM_WRITE		;else store data sram device
+	_USART_PROCESS_COMM0_08:
+		adiw	YL,1					;PPTR++
+		ldsw	X,_USART_BUFFER_RX_SIZE_COMM0		;X=buffer size
+		cpw	Y,X					;PPTR>BUFFER SIZE?
+		brlo	_USART_PROCESS_COMM0_10			;no, branch
+		clrw	Y					;else clear PPTR
+	_USART_PROCESS_COMM0_10:
+		stsw	_USART_PPTR_COMM0,Y			;update PPTR
+	_USART_PROCESS_COMM0_20:
+		rjmp	_USART_PROCESS_COMM1_DONE		;jump to done
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   UART PROCESS FOR COMM1		|
+	;|  					|
+	;|\  Input : none			|
+	;| |	     				|
+	;| | Output: none			|
+	;|/  Destroy:none		  	|
+	;|   				  	|
+	;|   			       	  	|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\____________________________________________________________________
+	;					/
+	;					| Obs: this process is called when buffered mode activade
+	;					\_________________________________________________________________
+	_USART_PROCESS_COMM1:
+		push	r0
+		push	r1
+		push	Acc					;save Acc
+		in	Acc,SREG
+		push	Acc					;save SREG
+		push	AccH					;save Others
+		push	Temp
+		pushw	X
+		pushw	Y
+		pushw	Z
+		ldsw	X,_USART_GPTR_COMM1			;get get pointer
+		ldsw	Y,_USART_PPTR_COMM1			;get put pointer
+		sbiw	XL,1					;GPTR--
+		brpl	_USART_PROCESS_COMM1_00			;branch if >=0
+		ldsw	X,_USART_BUFFER_RX_SIZE_COMM1		;else GPTR=BUFFER_SIZE-1
+		sbiw	XL,1
+	_USART_PROCESS_COMM1_00:
+		cpw	X,Y					;GPTR=PPTR ?
+		breq	_USART_PROCESS_COMM1_20			;branch if buffer full, no flags to set yet
+		lds	Acc,UDR1				;else get data from comm1
+		ldsw	Z,_USART_BUFFER_RX_PTR_COMM1		;Z--> COMM1 data buffer
+		addw	Z,Y					;Z-->buffer(PPTR)
+		lds	Temp,_USART_MODE_COMM1
+		cpi	Temp,_USART_MODE_BUFFERED_SRAM		;sram ?
+		brne	_USART_PROCESS_COMM1_04			;no, branch
+		st	Z,Acc					;else store data sram
+	_USART_PROCESS_COMM1_04:
+		cpi	Temp,_USART_MODE_BUFFERED_DEVICE	;device ?
+		brne	_USART_PROCESS_COMM1_08
+		call	_USART_DEVICE_SRAM_WRITE		;else store data sram device
+	_USART_PROCESS_COMM1_08:
+		adiw	YL,1					;PPTR++
+		ldsw	X,_USART_BUFFER_RX_SIZE_COMM1		;X=buffer size
+		cpw	Y,X					;PPTR>BUFFER SIZE?
+		brlo	_USART_PROCESS_COMM1_10			;no, branch
+		clrw	Y					;else clear PPTR
+	_USART_PROCESS_COMM1_10:
+		stsw	_USART_PPTR_COMM1,Y			;update PPTR
+	_USART_PROCESS_COMM1_20:
+	_USART_PROCESS_COMM1_DONE:
+		popw	Z
+		popw	Y
+		popw	X
+		pop	Temp
+		pop	AccH
+		pop	Acc
+		out	SREG,Acc				;restore SREG
+		pop	Acc					;restore Acc
+		pop	r1
+		pop	r0
+		ret
+#endif
+.exit
+

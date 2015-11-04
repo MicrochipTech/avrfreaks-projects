@@ -1,0 +1,202 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATE:17/12/2001 VERSION 1.0							|
+;>------------------------------------------------------------------------------<
+;| I N T E G E R  R O U T I N E S	     					|
+;| I N T E G E R  A R C  T A N G E N T 						|
+;+------------------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM				|
+;+------------------------------------------------------------------------------+
+#ifndef	__INTEGER_ATN__
+	#define __INTEGER_ATN__
+	.message "[ (MATH) INTEGER ATN ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef __INTEGER_DIV_U16U16U16F16__
+		.INCLUDE	"MATH\INTEGER\DIV_U16U16U16F16\DIV_U16U16U16F16.hug"
+	#endif
+	;+----------------------------------------------------------------------+
+	;| COMPUTE ARC TANGENT BETWEEN Y/X VALUES				|
+	;|									|
+	;| INPUT	: X	     value					|
+	;|		  Y	     value					|
+	;| OUTPUT	: AccH:Acc   atn(Y/X)	angle -90..0..90		|
+	;| Destroy	: r0..r11						|
+	;| Time		:							|
+	;+----------------------------------------------------------------------+
+	_INT_ATN_XY:
+		pushw	Z				;save z
+		mov	Acc,XH				;get X signal
+		eor	Acc,YH				;multiply signals
+		andi	Acc,0x80			;remain only signal multiply
+		push	Acc				;save signal
+		clr	r0
+		cp	XL,r0				;x=0?
+		cpc	XH,r0
+		brne	_INT_ATN_XYM10			;no, branch
+		ldi	Acc,90				;else 90 degree
+		jmp 	_INT_ATN_XY35
+	_INT_ATN_XYM10:
+		cp	YL,r0				;Y=0?
+		cpc	YH,r0
+		brne	_INT_ATN_XYM20			;no, branch
+		ldi	Acc,0				;else 0 degree
+		jmp 	_INT_ATN_XY35
+	_INT_ATN_XYM20:
+		tst	XH				;X positive?
+		brpl	_INT_ATN_XY00			;yes, branch
+		com	XL				;else X=-X
+		com	XH
+		subi	XL,-1
+		sbci	XH,-1
+	_INT_ATN_XY00:
+		tst	YH				;Y positive ?
+		brpl	_INT_ATN_XY10			;yes, branch
+		com	YL				;else Y=-Y
+		com	YH
+		subi	YL,-1
+		sbci	YH,-1
+	_INT_ATN_XY10:
+		mov	r0,XL				;mov X and Y to appropriate registers assume divident X
+		mov	r1,XH
+		mov	r2,YL
+		mov	r3,YH
+		ldi	AccH,_ON			;assume data inverted
+		cp	XL,YL				;X>Y ?
+		cpc	XH,YH
+		brge	_INT_ATN_XY15			;yes, branch
+		ldi	AccH,_OFF			;else data not inverted
+		mov	r0,YL				;mov X and Y to appropriate registers
+		mov	r1,YH
+		mov	r2,XL
+		mov	r3,XH
+	_INT_ATN_XY15:
+		call 	_DIV_U16U16U16F16		;divide fractionary Y/X
+		mov	r4,r0				;move fration to r5:r4
+		mov	r5,r1
+		mov	r6,r2				;move integer to r7:r6
+		mov	r7,r3
+		ldiz	_INTF_ATN_TABLE*2		;Z-->ATN TABLE
+		ldi	Acc,45				;start angle
+	_INT_ATN_XY20:
+		lpm					;get data from atn table and put into R11:R10:R9:R8
+		adiw	ZL,1
+		mov	r8,r0						
+		lpm
+		adiw	ZL,1
+		mov	r9,r0						
+		lpm
+		adiw	ZL,1
+		mov	r10,r0						
+		lpm
+		adiw	ZL,1
+		mov	r11,r0						
+		cp	r4,r8				;compare computed=table(i)
+		cpc	r5,r9
+		cpc	r6,r10
+		cpc	r7,r11
+		brlt	_INT_ATN_XY30			;yes, end
+		inc	Acc				;next value
+		cpi	Acc,90				;90o degree ?
+		brne	_INT_ATN_XY20			;no, until reatch
+	_INT_ATN_XY30:
+		cpi	AccH,_ON			;data inverted ?
+		brne	_INT_ATN_XY35			;no, branch
+		ldi	AccH,90				;else invert get value
+		sub	AccH,Acc
+		mov	Acc,AccH			;then put into correctly register
+	_INT_ATN_XY35:
+		pop	r0				;restore multiply sinal
+		ldi	AccH,0				;assume high part 0
+		tst	r0				;plus?
+		brpl	_INT_ATN_XY40			;yes, brach
+		neg	Acc				;else turn result negative
+		brpl	_INT_ATN_XY40			;
+		ldi	AccH,-1				;expand negative signal
+	_INT_ATN_XY40:
+		popw	Z				;restore Z
+		ret
+		
+	;+----------------------------------------------+
+	;| arc tangent table from 46o to 89o table 	|
+	;| are formatted in 16bits(integer part) and 	|
+	;| 16bits(fraction part)			|
+	;+----------------------------------------------+
+	_INTF_ATN_TABLE:
+		;    FFL  FFH  IIL  IIH
+		.DB 0x19,0x09,0x01,0x00 ; 46o=10919
+		.DB 0x87,0x12,0x01,0x00 ; 47o=11287
+		.DB 0x51,0x1C,0x01,0x00 ; 48o=11C51
+		.DB 0x7F,0x26,0x01,0x00 ; 49o=1267F
+		.DB 0x17,0x31,0x01,0x00 ; 50o=13117
+		.DB 0x22,0x3C,0x01,0x00 ; 51o=13C22
+		.DB 0xAA,0x47,0x01,0x00 ; 52o=147AA
+		.DB 0xB9,0x53,0x01,0x00 ; 53o=153B9
+		.DB 0x5B,0x60,0x01,0x00 ; 54o=1605B
+		.DB 0x9B,0x6D,0x01,0x00 ; 55o=16D9B
+		.DB 0x89,0x7B,0x01,0x00 ; 56o=17B89
+		.DB 0x35,0x8A,0x01,0x00 ; 57o=18A35
+		.DB 0xB0,0x99,0x01,0x00 ; 58o=199B0
+		.DB 0x0E,0xAA,0x01,0x00 ; 59o=1AA0E
+		.DB 0x68,0xBB,0x01,0x00 ; 60o=1BB68
+		.DB 0xD6,0xCD,0x01,0x00 ; 61o=1CDD6
+		.DB 0x77,0xE1,0x01,0x00 ; 62o=1E177
+		.DB 0x6E,0xF6,0x01,0x00 ; 63o=1F66E
+		.DB 0xE1,0x0C,0x02,0x00 ; 64o=20CE1
+		.DB 0xFE,0x24,0x02,0x00 ; 65o=224FE
+		.DB 0xFC,0x3E,0x02,0x00 ; 66o=23EFC
+		.DB 0x19,0x5B,0x02,0x00 ; 67o=25B19
+		.DB 0x9F,0x79,0x02,0x00 ; 68o=2799F
+		.DB 0xE7,0x9A,0x02,0x00 ; 69o=29AE7
+		.DB 0x5B,0xBF,0x02,0x00 ; 70o=2BF5B
+		.DB 0x7A,0xE7,0x02,0x00 ; 71o=2E77A
+		.DB 0xE3,0x13,0x03,0x00 ; 72o=313E3
+		.DB 0x57,0x45,0x03,0x00 ; 73o=34557
+		.DB 0xC7,0x7C,0x03,0x00 ; 74o=37CC7
+		.DB 0x68,0xBB,0x03,0x00 ; 75o=3BB68
+		.DB 0xC3,0x02,0x04,0x00 ; 76o=402C3
+		.DB 0xDC,0x54,0x04,0x00 ; 77o=454DC
+		.DB 0x63,0xB4,0x04,0x00 ; 78o=4B463
+		.DB 0x01,0x25,0x05,0x00 ; 79o=52501
+		.DB 0xD9,0xAB,0x05,0x00 ; 80o=5ABD9
+		.DB 0x52,0x50,0x06,0x00 ; 81o=65052
+		.DB 0x89,0x1D,0x07,0x00 ; 82o=71D89
+		.DB 0xF4,0x24,0x08,0x00 ; 83o=824F4
+		.DB 0xAD,0x83,0x09,0x00 ; 84o=983AD
+		.DB 0x18,0x6E,0x0B,0x00 ; 85o=B6E18
+		.DB 0xF8,0x4C,0x0E,0x00 ; 86o=E4CF8
+		.DB 0xC5,0x14,0x13,0x00 ; 87o=1314C5
+		.DB 0xE1,0xA2,0x1C,0x00 ; 88o=1CA2E1
+		.DB 0x3B,0x4A,0x39,0x00 ; 89o=394A3B
+#endif
+.exit
+
+

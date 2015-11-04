@@ -1,0 +1,1052 @@
+;+------------------------------------------------------+
+;| HOSPITAL SARAH BRASILIA				|
+;| SINGLE PRECISION FLOAT POINT IMPLEMENTATION FILE	|
+;| 4 BITS INTERFACE					|
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA				    |
+;|								    |
+;|	ESTAS ROTINAS FORAM DESENVOLVIDAS A MÉDIDAS QUE FORAM SENDO |
+;| NECESSITADAS DURANTE AO LONGO DE ALGUNS ANOS. ELAS  SÃO  DE  USO |
+;| LIVRE E QUAISQUER ALTERAÇÕES SERÃO PERMITIDAS, DESDE QUE O  NOME |
+;| DO AUTOR FIGURE NO INÍCIO DE CADA PROGRAMA E QUE CASO, O USO DELAS|
+;| PROVOQUE MAL FUNCIONAMENTO, OU PREJUÍZO A TERCEIROS O AUTOR FICA |
+;| LIVRE DESTAS. TODAS AS ROTINAS FORAM TESTADAS E ESTÃO EM  USO EM |
+;| SISTEMAS ONDE NENHUM PROBLEMA FOI RELATADO, TODAS FORAM FEITAS DA|
+;| FORMA MAIS PRÓXIMA DA PROGRAMAÇÃO ORIENTADA A OBJETO (OOP) SEM A |
+;| IMPLEMENTAÇÃO DE INSTANCIAMENTO 				    |
+;|								    |
+;| QUAISQUER DÚVIDAS MEU EMAIL E: dartagnanmath@hotmail.com 	    |
+;| A MEDIDA DO POSSÍVEL RESPONDEREI A TODOS OS EMAILS.		    |
+;+------------------------------------------------------------------+
+;|								    |
+;|	THIS ROUTINES THEY WERE DEVELOPED AT SAME TIME THAT WERE    |
+;| NEEDED ALONG OF SOME YEARS. THEY ARE FOR USE FREE AND ANY        |
+;| ALTERATIONS WILL BE PERMITED SINCE THAT AUTHOR NAME APPEAR AT    |
+;| BEGINNER OF EACH PROGRAM, AND IF INCORRECT USE PRODUCE           |
+;| MALFUNCIONS OR DAMAGE TO THIRD PARTIES THE AUTHOR STAY FREE.	    |
+;| ALL ROTINES WERE TESTED AND STILL IN USE AT MANY SYSTEM AND NO   |
+;| PROBLEM WERE RELATED. ALL ROTINES WERE MAKED AT CLOSED "ORIENTED |
+;| OBJECT PROGRAMING" (OOP) WITHOUT INSTANCE IMPLEMENTATIONS:	    |
+;|								    |
+;| ANY QUESTIONS MY EMAIL IS dartagnanmath@hotmail.com		    |
+;| SOON AS POSSIBLE AS ANSWER ALL EMAILS			    |
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATE:25/06/1999 VERSION 1.0				|
+;>------------------------------------------------------<
+;| S I N G L E  F L O A T  P O I N T  R O U T I N E S	|
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+;+------------------------------------------------------+
+
+;+-------------------------+
+;! DEFINICAO DE CONSTANTES !
+;+-------------------------+
+
+.EQU	FSINGLE		= 4		;size of float point single
+.EQU	INTEGER		= 2		;size of float point integer
+
+.EQU	FBIAS      = 0x81             ;bias do ponto flutuante
+.EQU	FPOK       = 0                ;ponto flutuante Ok
+.EQU	FEOVER     = 1                ;ponto flutuante overflow +
+.EQU	FEUNDER    = 2                ;ponto flutuante underflow
+.EQU	FEDIV0     = 3                ;ponto flutuante divisao por zero +
+.EQU	FEILLEG    = 4                ;ponto flutuante funcao ilegal
+
+;+----------------+
+;! USED REGISTERS !
+;+----------------+
+
+.DEF	Tmp	= r15			;temporary use
+.DEF	Acc	= r16			;My 1st accumulator
+.DEF	AccH	= r17			;My 2nd accumulator
+.DEF	OpL1	= r18			;1st Operator low mantisa
+.DEF	OpM1	= r19			;1st Operator middle mantisa
+.DEF	OpH1	= r20			;1st Operator High mantisa
+.DEF	OpE1	= r21			;1st Operator Expoent
+.DEF	OpL2	= r22			;2st Operator low mantisa
+.DEF	OpM2	= r23			;2st Operator middle mantisa
+.DEF	OpH2	= r24			;2st Operator High mantisa
+.DEF	OpE2	= r25			;2st Operator Expoent
+.DEF	AcL	= r26			;Accumulator low mantisa
+.DEF	AcM	= r27			;Accumulator middle mantisa
+.DEF	AcH	= r28			;Accumulator High mantisa
+.DEF	AcE	= r29			;Accumulator Expoent
+
+
+;+---------------------------------------+
+;! SETA PONTO FLUTUANTE UNDERFLOW        !
+;! zera numero e seta variavel           !
+;! de erro com float underflow           !
+;!                                       !
+;! Entrada: Nada                         !
+;! Saida:   Floating Accumulator 0(zero) !
+;!	    Acc=Underflow code		 ! 
+;! Destroi: Flags                        !
+;+---------------------------------------+
+
+FUnder:
+	ldi	Acc,FEUNDER		;set Floating Pointer Underflow
+FClear:
+	clr	AcL			;Clear Floating pointer accumulator
+	clr	AcM
+	clr	AcH
+	clr	AcE
+	ret
+
+;+-----------------------------------------------+
+;! SETA PONTO FLUTUANTE +OVERFLOW OU -OVERFLOW   !
+;! seta nuemro com maximo positivo ou negativo   !
+;! e erro com flag (+overflow ou -overflow)      !
+;! de acordo se o numero for + ou -              !
+;!                                               !
+;! Entrada: AcH bit 7 sinal do numero            !
+;! Saida:   Floating Accumulator +/-1.701412e+38 !
+;!	    Acc=Overflow code			 !
+;! Destroi: Flags                                !
+;+-----------------------------------------------+
+
+FOver:
+	Ldi	Acc,FEOVER		;set Floating Pointer Overflow
+FOver00:
+	bst	AcH,7			;positive ?
+	brtc	FOver10			;yes, branch
+	ldi	AcH,0xFF		;set max Negative number
+	mov	AcM,AcH
+	mov	AcL,AcH
+	mov	AcE,AcH
+	ret
+FOver10:
+	ldi	AcH,0x7F
+	ldi	AcM,0xFF		;set max Positive Number
+	mov	AcL,AcM
+	mov	AcE,AcM
+	ret		
+		
+;+-----------------------------------------------+
+;! SETA PONTO FLUTUANTE DIVISAO POR ZERO         !
+;! seta numero com maximo positovo ou negativo   !
+;! e erro com float (+DIV0 ou -DIV0)             !
+;! de acordo se o numero for + ou -              !
+;!                                               !
+;! Entrada: AcH bit 7 sinal do numero            !
+;! Saida:   Floating Accumulator +/-1.701412e+38 !
+;!	    Acc=Division by zero code		 !
+;! Destroi: Flags                                !
+;+-----------------------------------------------+
+
+FDiv0:
+	ldi	Acc,FEDIV0		;set Floating Pointer Division by Zero
+	rjmp	FOver00
+
+;+--------------------------------------------------------------------------+
+;! PONTO FLUTUANTE NORMALIZACAO                                             !
+;! A normalizacao do numero em ponto flutuante assume que o numero forneci- !
+;! do nao esta nomalizado, ou seja o bit mais significativo fora da sua po- !
+;! sicao. A normalizacao se encarrega-ra de shiftar todos os bits da manti- !
+;! sa e respectivo decremento do expoente ate que o bit mais significativo  !
+;! atinja sua posicao.                                                      !
+;!                                                                          !
+;! Entrada: Floating Accumulator numero nao normalizado                     !
+;! Saida:   Floating Accumulator numero normalizado                         !
+;!          Acc=FPok or Funderflow
+;! Destroi: flags                                                           !
+;+--------------------------------------------------------------------------+
+
+
+FNORM:
+	mov	Acc,AcL			;mantisa = 0 ?
+	or	Acc,AcM
+	or	Acc,AcH
+	brne	FNORM00			;no, branch
+	rcall	FClear			;else clear result then
+	rjmp	FNORM30			;set ok
+FNORM00:
+	subi	AcE,FBIAS		;extract BIAS
+FNORM10:
+	bst	AcH,7			;normalized ?
+	brts	FNORM20			;yes, done
+	lsl	AcL			;left shift to normalize
+	rol	AcM
+	rol	AcH
+	cpi	AcE,0x80		;2^-128 before expoent decrement ?
+	breq	FUnder			;set Undeflow
+	dec	AcE			;expoent--
+	rjmp	FNORM10
+FNORM20:
+	subi	AcE,-FBIAS		;restaura bias
+FNORM30:
+	ldi	Acc,FPOK		;Float Pointer Ok
+	ret
+
+;+----------------------------------------------+
+;! CONVERTE BYTE COM SINAL PARA PONTO FLUTUANTE !
+;!                                              !
+;! Entrada: Acc byte com sinal                  !
+;! Saida:   Floating Accumulator 		!
+;!	    Acc=FPok or FUndeflow		!
+;! Destroi: AccH,Flags                         	!
+;+----------------------------------------------+
+
+ATOF:
+	clr	AccH			;convert byte signed to word signed
+	bst	Acc,7			;negative ?
+	brtc	ATOF10			;no, branch
+	dec	AccH			;else expand signal
+ATOF10:
+	rcall	ITOF			;integer to float
+	ret
+
+;+-------------------------------------------------+
+;! CONVERTE INTEIRO COM SINAL PARA PONTO FLUTUANTE !
+;!                                                 !
+;! Entrada: Acc,AccH inteiro com sinal             !
+;! Saida:   Floating Accumulator		   !
+;!	    Acc=FPok or FUndeflow		   !
+;! Destroi: AccH,Flags 	                           !
+;+-------------------------------------------------+
+
+ITOF:
+	cpi	Acc,0			;Accmulator igual zero ?
+	brne	ITOF00
+	cpi	AccH,0
+	brne	ITOF00			;no, branch
+	rjmp	FClear			;else clear accumulator
+ITOF00:
+	mov	AcH,AccH		;set accumulator to start normalization
+	mov	AcM,Acc
+	bst	AccH,7			;negative number ?
+	brtc	ITOF10			;no, branch
+	com	AcM			;only absolute values
+	com	AcH
+	subi	AcM,-1
+	sbci	AcH,-1
+ITOF10:	
+	clr	AcL			;clear rest of mantisa
+	ldi	AcE,FBIAS+15		;set expoent
+	rcall	FNORM			;normalize number
+	andi	AcH,0x7F		;clear signal bit
+	bst	AccH,7			;see signal to restore
+	brtc	ITOF20			;positive ? , branch
+	ori	AcH,0x80		;set negative
+ITOF20:
+	ret				;end conversion
+
+;+---------------------------------------+
+;! CONVERTE PONTO FLUTUANTE PARA INTEIRO !
+;!                                       !
+;! Entrada: Floating Accumulator         !
+;! Saida: AcH,AcM integer                !
+;! Destroi:Floating Accumulator,Flags    !
+;!         Acc,AccH			 !
+;+---------------------------------------+
+
+FTOI:
+	cpi	AcE,0			;Floating Zero ?
+	brne	FTOI10			;no, branch
+FTOI00:
+	clr	AcM			;else clear AcM,AcH
+	clr	AcH	
+	ret
+FTOI10:
+	cpi	AcE,FBIAS		;expoent lower 0 ?
+	brlo	FTOI00			;yes, branch
+	cpi	AcE,(FBIAS+16)		;expoent > 15
+	brlo	FTOI30			;no, branch
+	ldi	Acc,0x7F		;assume max positive number
+	ldi	AccH,0x7F
+	bst	AcH,7			;positive number ?
+	brtc	FTOI20
+	subi	Acc,low(-1)		;else max negative number
+	sbci	AccH,high(-1)
+FTOI20:
+	ret
+FTOI30:
+	mov	AccH,AcE		;AccH=Expoint without FBIAS
+	subi	AccH,FBIAS
+	ldi	Acc,15
+	sub	Acc,AccH		;Acc number of shifts i need
+	mov	AcL,AcH			;save AcH into AcL
+	ori	AcH,0x80		;set MSB of mantisa
+FTOI40:
+	or	Acc,Acc			;conversion end ?
+	breq	FTOI50			;yes, done
+	lsr	AcH
+	ror	AcM
+	dec	Acc			;shifts--
+	rjmp	FTOI40			;until done
+FTOI50:
+	bst	AcL,7			;positive ?
+	brtc	FTOI60			;yes, branch
+	com	AcM			;complement
+	com	AcH
+	subi	AcM,low(-1)
+	sbci	AcH,high(-1)
+FTOI60:
+	ret
+
+;+---------------------------------------+
+;! VERIFICA A POSIBILIDADE DE OVERFLOW OU!
+;! UNDERFLOW PARA MULTIPLICACAO E PREPA- !
+;! OP1 E OP2 PARA INICIO DE MULTIPLICACAO!
+;! E ZERA Floating Accumulator		 !
+;! Entrada: None		         !
+;! Saida:   Acc=24			 !
+;!          AccH=produto de sinais	 !
+;! Destroi:flags    		         !
+;!                                       !
+;+---------------------------------------+
+
+FREADY:
+	cpi	OpE1,0			;Op1 = 0 ?
+	brne	FREAD10			;No, branch
+	rjmp	FClear			;else clear product
+FREAD10:
+	subi	OpE1,FBIAS		;extract FBIAS
+	subi	OpE2,FBIAS
+	mov	Acc,OpE1		;see if signals are iguals 
+	eor	Acc,OpE2
+	bst	Acc,7			;signals not the same ?
+	brts	FREAD30			;no, branch
+	bst	OpE1,7			;signals are positive ?
+	brtc	FREAD20			;see, possibilit of overflow
+	mov	Acc,OpE1		;Acc=OpE1+OpE2
+	add	Acc,OpE2
+	bst	Acc,7			;signal bit igual 0?
+	brts	FREAD30			;no, branch
+	rjmp	FUnder			;set underflow
+FREAD20:	
+	mov	Acc,OpE1		;Acc=OpE1+OpE2
+	add	Acc,OpE2
+	bst	Acc,7			;signal bit igual 1?
+	brtc	FREAD30			;no, branch
+	mov	Acc,OpH1
+	eor	Acc,OpH2
+	mov	AcH,Acc			;set signal of overflow
+	rjmp	FOver			;set overflow
+FREAD30:	
+	mov	AccH,OpH1		;save signals multiply
+	eor 	AccH,OpH2
+	andi	AccH,0x80		;mask signal bit
+	ori	OpH1,0x80		;set MSB of operands
+	ori	OpH2,0x80
+	rcall	FClear			;clear Accumulator
+	mov	AcE,OpE1		;Accumulator expoent=OpE1+OpE2+FBIAS
+	add	AcE,OpE2
+	clr	OpE1			;used obtain more precision
+	ldi	Acc,24			;number of bits of op2
+	ret
+
+;+---------------------------------------+
+;! MULTIPLICACAO DE PONTO FLUTUANTE      !
+;!                                       !
+;! Entrada: Op1    multiplicando         !
+;!          Op2    multiplicador         !
+;! Saida:   Floating Accumulator produto !
+;!          Acc    tipo da exceção       !
+;! Destroi:Op1,Op2,Acc,AccH,flags        !
+;!                                       !
+;+---------------------------------------+
+
+_FMUL:
+	cpi	OpE2,0			;Op2 = 0 ?
+	brne	FMUL00			;No,branch
+	rjmp	FClear			;else clear product
+FMUL00:
+	rcall	FREADY			;ready to multiply
+	cpi	Acc,24			;correctly ready ?
+	breq	FMUL40			;yes, branch
+	ret				;no return with error code
+FMUL40:
+	ror	OpH1			;shift Op1
+	ror	OpM1
+	ror	OpL1
+	brcc	FMUL50			;if shifted bit = 0 then branch
+	add	AcL,OpL2		;else Accumulate
+	adc	AcM,OpM2
+	adc	AcH,OpH2
+FMUL50:
+	ror	AcH			;shift right accumulator
+	ror	AcM
+	ror	AcL
+	ror	OpE1
+	dec	Acc			;next bit
+	brne	FMUL40			;until done all bits
+	inc	AcE
+FMULDIV:
+	bst	AcH,7			;need normalization ?
+	brts	FMUL60			;no, branch
+	lsl	OpE1			;else normalize
+	rol	AcL
+	rol	AcM
+	rol	AcH
+	dec	AcE
+FMUL60:
+	bst	OpE1,7			;need to round ?
+	brtc	FMUL80			;no, branch
+	subi	AcL,-1
+	sbci	AcM,-1
+	sbci	AcH,-1
+	brcs	FMUL80			;need 2nd normalization ?, no branch
+	cpi	AcE,0x7F		;seed if overflow
+	brne	FMUL70			;no, branch
+	mov	AcH,AccH
+	rjmp	FOver			;set overflow
+FMUL70:
+	ror	AcH			;else normalize again
+	ror	AcM
+	ror	AcL
+	inc	AcE
+FMUL80:	
+	subi	AcE,-FBIAS		;restore FBIAS
+	andi	AcH,0X7F		;include signals multiply
+	or	AcH,AccH
+	ldi	Acc,FPoK
+	ret
+
+;+-----------------------------------------+
+;! DIVISAO DE PONTO FLUTUANTE              !
+;!                                         !
+;! Entrada: Op1  dividendo                 !
+;!          Op2  divisor               	   !
+;! Saida:   Floating Accumulator quociente !
+;!          Acc =tipo da exceção           !
+;! Destroi:Op1,Op2,Tmp,Acc,AccH,flags      !
+;+-----------------------------------------+
+
+_FDIV:
+	cpi	OpE2,0			;Op2 = 0 ?
+	brne	FDIV00			;No,branch
+	mov	AcH,OpH1
+	eor	AcH,OpH2
+	rjmp	FDiv0			;else set Division by zero code
+FDIV00:
+	subi	OpE2,FBIAS		;change Op2 signal to start division
+	neg	OpE2
+	subi	OpE2,-FBIAS
+	rcall	FREADY			;ready to divide
+	cpi	Acc,24			;correctly ready ?
+	breq	FDIV105			;yes, branch
+	ret				;no return with error code
+FDIV105:
+	inc	Acc			;to obtain more precision
+	clr	OpE2
+	clr	Tmp			;only to add with zero
+FDIV10:
+	sub	OpL1,OpL2		;Op1>=Op2	
+	sbc	OpM1,OpM2
+	sbc	OpH1,OpH2
+	sbci	OpE2,0
+	set
+	brcc	FDIV20			;no, branch
+	clt
+	add	OpL1,OpL2		;subtract Op1-Op2
+	adc	OpM1,OpM2
+	adc	OpH1,OpH2
+	adc	OpE2,Tmp
+FDIV20:
+	lsl	OpL1			;Op1<<1
+	rol	OpM1
+	rol	OpH1
+	rol	OpE2
+	bld	OpE1,7			;t flag to accumulator
+	rol	OpE1
+	rol	AcL			;shift result into quocient
+	rol	AcM
+	rol	AcH
+	dec	Acc			;next bit
+	brne	FDIV10			;until done all bits
+	ror	AcH			;restore AcH,AcM,AcL,OpE1 configuration
+	ror	AcM
+	ror	AcL
+	ror	OpE1
+	rjmp	FMULDIV			;MULTIPLY/DIVIDE CHECK AND EXPOENT RESTORE
+
+;+-------------------------------------+
+;! ADICAO DE PONTO FLUTUANTE           !
+;!                                     !
+;! Entrada: Op1   1a parcela           !
+;!          Op2   2a parcela           !
+;! Saida:   Floating Accumulator       !
+;!          Acc=Tipo da exceção        !
+;! Destroi:Op1,Op2,Acc,AccH,flags      !
+;+-------------------------------------+
+
+_FADD:
+	or	OpE1,OpE1		;Op1 = 0 ?
+	brne	FADD00			;no, branch
+	subi	OpE2,FBIAS
+FADD004:
+	mov	AcL,OpL2		;result=Op2
+	mov	AcM,OpM2
+	mov	AcH,OpH2
+	mov	AcE,OpE2
+	rjmp	FADDOK			;set Fadd Ok
+FADD00:
+	or	OpE2,OpE2		;Op2 = 0 ?
+	brne	FADD10			;no, branch
+	subi	OpE1,FBIAS
+FADD05:
+	mov	AcL,OpL1		;result=Op1
+	mov	AcM,OpM1
+	mov	AcH,OpH1
+	mov	AcE,OpE1
+FADDOK:
+	subi	AcE,-FBIAS		;restore FBIAS
+	ldi	Acc,FPOk		;set Floating Add Ok
+	ret	
+FADD10:
+	subi	OpE1,FBIAS		;extract FBIAS
+	subi	OpE2,FBIAS
+	mov	Acc,OpE1		;Acc=OpE1-OpE2
+	sub	Acc,OpE2
+	cpi	Acc,24			;Acc>23 ?
+	brge	FADD05			;yes, result=Op1
+	cpi	Acc,-23			;Acc<-23 ?
+	brlt	FADD004			;yes, result=Op2
+	mov	AcE,OpE1		;Result Exp.=Op1 Exp.		
+	bst	OpH1,7			;save Operands Signals
+	bld	AccH,1			;AccH bit 1=Op1 Signal
+	bst	OpH2,7
+	bld	AccH,2			;AccH bit 2=Op2 Signal
+	ori	OpH1,0x80		;set MSB bits of operands
+	ori	OpH2,0x80
+	cpi	Acc,0			;Acc=0 ?
+	brne	FADD20			;No, Branch
+	rjmp	FADD50			;direct without normalization
+FADD20:
+	brlt	FADD35			;Acc<0 , Branch
+FADD30:
+	lsr	OpH2			;else normalize Op1
+	ror	OpM2
+	ror	OpL2
+	dec	Acc
+	brne	FADD30			;until normalized
+	rjmp	FADD50
+FADD35:
+	neg	Acc			;Acc=Abs(Acc)
+FADD40:
+	lsr	OpH1			;normalize Op2	
+	ror	OpM1
+	ror	OpL1
+	dec	Acc
+	brne	FADD40			;until normalized
+	mov	AcE,OpE2		;Result Exp.=Op2 Exp.
+FADD50:
+	andi	AccH,0b00000110		;verify signals	
+	cpi	AccH,0
+	breq	FADD53			;iguals, branch
+	cpi	AccH,0b00000110
+	breq	FADD53
+	rjmp	FADD60			;no, goto subtraction
+FADD53:
+	mov	Acc,OpL1		;Ac=Op1+Op2
+	add	Acc,OpL2
+	mov	AcL,Acc	
+	mov	Acc,OpM1
+	adc	Acc,OpM2
+	mov	AcM,Acc	
+	mov	Acc,OpH1
+	adc	Acc,OpH2
+	mov	AcH,Acc
+	bst	AccH,1			;Result Signal=Op1 Signal
+	bld	AccH,3			;AccH Bit 3 = Result Signal
+	brcc	FADD54			;no, need normalization, brach
+	ror	AcH			;else normalize Result
+	ror	AcM
+	ror	AcL
+	cpi	AcE,0x7E		;overflow ?
+	breq	FADD55			;yes, branch
+	inc	AcE			;Ace++
+FADD54:
+	subi	AcE,-FBIAS		;add FBIAS into AcE
+	rjmp	FADD80			;Normalize
+FADD55:
+	bst	AccH,3
+	bld	AcH,7
+	rjmp	FOver			;set overflow
+FADD60:
+	mov	Acc,OpL1		;Ac=Op1-Op2
+	sub	Acc,OpL2
+	mov	AcL,Acc
+	mov	Acc,OpM1
+	sbc	Acc,OpM2
+	mov	AcM,Acc
+	mov	Acc,OpH1
+	sbc	Acc,OpH2
+	mov	AcH,Acc
+	bst	AccH,1			;Assume Result Signal=Op1 Signal
+	bld	AccH,3			;AccH Bit 3 = Result Signal
+	brcc	FADD70			;no need 2 complement, Branch
+	bst	AccH,2			;Result Signal=Op2 Signal
+	bld	AccH,3			;AccH Bit 3 = Result Signal
+	com	AcL			;2 Complement Result
+	com	AcM
+	com	AcH
+	subi	AcL,-1
+	sbci	AcM,-1
+	sbci	AcH,-1
+FADD70:
+	subi	AcE,-FBIAS		;add FBIAS into AcE
+	rcall	FNorm			;normalize
+	cpi	Acc,FPOk		;Normalization Ok ?
+	breq	FADD80			;yes, branch
+	ret
+FADD80:
+	bst	AccH,3			;join Result Signal
+	bld	AcH,7
+	ret
+
+;+-------------------------------------+
+;! ADICAO DE PONTO FLUTUANTE           !
+;!                                     !
+;! Entrada: Op1   1a parcela           !
+;!          Op2   2a parcela           !
+;! Saida:   Floating Accumulator       !
+;!          Acc=Tipo da exceção        !
+;! Destroi:Op1,Op2,Acc,AccH,flags      !
+;+-------------------------------------+
+
+_FSUB:
+
+	ldi	Acc,0x80		;Change Op2 signal
+	eor	OpH2,Acc
+	rjmp	_FADD			;go to Floating Addiction		
+
+;+-------------------------------------+
+;! LOAD op1 & op2 FROM STACK           !
+;!                                     !
+;! Saida:   Floating Accumulator       !
+;!          Acc=Tipo da exceção        !
+;! Destroi:Op1,Op2,Acc,AccH,flags      !
+;+-------------------------------------+
+_FLDOPS:
+	rcall	_FDECSTIX		;decrement stack
+	rcall	_FStAddr		;get operands
+	ld	OpL1,Z+	
+	ld	OpM1,Z+	
+	ld	OpH1,Z+	
+	ld	OpE1,Z+	
+	rcall	_FINCSTIX		;increment stack
+	rcall	_FStAddr		;get operands
+	ld	OpL2,Z+	
+	ld	OpM2,Z+	
+	ld	OpH2,Z+	
+	ld	OpE2,Z+	
+	ret
+
+;+----------------------------------+
+;! Save Before call function        !
+;| Input: Z address to be call	    |
+;+----------------------------------+
+
+_FSAVE:
+	push	Tmp
+	push	Acc
+	push	AccH
+	push	OpL1
+	push	OpM1
+	push	OpH1
+	push	OpE1
+	push	OpL2
+	push	OpM2
+	push	OpH2
+	push	OpE2
+	push	AcL
+	push	AcM
+	push	AcH
+	push	AcE
+	push	ZL
+	push	ZH
+	rcall	_FLDOPS
+	pop	ZH
+	pop	ZL
+	ldi	Acc,low(_FRESTORE)
+	push	Acc
+	ldi	Acc,high(_FRESTORE)
+	push	Acc
+	ijmp
+
+;+-------------------------------------+
+;! Restore Stack After function        !
+;+-------------------------------------+
+
+_FRESTORE:
+	rcall	_FDECSTIX
+	rcall	_FAcToSt
+	pop	AcE
+	pop	AcH
+	pop	AcM
+	pop	AcL
+	pop	OpE2
+	pop	OpH2
+	pop	OpM2
+	pop	OpL2
+	pop	OpE1
+	pop	OpH1
+	pop	OpM1
+	pop	OpL1
+	pop	AccH
+	pop	Acc
+	pop	Tmp
+	ret
+
+;+----------------------------------------------+
+;| Floating pointer stack 8 eight numbers    	|
+;|		   +-----+			|
+;| SRAM BOTTOM --> |_FST0|			|
+;|		   +-----+			|
+;| 		   |_FST1|			|
+;|		   +-----+			|
+;|  		   |_FST2|			|
+;|		   +-----+			|
+;|  		   |_FST3|			|
+;|		   +-----+			|
+;| 		   |_FST4|			|
+;|		   +-----+			|
+;|		   |_FST5|			|
+;|		   +-----+			|
+;| 		   |_FST6|			|
+;|		   +-----+			|
+;| 		   |_FST7| <-- SRAM BOTTOM + 31	|
+;|		   +-----+			|
+;+----------------------------------------------+
+
+.DSEG
+
+_FST0:		.BYTE 4
+_FST1:		.BYTE 4
+_FST2:		.BYTE 4
+_FST3:		.BYTE 4
+_FST4:		.BYTE 4
+_FST5:		.BYTE 4
+_FST6:		.BYTE 4
+_FST7:		.BYTE 4
+_FSTIX:		.BYTE 4
+
+.CSEG
+
+;+-------------------------------------+
+;| INCREMENT FLOAT POINTER STACK INDEX |
+;+-------------------------------------+
+_FINCSTIX:
+	lds	Acc,(_FSTIX)		;Get float index
+	inc	Acc			;increment it
+_FINC00:
+	andi	Acc,0B00000111		;mask
+	sts	(_FSTIX),Acc		;store
+	ret
+;+-------------------------------------+
+;| DECREMENT FLOAT POINTER STACK INDEX |
+;+-------------------------------------+
+_FDECSTIX:
+	lds	Acc,(_FSTIX)		;Get float index
+	dec	Acc			;decrement it
+	rjmp	_FINC00
+;+---------------------------+
+;| Calculate FStack address  |
+;+---------------------------+
+_FStAddr:
+	lds	Acc,(_FSTIX)		;Get loat index
+	lsl	Acc			;x4 because a single precision numbers into stack
+	lsl	Acc
+	ldi	ZL,low(_FST0)		;Z-->FST0
+	ldi	ZH,high(_FST0)
+	add	ZL,Acc			;calculate entry statck pointer
+	ldi	Acc,0
+	adc	ZH,Acc
+	ret
+;+---------------------------+
+;| Put FAcc into Float Stack |
+;+---------------------------+
+_FAcToSt:
+	rcall	_FStAddr		;calculate insertion address
+_FAcTo00:
+	st	Z+,AcL			;store Floating Accumator into Floating Stack Pointer
+	st	Z+,AcM
+	st	Z+,AcH
+	st	Z+,AcE
+	ret
+;+------------------------------------------+
+;| Get Float Stack number and put into FAcc |
+;+------------------------------------------+
+_FStToAc:
+	rcall	_FStAddr		;calculate address to get a number
+_FStTo00:
+	ld	AcL,Z+			;Floating Accumator=Floating Stack Pointer number
+	ld	AcM,Z+
+	ld	AcH,Z+
+	ld	AcE,Z+
+	ret
+
+;+-------------------------------------+
+;| FLOAT POINTER LOAD INTEGER TO FSTACK| 
+;| Input: Z --> integer data	       |
+;+-------------------------------------+
+
+_FLDI:
+	push	Acc
+	push	AccH
+	push	AcL
+	push	AcM
+	push	AcH
+	push	AcE
+	ld	Acc,Z+			;load data to convert
+	ld	AccH,Z
+	rcall	ITOF	
+_FLDI00:
+	rcall	_FINCSTIX		;increment fstack
+	rcall	_FAcToSt		;store into fstack
+_FLDI10:
+	pop	AcE
+	pop	AcH
+	pop	AcM
+	pop	AcL
+	pop	AccH
+	pop	Acc
+	ret
+
+;+-----------------------------------------------+
+;| FLOAT POINTER STORE FROM FSTACK -->(integer)Z |
+;| Input: Z --> integer to store	 	 |
+;+-----------------------------------------------+
+
+_FSTI:
+	push	Acc
+	push	AccH
+	push	AcL
+	push	AcM
+	push	AcH
+	push	AcE
+	push	ZL			;save useds
+	push	ZH
+	rcall	_FStToAc		;Get number from STack
+	rcall	FTOI			;convert
+_FSTI00:
+	pop	ZH			;restore useds
+	pop	ZL
+	st	Z+,AcM			;store converted number
+	st	Z,AcH
+	rjmp	_FLDI10
+
+;+-----------------------------------------------+
+;| FLOAT POINTER STORE FROM FSTACK -->(integer)Z |
+;| AND DECREMENT (PULL) FSTACK			 |
+;| Input: Z --> integer to store	 	 |
+;+-----------------------------------------------+
+
+_FSTIP:
+	push	Acc
+	push	AccH
+	push	AcL
+	push	AcM
+	push	AcH
+	push	AcE
+	push	ZL			;save useds
+	push	ZH
+	rcall	_FStToAc		;Get number from STack
+	rcall	FTOI			;convert
+	rcall	_FDECSTIX		;decrement Fstack
+	rjmp	_FSTI00
+
+;+------------------------------+
+;| FLOAT POINTER LOAD TO FSTACK | 
+;| Input: Z --> Floating data   |
+;+------------------------------+
+_FLD:
+	push	Acc
+	push	AccH
+	push	AcL
+	push	AcM
+	push	AcH
+	push	AcE
+	rcall	_FStTo00		;load Data into Acc
+	rjmp	_FLDI00			;store Data into FStack
+
+;+---------------------------------------------+
+;| FLOAT POINTER STORE FROM FSTACK -->(float)Z |
+;| Input: Z --> float to store		       |
+;+---------------------------------------------+
+_FST:
+	push	Acc
+	push	AccH
+	push	AcL
+	push	AcM
+	push	AcH
+	push	AcE
+	push	ZL			;save useds
+	push	ZH
+	rcall	_FStToAc		;Get number from STack
+_FST00:
+	pop	ZH			;restore useds
+	pop	ZL
+	rcall	_FAcTo00		;store number 
+	rjmp	_FLDI10
+
+;+---------------------------------------------+
+;| FLOAT POINTER STORE FROM FSTACK -->(float)Z |
+;| AND DECREMENT (PULL) FSTACK		       |
+;| Input: Z --> float to store		       |
+;+---------------------------------------------+
+_FSTP:
+	push	Acc
+	push	AccH
+	push	AcL
+	push	AcM
+	push	AcH
+	push	AcE
+	push	ZL			;save useds
+	push	ZH
+	rcall	_FStToAc		;Get number from STack
+	rcall	_FDECSTIX		;decrement fstack
+	rjmp	_FST00
+
+;+------------------------+
+;| FLOAT POINTER ABSOLUTE |
+;+------------------------+
+_FABS:
+	andi	OpH2,0b01111111		;set number to positive	
+_FABS00:
+	mov	AcL,OpL2		;result into Facc
+	mov	AcM,OpM2
+	mov	AcH,OpH2
+	mov	AcE,OpE2
+	rcall	_FINCSTIX		;increment to compensate unary function
+	ret
+
+;+---------------------+
+;| FLOAT CHANGE SIGNAL |
+;+---------------------+
+_FCHS:
+	ldi	AccH,0b10000000
+	eor	OpH2,AccH		;change signal bit
+	rjmp	_FABS00
+;+-------------------+
+;| FLOAT DIVIDE BY 2 | 
+;+-------------------+
+_FDIV2:
+	dec	OpE2
+	rjmp	_FABS00
+
+;+--------------+
+;| FLOAT SQUARE |
+;+--------------+
+_FSQR:
+	mov	OpL1,OpL2		;op1=op2
+	mov	OpM1,OpM2
+	mov	OpH1,OpH2
+	mov	OpE1,OpE2
+	rcall	_FMUL			;Facc=op1*op2
+	rcall	_FINCSTIX		;increment to compensate unary function
+	ret	
+;+------------------+
+;| FLOAT INITIALIZE |
+;+------------------+
+_FINIT:
+	push	Acc
+	push	AccH
+	ser	Acc
+	sts	(_FSTIX),Acc
+	ldi	Zl,low(_FST0)
+	ldi	ZH,high(_FST0)
+	ldi	Acc,4*8
+	clr	AccH
+_FIN00:
+	st	Z+,AccH
+	dec	Acc
+	brne	_FIN00
+	pop	AccH
+	pop	Acc
+	ret
+
+;+-----------------+
+;| FLOATING MACROS |
+;+-----------------+
+
+.MACRO	FLDI	
+	ldi	zl,low(@0)
+	ldi	zh,high(@0)
+	rcall	_FLDI
+.ENDMACRO
+
+.MACRO	FSTI	
+	ldi	zl,low(@0)
+	ldi	zh,high(@0)
+	rcall	_FSTI
+.ENDMACRO
+
+.MACRO	FSTIP
+	ldi	zl,low(@0)
+	ldi	zh,high(@0)
+	rcall	_FSTIP
+.ENDMACRO
+
+.MACRO	FLD
+	ldi	zl,low(@0)
+	ldi	zh,high(@0)
+	rcall	_FLD
+.ENDMACRO
+
+.MACRO	FST
+	ldi	zl,low(@0)
+	ldi	zh,high(@0)
+	rcall	_FST
+.ENDMACRO
+
+.MACRO	FSTP
+	ldi	zl,low(@0)
+	ldi	zh,high(@0)
+	rcall	_FSTP
+.ENDMACRO
+
+.MACRO	FADD
+	ldi	zl,low(_FADD)
+	ldi	zh,high(_FADD)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FSUB
+	ldi	zl,low(_FSUB)
+	ldi	zh,high(_FSUB)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FMULT
+	ldi	zl,low(_FMUL)
+	ldi	zh,high(_FMUL)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FDIV
+	ldi	zl,low(_FDIV)
+	ldi	zh,high(_FDIV)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FABS
+	ldi	zl,low(_FABS)
+	ldi	zh,high(_FABS)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FCHS
+	ldi	zl,low(_FCHS)
+	ldi	zh,high(_FCHS)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FDIV2
+	ldi	zl,low(_FDIV2)
+	ldi	zh,high(_FDIV2)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FSQR
+	ldi	zl,low(_FSQR)
+	ldi	zh,high(_FSQR)
+	rcall	_FSAVE
+.ENDMACRO
+
+.MACRO	FINIT
+	rcall	_FINIT
+.ENDMACRO

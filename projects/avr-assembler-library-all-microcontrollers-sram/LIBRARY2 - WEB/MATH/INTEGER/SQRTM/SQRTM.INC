@@ -1,0 +1,79 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+----------------------------------------------------------------------+
+;|									|
+;| DATE:17/12/2001 VERSION 1.0						|
+;>----------------------------------------------------------------------<
+;| I N T E G E R  R O U T I N E S	     				|
+;| S Q U A R E  R O O T 						|
+;+----------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM			|
+;+----------------------------------------------------------------------+
+;+----------------------------------------------------------------+
+;| SQRTM_U16U8							  |
+;| Compute a Square Root of 16bits unsigned value and obtain	  |
+;| 8bits unsigned value and only mega MEGA AVRS			  | 
+;|								  |
+;| Input  : R1:R0 16bit value					  |
+;| Output : R0     8bit result					  |
+;|	    R1	   zero						  |
+;| Destroy: R1,R2,R3,R4,R5,Flags				  |
+;| Time   : Min=96+3 rcall  Max=112+3 rcall average 6.5us at 16Mhz| 
+;+----------------------------------------------------------------+
+#ifndef	__INTEGER_SQRTM_U16U8__
+	#define __INTEGER_SQRTM_U16U8__
+	.message "[ (MATH) INTEGER SQUARE ROOT FOR MEGA ]"
+_SQRTM_U16U8:
+	movw	r2,r0					;value in r3:r2
+	clr	r0					;load r1 with 1 and r0 with 0
+	clr	r1
+	inc	r1
+	add	r2,r1					;to compensate comparation instruction
+	adc	r3,r0
+	clr	r4					;load r4 with 0x80
+	sec
+	ror	r4
+	clr	r5					;clear accumulator mask
+_SQRTM_U16U8_10:
+	or	r5,r4					;set new bit guess into accumulator
+	mul	r5,r5					;set new x^2 guess
+	cp	r0,r2					;square>value?
+	cpc	r1,r3
+	brlo	_SQRTIM_U16U8_20			;no, branch
+	com	r4					;else clear bit guess
+	and	r5,r4
+	com	r4
+_SQRTIM_U16U8_20:
+	lsr	r4					;next guess bit
+	brcc	_SQRTM_U16U8_10				;until done
+	mov	r0,r5					;r1:r0=result
+	clr	r1
+	ret	
+#endif
+.exit
+

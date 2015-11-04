@@ -1,0 +1,86 @@
+;+------------------------------------------------------+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATA: 10/04/2000					|
+;>------------------------------------------------------<
+;| H A N D D L E S  I N T E R R U P T S  F O R 		|
+;| A T 9 0 S 2 3 2 3			 		|
+;+------------------------------------------------------+
+
+#ifnedf __2323_HANDDLES__
+
+	#define __2323_HANDDLES__
+
+	#ifndef __GLOBAL_DEFINITIONS__
+		.message "/--------------------------------\"
+		.message "|GLOBAL DEFINITIONS NOT INCLUDED |"
+		.message "\--------------------------------/"
+	#endif
+
+	.message "+---------------+"
+	.message "|               |"
+	.message "| 2323 HANDDLES |"
+	.message "|               |"
+	.message "+---------------+"
+
+	;+----------------------------------+
+	;| HANDDLE SRAM VECTORS DEFINITIONS |
+	;+----------------------------------+
+
+	.DSEG
+		_HDC_START:
+		_HDC_INT0_VECT:		.BYTE 2		;use thats label names to set handdle address routines
+		_HDC_OVF0_VECT:		.BYTE 2
+		_HDC_END:
+	.CSEG
+
+	;+----------------------------------+
+	;| HANDDLE JUMP VECTORS DEFINITIONS |
+	;+----------------------------------+
+
+	jmp 	_HDC_INIT		;jump to initialization routine
+	jmp 	_HDC_INT0_PROC		;jump to haddle routines
+	jmp 	_HDC_OVF0_PROC
+
+	;+----------------------
+	;| INITIALIZE STACK & SRAM
+	;+----------------------
+	.EQU	RAMSTART	= 0X60
+
+	_HDC_INIT:
+		ldi	Acc,low(RAMEND)
+		out	SPL,Acc
+	
+	.INCLUDE "DEFS\SRAM_INITIALIZATION\SRAM_INIT.hug"		;SRAM & Stack initialization include file
+
+	jmp 	_MAIN_INIT		;jump to main initializations
+
+	;+----------------------------------+
+	;| HANDDLES 			    |
+	;+----------------------------------+
+	;------------------<<  INT 0   >>---------------------------------------------------------------------
+	_HDC_INT0_PROC:
+		push	ZL			;save Z
+		push	ZH
+		lds	ZL,_HDC_INT0_VECT+0	;Z=HANDDLE VECTOR
+		lds	ZH,_HDC_INT0_VECT+1
+		jmp 	_HDC_EXIT
+	;------------------<<  OVF 0   >>---------------------------------------------------------------------
+	_HDC_OVF0_PROC:
+		push	ZL			;save Z
+		push	ZH
+		lds	ZL,_HDC_OVF0_VECT+0	;Z=HANDDLE VECTOR
+		lds	ZH,_HDC_OVF0_VECT+1
+		jmp 	_HDC_EXIT
+	;------------------<<  COMMON RETURN ADDRESS   >>----------------------------------------------------
+	_HDC_EXIT:
+		icall				;call routine
+		pop	ZH
+		pop	ZL
+		reti				;return from interrupt
+	_HDC_RETURN:
+		ret				;return from interrupt routine
+	
+#endif
+
+.exit
+
