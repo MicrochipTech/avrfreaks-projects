@@ -1,0 +1,259 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+---+
+;|									|
+;| DATA:12/04/2001							|
+;>----------------------------------------------------------------------<
+;| C I R C L E  1 6  B I T  R O U T I N E 				|
+;+----------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM			|
+;| AND USE A BRESEHAM ALGORITHM 					|
+;+----------------------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;+------------------------------------------------------+---------------------------------------+
+;| _DISP_PSET		A USER DEFINED ROUTINES TO SET A PIXEL WITH FOLLOW INPUT PARAMETERS	|
+;|												|
+;|			coordenates in x,y registers						|
+;|			Acc color number 0..255							|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _GRAPH_CIRCLE	Draw a circle								|
+;|												|
+;|			ldi	XL,LOW(100)	;Draw a Circle at center 100,75 radius=50	|
+;|			ldi	XH,HIGH(100)	;x=100						|
+;|			ldi	YL,LOW(75)	;y=75						|
+;|			ldi	YH,HIGH(75)							|
+;|			ldi	AccT,LOW(50)	;radius=50					|
+;|			ldi	AccTH,HIGH(50)							|
+;|			ldi	Acc,ON		;Pixels ON					|
+;|			rcall	_GRAPH_CIRCLE	;Draw a circle					|
+;+----------------------------------------------------------------------------------------------+
+#ifndef __GRAPH_CIRCLE__
+	#define	__GRAPH_CIRCLE__
+	.message "+------------------+"
+	.message "|                  |"
+	.message "| GRAPH CIRCLE     |" 
+	.message "|                  |"
+	.message "+------------------+"
+	;+---------------------------------------+
+	;| Circle				 |
+	;| input: X    = X center coordinate	 |
+	;|	  Y    = Y center coordinate	 |
+	;|	  AccT:AccTH = Radius		 |
+	;|	  Acc  = Pixel			 |
+	;+---------------------------------------+
+	;					  \______________________________________________________________________________________________
+	.DEF	_Graph_XCL = R0
+	.DEF	_Graph_XCH = R1
+	.DEF	_Graph_YCL = R2
+	.DEF	_Graph_YCH = R3
+	.DEF	_Graph_TMP = R4
+	_GRAPH_CIRCLE:
+		push 	Acc
+		push	AccH			;save useds
+		push	AccT
+		push	AccTH
+		push	_Graph_XCL
+		push	_Graph_XCH
+		push	_Graph_YCL
+		push	_Graph_YCH
+		push	_Graph_TMP
+		push	Acc			;save color
+		mov	AccH,AccT
+		mov	AccT,AccTH		;AccH,AccT=Radius
+		clr	_Graph_XCL		;X=0
+		clr	_Graph_XCH
+		mov	_Graph_YCL,AccH		;Y=Radius
+		mov	_Graph_YCH,AccT
+		lsl	AccH			;2*Radius
+		rol	AccT
+		com	AccH			;-2*Radius
+		com	AccT
+		subi	AccH,-1
+		sbci	AccT,-1
+		ldi	Acc,3			;d=3-2*Radius
+		add	AccH,Acc
+		clr	Acc
+		adc	AccT,Acc
+		pop	Acc
+	_Graph_CI00:
+		cp	_Graph_XCL,_Graph_YCL	;X<Y ?
+		cpc	_Graph_XCH,_Graph_YCH
+		brge	_Graph_CI_DONE		;yes, done
+		rcall	_Graph_PSETSIM		;plot 8 simetrics pixels
+		tst	AccT			;D<0 ?
+		brpl	_Graph_CI01		;no, jump
+		push	Acc
+		push	_Graph_XCL
+		push	_Graph_XCH
+		lsl	_Graph_XCL		;xc*4
+		rol	_Graph_XCH
+		lsl	_Graph_XCL
+		rol	_Graph_XCH
+		ldi	Acc,6
+		add	_Graph_XCL,Acc		;xc*4+6
+		clr	Acc
+		adc	_Graph_XCH,Acc
+		add	AccH,_Graph_XCL		;d=d+xc*4+6
+		adc	AccT,_Graph_XCH
+		pop	_Graph_XCH
+		pop	_Graph_XCL
+		pop	Acc
+		rjmp	_Graph_CI02
+	_Graph_CI01:
+		push	Acc
+		push	_Graph_XCL
+		push	_Graph_XCH
+		sub	_Graph_XCL,_Graph_YCL	;xc-yc
+		sbc	_Graph_XCH,_Graph_YCH	
+		lsl	_Graph_XCL		;4*(xc-yc)
+		rol	_Graph_XCH
+		lsl	_Graph_XCL
+		rol	_Graph_XCH
+		ldi	Acc,10
+		add	_Graph_XCL,Acc		;4*(xc-yc)+10
+		clr	Acc
+		adc	_Graph_XCH,Acc
+		add	AccH,_Graph_XCL		;d=d+4*(xc-yc)+10
+		adc	AccT,_Graph_XCH
+		pop	_Graph_XCH
+		pop	_Graph_XCL
+		pop	Acc
+		push	Acc
+		ldi	Acc,1
+		sub	_Graph_YCL,Acc		;yc--
+		clr	Acc
+		sbc	_Graph_YCH,Acc
+		pop	Acc
+	_Graph_CI02:
+		push	Acc
+		ldi	Acc,1
+		add	_Graph_XCL,Acc		;xc++
+		clr	Acc
+		adc	_Graph_XCH,Acc
+		pop	Acc
+		rjmp	_Graph_CI00		
+	_Graph_CI_DONE:
+		cp	_Graph_XCL,_Graph_YCL	;xc=yc ?
+		cpc	_Graph_XCH,_Graph_YCH
+		brne	_Graph_CI_DONE2		;no, done
+		rcall	_Graph_PSETSIM		;else plot assimetric points
+	_Graph_CI_DONE2:	
+		pop	_Graph_TMP		;restore useds
+		pop	_Graph_YCH
+		pop	_Graph_YCL
+		pop	_Graph_XCH
+		pop	_Graph_XCL
+		pop	AccTH
+		pop	AccT
+		pop	AccH
+		pop	Acc
+		ret
+	;+---------------------------------------+
+	;| Put eight simetrics pixels		 |
+	;| input: X = X center coordinate	 |
+	;|	  Y = Y center coordinate	 |
+	;|	  XC = X extend			 |
+	;|	  YC = Y extend			 |
+	;|	  Acc 0 reset 0xff set pixel	 |
+	;+=======================================+=======================================================
+	_Graph_PSETSIM:
+		push	_Graph_TMP
+		rcall	_Graph_4SIM		;plot 4 pixels 1st
+		push	Acc			;swap coordinates
+		mov	Acc,_Graph_XCL
+		mov	_Graph_XCL,_Graph_YCL
+		mov	_Graph_YCL,Acc
+		mov	Acc,_Graph_XCH
+		mov	_Graph_XCH,_Graph_YCH
+		mov	_Graph_YCH,Acc
+		pop	Acc
+		rcall	_Graph_4SIM		;plot 4 next simetrics pixels
+		push	Acc			;restore original position
+		mov	Acc,_Graph_XCL
+		mov	_Graph_XCL,_Graph_YCL
+		mov	_Graph_YCL,Acc
+		mov	Acc,_Graph_XCH
+		mov	_Graph_XCH,_Graph_YCH
+		mov	_Graph_YCH,Acc
+		pop	Acc
+		pop	_Graph_TMP
+		ret
+	_Graph_4SIM:
+		push	Acc
+		ldi	Acc,0b0000000		;bit 0 = 0 add else subtract X bit 1 = 0 add else subtract Y
+		mov	_Graph_TMP,Acc
+		pop	Acc
+		rcall	_Graph_PLOT4
+		push	Acc
+		ldi	Acc,0b00000001
+		mov	_Graph_TMP,Acc
+		pop	Acc
+		rcall	_Graph_PLOT4
+		push	Acc
+		ldi	Acc,0b00000010
+		mov	_Graph_TMP,Acc
+		pop	Acc
+		rcall	_Graph_PLOT4
+		push	Acc
+		ldi	Acc,0b00000011
+		mov	_Graph_TMP,Acc
+		pop	Acc
+		rcall	_Graph_PLOT4
+		ret
+	_Graph_PLOT4:
+		push	XL
+		push	XH
+		push	YL
+		push	YH
+		sbrs	_Graph_TMP,0
+		add	XL,_Graph_XCL		;x+xc
+		sbrs	_Graph_TMP,0
+		adc	XH,_Graph_XCH
+		sbrc	_Graph_TMP,0
+		sub	XL,_Graph_XCL		;x-xc
+		sbrc	_Graph_TMP,0
+		sbc	XH,_Graph_XCH
+		sbrs	_Graph_TMP,1	
+		add	YL,_Graph_YCL		;y+yc	
+		sbrs	_Graph_TMP,1
+		adc	YH,_Graph_YCH	
+		sbrc	_Graph_TMP,1
+		sub	YL,_Graph_YCL		;y-yc
+		sbrc	_Graph_TMP,1
+		sbc	YH,_Graph_YCH	
+		rcall	_DISP_PSET
+		pop	YH
+		pop	YL
+		pop	XH
+		pop	XL
+		ret
+#endif
+.exit
+

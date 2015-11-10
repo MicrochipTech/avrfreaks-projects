@@ -1,0 +1,109 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATA:1/12/2002								|
+;>------------------------------------------------------------------------------<
+;| C A L C U L A T E  A  D I S C R E T E  C O S I N E  F U N C T I O N		|
+;+------------------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM				|
+;+------------------------------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N  		|
+;+------------------------------------------------------+---------------------------------------+
+;| _DSCOS16B	return a scaled sine of angle A from -32768 to 32677				|
+;|												|
+;|			ldi	Acc,low(315)		;calculate a cosine of 315 degree	|
+;|			ldi	AccH,high(315)							|
+;|			ldi	AccT,low(100)		;scale factor = 100			|
+;|			ldi	AccTH,high(100)							|
+;|			rcall	_DSCOS16B		;Acc:AccH has a s*cos(Acc:AccH) previous|
+;|												|
+;+----------------------------------------------------------------------------------------------+												|
+;| _DCOS16B	return a cosine of angle A from -32768 to 32677					|
+;|												|
+;|			ldi	Acc,low(315)		;calculate a cosine of 315 degree	|
+;|			ldi	AccH,high(315)							|
+;|			rcall	_DCOS16B		;Acc:AccH has a cos(Acc:AccH) previous	|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+#ifndef	__INTEGER_DISCRETE_COSINE__
+	#define __INTEGER_DISCRETE_COSINE__
+	.message "[ (MATH) INTEGER DISCRETE COSINE ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef	__INTEGER_DISCRETE_SINE__
+		.INCLUDE	"MATH\TRIGONOMETRY\DISCRETE_SINE\DISCRETE_SINE.INC"
+	#endif
+	;+----------------------------------------------------------------------+
+	;| Calculate a discrete scaled cosine of angle A from -32768 to 32677, and|
+	;| other hands perform the follow equation:				|
+	;|									|
+	;|	y=S*cosine(A)							|
+	;| where:								|
+	;|	S unsigned integer Scale					|
+	;|	A signed integer Angle						|
+	;| 	Y integer scaled cosine function				|
+	;|									|
+	;| Input  : Acc:AccH signed integer angle A				|
+	;|	    AccT:AccTH unsigned integer scale factor			|
+	;| Output : Acc:AccH signed integer sine of angle A			|
+	;| Destroy: Flags,R0,R1,R2,R3,R4,R5,R6					|
+	;| obs    :								|
+	;+----------------------------------------------------------------------+
+	_DSCOS16B:
+		rcall	_DCOS16B				;get sine of angle A first
+		rjmp	_DSSIN16B_COS_ENTRY			;call cosine entry point
+	;+--------------------------------------------------------------+
+	;| Calculate a discrete cosine of angle A from -32768 to 32677	|
+	;|								|
+	;| Input  : Acc:AccH signed integer angle A			|
+	;| Output : Acc:AccH signed cosine of angle A			|
+	;| Destroy: Flags,R0						|
+	;| obs    :							|
+	;|								|
+	;| returned number format into Acc:AccH				|
+	;|								|
+	;|  15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0		|
+	;| +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+		|
+	;| | s| i| f| f| f| f| f| f| f| f| f| f| f| f| f| f|		|
+	;| +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+		|
+	;|								|
+	;| s = signal 0=positive 1=negative				|
+	;| i = integer part 						|
+	;| f = fractionary part						|
+	;+--------------------------------------------------------------+
+	_DCOS16B:
+		subi	Acc,low(-90)			;because a cosine function is 90o out of fase a sine function
+		sbci	AccH,high(-90)
+		rcall	_DSIN16B			;call sine function
+		ret
+	#endif
+.exit
+

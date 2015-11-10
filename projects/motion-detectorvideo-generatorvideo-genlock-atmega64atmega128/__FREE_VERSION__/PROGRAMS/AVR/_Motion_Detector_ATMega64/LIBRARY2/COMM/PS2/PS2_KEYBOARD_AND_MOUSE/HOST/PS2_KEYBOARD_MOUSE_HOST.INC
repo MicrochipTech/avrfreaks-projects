@@ -1,0 +1,2492 @@
+; 	 ____________________________________________________________________________________________
+;	|////////////////////////////////////////////////////////////////////////////////////////////|
+;	|///|											|////|
+;	|///| DRIVE	 : PS2 KEYBOARD AND MOUSE HOST						|////|
+;	|///| VERSAO	 : 2.0									|////|
+;	|///| PROGRAMADOR: JOÃO DARTAGNAN ANTUNES OLIVEIRA				   	|////|
+;	|///| DATA 	 : 10 de Julho de 2007 (19:39)						|////|
+;	|///| DESCRIÇÃO	 : Estabelece comunicacao bidirecional com KEYBOARD e MOUSE PS2		|////|
+;	|///| OBJETIVO:	   Emular interface PS2 receber e enviar dados e comandos para MOUSE e  |////|
+;	|///| 		   KEYBOARD e rotinas de translação de ASCII KEYBOARD CODES e vice-versa|////|
+;	|///|	           keyboard scan codes.							|////|
+;	|///| RESOURCES	 : This drive use TIMER0,TIMER1,TIMER2 and INT0,INT1 pins and 2 I/O bits|////|
+;	|///|											|////|
+;	|///| OBS:	   This software is inteded to use in AVR with SRAM			|////|
+;	|///|		   PS2 LINE RECQUIRE 10K RESISTORS AT CLOCK AND DATA LINES		|////|
+;	|///|___________________________________________________________________________________|////|
+;-------|////////////////////////////////////////////////////////////////////////////////////////////|
+;	>--------------------------------------------------------------------------------------------<
+;-------|											     |
+;	|   		P S 2  K E Y B O A R D  A N D  M O U S E  D E V I C E	 		     |
+;	| 											     |
+;+------+--------------------------------------------------------------------------------------------+
+;|
+;| PS2 PROTOCOL USED TO IMPLEMENT PS2_KEYBOARD_AND_MOUSE_DEVICE
+;|
+;|
+;|	COMMUNICATION BETWEEN HOST AND PS2 DEVICE
+;|
+;|	Before the keyboard microcontroller drives the PS2 DEVICE
+;|	Clock and Data lines, it sets both lines to a high level to
+;|	check the current line status. The three line status modes
+;|	between the HOST and the PS2 DEVICE are the following:
+;|
+;|	- Two-way communication between PS2 DEVICE and HOST
+;|	  if both Clock and Data lines are high
+;|
+;|	- HOST sends to PS2 DEVICE if Data line is low
+;|
+;|	- HOST inhibits communication if Clock is low
+;|
+;|	The HOST always drives the Clock and inhibits the
+;|	communication by forcing the Clock line to a low level
+;|	(inactive level), which keeps the keyboard from sending
+;|	any data packet and from generating Clock pulses during
+;|	this stage.
+;|
+;|	Once the Clock line releases high (active level), the
+;|	keyboard has to check the Data line. When the Data line is
+;|	inactive, the HOST requests to send the serial data to the
+;|	keyboard. The keyboard has to send serial Clock streams
+;|	to receive the data packet from the HOST. When both data
+;|	and Clock lines are active, the keyboard sends the scan
+;|	codes to the HOST at any time.
+;|
+;|	SERIAL DATA STREAM(PS2 DEVICE TO HOST)     TH    TL
+;|						    v     v
+;|      PS2 CLOCK ---+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-----------------
+;|		     | | | | | | | | | | | | | | | | | | | | | |			
+;|		     +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ 		
+;|										
+;|      PS2 DATA  --+---+---+---+---+---+---+---+---+---+---+---+---------------
+;|		    | 0 | D0| D1| D2| D3| D4| D5| D6| D7| P | 1 |
+;|		    +---+---+---+---+---+---+---+---+---+---+---+		
+;|		    <-------------------- TB ------------------->
+;|
+;|	The serial data bit stream consists of 11 bits, which include
+;|	a start bit, 8 data bits, odd parity bit, and a stop bit. When
+;|	bit stream sends data to the PC, all the data bits are
+;|	guaranteed while the Clock line is low. The data changes
+;|	during a high level of the Clock line. When the bit stream
+;|	arrives from the PC, the data fetches at the leading edge
+;|	of the Clock. After the stop bit detects high, the KBC forces
+;|	the Data line to a low level for one bit period. The start bit
+;|	is always low and the stop bit is high. The 8-bit data
+;|	transmits from the least significant bit (LSB). The odd parity
+;|	bit means that the number of 1s for the data bit and the
+;|	parity bit must be odd all the time.
+;|
+;|	SERIAL DATA COMMUNICATION FROM HOST TO PS2 LINE
+;|
+;|	Three kinds of data are handled between the PS2 DEVICE and the HOST
+;|
+;|	- Command and Acknowledge
+;|	- Optional Data
+;|	- Key Scan Code from the PS2 KEYBOARD FIFO Buffer
+;|
+;|	The command reception has the highest priority of the
+;|	data communication. A new command always overrides
+;|	to the old command even during communication. The HOST
+;|	starts the command transfer by lowering the Data line.
+;|	Then, the microcontroller sends eleven Clock pulses to
+;|	receive the serial data packet from the PC. When the data
+;|	arrives, the microcontroller sends an acknowledge (0FAh).
+;|	The optional data arrives or departs after sending the
+;|	acknowledge. The key scan code only sends from the
+;|	keyboard FIFO buffer when no data is coming from the PC
+;|
+;|	SERIAL DATA STREAM(HOSTO TO PS2 DEVICE)			  TH     TL
+;|								  v	  v
+;|      PS2 CLOCK --+      +-------+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +---------------------
+;|		    |      |   ^   | | | | | | | | | | | | | | | | | | | | | |
+;|		    +------+   |   +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ 		
+;|		    <- TI ->   |								
+;| 		               +- RECEIVE CONDITION
+;|			       |
+;|      PS2 DATA  ---------+   |    +---+---+---+---+---+---+---+---+---+---+---+-------------------	
+;|		           |   v    |D0 | D1| D2| D3| D4| D5| D6| D7| P | 1 | 0 |
+;|		           +--------+---+---+---+---+---+---+---+---+---+---+---+
+;|			   <- TREQ ->
+;|				    <----------------- TB ---------------------->
+;|
+;|	TI 	= Inhibit Transmission from PS2 DEVICE to HOST time ~300us
+;|	TREQ	= Resquest data transmission from HOST to DEVICE time 80us..100000us
+;|	TB	= Byte transmission time ~880us
+;|	TH	= Clock High time ~40us
+;|	TL	= Clock Low time ~40us
+;|
+;|	TABLE OF COMMANDS SEND BY HOST TO PS2 KEYBOARD
+;|
+;|	COMMAND NAME		HEX VALUES		FUNCTION
+;|
+;|	STATUS_IND		ED,ACK,XX,ACK 		Set/Reset Lock Status indicators
+;|	ECHO 			EE,EE (=ACK) 		Echo Command
+;|	ALT_SCAN 		F0,ACK,XX,ACK 		Select Alternate Scan Codes
+;|	TYPE_RATE DELAY 	F3,ACK,XX,ACK 		Set Typematic Rate/Delay
+;|	ENABLE 			F4,ACK 			Enable Key Scanning
+;|	DISABLE 		F5,ACK 			Default Disable
+;|	SET_DEFAULT 		F6,ACK 			Set Default Value
+;|	ALL_MAKE_TYPE 		F7,ACK 			Set All Keys - Typematic
+;|	ALL_MAKE_BREAK 		F8,ACK 			Sent All Keys - Make/Break
+;|	ALL MAKE 		F9,ACK 			Set All Keys - Make
+;|	ALL_M_T_B 		FA,ACK 			Set All Keys Typematic/Make/Break
+;|	KEY_MAKE_TYPE 		FB,ACK,XX,ACK 		Set Key Type - Typematic
+;|	KEY_MAKE_BREAK 		FC,ACK,XX,ACK 		Set Key Type - Make/Break
+;|	KEY MAKE 		FD,ACK,XX,ACK 		Set Key Type - Make
+;|	RESEND 			FE 			Resend Command
+;|	RESET 			FF,ACK,YY 		Reset Command
+;|	READ ID 		F2,ACK, AB,83 		Read ID Command
+;|
+;|	Notes:
+;|		ACK 	= Acknowledge Data to PC (0FAh)
+;|		XX 	= Received Data from PC.
+;|		YY 	= Result of Basic Assurance Test
+;|		AB 83 	= ID Number
+;|
+;|	TABLE OF COMMANDS SEND BY PS2 KEYBOARD TO HOST
+;|
+;|	COMMAND NAME			HEX VALUE
+;|
+;|	Key Detection Error/Overrun 	00 (Code Set 2)
+;|	Keyboard ID 			AB 83
+;|	Bat Completion Code 		AA
+;|	Bat Failure Core 		FC
+;|	Echo 				EE
+;|	Acknowledge 			FA	
+;|	Resend 				FE
+;|	Key Detection Error/Overrun 	FF (Code Set 1)
+;|
+;|	TABLE OF COMMANDS SEND BY HOST TO PS2 MOUSE
+;|
+;|	COMMAND NAME		HEX VALUES		FUNCTION
+;|
+;|	RESET			FF,ACK,YY,ID		Reset 
+;|	RESEND			FE,ACK			Resend
+;|	SET_DEFAULT 		F6,ACK			Set Default
+;|	ENABLE 			F4,ACK			Enable 
+;|	DISABLE 		F5,ACK			Disable
+;|	SET_SAMPLE_RATE		F3,ACK,SR,ACK		Set Sampling Rate
+;|	READ_DEVICE_TYPE	F2,ACK,ID		Read Device Type
+;|	SET_REMOTE_MODE 	F0,ACK			Set Remote Mode
+;|	SET_WRAP_MODE 		EE,ACK			Set Wrap Mode
+;|	RESET_WRAP_MODE		EC,ACK			Reset Wrap Mode
+;|	READ_DATA		EB,ACK,DT1,DT2,DT3	Read data
+;|	SET_STREAM_MODE		EA,ACK			Set Stream Mode
+;|	STATUS_REQUEST		E9,ACK,ST1,ST2,ST3	Status Request
+;|	SET_RESOLUTION		E8,ACK,RS		Set Resolution
+;|	SET_SCALING_2X1		E7,ACK			Set Scaling 2x1
+;|	RESET_SCALING		E6,ACK	 		Reset Scaling
+;|
+;|	Notes:
+;|		YY 		= Result of Basic Assurance Test
+;|		ACK 		= Acknowledge Data to PC (0FAh)
+;|		SR		= SAMPLE RATE
+;|		ID		= PS2(00h)
+;|		DT1,DT2,DT3	= data packet formatted bellow
+;|				  DT1
+;|				  	bit 0=Right Button 1=pressed
+;|				  	bit 1=Middle Button 1=pressed
+;|				  	bit 2=Left Button 1=pressed
+;|				  	bit 3=1
+;|				  	bit 4=x sign bit 1=negative
+;|				  	bit 5=y sign bit 1=negative
+;|				 	bit 6=x overflow 1=overflow
+;|				  	bit 7=y overflow 1=overflow
+;|				  DT2=X movement
+;|				  DT3=Y movement
+;|		ST1,ST2,ST3	= status packet formatted bellow
+;|				  ST1
+;|				  	bit 0=Right Button 1=pressed
+;|				  	bit 1=Middle Button 1=pressed
+;|				  	bit 2=Left Button 1=pressed
+;|				  	bit 3=0
+;|				  	bit 4=Scaling 1=2x1 0=1x1
+;|				  	bit 5=Enable 1=Enabled
+;|				 	bit 6=Mode 0=Remote 1=Stream
+;|				  	bit 7=0
+;|				  ST2=Resolution
+;|				  ST3=Sample Rate
+;|				
+;|		RS		= Resolution 
+;|				  0=1 count/mm
+;|				  1=2 count/mm
+;|				  2=4 count/mm
+;|				  3=8 count/mm
+;|
+;|
+
+
+;
+;			 ///////////////////////\\\\\\\\\\\\\\\\\\\\\\\\\
+;			//						\\
+;----------------------||  	       	 PS2 DEVICE DRIVE		||---------------------------
+;			\\						//
+			 \\\\\\\\\\\\\\\\\\\\\\\/////////////////////////
+
+#ifndef __PS2_HOST_DRIVE__
+
+	#define __AVR_DEVICE_DRIVE__
+
+	.message "+------------------+"
+	.message "|                  |"
+	.message "| PS2 HOST DRIVE   |"
+	.message "|                  |"
+	.message "+------------------+"
+
+	;+------------------------------------
+	;| NEED INCLUDES
+	;+------------------------------------
+	
+	#ifndef __CQUEUE8__
+		.INCLUDE	"QUEUE\CIRCULAR_QUEUE\QUEUE_8BITS\CIRCULAR_QUEUE_8BITS.INC"
+	#endif
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: This object has a lot of function to control	|
+	;|		PS2 line in Speaker mode allowing read and wri- |
+	;|		te data thru this interface used commonly in 	|
+	;|		MOUSE and KEYBOARD				|
+	;>--------------------------------------------------------------<
+
+	;>--------------------------------------------------------------<
+	;| OBJECT DEFINITIONS						|
+	;| COPY BELOW COMMENTS LINE CODE AND PUT INTO MAIN PROGRAM	|
+	;| AND SET PORTS AND SAMPLE BELOW PORTD IS USED			|
+	;>--------------------------------------------------------------<
+
+
+	;-------------------------< PORT DEFINITONS >----------------------------
+
+	;	.EQU	_PS2_HOST_KEYBOARD_PORT_OUTPUT		= PORTD				;PS2 KEYBOARD PORTS
+	;	.EQU	_PS2_HOST_KEYBOARD_PORT_INPUT		= PIND
+	;	.EQU	_PS2_HOST_KEYBOARD_PORT_DIR		= DDRD
+
+	;	.EQU	_PS2_HOST_MOUSE_PORT_OUTPUT		= PORTD				;PS2 MOUSE PORTS
+	;	.EQU	_PS2_HOST_MOUSE_PORT_INPUT		= PIND
+	;	.EQU	_PS2_HOST_MOUSE_PORT_DIR		= DDRD
+
+	;	.EQU	_PS2_HOST_KEYBOARD_BIT_CLOCK		= 2				;PS2 KEYBOARD CLOCK LINE
+	;	.EQU	_PS2_HOST_KEYBOARD_BIT_DATA		= 4				;PS2 KEYBOARD DATA LINE
+	;	.EQU	_PS2_HOST_MOUSE_BIT_CLOCK		= 3				;PS2 MOUSE CLOCK LINE
+	;	.EQU	_PS2_HOST_MOUSE_BIT_DATA		= 5				;PS2 MOUSE DATA LINE
+
+	;-------------------------< DEVICE DEFINITIONS >--------------------------
+
+	;
+	;PS2 TIMER0 E TIMER2 CONTROL
+	;
+	.EQU	_PS2_HOST_TIMER0_STOP			= 0
+	.EQU	_PS2_HOST_TIMER0_START			= 3
+	.EQU	_PS2_HOST_TIMER2_STOP			= 0
+	.EQU	_PS2_HOST_TIMER2_START			= 4
+
+	;
+	;PS2 TIMEOUTS
+	;
+	.EQU	_PS2_TIMEOUT_HL				= 4000					;max time to wait(milliseconds)
+												;clock transiction high to low
+												;before host send command
+	.EQU	_PS2_TIMEOUT_LH				= 50					;max time to wait(milliseconds)
+												;clock transiction low to high
+	.EQU	_PS2_TIMEOUT_HL_COUNT			= ((_PS2_TIMEOUT_HL*(_AVR_CLOCK/1000))/14000)*1000 ;timeout in counts
+												;clock transiction high to low
+	.EQU	_PS2_TIMEOUT_LH_COUNT			= ((_PS2_TIMEOUT_LH*(_AVR_CLOCK/1000))/14000)*1000 ;timeout in counts					;max time to wait
+
+	;
+	;PS2 LINE STATUS
+	;
+	.EQU	_PS2_HOST_STATE_INVALID			= 0
+	.EQU	_PS2_HOST_STATE_IDLE			= 1				;STATE=(DATA=HIGH,CLOCK=HIGH) ready to transmite data
+	.EQU	_PS2_HOST_STATE_INHIBIT			= 2				;STATE=(DATA=HIGH,CLOCK=LOW) transmisions inhibit
+	.EQU	_PS2_HOST_STATE_HOST_REQUEST		= 3				;STATE=(DATA=LOW,CLOCK=HIGH) host request transmision
+	;
+	;PS2 TIMEOUT BETWEEN CLOCKS
+	;
+	.EQU	_PS2_HOST_CLOCK_TIME_OUT		= _AVR_CLOCK/256000		;for 250us
+	;
+	;PS2 FLAGS CODES BIT POSITIONS
+	;
+	.EQU	_PS2_HOST_FLAG_ERROR_START_BIT		= 0				;1 = invalid start bit error
+	.EQU	_PS2_HOST_FLAG_ERROR_PARITY_BIT		= 1				;1 = invalid parity bit error
+	.EQU	_PS2_HOST_FLAG_ERROR_STOP_BIT		= 2				;1 = invalid stop bit error
+	.EQU	_PS2_HOST_FLAG_RESEND_BIT		= 3				;1 = resend
+	.EQU	_PS2_HOST_FLAG_CMD_BIT			= 4				;1 = command reception 0=data reception
+	.EQU	_PS2_HOST_FLAG_DEVICE_BIT		= 5				;1 = MOUSE 0=KEYBOARD
+	.EQU	_PS2_HOST_FLAG_RECEIVING_BIT		= 6				;1 = data receiving 0=none
+	.EQU	_PS2_HOST_FLAG_RECEIVED_BIT		= 7				;1 = data received
+
+	;
+	;PS2 KEYBOARD FLAGS BITS
+	;
+	.EQU	_PS2_HOST_KEYBOARD_FLAG_SCROLL_LOCK_BIT		= 0				;SCROLL LOCK STATE 1=ON
+	.EQU	_PS2_HOST_KEYBOARD_FLAG_NUM_LOCK_BIT		= 1				;NUM LOCK STATE 1=ON
+	.EQU	_PS2_HOST_KEYBOARD_FLAG_CAPS_LOCK_BIT		= 2				;CAPS LOCK STATE 1=ON
+	.EQU	_PS2_HOST_KEYBOARD_FLAG_SCAN_STATE_BIT		= 0				;SCANNING STATE 1=ENABLE
+	.EQU	_PS2_HOST_KEYBOARD_FLAG_RESET_BIT		= 1				;RESET STATE 1=RESET
+
+	;
+	;KEYBOARD OUTPUT COMMANDS
+	;
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_STATE_IND		= 0XED			;Set/Reset Lock Status indicators
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_ECHO			= 0XEE			;Echo Command
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_ALT_SCAN 		= 0XF0			;Select Alternate Scan Codes
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_TYPE_RATE_DELAY 	= 0XF3			;Set Typematic Rate/Delay
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_ENABLE 		= 0XF4			;Enable Key Scanning
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_DISABLE 		= 0XF5			;Default Disable
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_SET_DEFAULT 		= 0XF6			;Set Default Value
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_ALL_MAKE_TYPE 	= 0XF7			;Set All Keys - Typematic
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_ALL_MAKE_BREAK 	= 0XF8			;Sent All Keys - Make/Break
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_ALL_MAKE 		= 0XF9			;Set All Keys - Make
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_ALL_MAKE_TYPE_BREAK	= 0XFA			;Set All Keys Typematic/Make/Break
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_KEY_MAKE_TYPE 	= 0XFB			;Set Key Type - Typematic
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_KEY_MAKE_BREAK	= 0XFC			;Set Key Type - Make/Break
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_KEY_MAKE 		= 0XFD			;Set Key Type - Make
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_RESEND 		= 0XFE 			;Resend Command
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_RESET			= 0XFF			;Reset Command
+	.EQU	_PS2_HOST_KEYBOARD_CMDOUT_READ_ID		= 0XF2	 		;Read ID Command
+	;
+	;KEYBOARD INPUT COMMANDS
+	;
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_OVERRUN_SET_2	= 0X00			;Key Detection Error/Overrun (Code Set 2)
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_ID_1		= 0XAB			;Keyboard ID 1st byte
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_ID_2		= 0X83			;Keyboard ID 2nd byte
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_BAT_COMPLETE	= 0XAA			;Bat Completion Code
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_BAT_FAILURE	= 0XFC			;Bat Failure Core
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_ECHO		= 0XEE			;Echo
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_ACK		= 0XFA			;Acknowledge
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_RESEND		= 0XFE			;Resend
+	.EQU	_PS2_HOST_KEYBOARD_CMDIN_OVERRUN_SET_1	= 0XFF			;key Detection Error/Overrun (Code Set 1)
+
+	;
+	;MOUSE OUTPUT COMMANDS
+	;
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_RESET		= 0XFF			;Reset 
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_RESEND		= 0XFE			;Resend
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_SET_DEFAULT 	= 0XF6			;Set Default
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_ENABLE 		= 0XF4			;Enable 
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_DISABLE 		= 0XF5			;Disable
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_SET_SAMPLE_RATE	= 0XF3			;Set Sampling Rate
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_READ_DEVICE_TYPE	= 0XF2			;Read Device Type
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_SET_REMOTE_MODE 	= 0XF0			;Set Remote Mode
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_SET_WRAP_MODE 	= 0XEE			;Set Wrap Mode
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_RESET_WRAP_MODE	= 0XEC			;Reset Wrap Mode
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_READ_DATA	= 0XEB			;Read data
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_SET_STREAM_MODE	= 0XEA			;Set Stream Mode
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_STATUS_REQUEST	= 0XE9			;Status Request
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_SET_RESOLUTION	= 0XE8 			;Set Resolution
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_SET_SCALING_2X1	= 0XE7			;Set Scaling 2x1
+	.EQU	_PS2_HOST_MOUSE_CMDOUT_RESET_SCALING	= 0XE6	 		;Reset Scaling
+	;
+	;MOUSE INPUT COMMANDS
+	;
+	.EQU	_PS2_HOST_MOUSE_CMDIN_ID		= 0X00			;0 For PS2
+	.EQU	_PS2_HOST_MOUSE_CMDIN_BAT_COMPLETE	= 0XAA			;Bat Completion Code
+	.EQU	_PS2_HOST_MOUSE_CMDIN_BAT_FAILURE	= 0XFC			;Bat Failure Core
+	.EQU	_PS2_HOST_MOUSE_CMDIN_ACK		= 0XFA			;Acknowledge
+	.EQU	_PS2_HOST_MOUSE_CMDIN_RESEND		= 0XFE			;Resend
+	.EQU	_PS2_HOST_MOUSE_CMDIN_OVERRUN_SET_1	= 0XFF			;key Detection Error/Overrun (Code Set 1)
+
+	;
+	;MOUSE MODES
+	;
+	.EQU	_PS2_HOST_MOUSE_MODE_REMOTE		= 0
+	.EQU	_PS2_HOST_MOUSE_MODE_STREAM		= 1
+	.EQU	_PS2_HOST_MOUSE_MODE_WRAP		= 2
+
+	.EQU	_PS2_HOST_QUEUE_SIZE			= 32		;This size is fixed d'ont change
+	.EQU	_PS2_HOST_QUEUE_BREAK_SIZE		= 16		;This size is fixed d'ont change
+
+	;
+	;PS2 MOUSE FLAGS BITS
+	;
+	.EQU	_PS2_HOST_MOUSE_FLAG_RIGHT_KEY_BIT		= 0			;RIGHT KEY STATE 1=pressed
+	.EQU	_PS2_HOST_MOUSE_FLAG_MIDDLE_KEY_BIT		= 1			;MIDDLE KEY STATE 1=pressed
+	.EQU	_PS2_HOST_MOUSE_FLAG_LEFT_KEY_BIT		= 2			;LEFT KEY STATE 1=pressed
+	.EQU	_PS2_HOST_MOUSE_FLAG_WRAP_BIT			= 3			;WRAP 1=enabled
+	.EQU	_PS2_HOST_MOUSE_FLAG_SCALING_BIT		= 4			;SCALING 0=1X1 1=2X1
+	.EQU	_PS2_HOST_MOUSE_FLAG_REPORTING_BIT		= 5			;REPORTING 1=Enabled
+	.EQU	_PS2_HOST_MOUSE_FLAG_MODE_BIT			= 6			;MODE 0=Remote 1=Stream
+	.EQU	_PS2_HOST_MOUSE_FLAG_RESET_BIT			= 7			;RESET 1=Reset device
+
+	;
+	;KEYBOARD AND MOUSE DATA OFFSET
+	;
+	.EQU	_PS2_HOST_OFFSET_DATA_IN	= 0
+	.EQU	_PS2_HOST_OFFSET_DATA_OUT	= 1
+	.EQU	_PS2_HOST_OFFSET_DATA_MASK	= 2
+	.EQU	_PS2_HOST_OFFSET_DATA_PARITY	= 3
+	.EQU	_PS2_HOST_OFFSET_DATA_FLAGS	= 4
+	.EQU	_PS2_HOST_OFFSET_DATA_EVENT	= 5
+	.EQU	_PS2_HOST_OFFSET_BREAK_COUNT	= 6
+	.EQU	_PS2_HOST_OFFSET_BREAK_TIME	= 7
+	.EQU	_PS2_HOST_OFFSET_DATA_QUEUE	= 8
+	.EQU	_PS2_HOST_OFFSET_BREAK_QUEUE	= _PS2_HOST_OFFSET_DATA_QUEUE+_PS2_HOST_QUEUE_SIZE+4
+	;
+	;KEYBOARD AND MOUSE BREAK QUEUES
+	;
+	.EQU	_PS2_HOST_DEVICE_TIMER1_FREQ_INT	= 4000				;Timer1 Interrupt Frequency
+	.EQU	_PS2_HOST_DEVICE_TIMER1_DIV		= _AVR_CLOCK/_PS2_HOST_DEVICE_TIMER1_FREQ_INT-1	;Divisor factor to generate 10Khz interrupt
+	.EQU	_PS2_HOST_DEVICE_FRAME_BREAK_TIME	= (20*_PS2_HOST_DEVICE_TIMER1_FREQ_INT)/10000	;20 Milliseconds of break time
+
+;-------------------------< SRAM  DEFINITONS >------------------------
+
+.DSEG
+	;/////////////////////////////
+	;// PS2 DEFINITIONS
+	;/////////////////////////////
+	_PS2_HOST_DEVICE:			.BYTE	_BYTE			;set actual device
+	;/////////////////////////////
+	;// KEYBOARD DEFINITIONS
+	;/////////////////////////////
+	_PS2_HOST_KEYBOARD_STATE_INDICATOR:	.BYTE	_BYTE			;KEYBOARD STATUS INDICATOR
+										;BIT 0 Scroll Lock Indicator
+										;BIT 1 Num Lock Indicator
+										;BIT 2 Caps Lock Indicator
+	_PS2_HOST_KEYBOARD_SCAN_CODE_TYPE:	.BYTE	_BYTE			;ACTUAL SCAN TYPE 1,2 OR 3
+	_PS2_HOST_KEYBOARD_TYPE_RATE_DELAY:	.BYTE	_BYTE			;ACTUAL TYPE RATE AND DELAY
+	_PS2_HOST_KEYBOARD_FLAGS:		.BYTE	_BYTE			;BIT 0=SCAN STATE
+										;BIT 1=RESET
+
+	;
+	;KEYBOARD DATA RECORD
+	;
+	_PS2_HOST_KEYBOARD_REC:
+		_PS2_HOST_KEYBOARD_DATA_IN:		.BYTE	_BYTE			;input data from PS2 DEVICE
+		_PS2_HOST_KEYBOARD_DATA_OUT:		.BYTE	_BYTE			;output data to PS2 DEVICE
+		_PS2_HOST_KEYBOARD_DATA_MASK:		.BYTE	_BYTE			;bit mask to data reception
+		_PS2_HOST_KEYBOARD_DATA_PARITY:		.BYTE	_BYTE			;parity count in reception
+		_PS2_HOST_KEYBOARD_DATA_FLAGS:		.BYTE	_BYTE			;receiver errors
+											;bit 0=1 Start Bit invalid
+											;bit 1=1 Parity error
+											;bit 2=1 Stop bit invalid
+											;bit 3=1 issue resend command
+											;bit 4=1 command reception
+		_PS2_HOST_KEYBOARD_DATA_EVENT:		.BYTE	_BYTE			;reception event count
+		_PS2_HOST_KEYBOARD_BREAK_COUNT:		.BYTE	_BYTE			;KEYBOARD break count of bytes in frame
+		_PS2_HOST_KEYBOARD_BREAK_TIME:		.BYTE	_BYTE			;KEYBOARD Frame break time
+		_PS2_HOST_KEYBOARD_QUEUE:		.BYTE	_PS2_HOST_QUEUE_SIZE+4	;KEYBOARD queue size 
+		_PS2_HOST_KEYBOARD_BREAK_QUEUE:		.BYTE	_PS2_HOST_QUEUE_BREAK_SIZE+4	;KEYBOARD frame breaks 
+												;holding a size of each
+												;received frame
+
+
+											;4+ because CQUEUE8 recquired 
+	;/////////////////////////////
+	;// MOUSE DEFINITIONS
+	;/////////////////////////////
+	_PS2_HOST_MOUSE_FLAGS:				.BYTE	_BYTE			;bit 0=Right Key State 1=pressed
+											;bit 1=Middle key state 1=pressed
+											;bit 2=Left key state	1=pressed
+											;bit 3=Wrap 1=Wrap mode
+											;bit 4=Scaling 0=1x1 1=2x1
+											;bit 5=Enable 1=Enabled
+											;bit 6=Mode 0=Remote 1=Stream
+											;bit 7=Reset 1=Reset
+	_PS2_HOST_MOUSE_RESOLUTION:			.BYTE	_BYTE			;resolution 
+											;0= 1count/mm
+											;1= 2count/mm
+											;2= 4count/mm
+											;3= 8count/mm
+	_PS2_HOST_MOUSE_SAMPLE_RATE:			.BYTE	_BYTE			;mouse sample rate
+	;
+	; MOUSE DATA RECORD
+	;
+	_PS2_HOST_MOUSE_REC:
+		_PS2_HOST_MOUSE_DATA_IN:		.BYTE	_BYTE			;input data from PS2 DEVICE
+		_PS2_HOST_MOUSE_DATA_OUT:		.BYTE	_BYTE			;output data to PS2 DEVICE
+		_PS2_HOST_MOUSE_DATA_MASK:		.BYTE	_BYTE			;bit mask to data reception
+		_PS2_HOST_MOUSE_DATA_PARITY:		.BYTE	_BYTE			;parity count in reception
+		_PS2_HOST_MOUSE_DATA_FLAGS:		.BYTE	_BYTE			;receiver errors
+											;bit 0=1 Start Bit invalid
+											;bit 1=1 Parity error
+											;bit 2=1 Stop bit invalid
+											;bit 3=1 issue resend command
+											;bit 4=1 command reception
+		_PS2_HOST_MOUSE_DATA_EVENT:		.BYTE	_BYTE			;reception event count
+		_PS2_HOST_MOUSE_BREAK_COUNT:		.BYTE	_BYTE			;MOUSE break count of bytes in frame
+		_PS2_HOST_MOUSE_BREAK_TIME:		.BYTE	_BYTE			;MOUSE Frame break time
+		_PS2_HOST_MOUSE_QUEUE:			.BYTE	_PS2_HOST_QUEUE_SIZE+4	;MOUSE queue size 
+											;4+ because CQUEUE8 recquired 
+		_PS2_HOST_MOUSE_BREAK_QUEUE:		.BYTE	_PS2_HOST_QUEUE_BREAK_SIZE+4	;MOUSE frame breaks 
+												;holding a size of each
+												;received frame
+
+
+.CSEG
+
+;-------------------------< MACROS  DEFINITONS >------------------------
+
+;
+;AccT=FLAGS
+;
+.MACRO	_M_ENABLE_CLOCK_INTERRUPT
+	;turn interrupt flag off
+	in	Acc,GIFR							;get old state
+	sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if DEVICE=KEYBOARD
+	ori	Acc,(1<<INTF0)
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if DEVICE=MOUSE
+	ori	Acc,(1<<INTF1)
+	out	GIFR,Acc
+	;enable interrupt
+	in	Acc,GICR							;get old state
+	sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if DEVICE=KEYBOARD
+	ori	Acc,(1<<INT0)
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if DEVICE=MOUSE
+	ori	Acc,(1<<INT1)
+	out	GICR,Acc
+.ENDMACRO
+
+;
+;AccT=FLAGS
+;
+.MACRO	_M_DISABLE_CLOCK_INTERRUPT
+	in	Acc,GICR							;get old state
+	sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if DEVICE=KEYBOARD
+	andi	Acc,~(1<<INT0)
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if DEVICE=MOUSE
+	andi	Acc,~(1<<INT1)
+	out	GICR,Acc
+.ENDMACRO
+
+;
+;AccT=FLAGS
+;
+.MACRO	_M_TIMER_CHECK_OVERFLOW
+	in	Acc,TIFR							;get timers flags
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip IF KEYBOARD
+	rjmp	PC+7								;else branch to MOUSE
+	;///////////////////////////////
+	;// check overflow TIMER 0
+	;///////////////////////////////
+	sbrc	Acc,TOV0							;skip if not overflow
+	rjmp	PC+12								;else set overflow
+	in	Acc,TCNT0							;get timer0 count
+	cpi	Acc,_PS2_HOST_CLOCK_TIME_OUT					;timeout ?
+	brsh	PC+9								;yes, set overflow
+	rjmp	PC+6								;else set not overflow
+	;///////////////////////////////
+	;// check overflow TIMER 2
+	;///////////////////////////////
+	sbrc	Acc,TOV2							;skip if not overflow
+	rjmp	PC+6								;else set overflow
+	in	Acc,TCNT2							;get timer0 count
+	cpi	Acc,_PS2_HOST_CLOCK_TIME_OUT					;timeout ?
+	brsh	PC+3								;yes, set overflow
+	clc									;else set not overflow
+	rjmp	PC+2
+	sec									;set overflow
+.ENDMACRO
+
+;
+;AccT=FLAGS
+;
+.MACRO	_M_TIMER_CLEAR_OVERFLOW	
+	in	Acc,TIFR
+	sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if MOUSE
+	ori	Acc,(1<<TOV0)							;clear TIMER0 OVERFLOW
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if KEYBOARD
+	ori	Acc,(1<<TOV2)							;clear TIMER2 OVERFLOW
+	out	TIFR,Acc
+.ENDMACRO
+
+;
+;AccT=FLAGS
+;
+.MACRO	_M_TIMER_CLEAR	
+	ldi	Acc,0
+	sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if MOUSE
+	out	TCNT0,Acc							;clear TIMER0
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if KEBOARD
+	out	TCNT2,Acc							;else clear TIMER2
+.ENDMACRO
+;
+;AccT=FLAGS
+;
+.MACRO	_M_TIMER_STOP	
+	ldi	Acc,_PS2_HOST_TIMER0_STOP					;TIMER<-STOP
+	sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if MOUSE
+	out	TCCR0,Acc							;stop TIMER0
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if KEYBOARD
+	out	TCCR2,Acc							;else stop TIMER2
+.ENDMACRO
+;
+;AccT=FLAGS
+;
+.MACRO	_M_TIMER_START	
+	sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT					;skip if KEYBOARD
+	rjmp	PC+4
+	ldi	Acc,_PS2_HOST_TIMER0_START					;TIMER0<-START
+	out	TCCR0,Acc
+	rjmp	PC+3
+	ldi	Acc,_PS2_HOST_TIMER2_START					;TIMER2<-START
+	out	TCCR2,Acc
+.ENDMACRO
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_KEYBOARD_INIT				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Initialize PS2_LISTENER engine			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Interrupt are disabled during interrupt		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_INIT:
+		push	Acc						;save Acc
+		in	Acc,SREG					;save SREG
+		cli							;disable interrupts
+		push	Acc
+		pushw	Z
+		;////////////////////////////////////////
+		;// PROGRAM PS2 KEYBOARD AND MOUSE LINE
+		;// AS INPUT AND HI-IMPEDANCE
+		;////////////////////////////////////////
+		cbi	_PS2_HOST_KEYBOARD_PORT_OUTPUT,	\
+			_PS2_HOST_KEYBOARD_BIT_CLOCK			;set KEYBOARD clock line to hiz
+		cbi	_PS2_HOST_KEYBOARD_PORT_OUTPUT,	\
+			_PS2_HOST_KEYBOARD_BIT_DATA			;set KEYBOARD data line to hiz
+		cbi	_PS2_HOST_KEYBOARD_PORT_DIR,		\
+			_PS2_HOST_KEYBOARD_BIT_CLOCK			;set KEYBOARD clock line as input
+		cbi	_PS2_HOST_KEYBOARD_PORT_DIR,		\
+			_PS2_HOST_KEYBOARD_BIT_DATA			;set KEYBOARD data line as input
+		cbi	_PS2_HOST_MOUSE_PORT_OUTPUT,		\
+			_PS2_HOST_MOUSE_BIT_CLOCK			;set MOUSE clock line to hiz
+		cbi	_PS2_HOST_MOUSE_PORT_OUTPUT,		\
+			_PS2_HOST_MOUSE_BIT_DATA			;set MOUSE data line to hiz
+		cbi	_PS2_HOST_MOUSE_PORT_DIR,		\
+			_PS2_HOST_MOUSE_BIT_CLOCK			;set MOUSE clock line as input
+		cbi	_PS2_HOST_MOUSE_PORT_DIR,		\
+			_PS2_HOST_MOUSE_BIT_DATA			;set MOUSE data line as input
+		;////////////////////////////////////////
+		;// CLEAR TIMER COUNT AND STOP IT
+		;////////////////////////////////////////
+		;////////////////////////////////////////
+		;// program KEYBOARD and MOUSE interrupts
+		;// lines to low to high transiction
+		;// clear timer0 and stop it
+		;////////////////////////////////////////
+		in	Acc,GICR					;enable int0 e int1 interrupts
+		ori	Acc,(1<<INT0)|(1<<INT1)
+		out	GICR,Acc
+		in	Acc,MCUCR					;program int0 and int1 to activated at rising changes
+		ori	Acc,(1<<ISC11)|(1<<ISC10)|(1<<ISC01)|(1<<ISC00)
+		out	MCUCR,Acc
+		_SET_HANDDLE _HDC_INT0_VECT,_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS
+		_SET_HANDDLE _HDC_INT1_VECT,_PS2_HOST_DEVICE_MOUSE_TO_HOST_PROCESS
+		ldi	Acc,_PS2_HOST_TIMER0_STOP			;stop timer
+		out	TCCR0,Acc
+		ldi	Acc,0						;clear timer count									;frequency
+		out	TCNT0,Acc
+		ldi	Acc,_PS2_HOST_TIMER2_STOP			;stop timer
+		out	TCCR2,Acc
+		ldi	Acc,0						;clear timer count									;frequency
+		out	TCNT2,Acc
+		;////////////////////////////////////////
+		;// program TIMER1 to generate 10Khz
+		;// interrupt to process KEYBOARD
+		;// and MOUSE break queues using
+		;// waveform generator mode 4
+		;// wgm13=0 wgm12=1 wgm11=0 wgm10=0
+		;////////////////////////////////////////
+		ldiaw	_PS2_HOST_DEVICE_TIMER1_DIV			;program ICR to obtain interrupt frequency
+		out	OCR1AH,AccH
+		out	OCR1AL,Acc
+		ldi	Acc,(0<<WGM11)|(0<<WGM10)
+		out	TCCR1A,Acc
+		ldi	Acc,(0<<WGM13)|(1<<WGM12)|_TIMERM13_DIV_1
+		out	TCCR1B,Acc
+		in	Acc,TIMSK					;enable TIMER1 interrupt
+		ori	Acc,(1<<OCIE1A)
+		out	TIMSK,Acc
+		_SET_HANDDLE _HDC_OC1A_VECT,_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS
+		;////////////////////////////////////////
+		;// INITIALIZE KEYBOARD VARIABLES
+		;////////////////////////////////////////
+		ldiw	Z,_PS2_HOST_KEYBOARD_REC			;Z-->KEYBOARD REC
+		ldi	Acc,0
+		std	Z+_PS2_HOST_OFFSET_DATA_EVENT,Acc		;EVENT<-0
+		std	Z+_PS2_HOST_OFFSET_DATA_FLAGS,Acc		;FLAGS<-0
+		std	Z+_PS2_HOST_OFFSET_DATA_PARITY,Acc		;PARITY<-0
+		std	Z+_PS2_HOST_OFFSET_DATA_IN,Acc			;DATA<-0
+		ldi	Acc,1
+		std	Z+_PS2_HOST_OFFSET_DATA_MASK,Acc		;MASK=1
+		rcall	_PS2_HOST_KEYBOARD_INIT_QUEUES
+		rcall	_PS2_HOST_KEYBOARD_SET_DEFAULT
+		;////////////////////////////////////////
+		;// INITIALIZE MOUSE VARIABLES
+		;////////////////////////////////////////
+		ldiw	Z,_PS2_HOST_MOUSE_REC				;Z-->MOUSE REC
+		ldi	Acc,0
+		std	Z+_PS2_HOST_OFFSET_DATA_EVENT,Acc		;EVENT<-0
+		std	Z+_PS2_HOST_OFFSET_DATA_PARITY,Acc		;PARITY<-0
+		std	Z+_PS2_HOST_OFFSET_DATA_IN,Acc			;DATA<-0
+		ldi	Acc,(1<<_PS2_HOST_FLAG_DEVICE_BIT)
+		std	Z+_PS2_HOST_OFFSET_DATA_FLAGS,Acc		;FLAGS<-(DEVICE=MOUSE)
+		ldi	Acc,1
+		std	Z+_PS2_HOST_OFFSET_DATA_MASK,Acc		;MASK=1
+		rcall	_PS2_HOST_MOUSE_INIT_QUEUES
+		rcall	_PS2_HOST_MOUSE_SET_DEFAULT
+;		ldiw	Z,_PS2_HOST_MOUSE_QUEUE
+;		ldi	Acc,_PS2_HOST_QUEUE_SIZE
+;		rcall	_CQUEUE8_INIT					;init MOUSE queue
+		;////////////////////////////////////////
+		;// WAIT 20ms
+		;////////////////////////////////////////
+		_M_DELAY_MILLISECONDS	20				;wait 20ms to PS2 line stabilize
+		popw	Z
+		pop	Acc
+		out	SREG,Acc					;restore SREG
+		pop	Acc						;restore Acc
+		ret
+		
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_DEVICE_PROCESS_QUEUE_BREAKS			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Process Queue Data PS2 Frame Breaks		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS: ;<p1>
+		push	r0
+		push	r1
+		push	Acc							;save Acc
+		in	Acc,SREG						;Get SREG
+		pushaw								;save SREG
+		pushw	Z
+PUSH	TEMP
+		sei								;enable interrupts for highest priority
+		;/////////////////////////////////////
+		;// PROCESS KEYBOARD FRAME BREAKS
+		;/////////////////////////////////////
+		ldiw	Z,_PS2_HOST_KEYBOARD_REC				;KEYBOARD.REC
+		rcall	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS_FRAME_CHECK	;CHECK FRAME
+		;/////////////////////////////////////
+		;// PROCESS MOUSE FRAME BREAKS
+		;/////////////////////////////////////
+		ldiw	Z,_PS2_HOST_MOUSE_REC					;MOUSE.REC
+		rcall	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS_FRAME_CHECK	;CHECK FRAME
+	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS_EXIT:
+POP	TEMP
+		popw	Z
+		popaw								;restore SREG
+		out	SREG,Acc
+		pop	Acc
+		pop	r1
+		pop	r0
+		ret
+		;/////////////////////////////////////////
+		;// CHECK IF TIME TO INSERT FRAME COUNT
+		;/////////////////////////////////////////
+	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS_FRAME_CHECK:
+
+		ldd	Acc,Z+_PS2_HOST_OFFSET_BREAK_TIME			;PS2.BREAK.TIME++
+		inc	Acc
+		std	Z+_PS2_HOST_OFFSET_BREAK_TIME,Acc
+		cpi	Acc,_PS2_HOST_DEVICE_FRAME_BREAK_TIME			;PS2.BREAK.TIME>FRAME.BREAK.TIME?
+		brlo	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS_FRAME_CHECK_10	;no, exit
+
+
+		ldi	Acc,0							;PS2.BREAK.TIME<-0
+		std	Z+_PS2_HOST_OFFSET_BREAK_TIME,Acc
+		ldd	Acc,Z+_PS2_HOST_OFFSET_BREAK_COUNT			;PS2.BREAK.COUNT==0?
+		cpi	Acc,0
+		breq	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS_FRAME_CHECK_10	;yes, exit
+		CPIW	Z,_PS2_HOST_MOUSE_REC
+		BRNE	L1
+;		SBI	PORTB,1
+		IN	ACCH,PORTB
+		LDI	TEMP,(1<<1)
+		EOR	ACCH,TEMP
+		OUT	PORTB,ACCH
+L1:
+		addiw	Z,_PS2_HOST_OFFSET_BREAK_QUEUE
+		rcall	_CQUEUE8_PUT_DATA					;BREAK.QUEUE<-PS2.DEVICE.BREAK.COUNT
+		subiw	Z,_PS2_HOST_OFFSET_BREAK_QUEUE				;Z-->REC
+		ldi	Acc,0							;PS2.BREAK.COUNT<-0
+		std	Z+_PS2_HOST_OFFSET_BREAK_COUNT,Acc
+	_PS2_HOST_DEVICE_PROCESS_QUEUE_BREAKS_FRAME_CHECK_10:
+
+;		CBI	PORTB,1
+		
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_DEVICE_KEYBOARD_INIT_QUEUE			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set KEYBOARD empyt QUEUE			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	r0,r1,flags					|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_KEYBOARD_INIT_QUEUES:
+		push	Acc
+		in	Acc,SREG					;save SREG state
+		cli							;disable interrupts
+		push	Acc
+		pushw	Z
+		ldi	Acc,0
+		sts	_PS2_HOST_KEYBOARD_BREAK_COUNT,Acc		;break.count=0
+		sts	_PS2_HOST_KEYBOARD_BREAK_TIME,Acc		;break.time=0
+		ldiw	Z,_PS2_HOST_KEYBOARD_QUEUE
+		ldi	Acc,_PS2_HOST_QUEUE_SIZE
+		rcall	_CQUEUE8_INIT					;init KEYBOARD queue
+		ldiw	Z,_PS2_HOST_KEYBOARD_BREAK_QUEUE
+		ldi	Acc,_PS2_HOST_QUEUE_BREAK_SIZE
+		rcall	_CQUEUE8_INIT					;init KEYBOARD BREAK queue
+	_PS2_HOST_KEYBOARD_INIT_QUEUES_10:
+		popw	Z
+		pop	Acc
+		out	SREG,Acc					;restore SREG state
+		pop	Acc
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_DEVICE_MOUSE_INIT_QUEUE			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set MOUSE empyt QUEUE				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	r0,r1,flags					|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_MOUSE_INIT_QUEUES:
+		push	Acc
+		in	Acc,SREG					;save SREG state
+		cli							;disable interrupts
+		push	Acc
+		pushw	Z
+		sts	_PS2_HOST_MOUSE_BREAK_COUNT,Acc			;break.count=0
+		sts	_PS2_HOST_MOUSE_BREAK_TIME,Acc			;break.time=0
+		ldiw	Z,_PS2_HOST_MOUSE_QUEUE
+		ldi	Acc,_PS2_HOST_QUEUE_SIZE
+		rcall	_CQUEUE8_INIT					;init MOUSE queue
+		ldiw	Z,_PS2_HOST_MOUSE_BREAK_QUEUE
+		ldi	Acc,_PS2_HOST_QUEUE_BREAK_SIZE
+		rcall	_CQUEUE8_INIT					;init MOUSE BREAK queue
+		rjmp	_PS2_HOST_KEYBOARD_INIT_QUEUES_10
+
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_DEVICE_KEYBOARD_SET_DEFAULT			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set KEYBOARD default state			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_KEYBOARD_SET_DEFAULT:
+		push	Acc
+		in	Acc,SREG							;save SREG state
+		cli									;disable interrupts
+		push	Acc
+		ldi	Acc,0b00101011							;set rate=10.9char/sec delay=500ms
+		sts	_PS2_HOST_KEYBOARD_TYPE_RATE_DELAY,Acc
+		ldi	Acc,2								;Scan type 2
+		sts	_PS2_HOST_KEYBOARD_SCAN_CODE_TYPE,Acc
+		ldi	Acc,0								;All Indicadors off
+		sts	_PS2_HOST_KEYBOARD_STATE_INDICATOR,Acc
+		ldi	Acc,(1<<_PS2_DEVICE_KEYBOARD_FLAG_SCAN_STATE_BIT)|	\
+			    (0<<_PS2_DEVICE_KEYBOARD_FLAG_RESET_BIT) 			;SCAN<-0,RESET<-0
+		sts	_PS2_HOST_KEYBOARD_FLAGS,Acc
+		pop	Acc
+		out	SREG,Acc							;restore SREG state
+		pop	Acc
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_SET_DEFAULT			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set MOUSE default state				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_MOUSE_SET_DEFAULT:
+		push	Acc
+		ldi	Acc,100								;Sample Rate=100
+		sts	_PS2_HOST_MOUSE_SAMPLE_RATE,Acc
+		ldi	Acc,2								;Resolution=4 counts/mm
+		sts	_PS2_HOST_MOUSE_RESOLUTION,Acc
+		ldi	Acc,(0<<_PS2_HOST_MOUSE_FLAG_RIGHT_KEY_BIT)	| \
+			    (0<<_PS2_HOST_MOUSE_FLAG_MIDDLE_KEY_BIT)	| \
+			    (0<<_PS2_HOST_MOUSE_FLAG_LEFT_KEY_BIT)	| \
+			    (0<<_PS2_HOST_MOUSE_FLAG_WRAP_BIT)	| \
+			    (0<<_PS2_HOST_MOUSE_FLAG_SCALING_BIT)	| \
+			    (0<<_PS2_HOST_MOUSE_FLAG_REPORTING_BIT)	| \
+			    (1<<_PS2_HOST_MOUSE_FLAG_MODE_BIT)	| \
+			    (0<<_PS2_HOST_MOUSE_FLAG_RESET_BIT)				;RIGHT.KEY<-0,MIDDLE.KEY<-0,LEFT.KEY<-0
+			    								;WRAP<-OFF
+											;SCALING<-1X1
+											;REPORTING<-OFF
+											;MODE<-STREAM
+											;RESET<-ON
+		sts	_PS2_DEVICE_MOUSE_FLAGS,Acc
+		pop	Acc
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_DEVICE_KEYBOARD_SET_FLAGS			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: SET KEYBOARD FLAGS			 	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc mask of bits flags to be set		|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	one more two flag may be set at a time		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_PS2_HOST_KEYBOARD_SET_FLAGS:
+		push	AccH							;save useds
+		push	Temp
+		in	AccH,SREG						;save SREG
+		cli
+		lds	Temp,_PS2_HOST_KEYBOARD_FLAGS				;get flags
+		or	Temp,Acc						;set bits
+	_PS2_HOST_KEYBOARD_SET_FLAGS_10:
+		sts	_PS2_HOST_KEYBOARD_FLAGS,Temp				;store back
+		out	SREG,AccH						;restore SREG
+		pop	Temp							;restore useds
+		pop	AccH
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_KEYBOARD_RESET_FLAGS			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: RESET KEYBOARD FLAGS			 	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc mask of bits flags to be reset		|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	one more two flag may be set at a time		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_PS2_HOST_KEYBOARD_RESET_FLAGS:
+		push	AccH							;save useds
+		push	Temp
+		in	AccH,SREG						;save SREG
+		cli
+		lds	Temp,_PS2_HOST_KEYBOARD_FLAGS				;get flags
+		com	Acc
+		and	Temp,Acc						;reset
+		rjmp	_PS2_HOST_KEYBOARD_SET_FLAGS_10
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_SET_FLAGS			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: SET MOUSE FLAGS				 	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc mask of bits flags to be set		|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	one more two flag may be set at a time		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_PS2_HOST_MOUSE_SET_FLAGS:
+		push	AccH							;save useds
+		push	Temp
+		in	AccH,SREG						;save SREG
+		cli
+		lds	Temp,_PS2_HOST_MOUSE_FLAGS				;get flags
+		or	Temp,Acc						;set bits
+	_PS2_HOST_MOUSE_SET_FLAGS_10:
+		sts	_PS2_HOST_MOUSE_FLAGS,Temp				;store back
+		out	SREG,AccH						;restore SREG
+		pop	Temp							;restore useds
+		pop	AccH
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_RESET_FLAGS			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: RESET MOUSE FLAGS			 	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc mask of bits flags to be reset		|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	one more two flag may be set at a time		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_PS2_HOST_MOUSE_RESET_FLAGS:
+		push	AccH							;save useds
+		push	Temp
+		in	AccH,SREG						;save SREG
+		cli
+		lds	Temp,_PS2_HOST_MOUSE_FLAGS				;get flags
+		com	Acc
+		and	Temp,Acc						;reset
+		rjmp	_PS2_HOST_MOUSE_SET_FLAGS_10
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_CHECK_FLAG			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Check if new flag are different of flags	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  New Flags States				|
+	;|		AccH mask of flag to be update			|
+	;| OUTPUT     :	z=1 if igual					|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	one more two flag may be set at a time		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_MOUSE_CHECK_FLAG:
+		push	Temp
+		push	Acc							;save useds
+		lds	Temp,_PS2_HOST_MOUSE_FLAGS				;get FLAGS
+		and	Temp,AccH						;extract FLAG bit to be tested
+		and	Acc,AccH						;extract from new FLAG too
+		cp	Acc,Temp						;FLAGS.BITS are iqual?
+		pop	Acc
+		pop	Temp
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_KEYBOARD_GET_FLAG_STATE		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get state of keyboard flag	 		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc mask of bits of flags			|
+	;| OUTPUT     :	Cy=1 if set					|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_PS2_HOST_KEYBOARD_GET_FLAG_STATE:
+		push	Temp
+		lds	Temp,_PS2_HOST_KEYBOARD_FLAGS				;get flags
+		and	Temp,AccH						;mask flag			
+		breq	_PS2_HOST_KEYBOARD_GET_FLAG_STATE_10			;branch if disable
+		sec								;set enable
+		pop	Temp
+		ret
+	_PS2_HOST_KEYBOARD_GET_FLAG_STATE_10:
+		clc								;set disable
+		pop	Temp
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_DEVICE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_GET_FLAG_STATE			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get state of mouse flag		 		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc mask of bits of flags			|
+	;| OUTPUT     :	Cy=1 if set					|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_PS2_HOST_MOUSE_GET_FLAG_STATE:
+		push	Temp
+		lds	Temp,_PS2_HOST_MOUSE_FLAGS				;get flags
+		and	Temp,AccH						;mask flag			
+		breq	_PS2_HOST_MOUSE_GET_FLAG_STATE_10			;branch if disable
+		sec								;set enable
+		pop	Temp
+		ret
+	_PS2_HOST_MOUSE_GET_FLAG_STATE_10:
+		clc								;set disable
+		pop	Temp
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_GET_DATA_BIT				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data bit from device			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  FLAGS					|
+	;| OUTPUT     :	cy=1 if data bit =high else cy=0		|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|						
+	_PS2_HOST_GET_DATA_BIT:
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if KEYBOARD
+		rjmp	_PS2_HOST_GET_DATA_BIT_10				;else branch
+		clc								;assume bit=0
+		sbic	_PS2_HOST_KEYBOARD_PORT_INPUT,_PS2_HOST_KEYBOARD_BIT_DATA
+		sec								;else bit=1
+		ret
+	_PS2_HOST_GET_DATA_BIT_10:
+		clc								;assume bit=0
+		sbic	_PS2_HOST_MOUSE_PORT_INPUT,_PS2_HOST_MOUSE_BIT_DATA
+		sec								;else bit=1
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_KEYBOARD_DEVICE_TO_HOST_PROCESS	|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data from PS2 DEVICE KEYBOARD		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Received data is stored in circular queue	|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	~10us at 11Mhz					|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|						
+	;/ KEYBOARD TRANSMITION EVENTS NUMBERS
+	;|
+	;| EVENT NUMBER -    	             1		         2
+	;| 		   1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3	
+	;| KEYBOARD CLOCK  --+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-----------------
+	;|		     | | | | | | | | | | | | | | | | | | | | | |		
+	;|		     +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ 	
+	;|		     TL    TH
+	;|										
+	;| KEYBOARD DATA ---+---+---+---+---+---+---+---+---+---+---+---+---------------
+	;|		    | 0 | D0| D1| D2| D3| D4| D5| D6| D7| P | 1 |		
+	;|		    +---+---+---+---+---+---+---+---+---+---+---+		
+	;|		    <----------------- TB ---------------------->
+	;|
+	;|	D0..D7  = DATA BITS
+	;|	P	= PARITY BIT
+	;|	TREQ	= Resquest data transmission from HOST to DEVICE time 80us..10000us
+	;|	TB	= Byte transmission time ~880us
+	;|	TH	= Clock High time ~40us
+	;|	TL	= Clock Low time ~40us
+	;|
+	;| EVENT NUMBER	     	DESCRIPTION
+	;| ------------		-----------------------------------
+	;|								
+	;|	1		PS2 Device check line, if in Idle start then start transmision else exit
+	;|	2		PS2 Device clock=lo, data=start bit(low)
+	;|	3		PS2 Device clock=hi,check line for host request then exit if so
+	;|	4		PS2 Device clock=lo, data=DO
+	;|	5		PS2 Device clock=hi,check line for host request then exit if so
+	;|	6		PS2 Device clock=lo, data=D1
+	;|	7		PS2 Device clock=hi,check line for host request then exit if so
+	;|	8		PS2 Device clock=lo, data=D2
+	;|	9		PS2 Device clock=hi,check line for host request then exit if so
+	;|	10		PS2 Device clock=lo, data=D3
+	;|	11		PS2 Device clock=hi,check line for host request then exit if so
+	;|	12		PS2 Device clock=lo, data=D4
+	;|	13		PS2 Device clock=hi,check line for host request then exit if so
+	;|	14		PS2 Device clock=lo, data=D5
+	;|	15		PS2 Device clock=hi,check line for host request then exit if so
+	;|	16		PS2 Device clock=lo, data=D6
+	;|	17		PS2 Device clock=hi,check line for host request then exit if so
+	;|	18		PS2 Device clock=lo, data=D7
+	;|	19		PS2 Device clock=hi,check line for host request then exit if so
+	;|	20		PS2 Device clock=lo, data=Parity
+	;|	21		PS2 Device clock=hi,check line for host request then exit if so
+	;|	22		PS2 Device clock=lo, data=stop bit(high)
+	;|	23		PS2 Device clock=hi
+	;\---------------------------------------------------------------------------------------/
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS:
+		push	r0								;used by queue
+		push	r1
+		push	Acc								;save Acc
+		in	Acc,SREG							;save SREG
+		pushaw
+		pushawt
+		pushw	Z
+		ldiw	Z,_PS2_HOST_KEYBOARD_REC					;Z-->KEYBOARD RECORD
+		;//////////////////////////////////
+		;// PROCESS ENTRY
+		;/////////////////////////////////
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_ENTRY:
+		ldi	Acc,0
+		std	Z+_PS2_HOST_OFFSET_BREAK_TIME,Acc				;break.time<-0
+
+		ldd	AccT,Z+_PS2_HOST_OFFSET_DATA_FLAGS				;AccT<-FLAGS
+		_M_TIMER_CHECK_OVERFLOW							;check if overflow
+		brcc	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_10			;no, branch
+		;//////////////////////////////////////////////
+		;// if timeout assume new start bit
+		;// reception and clear reception event
+		;//////////////////////////////////////////////
+		_M_TIMER_CLEAR_OVERFLOW							;TIMER.OVERFLOW<-0
+		_M_TIMER_CLEAR								;TIMER.COUNT<-0
+		_M_TIMER_STOP								;TIMER<-STOP
+		ldi	Acc,0
+		std	Z+_PS2_HOST_OFFSET_DATA_EVENT,Acc				;EVENT<-0
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_10:
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_EVENT				;get EVENT
+		cpi	Acc,0								;EVENT=0?(START BIT)
+		brne	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_20			;no, branch
+		;//////////////////////////////////////////////
+		;// EVENT=0 (START BIT)
+		;//////////////////////////////////////////////
+		_M_TIMER_START								;TIMER<-START
+		ldi	Acc,0
+		std	Z+_PS2_HOST_OFFSET_DATA_EVENT,Acc				;EVENT<-0
+		std	Z+_PS2_HOST_OFFSET_DATA_IN,Acc					;DATA<-0
+		std	Z+_PS2_HOST_OFFSET_DATA_PARITY,Acc				;DATA.PARITY<-0
+		ldi	Acc,1
+		std	Z+_PS2_HOST_OFFSET_DATA_MASK,Acc				;DATA.MASK<-1
+		ori	AccT,(1<<_PS2_HOST_FLAG_RECEIVING_BIT)				;RECEIVING<-1
+		andi	AccT,(1<<_PS2_HOST_FLAG_CMD_BIT)|(1<<_PS2_HOST_FLAG_DEVICE_BIT)|(1<<_PS2_HOST_FLAG_RECEIVING_BIT)|(1<<_PS2_HOST_FLAG_RECEIVED_BIT)	;clear error flags
+		rcall	_PS2_HOST_GET_DATA_BIT						;get data
+		brcc	PC+2								;branch START BIT = 0
+		ori	AccT,(1<<_PS2_HOST_FLAG_ERROR_START_BIT)			;else set START BIT ERROR
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT_INC		;inc EVENT
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_20:
+		cpi	Acc,8+1								;EVENT=1..8
+		brsh	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_40			;no, branch
+		;//////////////////////////////////////////////
+		;// EVENT=1..8 DATA BITS
+		;//////////////////////////////////////////////
+		rcall	_PS2_HOST_GET_DATA_BIT						;get data
+		brcc	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_30			;branch if BIT=0
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_IN					;DATA|=MASK
+		ldd	AccH,Z+_PS2_HOST_OFFSET_DATA_MASK
+		or	Acc,AccH
+		std	Z+_PS2_HOST_OFFSET_DATA_IN,Acc
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_PARITY				;PARITY++
+		inc	Acc
+		std	Z+_PS2_HOST_OFFSET_DATA_PARITY,Acc
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_30:
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_MASK				;MASK<<1
+		lsl	Acc					
+		std	Z+_PS2_HOST_OFFSET_DATA_MASK,Acc
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT_INC		;inc EVENT
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_40:
+		cpi	Acc,9								;EVENT=9
+		brne	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_60			;no, branch
+		;//////////////////////////////////////////////
+		;// EVENT=9 PARITY
+		;//////////////////////////////////////////////
+		lds	Acc,_PS2_HOST_KEYBOARD_DATA_PARITY				;PARITY & 1 ^ bit
+		andi	Acc,1
+		ldi	AccH,1								;assume bit=1
+		rcall	_PS2_HOST_GET_DATA_BIT						;get data
+		brcs	PC+2
+		ldi	AccH,0								;else bit=0
+		eor	Acc,AccH
+		cpi	Acc,0								;result = 0?
+		brne	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_50			;no, branch
+		ori	AccT,(1<<_PS2_HOST_FLAG_ERROR_PARITY_BIT)
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_50:
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT_INC		;inc EVENT
+		;//////////////////////////////////////////////
+		;// EVENT=10 STOP BIT AND DATA STORAGE
+		;//////////////////////////////////////////////
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_60:
+		rcall	_PS2_HOST_GET_DATA_BIT						;get data
+		brcs	PC+2								;branch if BIT=1
+		ori	AccT,(1<<_PS2_HOST_FLAG_ERROR_STOP_BIT)
+		andi	AccT,~(1<<_PS2_HOST_FLAG_RECEIVING_BIT)				;RECEIVING<-0
+		_M_TIMER_CLEAR								;TIMER.COUNT<-0
+		_M_TIMER_STOP								;TIMER<-STOP
+		ldi	Acc,0								;EVENT=0
+		std	Z+_PS2_HOST_OFFSET_DATA_EVENT,Acc
+		mov	Acc,AccT							;get flags
+		andi	Acc,(1<<_PS2_HOST_FLAG_ERROR_START_BIT)|(1<<_PS2_HOST_FLAG_ERROR_PARITY_BIT)|(1<<_PS2_HOST_FLAG_ERROR_STOP_BIT)
+		brne	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_80			;yes, branch
+		ori	AccT,(1<<_PS2_HOST_FLAG_RECEIVED_BIT)				;set data received flag
+		sbrc	AccT,_PS2_HOST_FLAG_CMD_BIT					;skip if data ?
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT			;else exit if command
+		;//////////////////////////////////////////////
+		;// clear BREAK.TIME and increment BREAK.COUNT
+		;//////////////////////////////////////////////
+		ldi	Acc,0
+		std	Z+_PS2_HOST_OFFSET_BREAK_TIME,Acc				;break.time<-0
+		ldd	Acc,Z+_PS2_HOST_OFFSET_BREAK_COUNT				;break.count++
+		inc	Acc
+		std	Z+_PS2_HOST_OFFSET_BREAK_COUNT,Acc
+		;//////////////////////////////////////////////
+		;// SAVE DATA IN QUEUE
+		;//////////////////////////////////////////////
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_IN
+		pushw	Z
+		addiw	Z,_PS2_HOST_OFFSET_DATA_QUEUE					;put into KEYBOARD or MOUSE queue
+		rcall	_CQUEUE8_PUT_DATA
+		popw	Z
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT			;exit
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_70:
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT			;exit
+		;//////////////////////////////////////////////
+		;// IF ERROR ISSUE RESEND COMMAND
+		;//////////////////////////////////////////////
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_80:
+		ori	AccT,(1<<_PS2_HOST_FLAG_RESEND_BIT)				;RESEND<-1
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT			;exit
+		;//////////////////////////////////////////////
+		;// EVENT=10 STOP BIT AND DATA STORAGE
+		;//////////////////////////////////////////////
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT_INC:
+		_M_TIMER_CLEAR								;TIMER.COUNT<-0
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_EVENT				;EVENT++
+		inc	Acc
+		std	Z+_PS2_HOST_OFFSET_DATA_EVENT,Acc
+	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_EXIT:	
+		std	Z+_PS2_HOST_OFFSET_DATA_FLAGS,AccT				;update flags
+		popw	Z
+		popawt
+		popaw									;restore SREG
+		out	SREG,Acc
+		pop	Acc								;restore Acc
+		pop	r1
+		pop	r0
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_DEVICE_TO_HOST_PROCESS		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data from PS2 DEVICE MOUSE			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Received data is stored in circular queue	|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	10us at 11Mhz					|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	---						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|						
+	;/ KEYBOARD TRANSMITION EVENTS NUMBERS
+	;|
+	;| EVENT NUMBER -    	             1		         2
+	;| 		   1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3	
+	;| KEYBOARD CLOCK  --+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-----------------
+	;|		     | | | | | | | | | | | | | | | | | | | | | |		
+	;|		     +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ 	
+	;|		     TL    TH
+	;|										
+	;| KEYBOARD DATA ---+---+---+---+---+---+---+---+---+---+---+---+---------------
+	;|		    | 0 | D0| D1| D2| D3| D4| D5| D6| D7| P | 1 |		
+	;|		    +---+---+---+---+---+---+---+---+---+---+---+		
+	;|		    <----------------- TB ---------------------->
+	;|
+	;|	D0..D7  = DATA BITS
+	;|	P	= PARITY BIT
+	;|	TREQ	= Resquest data transmission from HOST to DEVICE time 80us..10000us
+	;|	TB	= Byte transmission time ~880us
+	;|	TH	= Clock High time ~40us
+	;|	TL	= Clock Low time ~40us
+	;|
+	;| EVENT NUMBER	     	DESCRIPTION
+	;| ------------		-----------------------------------
+	;|								
+	;|	1		PS2 Device check line, if in Idle start then start transmision else exit
+	;|	2		PS2 Device clock=lo, data=start bit(low)
+	;|	3		PS2 Device clock=hi,check line for host request then exit if so
+	;|	4		PS2 Device clock=lo, data=DO
+	;|	5		PS2 Device clock=hi,check line for host request then exit if so
+	;|	6		PS2 Device clock=lo, data=D1
+	;|	7		PS2 Device clock=hi,check line for host request then exit if so
+	;|	8		PS2 Device clock=lo, data=D2
+	;|	9		PS2 Device clock=hi,check line for host request then exit if so
+	;|	10		PS2 Device clock=lo, data=D3
+	;|	11		PS2 Device clock=hi,check line for host request then exit if so
+	;|	12		PS2 Device clock=lo, data=D4
+	;|	13		PS2 Device clock=hi,check line for host request then exit if so
+	;|	14		PS2 Device clock=lo, data=D5
+	;|	15		PS2 Device clock=hi,check line for host request then exit if so
+	;|	16		PS2 Device clock=lo, data=D6
+	;|	17		PS2 Device clock=hi,check line for host request then exit if so
+	;|	18		PS2 Device clock=lo, data=D7
+	;|	19		PS2 Device clock=hi,check line for host request then exit if so
+	;|	20		PS2 Device clock=lo, data=Parity
+	;|	21		PS2 Device clock=hi,check line for host request then exit if so
+	;|	22		PS2 Device clock=lo, data=stop bit(high)
+	;|	23		PS2 Device clock=hi
+	;\---------------------------------------------------------------------------------------/
+	_PS2_HOST_DEVICE_MOUSE_TO_HOST_PROCESS:
+		push	r0								;used by queue
+		push	r1
+		push	Acc								;save Acc
+		in	Acc,SREG							;save SREG
+		pushaw
+		pushawt
+		pushw	Z
+		ldiw	Z,_PS2_HOST_MOUSE_REC						;Z-->MOUSE RECORD
+		rjmp	_PS2_HOST_DEVICE_KEYBOARD_TO_HOST_PROCESS_ENTRY			;jump to entry point
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_KEYBOARD_GET_QUEUE_DATA		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data from KEYBOARD QUEUE			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Acc	Data					|
+	;|		Cy=1	if empyt				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_KEYBOARD_GET_QUEUE_DATA:
+		pushw	Z
+		ldiw	Z,_PS2_HOST_KEYBOARD_QUEUE					;get data from KEYBOARD QUEUE
+		rcall	_CQUEUE8_GET_DATA
+		popw	Z
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_KEYBOARD_GET_QUEUE_BREAK_DATA		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data from KEYBOARD BREAK QUEUE		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Acc	Data					|
+	;|		Cy=1	if empyt				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_KEYBOARD_GET_QUEUE_BREAK_DATA:
+		pushw	Z
+		ldiw	Z,_PS2_HOST_KEYBOARD_BREAK_QUEUE				;get data from KEYBOARD BREAK QUEUE
+		rcall	_CQUEUE8_GET_DATA
+		popw	Z
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_GET_QUEUE_DATA			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data from MOUSE QUEUE			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Acc	Data					|
+	;|		Cy=1	if empyt				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_MOUSE_GET_QUEUE_DATA:
+		pushw	Z
+		ldiw	Z,_PS2_HOST_MOUSE_QUEUE						;get data from MOUSE QUEUE
+		rcall	_CQUEUE8_GET_DATA
+		popw	Z
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_MOUSE_GET_QUEUE_BREAK_DATA		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data from MOUSE BREAK QUEUE			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Acc	Data					|
+	;|		Cy=1	if empyt				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_MOUSE_GET_QUEUE_BREAK_DATA:
+		pushw	Z
+		ldiw	Z,_PS2_HOST_MOUSE_BREAK_QUEUE					;get data from MOUSE BREAK QUEUE
+		rcall	_CQUEUE8_GET_DATA
+		popw	Z
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_SET_LINE_STATE				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set of PS2 State				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  State					|
+	;|		AccT Flags					|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Acc,Flags					|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	States may be one as bellow			|
+	;|								|
+	;|		_PS2_HOST_STATE_IDLE				|
+	;|		_PS2_HOST_STATE_INHIBIT				|
+	;|		_PS2_HOST_STATE_HOST_REQUEST			|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_SET_LINE_STATE:
+		cpi	Acc,_PS2_HOST_STATE_IDLE				;IDLE STATE?
+		brne	_PS2_HOST_SET_LINE_STATE_10				;no, branch
+		;///////////////////////////////////////////
+		;// SET PS2 LINE IDLE STATE
+		;///////////////////////////////////////////
+		in	Acc,_PS2_HOST_KEYBOARD_PORT_DIR				;get KEYBOARD STATE
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if KEYBOARD
+		in	Acc,_PS2_HOST_MOUSE_PORT_DIR				;else get MOUSE STATE
+		sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if MOUSE	
+		andi	Acc,~((1<<_PS2_HOST_KEYBOARD_BIT_DATA)|(1<<_PS2_HOST_KEYBOARD_BIT_CLOCK))	;KEYBOARD CLOCK=DATA=HIGH
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if KEYBOARD	
+		andi	Acc,~((1<<_PS2_HOST_MOUSE_BIT_DATA)|(1<<_PS2_HOST_MOUSE_BIT_CLOCK))		;MOUSE CLOCK=DATA=HIGH
+		sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if MOUSE	
+		out	_PS2_HOST_KEYBOARD_PORT_DIR,Acc				;send data back to KEYBOARD LINE
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if KEYBOARD
+		out	_PS2_HOST_MOUSE_PORT_DIR,Acc				;send data back to MOUSE LINE
+		ret
+	_PS2_HOST_SET_LINE_STATE_10:
+		cpi	Acc,_PS2_HOST_STATE_INHIBIT				;INHIBIT STATE?
+		brne	_PS2_HOST_SET_LINE_STATE_30				;no,branch
+		;///////////////////////////////////////////
+		;// SET PS2 LINE INHIBIT STATE
+		;///////////////////////////////////////////
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if KEYBOARD
+		rjmp	_PS2_HOST_SET_LINE_STATE_20
+		in	Acc,_PS2_HOST_KEYBOARD_PORT_DIR				;get KEYBOARD STATE
+		andi	Acc,~(1<<_PS2_HOST_KEYBOARD_BIT_DATA)			;KEYBOARD CLOCK=LOW DATA=HIGH
+		ori	Acc,(1<<_PS2_HOST_KEYBOARD_BIT_CLOCK)
+		out	_PS2_HOST_KEYBOARD_PORT_DIR,Acc
+		ret
+	_PS2_HOST_SET_LINE_STATE_20:
+		in	Acc,_PS2_HOST_MOUSE_PORT_DIR				;get MOUSE STATE
+		andi	Acc,~(1<<_PS2_HOST_MOUSE_BIT_DATA)			;MOUSE CLOCK=LOW DATA=HIGH
+		ori	Acc,(1<<_PS2_HOST_MOUSE_BIT_CLOCK)
+		out	_PS2_HOST_MOUSE_PORT_DIR,Acc
+		ret
+	_PS2_HOST_SET_LINE_STATE_30:
+		cpi	Acc,_PS2_HOST_STATE_HOST_REQUEST			;REQUEST STATE?
+		brne	_PS2_HOST_SET_LINE_STATE_50				;no, exit doing nothing
+		;///////////////////////////////////////////
+		;// SET PS2 LINE REQUEST STATE
+		;///////////////////////////////////////////
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if KEYBOARD
+		rjmp	_PS2_HOST_SET_LINE_STATE_40
+		in	Acc,_PS2_HOST_KEYBOARD_PORT_DIR				;get KEYBOARD STATE
+		andi	Acc,~(1<<_PS2_HOST_KEYBOARD_BIT_CLOCK)			;KEYBOARD CLOCK=HIGH DATA=LOW
+		ori	Acc,(1<<_PS2_HOST_KEYBOARD_BIT_DATA)
+		out	_PS2_HOST_KEYBOARD_PORT_DIR,Acc
+		ret
+	_PS2_HOST_SET_LINE_STATE_40:
+		in	Acc,_PS2_HOST_MOUSE_PORT_DIR				;get MOUSE STATE
+		andi	Acc,~(1<<_PS2_HOST_MOUSE_BIT_CLOCK)			;MOUSE CLOCK=HIGH DATA=LOW
+		ori	Acc,(1<<_PS2_HOST_MOUSE_BIT_DATA)
+		out	_PS2_HOST_MOUSE_PORT_DIR,Acc
+	_PS2_HOST_SET_LINE_STATE_50:
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_SET_DATA				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set PS2 data state				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	cy=1 data=high else data=low			|
+	;|		AccT Flags					|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Acc,Flags					|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_SET_DATA_BIT:
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if KEYBOARD
+		rjmp	_PS2_HOST_SET_DATA_BIT_20
+		;/////////////////////////////////////
+		;// SET KEYBOARD DATA 
+		;/////////////////////////////////////
+		brcc	_PS2_HOST_SET_DATA_BIT_10				;branch if cy=0
+		cbi	_PS2_HOST_KEYBOARD_PORT_DIR,_PS2_HOST_KEYBOARD_BIT_DATA
+		ret
+	_PS2_HOST_SET_DATA_BIT_10:
+		sbi	_PS2_HOST_KEYBOARD_PORT_DIR,_PS2_HOST_KEYBOARD_BIT_DATA
+		ret
+		;/////////////////////////////////////
+		;// SET MOUSE DATA 
+		;/////////////////////////////////////
+	_PS2_HOST_SET_DATA_BIT_20:	
+		brcc	_PS2_HOST_SET_DATA_BIT_30				;branch if cy=0
+		cbi	_PS2_HOST_MOUSE_PORT_DIR,_PS2_HOST_MOUSE_BIT_DATA
+		ret
+	_PS2_HOST_SET_DATA_BIT_30:
+		sbi	_PS2_HOST_MOUSE_PORT_DIR,_PS2_HOST_MOUSE_BIT_DATA
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_DATA_HOLD_TIME				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: PS2 data hold time after clock transictions	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------
+	;| Make a 15us Delay ~(1/4 PS2 line period)
+	;| time equation: (9+Acc*3+3(rcall))*----------- 
+	;|				      AVR_CLOCK  
+	_PS2_HOST_DATA_HOLD_TIME:
+		push	Acc
+		ldi	Acc,((15*_AVR_CLOCK)/1000000-11)/3
+		dec	Acc
+		brne	PC-1
+		pop	Acc
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_WAIT_CLOCK_HTOL			|
+	;|								|
+	;|		CLOCK ---+					|
+	;|		         |					|
+	;|		         v----					|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Wait PS2 line clock transiction high to low	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	cy=1 if timeout					|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Main loop equation time as follow:		|
+	;|								|
+	;|	T.Count=((Timeout*(_AVR_CLOCK/1000))/14000)*1000	|
+	;|								|
+	;|	Timeout=Timeout in milliseconds				|
+	;|	T.Count=Number of counts to obtain max timeout		|
+	;|								|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_PS2_HOST_WAIT_CLOCK_HTOL:
+		pushTempW
+		push	AccT							;save FLAGS
+		;////////////////////////////////////////////
+		;// GET FIRST CLOCK STATE
+		;////////////////////////////////////////////
+		ldi	Temp,low(_PS2_TIMEOUT_HL_COUNT)				;set timeout count
+		ldi	TempH,high(_PS2_TIMEOUT_HL_COUNT)
+		ldi	AccTH,byte3(_PS2_TIMEOUT_HL_COUNT)
+		in	AccH,_PS2_HOST_KEYBOARD_PORT_INPUT			;get KEYBOARD STATE
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if DEVICE=KEYBOARD
+		in	AccH,_PS2_HOST_MOUSE_PORT_INPUT				;get MOUSE STATE
+		sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if DEVICE=MOUSE
+		andi	AccH,(1<<_PS2_HOST_KEYBOARD_BIT_CLOCK)			;mask KEYBOARD CLOCK line
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if DEVICE=KEYBOARD
+		andi	AccH,(1<<_PS2_HOST_MOUSE_BIT_CLOCK)			;mask MOUSE CLOCK line
+		;////////////////////////////////////////////
+		;// WAIT PS2 CLOCK LINE TRANSICTION
+		;////////////////////////////////////////////
+	_PS2_HOST_WAIT_CLOCK_HTOL_10:
+		subi	Temp,1
+		sbci	TempH,0
+		sbci	AccTH,0
+		breq	_PS2_HOST_WAIT_CLOCK_HTOL_30				;exit with timeout
+		in	Acc,_PS2_HOST_KEYBOARD_PORT_INPUT			;get KEYBOARD STATE
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if DEVICE=KEYBOARD
+		in	Acc,_PS2_HOST_MOUSE_PORT_INPUT				;get MOUSE STATE
+		sbrs	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if DEVICE=MOUSE
+		andi	Acc,(1<<_PS2_HOST_KEYBOARD_BIT_CLOCK)			;mask KEYBOARD CLOCK line
+		sbrc	AccT,_PS2_HOST_FLAG_DEVICE_BIT				;skip if DEVICE=KEYBOARD
+		andi	Acc,(1<<_PS2_HOST_MOUSE_BIT_CLOCK)			;mask MOUSE CLOCK line
+		cp	Acc,AccH						;any transiction ?
+		breq	_PS2_HOST_WAIT_CLOCK_HTOL_10				;no, wait
+		mov	AccH,Acc						;update last state
+		cpi	Acc,0							;high to low?
+		brne	_PS2_HOST_WAIT_CLOCK_HTOL_10				;no, wait
+		rcall	_PS2_HOST_DATA_HOLD_TIME				;data hold time
+		clc								;set not overlow
+	_PS2_HOST_WAIT_CLOCK_HTOL_20:
+		pop	AccT							;restore FLAGS
+		popTempW
+		ret
+	_PS2_HOST_WAIT_CLOCK_HTOL_30:
+		sec
+		rjmp	_PS2_HOST_WAIT_CLOCK_HTOL_20
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_SET_CMD_FLAG				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set cmd flag state				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  ON/OFF					|
+	;|		Z--> DEVICE RECORD				|
+	;| OUTPUT     :	Acc  new Flags state				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_SET_CMD_FLAG:
+		pushaw
+		in	AccH,SREG						;save SREG state
+		cli								;disable interrupts
+		push	AccH
+		ldd	AccH,Z+_PS2_HOST_OFFSET_DATA_FLAGS			;get flags
+		andi	Acc,(1<<_PS2_HOST_FLAG_CMD_BIT)
+		andi	AccH,~(1<<_PS2_HOST_FLAG_CMD_BIT)
+		or	Acc,AccH
+	_PS2_HOST_SET_CMD_FLAG_10:
+		std	Z+_PS2_HOST_OFFSET_DATA_FLAGS,Acc
+		pop	AccH
+		out	SREG,AccH						;restore SREG
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_SET_RECEIVED_FLAG			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set received flag state				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  ON/OFF					|
+	;|		Z--> DEVICE RECORD				|
+	;| OUTPUT     :	Acc  new Flags state				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_SET_RECEIVED_FLAG:
+		pushaw
+		in	AccH,SREG						;save SREG state
+		cli								;disable interrupts
+		push	AccH
+		ldd	AccH,Z+_PS2_HOST_OFFSET_DATA_FLAGS			;get flags
+		andi	Acc,(1<<_PS2_HOST_FLAG_RECEIVED_BIT)
+		andi	AccH,~(1<<_PS2_HOST_FLAG_RECEIVED_BIT)
+		or	Acc,AccH
+		rjmp	_PS2_HOST_SET_CMD_FLAG_10
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_SET_RECEIVING_FLAG			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Set received flag state				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  ON/OFF					|
+	;|		Z--> DEVICE RECORD				|
+	;| OUTPUT     :	Acc  new Flags state				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:							|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_SET_RECEIVING_FLAG:
+		pushaw
+		in	AccH,SREG						;save SREG state
+		cli								;disable interrupts
+		push	AccH
+		ldd	AccH,Z+_PS2_HOST_OFFSET_DATA_FLAGS			;get flags
+		andi	Acc,(1<<_PS2_HOST_FLAG_RECEIVING_BIT)
+		andi	AccH,~(1<<_PS2_HOST_FLAG_RECEIVING_BIT)
+		or	Acc,AccH
+		rjmp	_PS2_HOST_SET_CMD_FLAG_10
+
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_HOST_TO_DEVICE				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Send Data from HOST to PS2 DEVICE		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  Data to be sent to PS2 DEVICE		|
+	;|		Z--> DEVICE RECORD				|
+	;| OUTPUT     :	cy=1 overflow o ps2 device no answer ack	|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	This function put data reception in command	|
+	;|		reception mode, Global interrupt must be enabled|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;/ PS2 HOST TO PS2 DEVICE EVENTS NUMBERS
+	;|					
+	;| EVENT NUMBER  - 			         1 		     2
+	;| 		    1      2       3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 
+	;|      PS2 CLOCK --+      +-------+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +---------------------
+	;|		    |      |   ^   | | | | | | | | | | | | | | | | | | | | | |
+	;|		    +------+   |   +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ 		
+	;|		    <- TI ->   |								
+	;| 		               +- RECEIVE CONDITION
+	;|			       |					      	
+	;|      PS2 DATA  ---------+   |    +---+---+---+---+---+---+---+---+---+---+---+-------------------	
+	;|		           |   v    |D0 | D1| D2| D3| D4| D5| D6| D7| P | 1 |ACK|
+	;|		           +--------+---+---+---+---+---+---+---+---+---+---+---+
+	;|			   <- TREQ ->			
+	;|				    <----------------- TB ---------------------->
+	;|
+	;|	D0..D7  = DATA BITS
+	;|	P	= PARITY BIT
+	;|	ACK	= LOW LEVEL, DEVICE PS2 SIGNALING TO HOST ACKNOWLEDGE
+	;|	TI 	= Inhibit Transmission from PS2 DEVICE to HOST time ~100us
+	;|	TREQ	= Resquest data transmission from HOST to DEVICE time 80us..10000us
+	;|	TB	= Byte transmission time ~880us
+	;|	TH	= Clock High time ~40us
+	;|	TL	= Clock Low time ~40us
+	;|
+	;| EVENT NUMBER	     	DESCRIPTION
+	;| ------------		-----------------------------------
+	;|								
+	;|	1		Host put clock low to disable any transmission in course
+	;|	2		Host Release clock to high level and put data low for Host request state
+	;|			PS2 Device check this line state no with more 10ms time sample
+	;|	3		PS2 Device answer Host request put clock in low and put D0 state in data line
+	;|	4		PS2 Device put line in High
+	;|	5		PS2 Device put D1 in data line,clock low
+	;|	6		PS2 Device put line in High
+	;|	7		PS2 Device put D2 in data line,clock low
+	;|	8		PS2 Device put line in High
+	;|	9		PS2 Device put D3 in data line,clock low
+	;|	10		PS2 Device put line in High
+	;|	11		PS2 Device put D4 in data line,clock low
+	;|	12		PS2 Device put line in High
+	;|	13		PS2 Device put D5 in data line,clock low
+	;|	14		PS2 Device put line in High
+	;|	15		PS2 Device put D6 in data line,clock low
+	;|	16		PS2 Device put line in High
+	;|	17		PS2 Device put D7 in data line,clock low
+	;|	18		PS2 Device clock high
+	;|	19		PS2 Device put Parity in data line,clock low
+	;|	20		PS2 Device clock high
+	;|	21		PS2 Device put 1(stop bit) in data line,clock low
+	;|	22		PS2 Device clock high
+	;|	23		PS2 Device put low in data line if command received ok,clock low
+	;|	24		PS2 Device clock high
+	;|	25		PS2 Device data high
+	;\---------------------------------------------------------------------------------------/
+	_PS2_HOST_HOST_TO_DEVICE:
+		pushaw
+		pushawt
+		sei
+		;//////////////////////////////////
+		;// PROCESS ENTRY
+		;/////////////////////////////////
+		std	Z+_PS2_HOST_OFFSET_DATA_OUT,Acc					;save Data to send out
+	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_ENTRY:
+		ldd	AccT,Z+_PS2_HOST_OFFSET_DATA_FLAGS				;AccT<-FLAGS
+		sbrc	AccT,_PS2_HOST_FLAG_RECEIVING_BIT				;skip if not receiving
+		rjmp	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_ENTRY				;else wait exit of this state
+		;//////////////////////////////////
+		;// CLEAR INTERRUPTS,COUNT,EVENT
+		;/////////////////////////////////
+		_M_DISABLE_CLOCK_INTERRUPT						;disable PS2 clock interrupt
+		_M_TIMER_CLEAR_OVERFLOW							;TIMER.OVERFLOW<-0
+		_M_TIMER_CLEAR								;TIMER.COUNT<-0
+		_M_TIMER_STOP								;TIMER<-STOP
+		ldi	Acc,0
+		std	Z+_PS2_HOST_OFFSET_DATA_EVENT,Acc				;EVENT<-0
+		ldi	Acc,_OFF
+		rcall	_PS2_HOST_SET_RECEIVED_FLAG					;received flag off
+		ldi	Acc,_OFF
+		rcall	_PS2_HOST_SET_RECEIVING_FLAG					;receiving flag off
+		;//////////////////////////////////
+		;// PS2 LINE<-INHIBIT STATE (300uS)
+		;/////////////////////////////////
+		ldi	Acc,_PS2_HOST_STATE_INHIBIT					;PS2 LINE<-INHIBIT
+		rcall	_PS2_HOST_SET_LINE_STATE
+		_M_DELAY_MICROSECONDS	300						;wait 300Us
+		ldi	Acc,_ON								;COMMAND<-ON
+		rcall	_PS2_HOST_SET_CMD_FLAG
+		;//////////////////////////////////
+		;// PS2 LINE<-REQUEST STATE
+		;/////////////////////////////////
+		ldi	Acc,_PS2_HOST_STATE_HOST_REQUEST				;PS2 LINE<-HOST REQUEST
+		rcall	_PS2_HOST_SET_LINE_STATE
+		;//////////////////////////////////
+		;// SEND D0..D7
+		;//////////////////////////////////
+		ldi	AccH,8								;data bit count
+		ldi	AccTH,0								;parity count
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_OUT					;get data out
+	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_ENTRY_20:
+		pushaw
+		push	AccTH
+		;//////////////////////////////////
+		;// PS2 WAIT CLOCK ---+
+		;//		      |
+		;//		      V----
+		;//////////////////////////////////
+		rcall	_PS2_HOST_WAIT_CLOCK_HTOL
+		pop	AccTH
+		popaw	
+		brcs	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_TIMEOUT			;exit timeout
+		sbrc	Acc,0								;skip if bit 0=0
+		inc	AccTH								;else parity++
+		lsr	Acc								;data>>1
+		rcall	_PS2_HOST_SET_DATA_BIT						;set data
+		dec	AccH								;data.bit.count--
+		brne	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_ENTRY_20
+		;//////////////////////////////////
+		;// SEND PARITY
+		;//////////////////////////////////
+		push	AccTH
+		rcall	_PS2_HOST_WAIT_CLOCK_HTOL
+		pop	AccTH
+		brcs	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_TIMEOUT			;exit timeout
+		com	AccTH
+		andi	AccTH,1								;send parity
+		ror	AccTH
+		rcall	_PS2_HOST_SET_DATA_BIT						;set parity
+		;//////////////////////////////////
+		;// SEND STOP BIT
+		;//////////////////////////////////
+		rcall	_PS2_HOST_WAIT_CLOCK_HTOL
+		brcs	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_TIMEOUT			;exit timeout
+		sec
+		rcall	_PS2_HOST_SET_DATA_BIT						;set stop
+
+		;
+		;
+		; IMPLEMENTAR CHECK DO ACK 
+		;
+		;
+		;
+		clc									;set send data ok
+		rjmp	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_EXIT
+		;//////////////////////////////////
+		;// IF DEVICE TIMEOUT, CY=1 AND LINE STATE=IDLE
+		;//////////////////////////////////
+	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_TIMEOUT:
+		ldi	Acc,_PS2_HOST_STATE_IDLE					;PS2 LINE<-IDLE
+		rcall	_PS2_HOST_SET_LINE_STATE
+		sec									;set overflow
+	_PS2_HOST_HOST_TO_KEYBOARD_DEVICE_EXIT:
+		_M_ENABLE_CLOCK_INTERRUPT						;enable PS2 clock interrupt
+		popawt
+		popaw
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_GET_DEVICE_CMD_DATA			|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get data from PS2 DEVICE from send command	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Z-->  DEVICE RECORD				|
+	;| OUTPUT     :	Acc   data					|
+	;|		cy=1  if timeout of data not received correcty	|
+	;|		      after max resend tries			|	
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_GET_DEVICE_CMD_DATA:
+		push	Temp
+		pushawt									;save useds
+		;////////////////////////////////////////////
+		;// wait data reception and pump timeout count
+		;////////////////////////////////////////////
+		sei
+		;ldiawt	0								;max timeout for 11Mhz ~47ms
+		ldi	AccT,low(_PS2_TIMEOUT_HL_COUNT)				;set timeout count
+		ldi	AccTH,high(_PS2_TIMEOUT_HL_COUNT)
+		ldi	Temp,byte3(_PS2_TIMEOUT_HL_COUNT)
+	_PS2_HOST_GET_DEVICE_CMD_DATA_10:
+		subi	AccT,1
+		sbci	AccTH,0
+		sbci	Temp,0
+		breq	_PS2_HOST_GET_DEVICE_CMD_DATA_ERROR				;timeout? exit
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_FLAGS				;get flags
+		sbrs	Acc,_PS2_HOST_FLAG_RECEIVED_BIT					;skip if data in buffer
+		rjmp	_PS2_HOST_GET_DEVICE_CMD_DATA_10				;else wait
+		;////////////////////////////////////////////
+		;// clear RECEIVED flag and get data
+		;////////////////////////////////////////////
+		ldi	Acc,_OFF
+		rcall	_PS2_HOST_SET_RECEIVED_FLAG					;received flag off
+		ldd	Acc,Z+_PS2_HOST_OFFSET_DATA_IN					;get data in
+		clc
+	_PS2_HOST_GET_DEVICE_CMD_DATA_20:
+		popawt
+		pop	Temp
+		ret
+	_PS2_HOST_GET_DEVICE_CMD_DATA_ERROR:
+		ldi	Acc,_OFF
+		rcall	_PS2_HOST_SET_RECEIVED_FLAG					;received flag off
+		sec									;set error
+		rjmp	_PS2_HOST_GET_DEVICE_CMD_DATA_20
+
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Send command data from HOST to PS2 DEVICE	|
+	;|		KEYBOARD					|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc   command to be sent to PS2 DEVICE		|
+	;|		AccT  command parameter 1			|
+	;|		AccTH command parameter 2			|
+	;| OUTPUT     :	cy=1 overflow o ps2 device no answer ack	|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;| 14/08/2007 19:13 Analizar com cuidado na questão do que fazer se na espera de ACK
+	;| 		    o mesmo não for recebido.???
+	;|			- envia RESEND ? se sim por quantas vezes se o problema persistir
+
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD:
+		pushaw
+		pushw	Z
+		ldiw	Z,_PS2_HOST_KEYBOARD_REC					;Z-->KEYBOARD RECORD
+
+		cpi	Acc,_PS2_HOST_KEYBOARD_CMDOUT_STATE_IND				;SET STATE INDICADOR ?
+		breq	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_STATE_IND			;yes, branch
+		cpi	Acc,_PS2_HOST_KEYBOARD_CMDOUT_ALT_SCAN				;SET STATE ALTERNATE SCAN ?
+		breq	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ALT_SCAN			;yes, branch
+		cpi	Acc,_PS2_HOST_KEYBOARD_CMDOUT_ENABLE				;KEYBOARD ENABLE?
+		breq	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ENABLE			;yes, branch
+		cpi	Acc,_PS2_HOST_KEYBOARD_CMDOUT_DISABLE				;KEYBOARD DISABLE?
+		breq	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_DISABLE			;yes, branch
+		cpi	Acc,_PS2_HOST_KEYBOARD_CMDOUT_TYPE_RATE_DELAY			;SET TYPE RATE DELAY ?
+		breq	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_TYPE_RATE_DELAY		;yes, branch
+		cpi	Acc,_PS2_HOST_KEYBOARD_CMDOUT_RESET				;SET RESET ?
+		breq	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_RESET			;yes, branch
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT
+
+		;########################################
+		;##  	SET/RESET STATUS INDICATOR	#
+		;########################################---------------------------
+		;|Three status indicators on the keyboard-Num Lock,
+		;|Caps Lock, and Scroll Lock-are accessible by the host.
+		;|The PS2 DEVICE activates or deactivates these indicators
+		;|when it receives a valid command-code sequence
+		;|from the system. The command sequence begins with
+		;|the command byte (hex ED). The PS2 DEVICE responds
+		;|to the command byte with ACK, discontinues scanning,
+		;|assignments for this option byte are as follow:
+		;|
+		;|Bit 	Indicator
+		;|0 	Scroll Lock Indicator
+		;|1 	Num Lock Indicator
+		;|2 	Caps Lock Indicator
+		;|3~7 	Reserved (Must be 0)
+		;|If a bit for an indicator is set to 1, the indicator is turned
+		;|on. If a bit is set to 0, the indicator is turned off.
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_STATE_IND:
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		lbrcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		mov	Acc,AccT							;send parameter
+		sts	_PS2_HOST_KEYBOARD_STATE_INDICATOR,Acc				;save new status indicator
+
+		#ifdef __LEDS_MODE_STATUS_INDICATOR__
+			pushaw
+			mov	AccH,Acc
+			ldi	Acc,_OFF
+			sbrc	AccH,_PS2_HOST_KEYBOARD_FLAG_SCROLL_LOCK_BIT
+			ldi	Acc,_ON
+			rcall	_LED_SET_RED_STATE
+			ldi	Acc,_OFF
+			sbrc	AccH,_PS2_HOST_KEYBOARD_FLAG_NUMLOCK_LOCK_BIT
+			ldi	Acc,_ON
+			rcall	_LED_SET_GREEN_STATE
+			ldi	Acc,_OFF
+			sbrc	AccH,_PS2_HOST_KEYBOARD_FLAG_CAPS_LOCK_BIT
+			ldi	Acc,_ON
+			rcall	_LED_SET_YELLOW_STATE
+			popaw
+		#endif
+
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+		;########################################
+		;##  	    ALTERNATE SCAN		#
+		;########################################---------------------------
+		;|This command instructs the PS2 DEVICE select one of
+		;|the three sets of scan codes. The PS2 DEVICE acknowledges
+		;|receipt of this command with ACK, clears both
+		;|the output buffer and the typematic key. The host then
+		;|sends the option byte and the keyboard responds with
+		;|another ACK. An option byte value of hex 01 selects
+		;|scan code set 1, hex 02 selects set 2.
+		;|An option byte value of hex 00 causes the PS2 DEVICE
+		;|to acknowledge with ACK and sends a byte telling the
+		;|host which scan code set is currently in use.
+		;|After establishing the new scan code set, the
+		;|PS2 DEVICE returns to the scanning state it was in before
+		;|receiving the Select Alternate Scan Codes command
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ALT_SCAN:
+		;
+		; implementar caso quando parametro =0 ou seja ler atual scan state
+		; 18/8/2007
+		; 17:09
+
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		mov	Acc,AccT							;send parameter
+		sts	_PS2_HOST_KEYBOARD_STATE_INDICATOR,Acc				;save new alternative scan
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+		;########################################
+		;##  	    	ENABLE			#
+		;########################################---------------------------
+		;|Upon receipt of this command, the PS2 DEVICE will respond
+		;|with ACK, clears its output buffer, clears the last
+		;|typematic key, and starts scanning.
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ENABLE:
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		ldi	Acc,(1<<_PS2_HOST_KEYBOARD_FLAG_SCAN_STATE_BIT)			;FLAGS.SCAN.STATE<-1
+		rcall	_PS2_HOST_KEYBOARD_SET_FLAGS
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+		;########################################
+		;##  	    	DISABLE			#
+		;########################################---------------------------
+		;|The Default Disable command resets all conditions to
+		;|the power on default states. The PS2 DEVICE will
+		;|respond with ACK, clears its output buffer, sets the default
+		;|typematic rate/delay, and clears the last typematic
+		;|key. The PS2 DEVICE then stops scanning and awaits
+		;|further command.
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_DISABLE:
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		ldi	Acc,(1<<_PS2_HOST_KEYBOARD_FLAG_SCAN_STATE_BIT)			;FLAGS.SCAN.STATE<-0
+		rcall	_PS2_HOST_KEYBOARD_RESET_FLAGS
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+		;########################################
+		;##  	   SET TYPE RATE DELAY		#
+		;########################################
+		;|The host issues the Set Typematic Rate/Delay command
+		;|to change the typematic rate and delay. The
+		;|PS2 DEVICE responds to the command with ACK, stops
+		;|scanning and waits for the system to issue the rate/delay
+		;|value byte. The PS2 DEVICE responds to the value
+		;|byte with another ACK, sets the rate and delay to the
+		;|value indicated, and continues scanning (if it was previously
+		;|enabled). Bits 6 and 5 indicate the delay, and bits
+		;|4, 3, 2, 1 and 0 indicate the rate. Bit7 is always 0.
+		;|
+		;|delay values
+		;|
+		;| bit6 bit5	Time
+		;|  0	 0	250ms
+		;|  0	 1	500ms
+		;|  1	 0	750ms
+		;|  1    1	1000ms
+		;|
+		;|The period (interval from one typematic output to the
+		;|next) is determined by the following equation:
+		;|Period = (8+A)*(2^B)*0.00417 seconds.
+		;|
+		;|Where:
+		;|
+		;|A = binary value of bits 2, 1, and 0.
+		;|B = binary value of bits 4, and 3.
+		;|
+		;|The typematic rate is 1 for each period and are listed as
+		;|follows:
+		;|Bit	Typematic Rate 	Bit	Typematic Rate
+		;|
+		;|00000 	30.0	10000 		7.5
+		;|00001 	26.7 	10001 		6.7
+		;|00010 	24.0 	10010 		6.0
+		;|00011 	21.8	10011 		5.5
+		;|00100 	20.0 	10100 		5.0
+		;|00101 	18.5 	10101 		4.6
+		;|00110 	17.1 	10110 		4.3
+		;|00111 	16.0 	10111 		4.0
+		;|01000 	15.0 	11000 		3.7
+		;|01001 	13.3 	11001 		3.3
+		;|01010 	12.0 	11010 		3.0
+		;|01011 	10.9 	11011 		2.7
+		;|01100 	10.0 	11100 		2.5
+			;|01101 	 9.2 	11101 		2.3
+		;|01110 	 8.0 	11110 		2.1
+		;|01111 	 8.0 	11111 		2.0
+		;|
+		;|The default values for the PS2 DEVICE are as follows:
+		;|Typematic rate= 10.9 characters per second
+		;|Delay = 500ms
+		;|The execution of this command stops without changes
+		;|to the existing rate if another command is received instead
+		;|of the rate/delay value byte.
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_TYPE_RATE_DELAY:
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		mov	Acc,AccT							;send parameter
+		sts	_PS2_HOST_KEYBOARD_TYPE_RATE_DELAY,Acc				;save new alternative scan
+
+		#ifdef __LEDS_MODE_TYPE_RATE_DELAY__
+			pushaw
+			mov	AccH,Acc
+			ldi	Acc,_OFF
+			sbrc	AccH,0
+			ldi	Acc,_ON
+			rcall	_LED_SET_RED_STATE
+			ldi	Acc,_OFF
+			sbrc	AccH,1
+			ldi	Acc,_ON
+			rcall	_LED_SET_GREEN_STATE
+			ldi	Acc,_OFF
+			sbrc	AccH,2		
+			ldi	Acc,_ON
+			rcall	_LED_SET_YELLOW_STATE
+			popaw
+		#endif
+
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+		;########################################
+		;##  	         RESET			#
+		;########################################---------------------------
+		;|PS2 DEVICE wait 500ms for interface test disable 
+		;|CLOCK data DATA lines and answer ACK+BAT COMPLETE after
+		;|delay
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_RESET:
+		#ifdef	__LEDS_MODE_COMM__
+			push	Acc		
+			ldi	Acc,_ON
+			rcall	_LED_SET_RED_STATE
+			rcall	_LED_SET_GREEN_STATE
+			rcall	_LED_SET_YELLOW_STATE
+			pop	Acc
+		#endif
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_KEYBOARD_SET_DEFAULT					;reset to default
+		rcall	_PS2_HOST_KEYBOARD_INIT_QUEUES
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ensurance status test
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		#ifdef	__LEDS_MODE_COMM__
+			push	Acc		
+			ldi	Acc,_OFF
+			rcall	_LED_SET_RED_STATE
+			rcall	_LED_SET_GREEN_STATE
+			rcall	_LED_SET_YELLOW_STATE
+			pop	Acc
+		#endif
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+
+		;//////////////////////////////
+		;// EXIT WITH ERROR CY=1
+		;//////////////////////////////
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR:
+		ldi	Acc,_OFF
+		rcall	_PS2_HOST_SET_CMD_FLAG						;set data reception
+		sec
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT_10
+		;//////////////////////////////
+		;// EXIT WITH NO ERROR CY=0
+		;//////////////////////////////
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT:
+		ldi	Acc,_OFF
+		rcall	_PS2_HOST_SET_CMD_FLAG						;set data reception
+		clc
+	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT_10:
+		popw	Z
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : PS2_HOST					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Send command data from HOST to PS2 DEVICE	|
+	;|		MOUSE						|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc   command to be sent to PS2 DEVICE		|
+	;|		AccT  command parameter 1			|
+	;|		AccTH command parameter 2			|
+	;| OUTPUT     :	cy=1 overflow o ps2 device no answer ack	|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE:
+		pushaw
+		pushw	Z
+		ldiw	Z,_PS2_HOST_MOUSE_REC						;Z-->MOUSE RECORD
+
+		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_RESET
+		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_RESET
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_RESEND
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_RESEND
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_SET_DEFAULT
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_SET_DEFAULT
+		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_ENABLE
+		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_ENABLE
+		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_DISABLE
+		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_DISABLE
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_SET_SAMPLE_RATE
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_SET_SAMPLE_RATE
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_READ_DEVICE_TYPE
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_READ_DEVICE_TYPE
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_SET_REMOTE_MODE
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_SET_REMOTE_MODE
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_SET_WRAP_MODE
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_SET_WRAP_MODE
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_RESET_WRAP_MODE
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_RESET_WRAP_MODE
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_READ_DATA
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_READ_DATA
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_SET_STREAM_MODE
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_SET_STREAM_MODE
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_STATUS_REQUEST
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_STATUS_REQUEST
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_SET_RESOLUTION
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_SET_RESOLUTION
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_SET_SCALING
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_SET_SCALING
+;		cpi	Acc,_PS2_HOST_MOUSE_CMDOUT_RESET_SCALING
+;		lbreq	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_RESET_SCALING
+
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+
+		;########################################
+		;##  	         RESET			#
+		;########################################---------------------------
+		;|This command is used to reset the mouse. After acknowledging receipt of the command,
+		;|the mouse is reset and subsequently performs its power-on Basic Assurance Test (BAT).
+		;|During this test, default values are loaded for the sampling rate, resolution and scaling, and
+		;|data reporting is disabled. Depending on the result of the test, the mouse will either send
+		;|the ‘Passed’ code (AAh) or the ‘Failed’ code (FCh).
+		;|After the result of the power-on test is sent, the mouse sends its ID (ooh). The mouse will
+		;|then enter Stream mode. No movement data packets will be sent however, until the host
+		;|first sends the command to enable data reporting.
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_RESET:
+		#ifdef	__LEDS_MODE_COMM__
+			push	Acc		
+			ldi	Acc,_ON
+			rcall	_LED_SET_RED_STATE
+			rcall	_LED_SET_GREEN_STATE
+			rcall	_LED_SET_YELLOW_STATE
+			pop	Acc
+		#endif
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_MOUSE_SET_DEFAULT					;reset to default
+		rcall	_PS2_HOST_MOUSE_INIT_QUEUES
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ensurance status test
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get mouse id
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		#ifdef	__LEDS_MODE_COMM__
+			push	Acc		
+			ldi	Acc,_OFF
+			rcall	_LED_SET_RED_STATE
+			rcall	_LED_SET_GREEN_STATE
+			rcall	_LED_SET_YELLOW_STATE
+			pop	Acc
+		#endif
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+		;########################################
+		;##  	    	ENABLE			#
+		;########################################---------------------------
+		;|Begin transmission, if in stream mode
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_ENABLE:
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		ldi	Acc,(1<<_PS2_HOST_MOUSE_FLAG_REPORTING_BIT)			;FLAGS.REPORTING<-1
+		rcall	_PS2_HOST_MOUSE_SET_FLAGS
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+		;########################################
+		;##  	    	DISABLE			#
+		;########################################---------------------------
+		;|This command is used in the stream mode to stop transmissions initiated
+		;|from the mouse. It responds to all other commands while disabled.
+		;|If the mouse is in the stream mode, it must be disabled before sending it
+		;|any command that requires a response.
+		;|F4 Enable Begin transmission, if in stream mode
+		;+------------------------------------------------------------------
+	_PS2_HOST_CMD_HOST_TO_DEVICE_MOUSE_DISABLE:
+		rcall	_PS2_HOST_HOST_TO_DEVICE					;send command
+		rcall	_PS2_HOST_GET_DEVICE_CMD_DATA					;get ack
+		brcs	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_ERROR			;exit because a error
+		ldi	Acc,(1<<_PS2_HOST_MOUSE_FLAG_REPORTING_BIT)			;FLAGS.REPORTING<-0
+		rcall	_PS2_HOST_MOUSE_RESET_FLAGS
+		rjmp	_PS2_HOST_CMD_HOST_TO_DEVICE_KEYBOARD_EXIT			;exit
+#endif

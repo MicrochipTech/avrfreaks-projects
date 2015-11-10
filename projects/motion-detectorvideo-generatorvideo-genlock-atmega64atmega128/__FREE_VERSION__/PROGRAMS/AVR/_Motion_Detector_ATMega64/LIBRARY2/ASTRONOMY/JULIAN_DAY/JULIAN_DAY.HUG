@@ -1,0 +1,292 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATE:23/01/2003 VERSION 1.0							|
+;>--------------------------------------------------------------+---------------<
+;| J U L I A N  D A Y  C O M P U T A T I O N 			|
+;| 								|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+#ifndef __ASTRONOMY_JULIAN_DAY__
+	#define __ASTRONOMY_JULIAN_DAY__
+	.message "[ (ASTRONOMY) JULIAN DAY ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	
+	#ifndef __MATH_FLOAT_HEADER__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\HEADER_MACROS\DOUBLE_FLOAT_HEADER.hug"
+	#endif
+	#ifndef __MATH_FLOAT_MACROS__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\HEADER_MACROS\DOUBLE_FLOAT_MACROS.hug"
+	#endif
+	;+----------------------------------------------------------------------+
+	;| MY LOCAL CONSTANTS							|
+	;+----------------------------------------------------------------------+
+	.EQU	_JULIAN_DAY_CONST_JULIAN	= 0X00
+	.EQU	_JULIAN_DAY_CONST_GREGORIAN	= 0X01
+	;+----------------------------------------------------------------------+
+	;| MY LOCAL VARIABLES 							|
+	;+----------------------------------------------------------------------+
+	.DSEG
+		_JULIAN_DAY_YEAR:	.BYTE 	_INTEGER	;date storage
+		_JULIAN_DAY_MONTH:	.BYTE 	_BYTE
+		_JULIAN_DAY_DAY:	.BYTE 	_BYTE
+		_JULIAN_DAY_1720996P5:	.BYTE	_FDOUBLE	;area to store constants used
+		_JULIAN_DAY_30P6001:	.BYTE	_FDOUBLE	
+		_JULIAN_DAY_GREG_FLAG:	.BYTE	_BYTE		;0x00 gregorian calendar 0x01 julian calendar
+		_JULIAN_DAY:		.BYTE	_FDOUBLE	;julian day value
+	.CSEG
+	;+----------------------------------------------------------------------+	
+	;| MY LOCAL CONSTANTS IN FLASH						|
+	;+----------------------------------------------------------------------+
+	_JULIAN_DAY_F1720996P5:	.DB	"1720996.5",0
+	_JULIAN_DAY_F30P6001:	.DB	"30.6001",0
+			
+	;+----------------------------------------------------------------------+	
+	;| JULIAN DAY INITIALIZE (BECAUSE I OPERATE USING OOP METHOD		|
+	;|									|
+	;| Input  : None							|
+	;| Output : None							|
+	;| Destroy: None							|
+	;| Method : Destroy registers r0..r15					|
+	;| 									|
+	;+----------------------------------------------------------------------+
+	_JULIAN_DAY_INIT:
+		push	Acc
+		in	Acc,SREG			;save SREG state 
+		cli					;disable interrupts during initialization
+		push	Acc
+		_FINIT					;float point initialization
+		_FLDS	_JULIAN_DAY_F1720996P5		;load 1720996.5 constant
+		_FSTP	_JULIAN_DAY_1720996P5		;store into sram
+		_FLDS	_JULIAN_DAY_F30P6001		;load 30.6001 constant
+		_FSTP	_JULIAN_DAY_30P6001		;store into sram
+		call 	_JULIAN_DAY_SET_GREGORIAN
+		pop	Acc
+		out	SREG,Acc			;restore SREG state
+		pop	Acc
+		ret					;end
+	;+----------------------------------------------------------------------+
+	;| JULIAN DAY SET DATE							|
+	;|									|
+	;| Input  : Acc	       Day   1..31					|
+	;|	    AccH       Month 1..12					|
+	;|	    AccTH:AccT Year  						|
+	;| Output : None							|
+	;| Destroy: None							|
+	;| Method : None							|
+	;| 									|
+	;+----------------------------------------------------------------------+
+	_JULIAN_DAY_SET_DATE:
+		sts	_JULIAN_DAY_YEAR+0,AccT		;store year
+		sts	_JULIAN_DAY_YEAR+1,AccTH
+		sts	_JULIAN_DAY_MONTH,AccH		;store month
+		sts	_JULIAN_DAY_DAY,Acc		;store day
+		ret
+	;+----------------------------------------------------------------------+
+	;| JULIAN DAY GET DATE							|
+	;|									|
+	;| Input  : None							|
+	;| Output : Acc	       Day   1..31					|
+	;|	    AccH       Month 1..12					|
+	;|	    AccTH:AccT Year  						|
+	;| Destroy: None							|
+	;| Method : None							|
+	;| 									|
+	;+----------------------------------------------------------------------+
+	_JULIAN_DAY_GET_DATE:
+		lds	AccT,_JULIAN_DAY_YEAR+0		;store year
+		lds	AccTH,_JULIAN_DAY_YEAR+1
+		lds	AccH,_JULIAN_DAY_MONTH		;store month
+		lds	Acc,_JULIAN_DAY_DAY		;store day
+		ret
+	
+	;+----------------------------------------------------------------------+
+	;| JULIAN DAY SET GREGORIAN CALENDAR					|
+	;|									|
+	;| Input  : None							|
+	;| Output : None							|
+	;| Destroy: None							|
+	;| Method : None							|
+	;| 									|
+	;+----------------------------------------------------------------------+
+	_JULIAN_DAY_SET_GREGORIAN:
+		push	Acc
+		ldi	Acc,_JULIAN_DAY_CONST_GREGORIAN
+		sts	_JULIAN_DAY_GREG_FLAG,Acc	;set gregorian calendar
+		pop	Acc
+		ret
+	;+----------------------------------------------------------------------+
+	;| JULIAN DAY SET JULIAN CALENDAR					|
+	;|									|
+	;| Input  : None							|
+	;| Output : None							|
+	;| Destroy: None							|
+	;| Method : None							|
+	;| 									|
+	;+----------------------------------------------------------------------+
+	_JULIAN_DAY_SET_JULIAN:
+		push	Acc
+		ldi	Acc,_JULIAN_DAY_CONST_JULIAN
+		sts	_JULIAN_DAY_GREG_FLAG,Acc	;set gregorian calendar
+		pop	Acc
+		ret
+	;+----------------------------------------------------------------------+
+	;| JULIAN DAY GET VALUE							|
+	;|									|
+	;| Input  : None							|
+	;| Output : Z--> DOUBLE FLOAT POINT VALUE				|
+	;| Destroy: None							|
+	;| Method : None							|
+	;| 									|
+	;+----------------------------------------------------------------------+
+	_JULIAN_DAY_GET_VALUE:
+		ldiz	_JULIAN_DAY
+		ret
+	;+----------------------------------------------------------------------+
+	;| JULIAN DAY COMPUTE							|
+	;|									|
+	;| Input  : None							|
+	;| Output : None							|
+	;| Destroy: r0..r15 may destroyed because float point routines		|
+	;| Method : None							|
+	;| 									|
+	;+----------------------------------------------------------------------+
+	;| Compute julian day based in seted date and gregorian flag
+	;|
+	;| if calling this routine before setting a date and gregorian flag
+	;| a unpredictable result will be returned
+	;|
+	.DSEG
+	_JULIAN_DAY_A:		.BYTE	_FDOUBLE
+	_JULIAN_DAY_B:		.BYTE	_FDOUBLE
+	_JULIAN_DAY_LOCAL_YEAR:	.BYTE	_INTEGER
+	_JULIAN_DAY_LOCAL_MONTH:.BYTE	_BYTE
+	.CSEG
+	;+-----------------------------------------
+	;| here start julian day computation
+	;+-----------------------------------------
+	_JULIAN_DAY_COMPUTE:
+		;+---------------------------------
+		;| a = 10000*Year+100*Month+Day
+		;+---------------------------------
+		lds	r0,_JULIAN_DAY_YEAR+0		;JULIAN_DAY_LOCAL_YEAR=JULIAN_DAY_YEAR
+		sts	_JULIAN_DAY_LOCAL_YEAR+0,r0
+		lds	r0,_JULIAN_DAY_YEAR+1
+		sts	_JULIAN_DAY_LOCAL_YEAR+1,r0
+		lds	r0,_JULIAN_DAY_MONTH		;JULIAN_DAY_LOCAL_MONTH=JULIAN_DAY_MONTH
+		sts	_JULIAN_DAY_LOCAL_MONTH,r0
+		;+---------------------------------
+		;|If (m <= 2) Then
+		;|    m = m + 12
+	        ;|    y = y - 1
+	        ;|End If
+		;+---------------------------------
+		lds	Acc,_JULIAN_DAY_LOCAL_MONTH	;month <= 2 ?
+		cpi	Acc,3
+		brge	_JULIAN_DAY_C00			;no, branch
+			subi	Acc,-12			;else m=m+12
+			sts	_JULIAN_DAY_LOCAL_MONTH,Acc
+			lds	Acc,_JULIAN_DAY_LOCAL_YEAR+0	;year++
+			lds	AccH,_JULIAN_DAY_LOCAL_YEAR+1
+			adiw	AccH:Acc,1
+			sts	_JULIAN_DAY_LOCAL_YEAR+0,Acc
+			sts	_JULIAN_DAY_LOCAL_YEAR+1,AccH
+	_JULIAN_DAY_C00:
+		;+------------------------------------------------------
+		;|If (greg = False) Then
+		;|    b = -2 + Fix((y + 4716) / 4) - 1179
+		;|Else
+		;|    b = Fix(y / 400) - Fix(y / 100) + Fix(y / 4)
+		;|End If
+		;+------------------------------------------------------
+		lds	Acc,_JULIAN_DAY_GREG_FLAG	;get gregorian flag		
+		cpi	Acc,_JULIAN_DAY_CONST_GREGORIAN	;gregorian ?
+		breq	_JULIAN_DAY_C10			;yes, branch
+			_FLDII	-2			;load direct -2
+			_FLDI	_JULIAN_DAY_LOCAL_YEAR	;get year
+			_FLDII	4716			;load direct 4716
+			_FADD				;year+4716
+			_FLDII	4			;load direct 4
+			_FDIV				;(year+4716)/4
+			_FFIX				;fix((year+4716)/4)
+			_FLDII	-1179			;load direct 1179
+			_FADD				;fix((year+4716)/4)-1179
+			_FADD				;-2+fix((year+4716)/4)-1179
+			_FSTP	_JULIAN_DAY_B		;store result into b
+			jmp 	_JULIAN_DAY_C20
+	_JULIAN_DAY_C10: ;(ELSE)
+			_FLDI	_JULIAN_DAY_LOCAL_YEAR	;get year
+			_FLDII	400			;load direct 400
+			_FDIV				;year/400
+			_FFIX				;fix(year/400)
+			_FLDI	_JULIAN_DAY_LOCAL_YEAR	;get year
+			_FLDII	100			;load direct 100
+			_FDIV				;year/100
+			_FFIX				;fix(year/100)
+			_FSUB				;fix(year/400)-fix(year/100)
+			_FLDI	_JULIAN_DAY_LOCAL_YEAR	;get year
+			_FLDII	4			;load direct 4
+			_FDIV				;year/4
+			_FFIX				;fix(year/4)
+			_FADD				;fix(year/400)-Fix(year/100)+fix(year/4)
+			_FSTP	_JULIAN_DAY_B		;store result into b
+	_JULIAN_DAY_C20:
+		;+--------------------------------
+	 	;| a = 365# * y + 1720996.5
+	 	;+--------------------------------
+		_FLDII	365				;load direct 365
+		_FLDI	_JULIAN_DAY_LOCAL_YEAR		;get year
+		_FMUL					;365*year
+		_FLD	_JULIAN_DAY_1720996P5		;load constant 1720996.5
+		_FADD					;365*year+1720996.5
+		_FSTP	_JULIAN_DAY_A			;store result into a
+		;+------------------------------------------------------------
+		;|JULIAN_DAY = a + b + Fix(30.6001 * (p_MONTH + 1)) + p_DAY
+		;+------------------------------------------------------------
+		_FLD	_JULIAN_DAY_A			;get a
+		_FLD	_JULIAN_DAY_B			;get b
+		_FADD					;a+b
+		_FLD	_JULIAN_DAY_30P6001		;load constant 30.6001
+		_FLDB	_JULIAN_DAY_LOCAL_MONTH
+		_FLD1					;load one
+		_FADD					;month+1
+		_FMUL					;30.6001*(month+1)
+		_FFIX					;fix(30.6001*(month+1))
+		_FADD					;a+b+fix(30.6001*(month+1))
+		_FLDB	_JULIAN_DAY_DAY			;get day
+		_FADD					;a+b+fix(30.6001*(month+1))+day
+		_FSTP	_JULIAN_DAY			;store value
+		ret
+#endif
+.exit
+
+

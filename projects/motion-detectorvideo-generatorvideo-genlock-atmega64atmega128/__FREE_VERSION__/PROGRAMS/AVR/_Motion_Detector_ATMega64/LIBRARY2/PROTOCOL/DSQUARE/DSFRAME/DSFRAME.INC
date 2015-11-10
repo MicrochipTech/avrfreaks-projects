@@ -1,0 +1,984 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+------------------------------------------------------+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATA:4/12/2005					|
+;>------------------------------------------------------<
+;| D S Q U A R E  D S F R A M E  P R O T O C O L  V 2.7 |
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+;+------------------------------------------------------+
+;	 -----------------------------------------------------------------------------------------------
+;	| O protocolo de comunicação DSFrame é um protocolo destinado a comunicação entre diversos 	|
+;	| Drives e dispositivos eletrônicos da DSquare Tecnologia, sua topologia é mostrada abaixo.	|
+;	|												|
+;	|	+------+										|
+;	|	| HOST |----------+------------+------------+-------...........-------+			|
+;	|	+------+          |	       |	    |	           	      |			|
+;	|		     +----------+ +----------+ +----------+ ...........  +------------+		|
+;	|		     | CLIENT 1 | | CLIENT 2 | | CLIENT 3 | ...........  | CLIENT 255 |		|
+;	|		     +----------+ +----------+ +----------+ ...........  +------------+		|
+;	|												|
+;	| Como podemos ver em sua topologia, existe um Hospedeiro que será sempre o responsável pelo 	|
+;	| tráfego de informações na rede, o Hospedeiro sempre será o responsável pelo início das comuni-|
+;	| cações, o Hospedeiro é o responsável pela identificação dos Clientes e também o responsável 	|
+;	| em enviar o correto Pacote de informações para cada Cliente. Em contrapartida ao Hospedeiro 	|
+;	| temos os Clientes que são na realidade os disversos Dispositivos eletrônicos da DSquare, cada  |
+;	| Cliente possui seu próprio número de identificação, quando o Cliente receber uma comunicação  |
+;	| cuja identificação for a sua o Cliente encarregara de processar o Pacote de dados recebidos e |
+;	| respondera de acordo.										|
+;	|												|
+;	| Toda a comunicação entre Hospedeiro e Cliente dar-se-á através de Pacotes, estes Pacotes são  |
+;	| os responsáveis para o envio e recebimento de dados, o envio destes Pacotes ocorre unicamente |
+;	| entre Hospedeiro e um Cliente e nenhum outro Pacote será enviado a outro Cliente até que o    |
+;	| Hospedeiro faça referência ao outro Cliente, ou seja toda a comunicação é Half-Duplex.	|
+;	|												|
+;	| Abaixo descrição dos Pacote e definição dos seus campos;					|
+;	|												|
+;	+-----------------------------------------------------------------------------------------------+
+;	|												|
+;	| 	Abaixo formato do Pacote na comunicação do Hospedeiro ---> Cliente			|
+;	|												|
+;	|	+-------+										|
+;	|	|  SOH  |   ASCII  - "Start of Header", Início do Pacote				|
+;	|	+-------+										|
+;	|	|CLIENT |   Client - Número do Cliente 1..255						|
+;	|	+-------+										|
+;	|	|  LEN  |   Lenght - Tamanho bloco de dados 1..255					|
+;	|	+-------+										|
+;	|	|  STX  |   ASCII  - "Start of Text", Início do Bloco de Dados				|
+;	|	+-------+										|
+;	|	| DATA0 |   Data   - 1o Dado								|
+;	|	+-------+										|
+;	|	| DATA1 |   Data   - 2o Dado								|
+;	|	+-------+										|
+;	|	   .											|
+;	|	   .											|
+;	|	   .											|
+;	|	+-------+										|
+;	|	| DATAN |   Data   - No Dado, Máximo 255						|
+;	|	+-------+										|
+;	|	| CLD   |   Check  - Check Longitudinal de Dados, OU Exclusivo de SOH até DATAN		|
+;	|	+-------+										|
+;	|	|  EOT  |   ASCII  - "End of Transmission", Fim do Bloco de Dados			|
+;	|	+-------+										|
+;	|												|
+;	+-----------------------------------------------------------------------------------------------+
+;	|												|
+;	| 	Abaixo formato do Pacote na comunicação do Cliente ---> Hospedeiro			|
+;	|												|
+;	|	+-------+										|
+;	|	|  SOH  |   ASCII  - "Start of Header", Início do Pacote				|
+;	|	+-------+										|
+;	|	| CLIENT|   CLIENT - Número do Host 1..255						|
+;	|	+-------+										|
+;	|	|  LEN  |   Lenght - Tamanho bloco de dados 1..255					|
+;	|	+-------+										|
+;	|	|  STX  |   ASCII  - "Start of Text", Início do Bloco de Dados				|
+;	|	+-------+										|
+;	|	| DATA0 |   Data   - 1o Dado								|
+;	|	+-------+										|
+;	|	| DATA1 |   Data   - 2o Dado								|
+;	|	+-------+										|
+;	|	   .											|
+;	|	   .											|
+;	|	   .											|
+;	|	+-------+										|
+;	|	| DATAN |   Data   - No Dado, Máximo 255						|
+;	|	+-------+										|
+;	|	| CLD   |   Check  - Check Longitudinal de Dados, OU Exclusivo de SOH até DATAN		|
+;	|	+-------+										|
+;	|	|  EOT  |   ASCII  - "End of Transmission", Fim do Bloco de Dados			|
+;	|	+-------+										|
+;	|												|
+;	+-----------------------------------------------------------------------------------------------+
+#ifndef __DSFRAME_PROTOCOL_V27__
+	#define __DSFRAME_PROTOCOL_V27__
+	.message "+---------------------+"
+	.message "|             	|"
+	.message "| DSFRAME PROTOCOL  	|"
+	.message "|             	|"
+	.message "+---------------------+"
+;				  ///////////////////////\\\\\\\\\\\\\\\\\\\\\\\\
+;				 //						\\
+;-------------------------------||	  D S F R A M E  P R O T O C O L  	||-----------------------------------
+;				 \\						//
+;				  \\\\\\\\\\\\\\\\\\\\\\\///////////////////////
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION:This object perform all resorces for implementa- |
+	;|	       tion of DSFRAME protocol				|
+	;>--------------------------------------------------------------<
+	;>----------------------<
+	;| OBJECT DEFINITIONS	|
+	;>----------------------<
+	;-------------------------< CONSTANT DEFINITONS >------------------------
+	.EQU	_DSFRAME_MODE_HOST	=1		;DSFRAME operates like HOST
+	.EQU	_DSFRAME_MODE_CLIENT	=2		;DSFRAME operates like CLIENT
+	.EQU	_DSFRAME_OK		=0		;FRAME received OK
+	.EQU	_DSFRAME_ERROR_OK	=0		;FRAME Received OK
+	.EQU	_DSFRAME_ERROR_TIMEOUT	=1		;FRAME time out error
+	.EQU	_DSFRAME_ERROR_BROKEN	=2		;FRAME broken (invalid data received)
+	.EQU	_DSFRAME_ERROR_CLD	=3		;FRAME invalid CLD
+	.EQU	_DSFRAME_ERROR_NOTFORME	=4		;FRAME invalid Client (not for me)
+	;-------------------------< VARIABLES DEFINITONS >------------------------
+	.DSEG
+		_DSFRAME_HEADER_OUT:							;DSFRAME out data
+			_DSFRAME_OUT_SOH:		.BYTE	1			;ASCII SOH
+			_DSFRAME_OUT_CLIENT_NUMBER:	.BYTE 	1			;Client Number (Temporary data)
+			_DSFRAME_OUT_DATA_LEN:		.BYTE	1			;Data Length
+			_DSFRAME_OUT_STX:		.BYTE	1			;ASCII STX
+		_DSFRAME_HEADER_OUT_END:
+		_DSFRAME_HEADER_IN:							;DSFRAME in data
+			_DSFRAME_IN_SOH:		.BYTE	1			;ASCII SOH
+			_DSFRAME_IN_CLIENT_NUMBER:	.BYTE 	1			;Client Number (Temporary data)
+			_DSFRAME_IN_DATA_LEN:		.BYTE	1			;Data Length
+			_DSFRAME_IN_STX:		.BYTE	1			;ASCII STX
+		_DSFRAME_HEADER_IN_END:
+		_DSFRAME_CLIENT_NUMBER:			.BYTE	1			;Hold Client Number
+		_DSFRAME_OUT_DATA_BUFFER:		.BYTE	2			;Data Buffer Address out data
+		_DSFRAME_OUT_CLD:			.BYTE	1			;CLD out data
+		_DSFRAME_IN_DATA_BUFFER:		.BYTE	2			;Data Buffer Address in data
+		_DSFRAME_IN_CLD:			.BYTE	1			;CLD in data
+		_DSFRAME_IN_LOCAL_DATA_LEN:		.BYTE	1			;local in data len
+		_DSFRAME_IN_ERROR:			.BYTE	1			;error code
+		_DSFRAME_TX_ADDR:			.BYTE	2			;TX address routine		
+		_DSFRAME_RX_ADDR:			.BYTE	2			;RX address routine
+		_DSFRAME_RX_FLUSH_ADDR:			.BYTE	2			;RX FLUSH address routine
+		_DSFRAME_TIMEOUT_ADDR:			.BYTE	2			;TIMEOUT address routine
+	.CSEG
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_INIT					|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Initialize DSFRAME engine			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Interrupts are disabled during initialization	|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_INIT:;<$PUBLIC _DSFRAME_INIT$>
+		push	Acc						;Save Acc
+		in	Acc,SREG					;Save SREG
+		cli							;disable interrupts
+		pushaw							;Save AccH:Acc
+		ldi	Acc,_ASCII_SOH					;set SOH into Header
+		sts	_DSFRAME_OUT_SOH,Acc
+		ldi	Acc,_ASCII_STX					;set STX into Header
+		sts	_DSFRAME_OUT_STX,Acc
+		ldi	Acc,0
+		sts	_DSFRAME_CLIENT_NUMBER,Acc			;no Valid Client 
+		ldiaw	_DSFRAME_INIT_RETURN				;set RX,TX,TIMEOUT,RX_FLUSH to NILL
+		stsaw	_DSFRAME_TX_ADDR				;tx addr=nill
+		stsaw	_DSFRAME_RX_ADDR				;rx addr=nill
+		stsaw	_DSFRAME_RX_FLUSH_ADDR				;rx flush addr=nill
+		stsaw	_DSFRAME_TIMEOUT_ADDR				;timeout addr=nill
+		#ifdef	__DEBUG_MODE__					;if in debug mode
+			.DSEG
+				_DSFRAME_DATA_PTR:	.BYTE	1	;reserve space for emulation data pointer
+			.CSEG
+			ldi	Acc,0					;and clear it
+			sts	_DSFRAME_DATA_PTR,Acc
+		#endif
+		popaw							;Restore SREG
+		out	SREG,Acc
+		pop	Acc						;Restore Acc
+	_DSFRAME_INIT_RETURN:
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_CLIENT				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set Client Number				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc Client Number				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_CLIENT:
+		sts	_DSFRAME_CLIENT_NUMBER,Acc
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_GET_CLIENT				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Get Client Number				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Acc Client Number				|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_GET_CLIENT:
+		lds	Acc,_DSFRAME_CLIENT_NUMBER
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_OUT_DATA_BUFFER			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set Data output Buffer Address			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc Address				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_OUT_DATA_BUFFER:
+		stsaw	_DSFRAME_OUT_DATA_BUFFER
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_GET_OUT_DATA_BUFFER			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Get Data output Buffer Address			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	AccH:Acc Address				|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_GET_OUT_DATA_BUFFER:
+		ldsaw	_DSFRAME_OUT_DATA_BUFFER
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_IN_DATA_BUFFER			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set Data input Buffer Address			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc Address				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_IN_DATA_BUFFER:
+		stsaw	_DSFRAME_IN_DATA_BUFFER
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_GET_IN_DATA_BUFFER			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Get Data in Buffer Address			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	AccH:Acc Address				|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_GET_IN_DATA_BUFFER:
+		ldsaw	_DSFRAME_IN_DATA_BUFFER
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_RX_ADDR				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set RX routine address				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc address				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_RX_ADDR:
+		stsaw	_DSFRAME_RX_ADDR
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_RX_FLUSH_ADDR			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set RX Flush routine address			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc address				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_RX_FLUSH_ADDR:
+		stsaw	_DSFRAME_RX_FLUSH_ADDR
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_TX_ADDR				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set TX routines address				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc address				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_TX_ADDR:
+		stsaw	_DSFRAME_TX_ADDR
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_TIMEOUT_ADDR			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set TIMEOUT routine address			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc address				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_TIMEOUT_ADDR:
+		stsaw	_DSFRAME_TIMEOUT_ADDR
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_RX					|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Receiver data	 				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : None						|
+	;| OUTPUT     :	Acc Data					|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Called routine must be accept above parameters	|
+	;|		and no recquire Z register			|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_RX:
+		#ifndef __DEBUG_MODE__
+			pushw	Z
+			ldsw	Z,_DSFRAME_RX_ADDR
+			icall
+			popw	Z
+			ret
+		#else
+		;
+		;simulate data reception in db bytes
+		;
+			push	r0
+			pushw	Z
+			ldiw	Z,_DSFRAME_DATA_EMU*2	;Z-->data
+			lds	Acc,_DSFRAME_DATA_PTR
+			add	ZL,Acc
+			ldi	Acc,0
+			adc	ZH,Acc
+			lpm				;get data
+			lds	Acc,_DSFRAME_DATA_PTR	;ptr++
+			inc	Acc
+			sts	_DSFRAME_DATA_PTR,Acc
+			mov	Acc,r0			;put into appropriate register
+			clc				;set no error
+			popw	Z
+			pop	r0
+			ret
+			_DSFRAME_DATA_EMU:
+			;
+			;define bytes for testing purpose here
+			;
+			.DB	0x01,0x03,0x88,0x02,0x02,0x00,0x00,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4A,0x4B,0x4C,0x4D,0x4E,0x4F,0x50,0x51,0x52,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0x5B,0x5C,0x5D,0x5E,0x5F,0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6A,0x6B,0x6C,0x6D,0x6E,0x6F,0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x7B,0x7C,0x7D,0x7E,0x7F,0x80,0x81,0x82,0x83,0x84,0x0E,0x04
+;			.DB	_ASCII_SOH,3,132,_ASCII_STX,2,0,0,0
+;			.DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+;			.DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+;			.DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+;			.DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+;			.DB	138,_ASCII_EOT,_ASCII_SOH,1,5,_ASCII_STX,0,3,8,0,0,0x0c,_ASCII_EOT
+		#endif
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_RX_FLUSH				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Flush Receiver data 				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Called routine must be accept above parameters	|
+	;|		and no recquire Z register			|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_RX_FLUSH:
+		#ifndef	__DEBUG_MODE__
+			pushw	Z
+			ldsw	Z,_DSFRAME_RX_FLUSH_ADDR
+			icall
+			popw	Z
+			ret
+		#endif
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_TIMEOUT				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : set time out interval 				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : AccH:Acc Timeout in mileseconds			|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Called routine must be accept above parameters	|
+	;|		and no recquire Z register			|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_TIMEOUT:
+		#ifndef	__DEBUG_MODE__
+			pushw	Z
+			ldsw	Z,_DSFRAME_TIMEOUT_ADDR
+			icall
+			popw	Z
+			ret
+		#endif
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_TX					|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Send data 					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Acc Data					|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Called routine must be accept above parameters	|
+	;|		and no recquire Z register			|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_TX:
+		#ifndef __DEBUG_MODE__
+			pushw	Z
+			ldsw	Z,_DSFRAME_TX_ADDR
+			icall
+			popw	Z
+		#endif
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_DELAY_20US				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Delay 20 Microseconds				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	;| Make a 20us Delay 		          1	 
+	;| time equation: (9+Acc*3+3(rcall))*----------- 
+	;|				      AVR_CLOCK  
+	_DSQUARE_DELAY_20us:
+		push	Acc
+		ldi	Acc,((20*_AVR_CLOCK)/1000000-11)/3
+		dec	Acc
+		brne	PC-1
+		pop	Acc
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_OPEN_OUT				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Open Method for out data to send FRAME		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: This procedure clear DSFRAME_OUT_DATA_LEN,	|
+	;|		and compute initial CLD<-SOH xor CLIENT xor STX	|
+	;|		Client Number must be defined before call this	|
+	;|		function					|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_OPEN_OUT:
+		pushaw
+		ldi	Acc,0
+		sts	_DSFRAME_OUT_DATA_LEN,Acc			;Clear out Data Len
+		lds	Acc,_DSFRAME_OUT_SOH				;start CLD computation with SOH
+		lds	AccH,_DSFRAME_CLIENT_NUMBER			;assume HOST MODE
+		sts	_DSFRAME_OUT_CLIENT_NUMBER,AccH
+		eor	Acc,AccH
+		lds	AccH,_DSFRAME_OUT_STX				;xor with STX
+		eor	Acc,AccH
+		sts	_DSFRAME_OUT_CLD,Acc				;store SOH xor CLIENT xor STX
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_DATA				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set Data to be send and increment DATA_LEN	|
+	;|		and compute CLD					|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc Data					|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_DATA:
+		pushaw
+		pushw	Z
+		ldsw	Z,_DSFRAME_OUT_DATA_BUFFER			;Z-->data out buffer
+		lds	AccH,_DSFRAME_OUT_DATA_LEN			;AccH<-data.len
+		add	ZL,AccH
+		ldi	AccH,0
+		adc	ZH,AccH						;Z-->data(n)
+		st	Z,Acc						;*Z<-data
+		lds	AccH,_DSFRAME_OUT_CLD
+		eor	AccH,Acc					;CLD^<-data
+		sts	_DSFRAME_OUT_CLD,AccH
+		lds	AccH,_DSFRAME_OUT_DATA_LEN			;AccH<-data.len
+		inc	AccH						;data.len++
+		sts	_DSFRAME_OUT_DATA_LEN,AccH
+		popw	Z
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SET_DATA_INDEXED			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Set Data to be send indexed			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  Data					|
+	;|		AccH Data Index					|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SET_DATA_INDEXED:
+		pushaw
+		pushw	Z
+		ldsw	Z,_DSFRAME_OUT_DATA_BUFFER			;Z-->data out buffer
+		add	ZL,AccH
+		ldi	AccH,0
+		adc	ZH,AccH						;Z-->data(n)
+		st	Z,Acc						;*Z<-data
+		lds	AccH,_DSFRAME_OUT_CLD
+		eor	AccH,Acc					;CLD^<-data
+		sts	_DSFRAME_OUT_CLD,AccH
+		popw	Z
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_CLOSE_OUT				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Close Method , Compute final out CLD		|
+	;|		and prepare FRAME to send out			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_CLOSE_OUT:
+		pushaw
+		lds	Acc,_DSFRAME_OUT_CLD				;get CLD
+		lds	AccH,_DSFRAME_OUT_DATA_LEN			;get data.len
+		eor	Acc,AccH					;CLD^<-data.len
+		sts	_DSFRAME_OUT_CLD,Acc
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_SEND_OUT				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Send Method that send FRAME			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_SEND_OUT:
+		pushaw
+		pushw	Z
+		ldiw	Z,_DSFRAME_HEADER_OUT				;Z-->header
+		ldi	AccH,_DSFRAME_HEADER_OUT_END-_DSFRAME_HEADER_OUT;get header len
+	_DSFRAME_SEND_OUT_10:
+		ld	Acc,Z+						;get data	
+		rcall	_DSFRAME_TX					;send data
+;		rcall	_DSQUARE_DELAY_20us				;time to client process data
+		dec	AccH
+		brne	_DSFRAME_SEND_OUT_10				;until header done
+		ldsw	Z,_DSFRAME_OUT_DATA_BUFFER			;Z-->data buffer
+		lds	AccH,_DSFRAME_OUT_DATA_LEN			;get data len
+	_DSFRAME_SEND_OUT_20:
+		ld	Acc,Z+						;get data	
+		rcall	_DSFRAME_TX					;send data
+;------------------------------------------------------------------------
+;some devices with high speed transfer need bellow code 
+;------------------------------------------------------------------------
+;		rcall	_DSQUARE_DELAY_20us				;time to client process data
+;------------------------------------------------------------------------
+		dec	AccH
+		brne	_DSFRAME_SEND_OUT_20				;until header done
+		lds	Acc,_DSFRAME_OUT_CLD				;TX CLD
+		rcall	_DSFRAME_TX
+;		rcall	_DSQUARE_DELAY_20us				;time to client process data
+		ldi	Acc,_ASCII_EOT					;TX EOT
+		rcall	_DSFRAME_TX
+;		rcall	_DSQUARE_DELAY_20us				;time to client process data
+		popw	Z
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_OPEN_IN					|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Open Method for in data for FRAME reception	|
+	;|		wait character reception and set DSFRAME_ERROR	|
+	;|		According 					|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc Time in mileseconds to wait FRAME	|
+	;| OUTPUT     :	Acc Error Code					|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: This procedure perform all needes for data FRAME|
+	;|		reception, and clear DSFRAME_IN_LOCAL_DATA_LEN	|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_OPEN_IN:
+		push	Temp
+		push	AccH
+		pushw	Z
+		ldiw	Z,_DSFRAME_HEADER_IN				;Z-->header.in
+		ldi	AccH,0
+		sts	_DSFRAME_IN_LOCAL_DATA_LEN,AccH			;local.data.len<-0
+		ldi	AccH,_DSFRAME_ERROR_OK				;error=ok
+		sts	_DSFRAME_IN_ERROR,AccH
+		ldi	Temp,0
+		;///////////////////////
+		;/// GET SOH
+		;///////////////////////
+		rcall	_DSFRAME_RX					;wait data reception
+		brcc	_DSFRAME_OPEN_IN_10				;branch if no timeout
+		ldi	Acc,_DSFRAME_ERROR_TIMEOUT
+		sts	_DSFRAME_IN_ERROR,Acc				;TIMEOUT ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_10:
+		eor	Temp,Acc					;compute CLD
+		st	Z+,Acc						;store data
+		cpi	Acc,_ASCII_SOH					;SOH ?
+		breq	_DSFRAME_OPEN_IN_20				;yes, branch
+		ldi	Acc,_DSFRAME_ERROR_BROKEN
+		sts	_DSFRAME_IN_ERROR,Acc				;BROKEN ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+		;///////////////////////
+		;/// GET CLIENT
+		;///////////////////////
+	_DSFRAME_OPEN_IN_20:
+		rcall	_DSFRAME_RX					;wait data reception
+		brcc	_DSFRAME_OPEN_IN_30				;branch if no timeout
+		ldi	Acc,_DSFRAME_ERROR_TIMEOUT
+		sts	_DSFRAME_IN_ERROR,Acc				;TIMEOUT ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_30:
+		eor	Temp,Acc					;compute CLD
+		st	Z+,Acc						;store data
+		lds	AccH,_DSFRAME_CLIENT_NUMBER			;CLIENT
+		cp	Acc,AccH					;IS FOR ME?
+		breq	_DSFRAME_OPEN_IN_40				;yes, branch
+		ldi	Acc,_DSFRAME_ERROR_NOTFORME
+		sts	_DSFRAME_IN_ERROR,Acc				;NOTFORME ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+		;///////////////////////
+		;/// GET LEN
+		;///////////////////////
+	_DSFRAME_OPEN_IN_40:
+		rcall	_DSFRAME_RX					;wait data reception
+		brcc	_DSFRAME_OPEN_IN_50				;branch if no timeout
+		ldi	Acc,_DSFRAME_ERROR_TIMEOUT
+		sts	_DSFRAME_IN_ERROR,Acc				;TIMEOUT ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_50:
+		eor	Temp,Acc					;compute CLD
+		st	Z+,Acc						;store data
+		cpi	Acc,0						;len=0 ?
+		brne	_DSFRAME_OPEN_IN_60				;no, branch
+		ldi	Acc,_DSFRAME_ERROR_BROKEN
+		sts	_DSFRAME_IN_ERROR,Acc				;BROKEN ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+		;///////////////////////
+		;/// GET STX
+		;///////////////////////
+	_DSFRAME_OPEN_IN_60:
+		rcall	_DSFRAME_RX					;wait data reception
+		brcc	_DSFRAME_OPEN_IN_70				;branch if no timeout
+		ldi	Acc,_DSFRAME_ERROR_TIMEOUT
+		sts	_DSFRAME_IN_ERROR,Acc				;TIMEOUT ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_70:
+		eor	Temp,Acc					;compute CLD
+		st	Z+,Acc						;store data
+		cpi	Acc,_ASCII_STX					;STX?
+		breq	_DSFRAME_OPEN_IN_80				;no, branch
+		ldi	Acc,_DSFRAME_ERROR_BROKEN
+		sts	_DSFRAME_IN_ERROR,Acc				;BROKEN ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+		;///////////////////////
+		;/// GET DATA BLOCK
+		;///////////////////////
+	_DSFRAME_OPEN_IN_80:
+		ldsw	Z,_DSFRAME_IN_DATA_BUFFER			;Z-->data buffer
+		lds	AccH,_DSFRAME_HEADER_IN+2			;get len
+		sts	_DSFRAME_IN_DATA_LEN,AccH			;received num data
+	_DSFRAME_OPEN_IN_90:
+		rcall	_DSFRAME_RX					;wait data reception
+		brcc	_DSFRAME_OPEN_IN_100				;branch if no timeout
+		ldi	Acc,_DSFRAME_ERROR_TIMEOUT
+		sts	_DSFRAME_IN_ERROR,Acc				;TIMEOUT ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_100:		
+		eor	Temp,Acc					;compute CLD
+		st	Z+,Acc						;store data
+		dec	AccH						;data.len--
+		brne	_DSFRAME_OPEN_IN_90
+		;///////////////////////
+		;/// GET CLD
+		;///////////////////////
+		rcall	_DSFRAME_RX					;wait data reception
+		brcc	_DSFRAME_OPEN_IN_110				;branch if no timeout
+		ldi	Acc,_DSFRAME_ERROR_TIMEOUT
+		sts	_DSFRAME_IN_ERROR,Acc				;TIMEOUT ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_110:
+		cp	Temp,Acc					;valid CLD?
+		breq	_DSFRAME_OPEN_IN_120				;yes, branch
+		ldi	Acc,_DSFRAME_ERROR_CLD
+		sts	_DSFRAME_IN_ERROR,Acc				;CLD ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_120:
+		;///////////////////////
+		;/// GET EOT
+		;///////////////////////
+		rcall	_DSFRAME_RX					;wait data reception
+		brcc	_DSFRAME_OPEN_IN_130				;branch if no timeout
+		ldi	Acc,_DSFRAME_ERROR_TIMEOUT
+		sts	_DSFRAME_IN_ERROR,Acc				;TIMEOUT ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_130:
+		cpi	Acc,_ASCII_EOT					;EOT?
+		breq	_DSFRAME_OPEN_IN_140				;yes, branch
+		ldi	Acc,_DSFRAME_ERROR_BROKEN
+		sts	_DSFRAME_IN_ERROR,Acc				;BROKEN ERROR
+		rjmp	_DSFRAME_OPEN_IN_ERROR				;*<NOCHANGE>*
+	_DSFRAME_OPEN_IN_140:
+		ldi	Acc,_DSFRAME_ERROR_OK				;set no error
+		rjmp	_DSFRAME_OPEN_IN_EXIT				;*<NOCHANGE>*
+		;///////////////////////
+		;// EXIT WITH ERROR
+		;///////////////////////	
+	_DSFRAME_OPEN_IN_ERROR:
+		;///////////////////////
+		;// EXIT WITH NO ERROR
+		;///////////////////////	
+	_DSFRAME_OPEN_IN_EXIT:
+		popw	Z
+		pop	AccH
+		pop	Temp
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_GET_DATA				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Get Data to received and increment IN_DATA_LEN	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Acc Data					|
+	;|		cy=1 if no more data in buffer			|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_GET_DATA:
+		push	AccH
+		pushw	Z
+		ldsw	Z,_DSFRAME_IN_DATA_BUFFER			;Z-->data in buffer
+		lds	AccH,_DSFRAME_IN_LOCAL_DATA_LEN			;AccH<-data.len
+		add	ZL,AccH
+		ldi	AccH,0
+		adc	ZH,AccH						;Z-->data(n)
+		ld	Acc,Z						;data<-*Z
+		lds	AccH,_DSFRAME_IN_LOCAL_DATA_LEN			;AccH<-data.len
+		inc	AccH						;data.len++
+		sts	_DSFRAME_IN_LOCAL_DATA_LEN,AccH
+		lds	ZL,_DSFRAME_IN_DATA_LEN				;get received data
+		cp	AccH,ZL
+		brsh	_DSFRAME_GET_DATA_IN_10				;branch if same or igual
+		clc							;return with cy=0
+		rjmp	_DSFRAME_GET_DATA_IN_20				;*<NOCHANGE>*
+	_DSFRAME_GET_DATA_IN_10:
+		sec							;return with cy=1
+	_DSFRAME_GET_DATA_IN_20:
+		popw	Z
+		pop	AccH
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_GET_DATA_INDEXED			|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Get Data received indexed			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc Data index					|
+	;| OUTPUT     :	Acc Data					|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_GET_DATA_INDEXED:
+		push	AccH
+		pushw	Z
+		ldsw	Z,_DSFRAME_IN_DATA_BUFFER			;Z-->data in buffer
+		add	ZL,AccH
+		ldi	AccH,0
+		adc	ZH,AccH						;Z-->data(n)
+		ld	Acc,Z						;data<-*Z
+		popw	Z
+		pop	AccH
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_CLOSE_IN				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Close Method for in data from FRAME reception	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_CLOSE_IN:
+		;below remark code must replaced by routine call _DSFRAME_FLUSH_TIME
+		;
+		;
+		;=======================================
+		_M_DELAY_MICROSECONDS	800				;~(1byte)*frame_size*1.2
+		;=======================================
+		rcall	_DSFRAME_RX_FLUSH				;flush received data
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : DSFRAME						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : DSFRAME_GET_IN_DATA				|
+	;>--------------------------------------------------------------<
+	;| PERFORM    : Get Data number of received data		|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	Acc Num Data received				|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: ----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_DSFRAME_GET_DATA_IN:
+		lds	Acc,_DSFRAME_IN_DATA_LEN			;get data len
+		ret
+		
+#endif
+

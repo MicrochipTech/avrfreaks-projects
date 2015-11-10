@@ -1,0 +1,306 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+;| DATA:21/10/2002					|
+;>------------------------------------------------------<
+;| A V R  U A R T  R O U T I N E S  B Y  S O F T W A R E|
+;+------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+;+------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;+------------------------------------------------------+---------------------------------------+
+;| _SCOMM_INIT		INITIALIZE SCOMM							|
+;|												|
+;| .EQU			_SCOMM_PORT_DATA_OUTPUT	=PORTX	;Set SCOMM data ports			|
+;| .EQU			_SCOMM_PORT_DATA_DIR	=DDRX						|
+;| .EQU			_SCOMM_PORT_DATA_INPUT	=PINX						|
+;|												|
+;| .EQU			_SCOMM_PORT_CTRL_OUTPUT	=PORTX	;Set SCOMM control ports		|
+;| .EQU			_SCOMM_PORT_CTRL_DIR	=DDRX						|
+;| .EQU			_SCOMM_PORT_CTRL_INPUT	=PINX						|
+;|												|
+;| .EQU			_SCOMM_TX_BIT		= BITx	;Set SCOMM bits				|
+;| .EQU			_SCOMM_RX_BIT		= BITx						|
+;| .EQU			_SCOMM_RTS_BIT		= BITx						|
+;| .EQU			_SCOMM_CTS_BIT		= BITx						|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+#ifndef	__SCOMM__
+	
+	#define	__SCOMM__
+	;>----------------------<
+	;| NEED INCLUDES	|
+	;>----------------------<
+	
+	.message "+---------------------+"
+	.message "|                     |"
+	.message "|    SCOMM PROTOCOL	|"
+	.message "|                     |"
+	.message "+---------------------+"
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _SCOMM	 					|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: This object implements some functions(methods)	|
+	;|		do handdle serial communication using software	|
+	;|		routines. fixed baud rate 115200, 8 data bits	|
+	;|		and 2 stop bits optimized to use 16Mhz crystal, |
+	;|		but other values is allowed since that certain  |
+	;|		constants is tuned				|
+	;>--------------------------------------------------------------<
+	;>----------------------<
+	;| OBJECT DEFINITIONS	|
+	;>----------------------<
+	;In
+	;-------------------------< CONSTANT DEFINITONS >------------------------
+	;
+	.EQU	_SCOMM_TIMEOUT_ERROR	= 1
+	.EQU	_SCOMM_STARTBIT_ERROR	= 2
+	;
+	;-------------------------< SRAM VARIABLES >-----------------------------
+	;
+	.DSEG
+	.CSEG
+	;
+	;-------------------------< M A C R O S  >-------------------------------
+	;
+	;@-------------------@
+	;@ delay bit time    @
+	;@-------------------@
+	.MACRO	_M_SCOMM_DELAY_BIT
+		ldi	AccH,@0
+		dec	AccH
+		brne	PC-1
+	.ENDMACRO
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _SCOMM						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Initialize					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Interrupts are disabled during initialization	|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_SCOMM_INIT:
+		push	Temp						;save useds
+		in	Temp,SREG					;save SREG
+		cli							;disable interrupts
+		sbi	_SCOMM_PORT_DATA_OUTPUT,_SCOMM_TX_BIT		;default TX state is HIGH
+		sbi	_SCOMM_PORT_DATA_OUTPUT,_SCOMM_RX_BIT		;default RX with pull up
+		sbi	_SCOMM_PORT_CTRL_OUTPUT,_SCOMM_RTS_BIT		;default RTS state is HIGH
+		sbi	_SCOMM_PORT_CTRL_OUTPUT,_SCOMM_CTS_BIT		;default CTS with pull up
+		sbi	_SCOMM_PORT_DATA_DIR,_SCOMM_TX_BIT		;TX is output
+		cbi	_SCOMM_PORT_DATA_DIR,_SCOMM_RX_BIT		;RX is input
+		cbi	_SCOMM_PORT_CTRL_DIR,_SCOMM_RTS_BIT		;RTS is input
+		sbi	_SCOMM_PORT_CTRL_DIR,_SCOMM_CTS_BIT		;CTS is output
+		out	SREG,Temp
+		pop	Acc
+		ret	
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _SCOMM						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Send data to Tx line				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Acc	Data to be send				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Interrupts are disabled during transmission	|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_SCOMM_DATA_TX:
+		pushaw							;save useds
+		push	Temp
+		push	TempH
+		in	AccH,SREG					;save SREG
+		cli
+		ldi	TempH,8						;bit count
+		clc
+		rcall	_SCOMM_DATA_TX_BIT				;start bit *<NOCHANGE>*
+		nop
+		nop
+		nop
+	_SCOMM_DATA_TX_10:
+		ror	Acc						;get bit to be send
+		rcall	_SCOMM_DATA_TX_BIT				;send a bit *<NOCHANGE>*
+		dec	TempH
+		brne	_SCOMM_DATA_TX_10				;until all done
+		sec
+		rcall	_SCOMM_DATA_TX_BIT				;stop bit *<NOCHANGE>*
+		sec
+		rcall	_SCOMM_DATA_TX_BIT				;stop bit *<NOCHANGE>*
+		out	SREG,AccH					;restore SREG
+		pop	TempH
+		pop	Temp
+		popaw							;restore useds
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _SCOMM						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Send bit to Tx line				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : Cy	Bit to be send				|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_SCOMM_DATA_TX_BIT:
+		in	Temp,_SCOMM_PORT_DATA_OUTPUT				;1   get actual value of tx bit
+		andi	Temp,~(1<<_SCOMM_TX_BIT)				;1   assume bit level = low
+		brcc	PC+2							;1/2 branch if carry = 0
+		ori	Temp,(1<<_SCOMM_TX_BIT)					;1   else bit level = high
+		out	_SCOMM_PORT_DATA_OUTPUT,Temp				;1   set new tx bit level
+		ldi	Temp,42							;1   baudrate constant
+		dec	Temp							;1   pump baudrate
+		brne	PC-1							;1/2 until done
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _SCOMM						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get data from RX line				|
+	;>--------------------------------------------------------------<
+	;| INPUT      : None						|
+	;| OUTPUT     :	Acc	Data received if cy=0			|
+	;|		Acc	Error Code if cy=1			|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	Interrupts are disabled during reception	|
+	;|		this routine have a fixed time to wait a data	|
+	;|		(about 0.5 sec at 16Mhz) after this time none 	|
+	;|		received cy=1 and timeout code is set.		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_SCOMM_DATA_RX:
+		push	AccH						;save useds
+		in	AccH,SREG					;save SREG
+		cli							;disable interrupts
+		push	AccH
+		pushawt
+		ldi	AccT,0						;timeout counter<-0
+		ldi	AccTH,0
+		ldi	AccH,0
+		;+-----------------------------------
+		;| WAIT RX LINE GOES LOW
+		;+-----------------------------------
+	_SCOMM_DATA_RX_10:
+		sbis	_SCOMM_PORT_DATA_INPUT,_SCOMM_RX_BIT		;skip if no start bit yet
+		jmp 	_SCOMM_DATA_RX_20				;else check if start bit
+		subi	AccT,-1
+		sbci	AccTH,-1
+		sbci	AccH,-1
+		cpi	AccH,16
+		brlo	_SCOMM_DATA_RX_10				;wait time out	
+		ldi	Acc,_SCOMM_TIMEOUT_ERROR			;set timeout error
+		;+-----------------------------------
+		;| FINISH ROUTINE WITH ERROR CODE CY=1
+		;+-----------------------------------
+	_SCOMM_DATA_RX_ERROR_EXIT:
+		popawt
+		pop	AccH						;restore SREG
+		out	SREG,AccH
+		sec							;set error
+		pop	AccH						;restore useds
+		ret		
+		;+-----------------------------------
+		;| CHECK IF START BIT
+		;+-----------------------------------
+	_SCOMM_DATA_RX_20:
+		_M_SCOMM_DELAY_BIT	23				;wait halt time data bit
+		sbis	_SCOMM_PORT_DATA_INPUT,_SCOMM_RX_BIT		;RX high, skip if yes
+		rjmp	_SCOMM_DATA_RX_30				;else wait full data time *<NOCHANGE>*
+		ldi	Acc,_SCOMM_STARTBIT_ERROR			;set invalid start bit
+		rjmp	_SCOMM_DATA_RX_ERROR_EXIT			;exit with error *<NOCHANGE>*
+	_SCOMM_DATA_RX_30:
+		ldi	AccT,8						;data bits count
+		_M_SCOMM_DELAY_BIT	45				;wait full time data bit
+	_SCOMM_DATA_RX_40:
+		clc							;assume data bit 0
+		sbic	_SCOMM_PORT_DATA_INPUT,_SCOMM_RX_BIT		;skip if yes
+		sec							;else data bit 1
+		ror	Acc						;put into Acc
+		_M_SCOMM_DELAY_BIT	44				;wait full time
+		nop							;fine time tune for 16Mhz
+		dec	AccT						;bitcount --
+		brne	_SCOMM_DATA_RX_40				;until all got
+		popawt							;restore useds
+		pop	AccH
+		out	SREG,AccH					;restore SREG
+		clc							;set data ok
+		pop	AccH
+		ret	
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _SCOMM						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : Get RTS state					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : None						|
+	;| OUTPUT     :	cy=1 RTS=1					|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_SCOMM_GET_RTS:
+		clc							;assume low
+		sbic	_SCOMM_PORT_CTRL_INPUT,_SCOMM_RTS_BIT		;yes, skip
+		sec							;else cy=1
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : _SCOMM						|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : set CTS state					|
+	;>--------------------------------------------------------------<
+	;| INPUT      : cy=1 if to put CTS=HIGH				|
+	;| OUTPUT     :	nONE						|
+	;| DESTROYED  :	None						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|		
+	_SCOMM_GET_CTS:
+		Brcc _SCOMM_GET_CTS_00					;branch if cy clear
+		sbi	_SCOMM_PORT_CTRL_OUTPUT,_SCOMM_CTS_BIT
+		ret	
+	_SCOMM_GET_CTS_00:
+		cbi	_SCOMM_PORT_CTRL_OUTPUT,_SCOMM_CTS_BIT
+		ret
+.exit
+
+

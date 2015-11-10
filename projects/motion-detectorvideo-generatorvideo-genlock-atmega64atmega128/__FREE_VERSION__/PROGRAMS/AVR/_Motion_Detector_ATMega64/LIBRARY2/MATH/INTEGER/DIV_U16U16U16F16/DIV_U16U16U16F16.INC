@@ -1,0 +1,87 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+---+
+;|									|
+;| DATE:28/01/2002 VERSION 1.0						|
+;>----------------------------------------------------------------------<
+;| I N T E G E R  R O U T I N E S	     				|
+;| D I V I D E  							|
+;+----------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM			|
+;+----------------------------------------------------------------------+
+;+----------------------------------------------------------------------+
+;| DIV_U16U16U16F16							|
+;| Divide unsigned 16bits/unsigned 16 bits result unsigned 16bits	|
+;| integer part and 16bits fraction part				|
+;|								  	|
+;| Input  : R1:R0  Dividend				  		|
+;|	    R3:R2  Divisor				  		|
+;| Output : R1:R0  quotient fraction part		  		|
+;|	    R3:R2  quotient integer part				|
+;| Destroy: Flags,R4,R5,R6,R7					  	|
+;| Time   : MIN=451+3 rcall MAX=484+3 rcall			  	|
+;+----------------------------------------------------------------------+
+#ifndef	__INTEGER_DIV_U16U16U16F16__
+	#define __INTEGER_DIV_U16U16U16F16__
+	.message "[ (MATH) INTEGER DIV U16U16U16F16 ]"
+	_DIV_U16U16U16F16:
+		push	Acc			;save Acc
+		ldi	Acc,33			;quotient bit count
+		mov	r4,r2			;move divisor to r5:r4
+		mov	r5,r3
+		mov	r2,r0			;move dividend to r3:r2
+		mov	r3,r1
+		clr	r0
+		clr	r1
+		clr	r6			;clear my accumulador
+		clr	r7
+		clc				;clear first carry
+	_DIV_UF1600:
+		rol	r0			;rotate left dividend to see if fit inside quotient
+		rol	r1
+		rol	r2
+		rol	r3
+		rol	r6
+		rol	r7
+		cp	r6,r4			;fit?
+		cpc	r7,r5
+		brcs	_DIV_UF1610			;no, branch
+		sub	r6,r4			;else subtract divisor from dividend 
+		sbc	r7,r5
+	_DIV_UF1610:
+		dec	Acc			;next bit
+		brne	_DIV_UF1600			;until all done
+		com	r0
+		com	r1
+		com	r2			;because all bit are inverted during computation
+		com	r3
+		pop	Acc			;restore Acc
+		ret
+#endif
+.exit
+

@@ -1,0 +1,572 @@
+; 	 ____________________________________________________________________________________________
+;	|////////////////////////////////////////////////////////////////////////////////////////////|
+;	|///|											|////|
+;	|///| ALGORITHM	 : CIRCULAR QUEUE							|////|
+;	|///| VERSAO	 : 1.0									|////|
+;	|///| PROGRAMADOR: JOÃO DARTAGNAN ANTUNES OLIVEIRA				   	|////|
+;	|///| DATA 	 : 6 de Agosto de 2007 (23:51)						|////|
+;	|///| DESCRIÇÃO	 : Implementa algoritmo de fila circular				|////|
+;	|///| OBJETIVO:	   Implementar funcoes necessarias para um fila de dados do tipo (FIFO) |////|
+;	|///| 		   "Fist In First Out", Primeiro a Entrar Primeiro a Sair Circular, ou 	|////|
+;	|///|	           seja quando o dado inserido atingir o tamanho máximo da fila a inser-|////|
+;	|///|		   çao dar-se-a no inicio.						|////|
+;	|///| RESOURCES	 : Area na fila definido na SRAM					|////|
+;	|///|											|////|
+;	|///| OBS:	   This software is inteded to use in AVR with SRAM			|////|
+;	|///|___________________________________________________________________________________|////|
+;-------|////////////////////////////////////////////////////////////////////////////////////////////|
+;	>--------------------------------------------------------------------------------------------<
+;-------|											     |
+;	|   				C I R C U L A R  Q U E U E 	 		     	     |
+;	| 											     |
+;+------+--------------------------------------------------------------------------------------------+
+
+
+;			 ///////////////////////\\\\\\\\\\\\\\\\\\\\\\\\\
+;			//						\\
+;----------------------||  	       	 CIRCULAR QUEUE			||---------------------------
+;			\\						//
+			 \\\\\\\\\\\\\\\\\\\\\\\/////////////////////////
+
+#ifndef __CIRCULAR_QUEUE__
+
+	#define __CIRCULAR_QUEUE__
+
+	.message "+------------------+"
+	.message "|                  |"
+	.message "| CIRCULAR QUEUE   |"
+	.message "|                  |"
+	.message "+------------------+"
+
+;>--------------------------------------------------------------<
+;| OBJECT     : CIRCULAR_QUEUE					|
+;>--------------------------------------------------------------<
+;| DESCRIPTION: This object has a lot of function to control	|
+;|		data input and output from a circular queue	|
+;|		using a FIFO(First In First Out) queue	 	|
+;>--------------------------------------------------------------<
+
+;>--------------------------------------------------------------<
+;| This object recquire a defined region in SRAM with Size of   |
+;| of queue in bytes to work in appropriate manner.		|
+;| Below a sample code						|
+;>--------------------------------------------------------------<
+
+;
+;.DSEG
+;	MY_CIRCULAR_BUFFER:		.BYTE	SIZE_OF_CIRCULAR_BUFFER
+;.CSEG
+
+;>--------------------------------------------------------------<
+;| the code that use this object must be reserve space using the|
+;| below remark code						|
+;| Observation: Max number of queues suported is 42		|
+;>--------------------------------------------------------------<
+
+;.EQU	_CIRCULAR_QUEUE_ENTRIES	= 1							;Number of Queues entries 
+											;put this definition bellow
+											;_AVR_CLOCK definition
+
+;-------------------------< CONSTANT DEFINITONS >------------------------
+
+.EQU	_CIRCURLAR_QUEUE_OFF_SIZE	= 0						;size offset
+.EQU	_CIRCURLAR_QUEUE_OFF_ADDRESS	= 2						;address offset
+.EQU	_CIRCURLAR_QUEUE_OFF_G		= 4						;g pointer
+.EQU	_CIRCURLAR_QUEUE_OFF_P		= 6						;p pointer
+
+;-------------------------< DEVICE DEFINITIONS >-------------------------
+
+.DSEG
+	_CIRCULAR_QUEUE_COUNT:			.BYTE	_BYTE				;queue count
+	_CIRCULAR_QUEUE_ENTRIES_BUFFER:		.BYTE	_CIRCULAR_QUEUE_ENTRIES*6	;Each entrie is formatted as follow
+											;1st Word = Queue Size
+											;2nd Word = Queue Address
+											;3rd Word = Queue Get Pointer
+											;4th Word = Queue Put Pointer
+.CSEG
+
+;-------------------------< MACROS  DEFINITONS >-------------------------
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_INIT				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Initialize queue engine				|
+	;>--------------------------------------------------------------<
+	;| USAGE      :	rcall	_CIRCULAR_QUEUE_INIT			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	None						|
+	;| OUTPUT     :	None						|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	this function must be called before use of any 	|
+	;|		other 						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_INIT:
+		pushaw
+		pushw	Z
+		ldi	Acc,0
+		sts	_CIRCULAR_QUEUE_COUNT,Acc				;clear queues count
+		ldiw	Z,_CIRCULAR_QUEUE_ENTRIES_BUFFER			;Z-->queue.entries
+		ldi	Acc,_CIRCULAR_QUEUE_ENTRIES				;clear entry buffer
+		ldi	AccH,0
+	_CIRCULAR_QUEUE_INIT_10:
+		st	Z+,AccH							;clear parms
+		st	Z+,AccH
+		st	Z+,AccH
+		st	Z+,AccH
+		st	Z+,AccH
+		st	Z+,AccH
+		st	Z+,AccH
+		st	Z+,AccH
+		dec	Acc
+		brne	_CIRCULAR_QUEUE_INIT_10					;until all clear
+		popw	Z
+		popaw
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_GET_ENTRY_ADDRESS		|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Get queue entry address				|
+	;>--------------------------------------------------------------<
+	;| USAGE      :	ldi	Acc,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS	|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  	queue entry number			|
+	;| OUTPUT     :	Z--->	queue entry address			|
+	;|		cy=1	if invalid entry			|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	this function return with on effect if queue	|
+	;|		entry number > _CIRCULAR_QUEUE_ENTRIES		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS:
+		pushaw
+		cpi	AccH,_CIRCULAR_QUEUE_ENTRIES					;entry in valid range ?
+		sec									;assume entry invalid
+		brsh	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS_EXIT				;exit if invalid entry
+		ldiw	Z,_CIRCULAR_QUEUE_ENTRIES_BUFFER				;Z-->entries
+		lsl	AccH								;entry number *8
+		lsl	AccH
+		lsl	AccH
+		add	ZL,AccH
+		ldi	Acc,0
+		adc	ZH,Acc
+		clc									;set entry ok
+	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS_EXIT:
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_ADD				|
+	;>--------------------------------------------------------------<
+	;|DESCRIPTION : add new queue in queue entries			|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldiaw	QUEUE SIZE				|
+	;|		ldiw	Z,QUEUE_ADDRESS				|
+	;|		rcall	_CIRCULAR_QUEUE_ADD_ENTRY		|
+	;|		after this call Acc has a handdle number of this|
+	;|		queue						|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH:Acc   queue size				|
+	;|		AccTH:AccT queue data area buffer address	|
+	;| OUTPUT     :	Acc  	   queue handdle number			|
+	;|		cy=1 	   if queue entry full			|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	if this function return cy=1 possible mean that	|
+	;|		other drive or routine already use a circular	|
+	;|		queue, in this case increase 			|
+	;|		until cy=0 _CIRCULAR_QUEUE_ENTRIES		|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_ADD:
+		push	AccH
+		pushw	Z
+		push	AccH								;save size low
+		lds	AccH,_CIRCULAR_QUEUE_COUNT					;get actual queue count
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		pop	AccH								;restore size low
+		brcs	_CIRCULAR_QUEUE_ADD_ENTRY_EXIT					;exit if full
+		st	Z+,Acc								;set size
+		st	Z+,AccH
+		st	Z+,AccT								;set address
+		st	Z+,AccTH
+		ldi	Acc,0
+		st	Z+,Acc								;g=0
+		st	Z+,Acc	
+		st	Z+,Acc								;p=0
+		st	Z+,Acc
+		lds	Acc,_CIRCULAR_QUEUE_COUNT					;queue.count++
+		inc	Acc
+		sts	_CIRCULAR_QUEUE_COUNT,Acc
+		dec	Acc
+		clc
+	_CIRCULAR_QUEUE_ADD_ENTRY_EXIT:
+		popw	Z
+		pop	AccH
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_CLEAR				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Clear queue P and G pointers			|
+	;>--------------------------------------------------------------<
+	;| USAGE      : rcall	_CIRCULAR_QUEUE_CLEAR			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  queue entry number			|
+	;| OUTPUT     :	cy=1 if invalid entry				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_CLEAR:
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_INC_P				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Increment P pointer 				|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_INC_P			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  queue entry number			|
+	;| OUTPUT     :	cy=1 if invalid entry				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_INC_P:
+		pushaw
+		pushawt
+		pushw	Z		
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		brcs	_CIRCULAR_QUEUE_INC_P_EXIT					;exit if invalid
+		ld	Acc,Z+								;get Size
+		ld	AccH,Z+
+		adiw	ZL,4
+	_CIRCULAR_QUEUE_INC_P_10:
+		ld	AccT,Z+								;get P
+		ld	AccTH,Z+
+		addiawt	1								;p++
+		cp	AccT,Acc							;p>Size
+		cpc	AccTH,AccH
+		brlo	_CIRCULAR_QUEUE_INC_P_20					;no, branch
+		ldiawt	0								;else p=0
+	_CIRCULAR_QUEUE_INC_P_20:
+		clc
+		st	-Z,AccTH
+		st	-Z,AccT
+	_CIRCULAR_QUEUE_INC_P_EXIT:
+		popw	Z
+		popawt
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_INC_G				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Increment G pointer 				|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_INC_G			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  queue entry number			|
+	;| OUTPUT     :	cy=1 if invalid entry				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_INC_G:
+		pushaw
+		pushawt
+		pushw	Z		
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		brcs	_CIRCULAR_QUEUE_INC_P_EXIT					;exit if invalid
+		ld	Acc,Z+								;get Size
+		ld	AccH,Z+
+		adiw	ZL,2								;point to G
+		rjmp	_CIRCULAR_QUEUE_INC_P_10
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_DEC_P				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Decrement P pointer 				|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_DEC_P			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  queue entry number			|
+	;| OUTPUT     :	cy=1 if invalid entry				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_DEC_P:
+		pushaw
+		pushawt
+		pushw	Z		
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		brcs	_CIRCULAR_QUEUE_DEC_P_EXIT					;exit if invalid
+		ld	Acc,Z+								;get Size
+		ld	AccH,Z+
+		subiaw	1								;size -1
+		adiw	ZL,4
+	_CIRCULAR_QUEUE_DEC_P_10:
+		ld	AccT,Z+								;get P
+		ld	AccTH,Z+
+		subiawt	1								;p--
+		brpl	_CIRCULAR_QUEUE_DEC_P_20					;branch if p>=H
+		mov	AccT,Acc
+		mov	AccTH,AccH
+	_CIRCULAR_QUEUE_DEC_P_20:
+		clc
+		st	-Z,AccTH
+		st	-Z,AccT
+	_CIRCULAR_QUEUE_DEC_P_EXIT:
+		popw	Z
+		popawt
+		popaw
+		ret
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_DEC_G				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Decrement G pointer 				|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_DEC_G			|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  queue entry number			|
+	;| OUTPUT     :	cy=1 if invalid entry				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|																		|
+	_CIRCULAR_QUEUE_DEC_G:
+		pushaw
+		pushawt
+		pushw	Z		
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		brcs	_CIRCULAR_QUEUE_DEC_P_EXIT					;exit if invalid
+		ld	Acc,Z+								;get Size
+		ld	AccH,Z+
+		subiaw	1								;size -1
+		adiw	ZL,2
+		rjmp	_CIRCULAR_QUEUE_DEC_P_10					;g--
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_EMPTY				|
+	;>--------------------------------------------------------------<
+	;| DESCRIPTION: Check if queue if empty				|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_EMPTY			|
+	;|		cy=1 if invalid entry				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  queue entry number			|
+	;| OUTPUT     :	cy=1 if empty					|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|				
+	_CIRCULAR_QUEUE_EMPTY:
+		pushaw
+		pushawt
+		pushw	Z
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		brcs	_CIRCULAR_QUEUE_EMPTY_EXIT					;exit if invalid
+		adiw	ZL,4
+		ld	Acc,Z+								;get G
+		ld	AccH,Z+
+	_CIRCULAR_QUEUE_EMPTY_10:
+		ld	AccT,Z+								;get P
+		ld	AccTH,Z+
+		cp	Acc,AccT							;G=P?
+		cpc	AccH,AccTH
+		clc
+		brne	_CIRCULAR_QUEUE_EMPTY_EXIT					;branch if yes
+		sec
+	_CIRCULAR_QUEUE_EMPTY_EXIT:
+		popw	Z
+		popawt
+		popaw
+		ret
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_FULL				|
+	;>--------------------------------------------------------------<
+	;|DESCRIPTION: Check if queue if full				|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_FULL			|
+	;|		cy=1 if full					|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH  queue entry number			|
+	;| OUTPUT     :	cy=1 if full					|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	----						|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|				
+	_CIRCULAR_QUEUE_FULL:
+		pushaw
+		pushawt
+		pushw	Z
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		brcs	_CIRCULAR_QUEUE_EMPTY_EXIT					;exit if invalid
+		ld	AccT,Z+								;get size
+		ld	AccTH,Z+
+		subiawt	1
+		adiw	ZL,2
+		ld	Acc,Z+								;get G
+		ld	AccH,Z+
+		subiaw	1								;G--
+		push	Temp
+		cpiaw	0
+		pop	Temp
+		brpl	_CIRCULAR_QUEUE_FULL_10						;no, branch
+		mov	Acc,AccT							;else G=max-1
+		mov	AccH,AccTH
+	_CIRCULAR_QUEUE_FULL_10:
+		rjmp	_CIRCULAR_QUEUE_EMPTY_10
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_PUT_DATA				|
+	;>--------------------------------------------------------------<
+	;|DESCRIPTION : Put data into circular queue			|
+	;>--------------------------------------------------------------<
+	;| USAGE      : ldi	Acc,data	;data			|
+	;|		ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_PUT_DATA		|
+	;|		cy=1 if invalid entry				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	Acc  data 					|
+	;|		AccH queue entry				|
+	;| OUTPUT     :	cy=1 invalid entry				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION:	if _CIRCULAR_QUEUE_FULL to check if queue is full|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|				
+	_CIRCULAR_QUEUE_PUT_DATA:
+		pushaw
+		pushawt
+		pushw	Z
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		lbrcs	_CIRCULAR_QUEUE_INC_P_EXIT					;exit if invalid
+		pushw	Z
+		push	Acc								;save data
+		adiw	ZL,2								;get address
+		ld	Acc,Z+
+		ld	AccH,Z+
+		adiw	ZL,2
+		ld	AccT,Z+								;get P
+		ld	AccTH,Z+
+		mov	ZL,Acc								;Z=address
+		mov	ZH,AccH
+		add	ZL,AccT								;Z(p)<-data
+		adc	ZH,AccTH
+		pop	Acc								;restore data
+		st	Z,Acc
+		popw	Z
+		ld	Acc,Z+								;get Size
+		ld	AccH,Z+
+		adiw	ZL,4
+		rjmp	_CIRCULAR_QUEUE_INC_P_10					;P++
+
+	;>--------------------------------------------------------------<
+	;| OBJECT     : CIRCULAR_QUEUE					|
+	;>--------------------------------------------------------------<
+	;| FUNCTION   : CIRCULAR_QUEUE_GET_DATA				|
+	;>--------------------------------------------------------------<
+	;|DESCRIPTION : get data from circular queue			|
+	;>--------------------------------------------------------------<
+	;| USAGE      :	ldi	AccH,2		;Entry queue number 2	|
+	;|		rcall	_CIRCULAR_QUEUE_GET_DATA		|
+	;|		after this Acc=data				|
+	;|		cy=1 if invalid entry				|
+	;>--------------------------------------------------------------<
+	;| INPUT      :	AccH queue entry				|
+	;| OUTPUT     :	Acc  data					|
+	;|		cy=1 invalid entry				|
+	;| DESTROYED  :	Flags						|
+	;| TIME	      :	----						|
+	;>--------------------------------------------------------------<
+	;| OBSERVATION: use _CIRCULAR_QUEUE_EMPTY to check if queue	|
+	;|		is empty					|
+	;+--------------------------------------------------------------+-------------------------------------------------------------------------------\
+	;|				
+	_CIRCULAR_QUEUE_GET_DATA:
+		push	Temp
+		push	AccH
+		pushw	Z
+		rcall	_CIRCULAR_QUEUE_GET_ENTRY_ADDRESS				;get entry address
+		lbrcs	_CIRCULAR_QUEUE_INC_P_EXIT					;exit if invalid
+		pushw	Z
+		adiw	ZL,2								;get address
+		ld	Acc,Z+
+		ld	AccH,Z+
+		ld	AccT,Z+								;get G
+		ld	AccTH,Z+
+		mov	ZL,Acc								;Z=address
+		mov	ZH,AccH
+		add	ZL,AccT								;Z(p)<-data
+		adc	ZH,AccTH
+		ld	Temp,Z
+		popw	Z
+		ld	Acc,Z+								;get Size
+		ld	AccH,Z+
+		adiw	ZL,2
+		ld	AccT,Z+								;get G
+		ld	AccTH,Z+
+		addiawt	1								;G++
+		cp	AccT,Acc							;G>Size
+		cpc	AccTH,AccH
+		brlo	_CIRCULAR_QUEUE_GET_DATA_EXIT_10				;no, branch
+		ldiawt	0								;else G=0
+	_CIRCULAR_QUEUE_GET_DATA_EXIT_10:
+		clc
+		st	-Z,AccTH							
+		st	-Z,AccT		
+		mov	Acc,Temp
+		popw	Z
+		pop	AccH
+		pop	Temp
+		ret
+#endif

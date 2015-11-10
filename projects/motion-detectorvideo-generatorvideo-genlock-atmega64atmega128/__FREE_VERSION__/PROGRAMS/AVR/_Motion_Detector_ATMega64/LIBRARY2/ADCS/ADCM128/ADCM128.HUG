@@ -1,0 +1,170 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| DATA:16/11/2000						|
+;>--------------------------------------------------------------<
+;| A D C  F O R  A V R  M 1 2 8 				|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N S 		|
+;+------------------------------------------------------+---------------------------------------+
+;| _ADC_INIT		INITIALIZE ADC8535 INTERNAL CONVERTERS					|
+;|			INITIALIZATION EXAMPLE							|
+;|												|
+;|			LDI	Acc,6		;SET DIVISION FACTOR 2^6=64			|
+;|			call 	_ADC_INIT	;AFTER THIS POINT ALL ADC ROUTINES WORKING 	|
+;|----------------------------------------------------------------------------------------------|
+;| _ADC_CHANNEL		SET ADC CHANNEL TO GET VALUES						|
+;|												|
+;|			LDI	Acc,3		;SET CHANNEL 3 TO GET VALUE			|
+;|			call 	_ADC_GET	;AFTER THIS POINT ACC:ACCH HAVE A 10 BIT VALUE	|
+;|----------------------------------------------------------------------------------------------|
+;| _ADC_GET		TO GET VALUE FROM ADC8535 INTERNAL					|
+;|												|
+;|			call 	_ADC_GET	;AFTER THIS POINT ACC:ACCH HAVE A 10 BIT VALUE	|
+;+----------------------------------------------------------------------------------------------+
+#ifndef __ADCS_ADCM128__
+	#define __ADCS_ADCM128__
+	.message "+--------------+"
+	.message "|              |"
+	.message "| ADCS ADCM128 |"
+	.message "|              |"
+	.message "+--------------+"
+	.DSEG
+		_ADC_CHANNEL:		.BYTE 1			;set channel
+	.CSEG
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   ADC INITIALIZATION		  |
+	;|  				  |
+	;|\			          |
+	;| | Input  : Acc prescaler factor|
+	;| | Output : None		  |
+	;|/  Destroy: None	.	  |		
+	;|   Output : none		  |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_ADC_INIT:
+		push	Acc					;Save used
+		push	AccH
+		push	AccT
+		in	AccT,SREG				;Save SREG status
+		push	AccT
+		cli						;clear interrupts
+		andi	Acc,((1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0))	;only prescaler factor
+		in	AccH,ADCSRA				;read Actual status
+		andi	AccH,~((1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)) ;mask prescaler bits
+		or	Acc,AccH				;bound prescaler factor
+		ori	Acc,(1<<ADEN) | (1<<ADSC)		;issue ADC enable and start fist dummy conversion
+		out	ADCSRA,Acc
+	_ADC_I00:
+		sbic	ADCSRA,ADSC				;Wait 1st Convesion done
+		jmp 	_ADC_I00
+		in	Acc,SFIOR
+		ori	Acc,(1<<4)
+		out	SFIOR,Acc
+		clr	Acc
+		sts	DDRF,Acc
+		sts	PORTF,Acc
+		rcall	_ADC_SET_CHANNEL			;*<NOCHANGE>*
+		pop	AccT
+		out	SREG,AccT				;restore SREG status
+		pop	AccT
+		pop	AccH
+		pop	Acc
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   ADC SET CHANNEL		  |
+	;|  				  |
+	;|\			          |
+	;| | Input  : channel number 0..7 |
+	;|/  Output : None		  |
+	;|   Destroy: None	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_ADC_SET_CHANNEL:
+		push	AccH
+		in	AccH,SREG			;save SREG State
+		push	AccH
+		cli					;disable interrupts
+		in	AccH,ADMUX			;get actual multiplex state
+		andi	AccH,~((1<<MUX2)|(1<<MUX1)|(1<<MUX0))  ;mask channels 0..7
+		andi	Acc,((1<<MUX2)|(1<<MUX1)|(1<<MUX0))
+		sts	_ADC_CHANNEL,Acc		;update channel
+		or	AccH,Acc			;set new channel
+		out	ADMUX,AccH
+		pop	AccH				;restore SREG
+		out	SREG,AccH
+		pop	AccH
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   ADC GET CHANNEL		  |
+	;|  				  |
+	;|\			          |
+	;| | Input  : None		  |
+	;|/  Output : channel number 0..7 |
+	;|   Destroy: None	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_ADC_GET_CHANNEL:
+		lds	Acc,_ADC_CHANNEL		;get channel
+		ret
+	;   |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+
+	;|   ADC GET VALUE		  |
+	;|  				  |
+	;|\			          |
+	;| | Input  : None	          |
+	;|/  Output : Acc:AccH Value      |
+	;|   Destroy: None	          |
+	;|   			       	  |
+	;+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+	_ADC_GET_VALUE:
+		sbi	ADCSRA,ADSC			;set start conversion
+	_ADC_G00:
+		sbic	ADCSRA,ADSC			;Wait conversion complete
+		jmp 	_ADC_G00
+		in	Acc,ADCL			;read value
+		in	AccH,ADCH
+		ret
+#endif
+.exit
+
+

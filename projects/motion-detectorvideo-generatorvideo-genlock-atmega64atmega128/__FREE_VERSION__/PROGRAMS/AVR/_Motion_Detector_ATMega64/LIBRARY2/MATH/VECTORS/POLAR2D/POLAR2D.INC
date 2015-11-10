@@ -1,0 +1,347 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-------------------+
+;|											|
+;| DATA:1/12/2002									|
+;>--------------------------------------------------------------------------------------<
+;| C A L C U L A T E  A  2 D V E C T O R  A N D  P A R A M E T E R S  S E T 		|
+;+--------------------------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM					|
+;+--------------------------------------------------------------------------------------+
+;>------------------------------------------------------<
+;| I M P L E M E N T E D  F U N C T I O N  		|
+;+------------------------------------------------------+---------------------------------------+
+;| _VECTP2D_SET_POINT	set start point of vector P(xi,yi)					|
+;|												|
+;|			ldi	XL,low(315)		;set start point to p(315,100)		|
+;|			ldi	XH,high(315)							|
+;|			ldi	YL,low(100)							|
+;|			ldi	YH,high(100)							|
+;|			rcall	_VECTP2D_SET_POINT	;set					|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_GET_POINT	get start point of vector P(xi,yi) or end point P(xf,yf) 		|
+;|			if _VECTP2D_COMPUTE calling before					|
+;|												|
+;|			rcall	_VECTP2D_GET_POINT	;X,Y coordinates point			|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_SET_SCALE	set scale of vector range 1/256 to 256			 		|
+;|												|
+;|			ldi	Acc,low(256)		;set scale to 1				|
+;|			ldi	AccH,high(256)							|
+;|			rcall	_VECTP2D_SET_SCALE	;set					|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_GET_SCALE	get scale of vector 					 		|
+;|												|
+;|			rcall	_VECTP2D_SET_SCALE	;Acc:AccH Scale				|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_SET_RADIUS	set radius of vector range -32768 to 32767		 		|
+;|												|
+;|			ldi	Acc,low(200)		;set radius to 200			|
+;|			ldi	AccH,high(200)							|
+;|			rcall	_VECTP2D_SET_RADIUS	;set					|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_GET_RADIUS	get radius of vector 					 		|
+;|												|
+;|			rcall	_VECTP2D_GET_SCALE	;Acc:AccH Radius			|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_SET_ANGLE	set angle of vector range -32768 to 32767		 		|
+;|												|
+;|			ldi	Acc,low(340)		;set angle to 340			|
+;|			ldi	AccH,high(340)							|
+;|			rcall	_VECTP2D_SET_ANGLE	;set					|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_GET_ANGLE	get angle of vector 					 		|
+;|												|
+;|			rcall	_VECTP2D_GET_ANGLE	;Acc:AccH Angle				|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;| _VECTP2D_GET_COMPUTE	compute polar vector getting P(xi,yi),Radius,Scale and Angle to obtain	|
+;|			P(xf,yf), the new point is updated into P(xi,yi)			|
+;|												|
+;|			rcall	_VECTP2D_COMPUTE	;After this use _VECTP2D_GET_POINT	|
+;|							;to see new point			|
+;|												|
+;+----------------------------------------------------------------------------------------------+
+;+----------------------------------------------------------------------+
+;| Calculate a equation that obtain new point of polar vector starting  |
+;| at p(Xi,Yi) with angle A between Normal and P(Xi,Yi)-P(Xf,Yf) segment|
+;|									|
+;|									|
+;|    P(Xi,Yi) O--------------- Normal					|
+;|	 	\ A  /							|
+;|	  	 \  /							|
+;|	   	  \/							|
+;|	    	   \							|
+;|	     	  R \							|
+;|	      	     \							|
+;|	       	      \							|
+;|		       \						|
+;|	       P(Xf,Yf) O						|
+;|									|
+;| The 2d Polar Vector Equation is:					|
+;| 									|
+;|	P(Xf)=P(Xi)+S*R*COS(A)						|
+;|	P(Yf)=P(Yi)+S*R*SIN(A)						|
+;|									|
+;|	S is as Scale factor that range 1/256 to 256 is a fractionary	|
+;|	parameter							|
+;|									|
+;+----------------------------------------------------------------------+
+#ifndef	__INTEGER_VECTOR_POLAR2D__
+	#define __INTEGER_VECTOR_POLAR2D__
+	.message "[ (MATH) INTEGER VECTOR POLAR2D ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef	__INTEGER_DISCRETE_COSINE__
+		.INCLUDE	"MATH\TRIGONOMETRY\DISCRETE_COSINE\DISCRETE_COSINE.INC"
+	#endif
+	#ifndef	__INTEGER_DISCRETE_SINE__
+		.INCLUDE	"MATH\TRIGONOMETRY\DISCRETE_SINE\DISCRETE_SINE.INC"
+	#endif
+	.dseg
+		_VECTP2D_X:		.byte	2				;hold start point before computation and end point after computation
+		_VECTP2D_Y:		.byte	2
+		_VECTP2D_S:		.byte	2				;Scale
+		_VECTP2D_R:		.byte	2				;Radius
+		_VECTP2D_A:		.byte	2				;Angle in degrees
+	.cseg
+	;+------------------------------+
+	;| Set start point coordinates	|
+	;|				|
+	;| Input  : X start x point	|
+	;|	    Y start y point	|
+	;| Output : None		|
+	;| Destroy: None		|
+	;+------------------------------+
+	_VECTP2D_SET_POINT:
+		sts	_VECTP2D_X+0,XL
+		sts	_VECTP2D_X+1,XH
+		sts	_VECTP2D_Y+0,YL
+		sts	_VECTP2D_Y+1,YH
+		ret
+	;+------------------------------------------------------+
+	;| Set scale factor					|
+	;|							|
+	;| Input  : Acc:AccH Scale				|
+	;| Output : none					|
+	;| Destroy: none					|
+	;|							|
+	;| Obs: Scale is formatted as follow			|
+	;|							|
+	;|  15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0	|
+	;| +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+	|
+	;| | i| i| i| i| i| i| i| i| f| f| f| f| f| f| f| f|	|
+	;| +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+	|
+	;|							|
+	;| i = integer part 					|
+	;| f = fractionary part					|
+	;+------------------------------------------------------+
+	_VECTP2D_SET_SCALE:
+		sts	_VECTP2D_S+0,Acc
+		sts	_VECTP2D_S+1,AccH
+		ret
+	;+------------------------------+
+	;| Get scale			|
+	;| 				|
+	;| Input  : None		|
+	;| Output : Acc:AccH		|
+	;| Destroy: None		|
+	;+------------------------------+
+	_VECTP2D_GET_SCALE:
+		lds	Acc,_VECTP2D_S+0
+		lds	AccH,_VECTP2D_S+1
+		ret
+	;+------------------------------+
+	;| Set radius			|
+	;|				|
+	;| Input  : Acc:AccH Radius	|
+	;| Output : None		|
+	;| Destroy: None		|
+	;+------------------------------+
+	_VECTP2D_SET_RADIUS:
+		sts	_VECTP2D_R+0,Acc
+		sts	_VECTP2D_R+1,AccH
+		ret
+	;+------------------------------+
+	;| Get Radius			|
+	;| 				|
+	;| Input  : None		|
+	;| Output : Acc:AccH		|
+	;| Destroy: None		|
+	;+------------------------------+
+	_VECTP2D_GET_RADIUS:
+		lds	Acc,_VECTP2D_R+0
+		lds	AccH,_VECTP2D_R+1
+		ret
+	;+------------------------------+
+	;| Set angle			|
+	;|				|
+	;| Input  : Acc:AccH Radius	|
+	;| Output : None		|
+	;| Destroy: None		|
+	;+------------------------------+
+	_VECTP2D_SET_ANGLE:
+		sts	_VECTP2D_A+0,Acc
+		sts	_VECTP2D_A+1,AccH
+		ret		
+	;+------------------------------+
+	;| Get angle			|
+	;| 				|
+	;| Input  : None		|
+	;| Output : Acc:AccH		|
+	;| Destroy: None		|
+	;+------------------------------+
+	_VECTP2D_GET_ANGLE:
+		lds	Acc,_VECTP2D_A+0
+		lds	AccH,_VECTP2D_A+1
+		ret
+	;+------------------------------+
+	;| Get point coordinates	|
+	;| 				|
+	;| Input  : None		|
+	;| Output : X start x point	|
+	;|	    Y start y point	|
+	;| Destroy: None		|
+	;+------------------------------+
+	_VECTP2D_GET_POINT:
+		lds	XL,_VECTP2D_X+0
+		lds	XH,_VECTP2D_X+1
+		lds	YL,_VECTP2D_Y+0
+		lds	YH,_VECTP2D_Y+1
+		ret
+	;+--------------------------------------+
+	;| Computa Polar 2D Vector End Point	|
+	;| Using follow equation:		|
+	;|					|
+	;|	P(Xf)=P(Xi)+S*R*COS(A)		|
+	;|	P(Yf)=P(Yi)+S*R*SIN(A)		|
+	;|					|
+	;| Input  : None			|
+	;| Output : None			|
+	;| Destroy: Flags,R0,R1,R2,R3,R4,R5,R6	|
+	;|		  R7,R8,R9,R10,R11,R12	|
+	;+--------------------------------------+
+	_VECTP2D_COMPUTE:
+		push	Acc
+		push	AccH
+		push	AccT
+		push	AccTH
+		push	XL
+		push	XH
+		push	YL
+		push	YH
+		lds	Acc,_VECTP2D_A+0				;get Angle A
+		lds	AccH,_VECTP2D_A+1
+		lds	AccT,_VECTP2D_R+0				;get Radius R
+		lds	AccTH,_VECTP2D_R+1
+		rcall	_DSCOS16B					;perform R*COS(A)
+		rcall	_VECTP2D_MULT_S					;Multiply by Scale
+		lds	AccT,_VECTP2D_X+0				;Update
+		lds	AccTH,_VECTP2D_X+1
+		add	Acc,AccT
+		adc	AccH,AccTH
+		sts	_VECTP2D_X+0,Acc				;store X new end point
+		sts	_VECTP2D_X+1,AccH
+		lds	Acc,_VECTP2D_A+0				;get Angle A
+		lds	AccH,_VECTP2D_A+1
+		lds	AccT,_VECTP2D_R+0				;get Radius R
+		lds	AccTH,_VECTP2D_R+1
+		rcall	_DSSIN16B					;perform R*SIN(A)
+		rcall	_VECTP2D_MULT_S					;Multiply by Scale
+		lds	AccT,_VECTP2D_Y+0				;Update
+		lds	AccTH,_VECTP2D_Y+1
+		add	Acc,AccT
+		adc	AccH,AccTH
+		sts	_VECTP2D_Y+0,Acc				;store Y new end point
+		sts	_VECTP2D_Y+1,AccH
+		pop	YH
+		pop	YL
+		pop	XH
+		pop	XL
+		pop	AccTH
+		pop	AccT
+		pop	AccH
+		pop	Acc
+		ret
+	
+	;+------------------------------+
+	;| Perform Scale multiplication	|
+	;| Acc:AccH=Angle*Scale		|
+	;+------------------------------+
+	_VECTP2D_MULT_S:
+		mov	r0,Acc						;multiply signals
+		lds	r1,_VECTP2D_S+0
+		eor	r0,r1
+		push	r0						;save signal result
+		rcall	_VECTP2D_MULT_TO_POSITIVE
+		mov	r0,Acc						;put into apropriate registers
+		mov	r1,AccH
+		clr	r2
+		clr	r3
+		lds	Acc,_VECTP2D_S+0				;get Scale
+		lds	AccH,_VECTP2D_S+1
+		rcall	_VECTP2D_MULT_TO_POSITIVE
+		mov	r4,Acc
+		mov	r5,AccH
+		clr	r6
+		clr	r7
+		rcall	_MUL_U32U32U32					;Multiply
+		mov	Acc,r9						;get integer part only
+		mov	AccH,r10
+		pop	r0						;adjust signal
+		tst	r0
+		brpl	_VECTP2D_MULT00					;branch if positive
+		com	Acc						;else complement result
+		com	AccH
+		subi	Acc,-1
+		sbci	AccH,-1
+	_VECTP2D_MULT00:
+		ret
+	;+--------------------------
+	;| convert to positive if negative
+	;+--------------------------
+	_VECTP2D_MULT_TO_POSITIVE:
+		tst	AccH
+		brpl	_VECTP2D_MULT_TO00				;branch if yes
+		com	Acc						;else complement
+		com	AccH
+		subi	Acc,-1
+		sbci	AccH,1
+	_VECTP2D_MULT_TO00:
+		ret
+#endif
+.exit
+

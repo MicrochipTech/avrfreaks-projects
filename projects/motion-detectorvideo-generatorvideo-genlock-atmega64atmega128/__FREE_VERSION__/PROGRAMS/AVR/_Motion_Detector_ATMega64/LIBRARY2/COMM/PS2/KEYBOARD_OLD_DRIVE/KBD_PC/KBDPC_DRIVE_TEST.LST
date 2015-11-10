@@ -1,0 +1,1383 @@
+
+AVRASM ver. 1.54  C:\Dart\AVR\LIBRARY\COMM\PS2\KEYBOARD\KBDPC\KBDPC_DRIVE_TEST.ASM Tue Feb 19 23:34:51 2002
+
+
+         ;+------------------------------------------------------+
+         ;| PS2 COMMUNICATION BETWEEN KEYBOARD AND PC		|
+         ;| KEYBOARD-->PC					|
+         ;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+         ;| DATA:19/02/2002					|
+         ;>------------------------------------------------------<
+         ;| P R O G R A M  F I L E 				|
+         ;+------------------------------------------------------+
+         
+         ;+------------------------------------------------------+
+         ;| A V R  C L O C K 					|
+         ;+------------------------------------------------------+
+         
+          .EQU	_AVR_CLOCK	= 4000000
+         
+         ;+------------------------------------------------------+
+         ;| S R A M  I N I T I A L I Z A T I O N 		|
+         ;+------------------------------------------------------+
+         
+          .EQU	_SRAM_BOOT_TYPE	= 1					;USE 0 NOT CLEAR SRAM DURING BOOT
+         								;USE 1 CLEAR DURING BOOT
+         ;+------------------------------------------------------+
+         ;| I N C L U D E   F I L E S				|
+         ;+------------------------------------------------------+
+         
+         ;+----------------------------
+         ;| Global Definitions
+         ;+----------------------------
+          .include	"\Dart\Avr\Library\Defs\GlobDefs.Inc"		;Global Definitions
+         ;+------------------------------------------------------+
+         ;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+         ;| DATA: 10/04/2000					|
+         ;>------------------------------------------------------<
+         ;| G L O B A L  D E F I N I T I O N   F I L E 		|
+         ;+------------------------------------------------------+
+         
+         ;+------------------------------------------------------+
+         ;| T I M E R S  D E F I N I T I O N S			|
+         ;+------------------------------------------------------+
+         
+          .EQU	_TIMER_STOP	= 0B00000000			;timer stop
+          .EQU	_TIMER_DIV_1	= 0B00000001			;timer divisor factor by 1
+          .EQU	_TIMER_DIV_8	= 0B00000010			;timer divisor factor by 8
+          .EQU	_TIMER_DIV_64	= 0B00000011			;timer divisor factor by 64
+          .EQU	_TIMER_DIV_256	= 0B00000100			;timer divisor factor by 256
+          .EQU	_TIMER_DIV_1024	= 0B00000101			;timer divisor factor by 1024
+          .EQU	_TIMER_FALL	= 0B00000110			;timer Fall
+          .EQU	_TIMER_RISE	= 0B00000111			;timer Rise
+         	
+         ;+------------------------------------------------------+
+         ;| R E G I S T E R S   D E F I N I T I O N S		|
+         ;+------------------------------------------------------+
+         
+          .DEF	Acc		= r24				;my Works registers
+          .DEF	AccH		= r25
+          .DEF	AccT		= r16
+          .DEF	AccTH		= r17
+         
+         ;+------------------------------------------------------+
+         ;| C O N S T A N T S   D E F I N I T I O N S		|
+         ;+------------------------------------------------------+
+         
+          .EQU	_ON			= 0xFF
+          .EQU	_OFF			= 0x00
+         
+         ;+------------------------------------------------------+
+         ;| M A C R O  D E F I N I T I O N S			|
+         ;+------------------------------------------------------+
+         
+         ;  +---------------------+
+         ;  | P W M  M A C R O S  |
+         ;  +---------------------+
+         ; /
+         ;|
+         ;| @0 	   - PWM Prescaler factor
+         ;| Destroy - Acc
+         ;| Obs:
+         ;| 	_PWM_XB_INIT Function Always program PWM output in normal mode
+         ;|	call _PWM_OUT_INVERTED macro to invert it when needed
+         
+         ; ----------------
+         ;| INIT 8 BIT PWM |
+         ; ----------------
+         
+          .MACRO	_PWM_8B_INIT
+          	in	Acc,SREG					;Save SREG state
+          	cli
+          	push	Acc
+          	in	Acc,TCCR1B					;Get actual value
+          	andi	Acc,0b11111000					;Mask unused bits
+          	ori	Acc,@0						;set prescaler factor
+          	out	TCCR1B,Acc				
+          	ldi	Acc,(0<<PWM11) | (1<<PWM10) | (1<<COM1A1) | (1<<COM1A0)	;Normal PWM output 8 bits
+          	out	TCCR1A,Acc					;program	
+          	pop	Acc
+          	out	SREG,Acc					;restore SREG state
+          .ENDMACRO
+         
+         ; ----------------
+         ;| INIT 9 BIT PWM |
+         ; ----------------
+         
+          .MACRO	_PWM_9B_INIT
+          	in	Acc,SREG					;Save SREG state
+          	cli
+          	push	Acc
+          	in	Acc,TCCR1B					;Get actual value
+          	andi	Acc,0b11111000					;Mask unused bits
+          	ori	Acc,@0						;set prescaler factor
+          	out	TCCR1B,Acc				
+          	ldi	Acc,(1<<PWM11) | (0<<PWM10) | (1<<COM1A1) | (0<<COM1A0)	;Normal PWM output 9 bits
+          	out	TCCR1A,Acc					;program
+          	pop	Acc
+          	out	SREG,Acc					;restore SREG state
+          .ENDMACRO
+         
+         ; -----------------
+         ;| INIT 10 BIT PWM |
+         ; -----------------
+         
+          .MACRO	_PWM_10B_INIT
+          	in	Acc,SREG					;Save SREG state
+          	cli
+          	push	Acc
+          	in	Acc,TCCR1B					;Get actual value
+          	andi	Acc,0b11111000					;Mask unused bits
+          	ori	Acc,@0						;set prescaler factor
+          	out	TCCR1B,Acc				
+          	ldi	Acc,(1<<PWM11) | (1<<PWM10) | (1<<COM1A1) | (0<<COM1A0)	;Normal PWM output 10 bits
+          	out	TCCR1A,Acc					;program	
+          	pop	Acc
+          	out	SREG,Acc					;restore SREG state
+          .ENDMACRO
+         
+         ; --------------------------
+         ;| SET PWM OUTPUT AS NORMAL |
+         ; --------------------------
+         
+          .MACRO	_PWM_OUT_NORMAL
+          	in	Acc,SREG					;Save SREG state
+          	cli
+          	push	Acc
+          	in	Acc,TCCR1A
+          	andi	Acc,0b00111111					;Mask unused bits
+          	ori	Acc,(1<<COM1A1) | (0<<COM1A0)			;Normal output programed
+          	out	TCCR1A,Acc					;program	
+          	pop	Acc
+          	out	SREG,Acc					;restore SREG state
+          .ENDMACRO
+         
+         ; ----------------------------
+         ;| SET PWM OUTPUT AS INVERTED |
+         ; ----------------------------
+         
+          .MACRO	_PWM_OUT_INVERTED
+          	in	Acc,SREG					;Save SREG state
+          	cli
+          	push	Acc
+          	in	Acc,TCCR1A
+          	andi	Acc,0b00111111					;Mask unused bits
+          	ori	Acc,(1<<COM1A1) | (1<<COM1A0)			;Normal output programed
+          	out	TCCR1A,Acc					;program	
+          	pop	Acc
+          	out	SREG,Acc					;restore SREG state
+          .ENDMACRO
+         
+         ; ----------------------------------
+         ;| SEND VALUES INTO ACC:ACCH TO PWM |
+         ; ----------------------------------
+         
+          .MACRO	_PWM_OUT
+          	out	OCR1AH,AccH					;Define PWM output value
+          	out	OCR1AL,Acc
+          .ENDMACRO
+         
+         ; ------------------------------
+         ;| SEND IMEDIATE VALUES TO  PWM |
+         ;| @0 - Imetiate value input	|
+         ; ------------------------------
+         
+          .MACRO	_PWM_OUT_IMMEDIATE
+          	push	Acc
+          	ldi	Acc,high(@0)
+          	out	OCR1AH,Acc					;Define PWM output value
+          	ldi	Acc,low(@0)
+          	out	OCR1AL,Acc
+          	pop	Acc
+          .ENDMACRO
+         
+         ;  +----------------------------+
+         ;  | T I M E R S   M A C R O S  |
+         ;  +----------------------------+
+         ; /
+         ;|
+         ; ------------------------------
+         ;| TIMER 0 INITIALIZATION	|
+         ;| @0 - Prescaler division	|
+         ;| @1 - Timer division		|
+         ;| obs: Enable timer 0 interrupt|
+         ; ------------------------------
+         
+          .MACRO	_TIMER0_INIT		;Init timer 0 to count mode and enable 
+          	ldi	Acc,@0		;TCCR0=with prescaler factor
+          	out	TCCR0,Acc
+          	ldi	Acc,@1		;TCNT0=with division factor
+          	out	TCNT0,Acc
+          .ENDMACRO
+         
+         ;  +-----------------------------+
+         ;  | H A N D D L E  M A C R O S  |
+         ;  +-----------------------------+
+         ; /
+         ;|
+         ;+-----------------------------------
+         ;|SET HANDDLE ADDRESS ROUTINE
+         ;|
+         ;|EXAMPLE OF USE
+         ;|
+         ;|	_SET_HANDDLE _HDC_OVF0_VECT,ADDRESS_ROUTINE	;Set timer overflow 0 to jump ADDRESS_ROUTINE label
+         ;|
+         ;+-----------------------------------
+         
+          .MACRO	_SET_HANDDLE
+          	push	AccT		;save AccT 
+          	in	AccT,SREG	;save SREG state
+          	cli			;disable interrupts
+          	ldi	Acc,low(@1)	;get handdle address
+          	ldi	AccH,high(@1)	
+          	sts	@0+0,Acc	;set handdle
+          	sts	@0+1,AccH
+          	out	SREG,AccT	;restore SREG
+          	pop	AccT		;restore AccT
+          .ENDMACRO
+         
+         ;+-----------------------------------
+         ;|SAVE HANDDLE ADDRESS INTO SRAM OR REGISTER
+         ;|
+         ;|EXAMPLE OF USE
+         ;|
+         ;|	_SAVE_HANDDLE _HDC_OVF0_VECT,SRAM_SAVE_ADDRESS	;Set timer overflow 0 address into SRAM_SAVE_ADDRESS
+         ;|
+         ;+-----------------------------------
+         
+          .MACRO	_SAVE_HANDDLE
+          	push	AccT		;save AccT 
+          	in	AccT,SREG	;save SREG state
+          	cli			;disable interrupts
+          	lds	Acc,@0+0	;get handdle address
+          	lds	AccH,@0+1	
+          	sts	@1+0,Acc	;save handdle
+          	sts	@1+1,AccH
+          	out	SREG,AccT	;restore SREG
+          	pop	AccT		;restore AccT
+          .ENDMACRO
+         
+         ;+-----------------------------------
+         ;|CALL HANDDLE ADDRESS INTO SRAM OR REGISTER
+         ;|
+         ;|EXAMPLE OF USE
+         ;|
+         ;|	_CALL_HANDDLE SRAM_HANDDLE_ADDRESS		;call routine address SRAM_HANDDLE_ADDRESS
+         ;|
+         ;+-----------------------------------
+         
+          .MACRO	_CALL_HANDDLE
+          	lds	ZL,@0+0			;get handdle address into sram
+          	lds	ZH,@0+1
+          	icall				;call 
+          .ENDMACRO
+         	          .include 	"\Dart\Avr\Library\Defs\2313Defi.Inc"		;Microcontroler Definitions
+         ;***************************************************************************
+         ;* A P P L I C A T I O N   N O T E   F O R   T H E   A V R   F A M I L Y
+         ;* 
+         ;* Number		:AVR000
+         ;* File Name		:"2313def.inc"
+         ;* Title		:Register/Bit Definitions for the AT90S2313
+         ;* Date	 		:97.12.11
+         ;* Version		:1.20
+         ;* Support telephone	:+47 72 88 87 20 (ATMEL Norway)
+         ;* Support fax		:+47 72 88 87 18 (ATMEL Norway)
+         ;* Support E-Mail	:avr@atmel.com
+         ;* Target MCU		:AT90S2313
+         ;*
+         ;* DESCRIPTION
+         ;* When including this file in the assembly program file, all I/O register
+         ;* names and I/O register bit names appearing in the data book can be used.
+         ;* 
+         ;* The Register names are represented by their hexadecimal addresses.
+         ;* 
+         ;* The Register Bit names are represented by their bit number (0-7).
+         ;* 
+         ;* Please observe the difference in using the bit names with instructions
+         ;* such as "sbr"/"cbr" (set/clear bit in register) and "sbrs"/"sbrc" 
+         ;* (skip if bit in register set/cleared). The following example illustrates
+         ;* this:
+         ;* 
+         ;* in	r16,PORTB		;read PORTB latch
+         ;* sbr	r16,(1<<PB6)+(1<<PB5)	;set PB6 and PB5 (use masks, not bit#)
+         ;* out  PORTB,r16		;output to PORTB
+         ;*
+         ;* in	r16,TIFR		;read the Timer Interrupt Flag Register
+         ;* sbrc	r16,TOV0		;test the overflow flag (use bit#)
+         ;* rjmp	TOV0_is_set		;jump if set
+         ;* ...				;otherwise do something else
+         ;***************************************************************************
+         
+         ;***** Specify Device
+          .device AT90S2313
+         
+         ;***** I/O Register Definitions
+          .equ	SREG	=$3f
+          .equ	SPL	=$3d
+          .equ	GIMSK	=$3b
+          .equ	GIFR	=$3a
+          .equ	TIMSK	=$39
+          .equ	TIFR	=$38
+          .equ	MCUCR	=$35
+          .equ	MCUSR	=$34
+          .equ	TCCR0	=$33
+          .equ	TCNT0	=$32
+          .equ	TCCR1A	=$2f
+          .equ	TCCR1B	=$2e
+          .equ	TCNT1H	=$2d
+          .equ	TCNT1L	=$2c
+          .equ	OCR1AH	=$2b
+          .equ	OCR1AL	=$2a
+          .equ	ICR1H	=$25
+          .equ	ICR1L	=$24
+          .equ	WDTCR	=$21
+          .equ	EEAR	=$1e
+          .equ	EEARL	=$1e
+          .equ	EEDR	=$1d
+          .equ	EECR	=$1c
+          .equ	PORTB	=$18
+          .equ	DDRB	=$17
+          .equ	PINB	=$16
+          .equ	PORTD	=$12
+          .equ	DDRD	=$11
+          .equ	PIND	=$10
+          .equ	UDR	=$0c
+          .equ	USR	=$0b
+          .equ	UCR	=$0a
+          .equ	UBRR	=$09
+          .equ	ACSR	=$08
+         
+         
+         ;***** Bit Definitions
+          .equ	SP7	=7
+          .equ	SP6	=6
+          .equ	SP5	=5
+          .equ	SP4	=4
+          .equ	SP3	=3
+          .equ	SP2	=2
+          .equ	SP1	=1
+          .equ	SP0	=0
+         
+          .equ	INT1	=7
+          .equ	INT0	=6
+         
+          .equ	INTF1	=7
+          .equ	INTF0	=6
+         
+          .equ	TOIE1	=7
+          .equ	OCIE1A	=6
+          .equ	TICIE	=3
+          .equ	TOIE0	=1
+         
+          .equ	TOV1	=7
+          .equ	OCF1A	=6
+          .equ	ICF1	=3
+          .equ	TOV0	=1
+         
+          .equ	SE	=5
+          .equ	SM	=4
+          .equ	ISC11	=3
+          .equ	ISC10	=2
+          .equ	ISC01	=1
+          .equ	ISC00	=0
+         
+          .equ	EXTRF	=1
+          .equ	PORF	=0
+         
+          .equ	CS02	=2
+          .equ	CS01	=1
+          .equ	CS00	=0
+         
+          .equ	COM1A1	=7
+          .equ	COM1A0	=6
+          .equ	PWM11	=1
+          .equ	PWM10	=0
+         
+          .equ	ICNC1	=7
+          .equ	ICES1	=6
+          .equ	CTC1	=3
+          .equ	CS12	=2
+          .equ	CS11	=1
+          .equ	CS10	=0
+         
+          .equ	WDTOE	=4
+          .equ	WDE	=3
+          .equ	WDP2	=2
+          .equ	WDP1	=1
+          .equ	WDP0	=0
+         
+          .equ	EEMWE	=2
+          .equ	EEWE	=1
+          .equ	EERE	=0
+         
+          .equ	PB7	=7
+          .equ	PB6	=6
+          .equ	PB5	=5
+          .equ	PB4	=4
+          .equ	PB3	=3
+          .equ	PB2	=2
+          .equ	PB1	=1
+          .equ	PB0	=0
+         
+          .equ	DDB7	=7
+          .equ	DDB6	=6
+          .equ	DDB5	=5
+          .equ	DDB4	=4
+          .equ	DDB3	=3
+          .equ	DDB2	=2
+          .equ	DDB1	=1
+          .equ	DDB0	=0
+         
+          .equ	PINB7	=7
+          .equ	PINB6	=6
+          .equ	PINB5	=5
+          .equ	PINB4	=4
+          .equ	PINB3	=3
+          .equ	PINB2	=2
+          .equ	PINB1	=1
+          .equ	PINB0	=0
+         
+          .equ	PD6	=6
+          .equ	PD5	=5
+          .equ	PD4	=4
+          .equ	PD3	=3
+          .equ	PD2	=2
+          .equ	PD1	=1
+          .equ	PD0	=0
+         
+          .equ	DDD6	=6
+          .equ	DDD5	=5
+          .equ	DDD4	=4
+          .equ	DDD3	=3
+          .equ	DDD2	=2
+          .equ	DDD1	=1
+          .equ	DDD0	=0
+         
+          .equ	PIND6	=6
+          .equ	PIND5	=5
+          .equ	PIND4	=4
+          .equ	PIND3	=3
+          .equ	PIND2	=2
+          .equ	PIND1	=1
+          .equ	PIND0	=0
+         
+          .equ	RXC	=7
+          .equ	TXC	=6
+          .equ	UDRE	=5
+          .equ	FE	=4
+          .equ	OR	=3
+         
+          .equ	RXCIE	=7
+          .equ	TXCIE	=6
+          .equ	UDRIE	=5
+          .equ	RXEN	=4
+          .equ	TXEN	=3
+          .equ	CHR9	=2
+          .equ	RXB8	=1
+          .equ	TXB8	=0
+         
+          .equ	ACD	=7
+          .equ	ACO	=5
+          .equ	ACI	=4
+          .equ	ACIE	=3
+          .equ	ACIC	=2
+          .equ	ACIS1	=1
+          .equ	ACIS0	=0
+         
+          .def	XL	=r26
+          .def	XH	=r27
+          .def	YL	=r28
+          .def	YH	=r29
+          .def	ZL	=r30
+          .def	ZH	=r31
+         
+          .equ    RAMEND  =$df    ;Last On-Chip SRAM Location
+          .equ	RAMSTART=$60	;Fist On-Chip SRAM Location
+         
+          .equ	INT0addr=$001	;External Interrupt0 Vector Address
+          .equ	INT1addr=$002	;External Interrupt1 Vector Address
+          .equ	ICP1addr=$003	;Input Capture1 Interrupt Vector Address
+          .equ	OC1addr =$004	;Output Compare1 Interrupt Vector Address
+          .equ	OVF1addr=$005	;Overflow1 Interrupt Vector Address
+          .equ	OVF0addr=$006	;Overflow0 Interrupt Vector Address
+          .equ	URXCaddr=$007	;UART Receive Complete Interrupt Vector Address
+          .equ	UDREaddr=$008	;UART Data Register Empty Interrupt Vector Address
+          .equ	UTXCaddr=$009	;UART Transmit Complete Interrupt Vector Address
+          .equ	ACIaddr =$00a	;Analog Comparator Interrupt Vector Address
+         
+         ;+-------------------------------+
+         ;| MACROS DEFINITIONS 		 |
+         ;+-------------------------------+
+         
+         
+         ;+----------------------------------+
+         ;| HANDDLE SRAM VECTORS DEFINITIONS |
+         ;+----------------------------------+
+         
+          .DSEG
+          _HDC_START:
+000060      _HDC_INT0_VECT:		.BYTE 2		;use thats label names to set handdle address routines
+000062      _HDC_INT1_VECT:		.BYTE 2
+000064      _HDC_ICP1_VECT:		.BYTE 2
+000066      _HDC_OC1_VECT:		.BYTE 2
+000068      _HDC_OVF1_VECT:		.BYTE 2
+00006a      _HDC_OVF0_VECT:		.BYTE 2
+00006c      _HDC_URXC_VECT:		.BYTE 2
+00006e      _HDC_UDRE_VECT:		.BYTE 2
+000070      _HDC_UTXC_VECT:		.BYTE 2
+000072      _HDC_ACI_VECT:		.BYTE 2
+          _HDC_END:
+          .CSEG
+         
+         ;+----------------------------------+
+         ;| HANDDLE JUMP VECTORS DEFINITIONS |
+         ;+----------------------------------+
+         
+000000 c00a      	rjmp	_HDC_INIT		;jump to initialization routine
+000001 c021      	rjmp	_HDC_INT0_PROC		;jump to haddle routines
+000002 c028      	rjmp	_HDC_INT1_PROC
+000003 c02f      	rjmp	_HDC_ICP1_PROC
+000004 c036      	rjmp	_HDC_OC1_PROC
+000005 c03d      	rjmp	_HDC_OVF1_PROC
+000006 c044      	rjmp	_HDC_OVF0_PROC
+000007 c04b      	rjmp	_HDC_URXC_PROC
+000008 c052      	rjmp	_HDC_UDRE_PROC
+000009 c059      	rjmp	_HDC_UTXC_PROC
+00000a c060      	rjmp	_HDC_ACI_PROC
+         
+         ;+----------------------
+         ;| INITIALIZE STACK & SRAM 
+         ;+----------------------
+          _HDC_INIT:
+00000b ed8f      	ldi	Acc,low(RAMEND)
+00000c bf8d      	out	SPL,Acc
+         	
+          .INCLUDE	"\Dart\Avr\Library\Defs\SRAM_Init.Inc"	;SRAM & Stack initialization include file
+         ;+------------------------------------------------------+
+         ;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+         ;| DATA: 10/04/2000					|
+         ;>------------------------------------------------------<
+         ;| S R A M  I N I T I A L I Z A T I O N			|
+         ;+------------------------------------------------------+
+         
+         ;+----------------------
+         ;| INITIALIZE SRAM
+         ;+----------------------
+00000d e081      	ldi	Acc,_SRAM_BOOT_TYPE	;see if need to clear sram
+00000e 2388      	tst	Acc			;0-no clear -1 clear
+00000f f049      	breq	_VECT_INIT		;zero ? branch
+000010 e6e0      	ldi	ZL,low(RAMSTART)			;sram start address
+000011 e0f0      	ldi	ZH,high(RAMSTART)
+000012 e880      	ldi	Acc,low(RAMEND-RAMSTART+1)		;num bytes to erase
+000013 e090      	ldi	AccH,high(RAMEND-RAMSTART+1)
+000014 2700      	clr	AccT
+          _SRAM_I00:
+000015 9301      	st	Z+,AccT			;clear SRAM location
+000016 5081      	subi	Acc,1
+000017 4090      	sbci	AccH,0
+000018 f7e1      	brne	_SRAM_I00		;until all sram locations cleaded
+         ;+----------------------
+         ;| INITIALIZE VECTORS
+         ;+----------------------
+          _VECT_INIT:
+000019 e6e0      	ldi	ZL,low(_HDC_INT0_VECT)	;Z-->First vector
+00001a e0f0      	ldi	ZH,high(_HDC_INT0_VECT)
+00001b e706      	ldi	AccT,low(_HDC_RETURN)
+00001c e010      	ldi	AccTH,high(_HDC_RETURN)
+00001d e08a      	ldi	Acc,(_HDC_END-_HDC_START)/2
+          _VECT00:
+00001e 9301      	st	Z+,AccT			;store return address of each handdle vector
+00001f 9311      	st	Z+,AccTH
+000020 958a      	dec	Acc
+000021 f7e1      	brne	_VECT00
+000022 c150      	rjmp	_MAIN_INIT		;jump to MAIN initialization
+         
+         ;+----------------------------------+
+         ;| HANDDLES 			    |
+         ;+----------------------------------+
+         ;------------------<<  INT 0   >>---------------------------------------------------------------------
+          _HDC_INT0_PROC:
+000023 93ef      	push	ZL			;save Z
+000024 93ff      	push	ZH
+000025 91e0 0060 	lds	ZL,_HDC_INT0_VECT+0	;Z=HANDDLE VECTOR
+000027 91f0 0061 	lds	ZH,_HDC_INT0_VECT+1
+000029 9509      	icall				;call routine
+00002a c048      	rjmp	_HDC_EXIT
+         ;------------------<<  INT 1   >>---------------------------------------------------------------------
+          _HDC_INT1_PROC:
+00002b 93ef      	push	ZL			;save Z
+00002c 93ff      	push	ZH
+00002d 91e0 0062 	lds	ZL,_HDC_INT1_VECT+0	;Z=HANDDLE VECTOR
+00002f 91f0 0063 	lds	ZH,_HDC_INT1_VECT+1
+000031 9509      	icall				;call routine
+000032 c040      	rjmp	_HDC_EXIT
+         ;------------------<<  ICP 1  >>---------------------------------------------------------------------
+          _HDC_ICP1_PROC:
+000033 93ef      	push	ZL			;save Z
+000034 93ff      	push	ZH
+000035 91e0 0064 	lds	ZL,_HDC_ICP1_VECT+0	;Z=HANDDLE VECTOR
+000037 91f0 0065 	lds	ZH,_HDC_ICP1_VECT+1
+000039 9509      	icall				;call routine
+00003a c038      	rjmp	_HDC_EXIT
+         ;------------------<<  OC  1  >>---------------------------------------------------------------------
+          _HDC_OC1_PROC:
+00003b 93ef      	push	ZL			;save Z
+00003c 93ff      	push	ZH
+00003d 91e0 0066 	lds	ZL,_HDC_OC1_VECT+0	;Z=HANDDLE VECTOR
+00003f 91f0 0067 	lds	ZH,_HDC_OC1_VECT+1
+000041 9509      	icall				;call routine
+000042 c030      	rjmp	_HDC_EXIT
+         ;------------------<<  OVF 1   >>---------------------------------------------------------------------
+          _HDC_OVF1_PROC:
+000043 93ef      	push	ZL			;save Z
+000044 93ff      	push	ZH
+000045 91e0 0068 	lds	ZL,_HDC_OVF1_VECT+0	;Z=HANDDLE VECTOR
+000047 91f0 0069 	lds	ZH,_HDC_OVF1_VECT+1
+000049 9509      	icall				;call routine
+00004a c028      	rjmp	_HDC_EXIT
+         ;------------------<<  OVF 0   >>---------------------------------------------------------------------
+          _HDC_OVF0_PROC:
+00004b 93ef      	push	ZL			;save Z
+00004c 93ff      	push	ZH
+00004d 91e0 006a 	lds	ZL,_HDC_OVF0_VECT+0	;Z=HANDDLE VECTOR
+00004f 91f0 006b 	lds	ZH,_HDC_OVF0_VECT+1
+000051 9509      	icall				;call routine
+000052 c020      	rjmp	_HDC_EXIT
+         ;------------------<<  URXC   >>---------------------------------------------------------------------
+          _HDC_URXC_PROC:
+000053 93ef      	push	ZL			;save Z
+000054 93ff      	push	ZH
+000055 91e0 006c 	lds	ZL,_HDC_URXC_VECT+0	;Z=HANDDLE VECTOR
+000057 91f0 006d 	lds	ZH,_HDC_URXC_VECT+1
+000059 9509      	icall				;call routine
+00005a c018      	rjmp	_HDC_EXIT
+         ;------------------<<  UDRE   >>---------------------------------------------------------------------
+          _HDC_UDRE_PROC:
+00005b 93ef      	push	ZL			;save Z
+00005c 93ff      	push	ZH
+00005d 91e0 006e 	lds	ZL,_HDC_UDRE_VECT+0	;Z=HANDDLE VECTOR
+00005f 91f0 006f 	lds	ZH,_HDC_UDRE_VECT+1
+000061 9509      	icall				;call routine
+000062 c010      	rjmp	_HDC_EXIT
+         ;------------------<<  UTXC   >>---------------------------------------------------------------------
+          _HDC_UTXC_PROC:
+000063 93ef      	push	ZL			;save Z
+000064 93ff      	push	ZH
+000065 91e0 0070 	lds	ZL,_HDC_UTXC_VECT+0	;Z=HANDDLE VECTOR
+000067 91f0 0071 	lds	ZH,_HDC_UTXC_VECT+1
+000069 9509      	icall				;call routine
+00006a c008      	rjmp	_HDC_EXIT
+         ;------------------<<  ACI    >>---------------------------------------------------------------------
+          _HDC_ACI_PROC:
+00006b 93ef      	push	ZL			;save Z
+00006c 93ff      	push	ZH
+00006d 91e0 0072 	lds	ZL,_HDC_ACI_VECT+0	;Z=HANDDLE VECTOR
+00006f 91f0 0073 	lds	ZH,_HDC_ACI_VECT+1
+000071 9509      	icall				;call routine
+000072 c000      	rjmp	_HDC_EXIT
+         ;------------------<<  COMMON RETURN ADDRESS   >>----------------------------------------------------
+          _HDC_EXIT:
+000073 91ff      	pop	ZH
+000074 91ef      	pop	ZL
+000075 9518      	reti				;return from interrupt
+          _HDC_RETURN:
+000076 9508      	ret				;return from interrupt routine
+         	
+         ;+----------------------------
+         ;| Time Routines
+         ;+----------------------------
+          .include	"\Dart\Avr\Library\Time\Time.inc"		;Time Routines
+         ;+------------------------------------------------------+
+         ;| HOSPITAL SARAH BRASILIA				|
+         ;| TIME INCLUDE ROUTINES VERSÃO 1.0			|
+         ;| NEED FILE TO WORK "GLOBDEFS.INC"			|
+         ;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+         ;| DATA:14/03/2001					|
+         ;>------------------------------------------------------<
+         ;| T I M E  R O U T I N E S	 			|
+         ;+------------------------------------------------------+
+         
+         ;>------------------------------------------------------<
+         ;| I M P L E M E N T E D  F U N C T I O N S 		|
+         ;+------------------------------------------------------+---------------------------------------+
+         ;| _DelayMile	Wait N Mileseconds into Acc:AccH register pair					|
+         ;|		Sample using _DelayMile to wait a 15ms						|
+         ;|												|
+         ;|		LDI	ACCT,LOW(15)		;ACC:ACCH=Time Contante in this case 15ms	|
+         ;|		LDI	ACCTH,HIGH(15)								|
+         ;|		RCALL	_DelayMile		;Make a delay					|
+         ;+----------------------------------------------------------------------------------------------+
+         
+         ;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+         ;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+         ;|  Make a mileseconds Delay MACRO 		 |
+         ;|\			          		 |
+         ;| | Destroy : None				 |
+         ;|/  			          		 |
+         ;|   	        		  		 |
+         ;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+         ;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+         ;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\_________________________________________________________
+         
+          .MACRO	_DELAY_MILESECONDS
+          	push	Acc
+          	push	AccH
+          	ldi	Acc,low(@0)
+          	ldi	AccH,high(@0)
+          	rcall	_DelayMile
+          	pop	AccH
+          	pop	Acc
+          .ENDMACRO
+         
+         
+         ;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+         ;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+         ;|  Make a mileseconds Delay	  		 |
+         ;|  				  		 |
+         ;|\			          		 |
+         ;| | Input  : Acc,AccH Mileseconds Delay	 |
+         ;|/  Output : None	          		 |
+         ;|   Destroy: None	          		 |
+         ;|   			       	  		 |
+         ;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+         ;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+         ;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\_________________________________________________________
+         ;				/
+         ;				| Mileseconds Equation Time
+         ;			        | 
+         ;				|      6.N+6
+         ;				| Lt=---------	
+         ;				|    AVR_CLOCK   
+         ;				|
+         ;				| Resolving for N
+         ;				|
+         ;				|   Lt.AVR_CLOCK-6			        Lt.AVR_CLOCK - 6000	
+         ;				| N=--------------  Converting Lt to ms --> N=------------------------
+         ;				|	  6					      6000
+         ;				| 
+         ;				| To wait a 1ms Lt=1000uS 
+         ;				\_______________________________________________________________________
+         
+         
+          .EQU	_N1000	= (1*_AVR_CLOCK-6000)/6000 ;1000uS
+         
+          _DelayMile:
+000077 938f      	push	Acc			;Save Useds
+000078 939f      	push	AccH
+000079 930f      	push	AccT
+00007a 931f      	push	AccTH
+00007b 920f      	push	r0
+00007c 2400      	clr	r0
+          _DelM00:
+00007d 1580      	cp	Acc,r0			;End of time ?
+00007e 0590      	cpc	AccH,r0
+00007f f051      	breq	_DelM20			;Yes, Done		
+000080 e909      	ldi	AccT,low(_N1000)	;load time constant for wait a 1ms
+000081 e012      	ldi	AccTH,high(_N1000)
+          _DelM10:
+000082 5001      	subi	AccT,1			;decrement time
+000083 4010      	sbci	AccTH,0
+000084 1500      	cp	AccT,r0
+000085 0510      	cpc	AccTH,r0		;1ms reatched ?
+000086 f7d9      	brne	_DelM10			;no, wait
+000087 5081      	subi	Acc,1
+000088 4090      	sbci	AccH,0
+000089 cff3      	rjmp	_DelM00			;next milesecond delay
+          _DelM20:
+00008a 900f      	pop	r0			;Restore Useds
+00008b 911f      	pop	AccTH
+00008c 910f      	pop	AccT
+00008d 919f      	pop	AccH
+00008e 918f      	pop	Acc
+00008f 9508      	ret
+         ;+----------------------------
+         ;| PS2 Routines
+         ;+----------------------------
+          .include	"\Dart\Avr\Library\COMM\PS2\KEYBOARD\KBDPC\KBDPC.inc"	;PS2 Keyboard --> PC routines
+         ;+------------------------------------------------------+
+         ;| PS2 - KEYBOARD PROTOCOL COMMUNICATIONS ROUTINES	|
+         ;| DIRECTION KEYBOARD --> PC				|
+         ;| NEED FILE TO WORK "GLOBDEFS.INC" 			|
+         ;| BY JOÃO DARTAGNAN ANTUNES OLIVEIRA			|
+         ;| DATA:22/03/2001					|
+         ;>------------------------------------------------------<
+         ;| P S 2  K E Y B O A R D  P R O T O C O L 		|
+         ;+------------------------------------------------------+
+         ;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM	|
+         ;+------------------------------------------------------+
+         
+         
+         ;>------------------------------------------------------<
+         ;| I M P L E M E N T E D  F U N C T I O N S 		|
+         ;+------------------------------------------------------+---------------------------------------+
+         ;| _PS2KBD_INIT		INITIALIZE I2C LINE							|
+         ;|												|
+         ;|												|
+         ;|			RCALL	_I2C_INIT	;AFTER THIS POINT ALL I2C ROUTINES WORKING 	|
+         ;|						;AT PORTB					|
+         ;|----------------------------------------------------------------------------------------------|
+         ;| _I2C_ACK_IN		READ ACK BIT STATUS							|
+         ;|												|
+         ;|			RCALL	_I2C_ACK_IN	;GET ACK STATUS					|
+         ;|						;ACK STATUS INTO C FLAG				|
+         ;+----------------------------------------------------------------------------------------------+
+         
+         ;+-------------------------+
+         ;| KEYBOARD RESPONSE CODES |
+         ;+-------------------------+
+         
+          .EQU	_PS2KBD_CODE_ACK	= 0XFA
+          .EQU	_PS2KBD_CODE_POWERGOOD	= 0XAA
+          .EQU	_PS2KBD_CODE_ECHO	= 0XEE
+          .EQU	_PS2KBD_CODE_RESEND	= 0XFE
+          .EQU	_PS2KBD_CODE_OVERFLOW	= 0X00
+         
+         ;+-------------------------+
+         ;| KEYBOARD COMMANDS	   |
+         ;+-------------------------+
+         
+          .EQU	_PS2KBD_CMD_DISABLE		= 0XF5
+          .EQU	_PS2KBD_CMD_ECHO		= 0XEE
+          .EQU	_PS2KBD_CMD_ENABLE		= 0XF4
+          .EQU	_PS2KBD_CMD_READID		= 0XF2
+          .EQU	_PS2KBD_CMD_RESEND		= 0XFE
+          .EQU	_PS2KBD_CMD_RESET		= 0XFF
+          .EQU	_PS2KBD_CMD_SETSCANCODE		= 0XF0
+          .EQU	_PS2KBD_CMD_SETTYPEMATIC	= 0XF7
+          .EQU	_PS2KBD_CMD_SETMAKEBREAK	= 0XF8
+          .EQU	_PS2KBD_CMD_SETMAKE		= 0XF9
+          .EQU	_PS2KBD_CMD_TYPEMAKEBREAK 	= 0XFA
+          .EQU	_PS2KBD_CMD_DEFAULT		= 0XF6
+          .EQU	_PS2KBD_CMD_SETKEYTYPE		= 0XFB
+          .EQU	_PS2KBD_CMD_SETKEYMAKEBREAK	= 0XFC
+          .EQU	_PS2KBD_CMD_SETKEYAGAIN		= 0XFD
+          .EQU	_PS2KBD_CMD_SETSTATUS		= 0XED
+          .EQU	_PS2KBD_CMD_RATEDELAY		= 0XF3
+         
+         ;+-------------------------+
+         ;| SRAM VARIABLES INDEXES  |
+         ;+-------------------------+
+         
+          .DSEG
+         			;+------------------------------+
+         			;| RATEDELAY			|
+         			;|				|
+         			;| BIT 7 = 0 NOT USED		|
+         			;| BIT 6..5 = REPEAT DELAY	|
+         			;|	      00 -  250 Ms	|
+         			;|	      01 -  500 Ms	|
+         			;|	      10 -  750 Ms	|
+         			;|	      11 - 1000 Ms	|
+         			;|				|
+         			;| BIT 4..0 = REPEAT RATE	|
+         			;|	      00000 - 30 c/sec	|
+         			;|	      11111 -  2 c/sec	|
+         			;+------------------------------+
+000074      _PS2KBD_RATEDELAY:	 .BYTE 1
+         			;+------------------------------+
+         			;| STATUS INDICATOR		|
+         			;|				|
+         			;| BIT 7..3 = 0			|
+         			;| BIT 2    = CAPS LOCK		|
+         			;| BIT 1    = NUM LOCK		|
+         			;| BIT 0    = SCROLL LOCK	|
+         			;|				|
+         			;| 1 = Status ON		|
+         			;+------------------------------+
+          .EQU	_PS2KBD_CAPS_LOCK_BIT	= 2
+          .EQU	_PS2KBD_NUM_LOCK_BIT	= 1
+          .EQU	_PS2KBD_SCROLL_LOCK_BIT	= 0
+         
+000075      _PS2KBD_STATUSINDICATOR: .BYTE 1
+000076      _PS2KBD_SCANCODE: 	.BYTE 1 	;scan code nunber 1,2 or 3
+          .CSEG
+         
+         ;   |  |  |  |  |  |  |  |  |  |
+         ;+--+--+--+--+--+--+--+--+--+--+--+
+         ;|   KBD INITIALIZE		  |
+         ;|  				  |
+         ;|\			          |
+         ;| | Input  : None	          |
+         ;|/  Output : None	          |
+         ;|   Destroy: None	          |
+         ;|   			       	  |
+         ;+--+--+--+--+--+--+--+--+--+--+--+ 
+         ;   |  |  |  |  |  |  |  |  |  |
+         ;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________
+         
+          _PS2KBD_INIT:
+000090 938f      	push	Acc
+000091 b78f      	in	Acc,SREG					;Save SREG state
+000092 94f8      	cli							;to handdling ports correctly
+000093 9ac0      	sbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;set keyboard clock to high state
+000094 9ac1      	sbi	_PS2KBD_DATA_PORT_OUTPUT,_PS2KBD_DATA_BIT	;Set keyboard data to high state
+000095 9ab8      	sbi	_PS2KBD_CLOCK_PORT_DIR,_PS2KBD_CLOCK_BIT	;Set keyboard clock as output
+000096 9ab9      	sbi	_PS2KBD_DATA_PORT_DIR,_PS2KBD_DATA_BIT		;Set keyboard data as output	
+000097 bf8f      	out	SREG,Acc					;Restore SREG state
+000098 918f      	pop	Acc
+000099 9508      	ret
+         
+         
+         ;+---------------------------------------+
+         ;|					 |
+         ;| START ENTRY FOR KEYBOARD HANDDLE	 |
+         ;|					 |
+         ;+---------------------------------------+----------------------------------------------------------------------------
+          _PS2KBD_HANDDLE:
+00009a 98b8      	cbi	_PS2KBD_CLOCK_PORT_DIR,_PS2KBD_CLOCK_BIT	;set DATA and CLOCK to input
+00009b 98b9      	cbi	_PS2KBD_DATA_PORT_DIR,_PS2KBD_DATA_BIT
+00009c 0000      	nop
+00009d 9bb0      	sbis	_PS2KBD_CLOCK_PORT_ÌNPUT,_PS2KBD_CLOCK_BIT	;see if CLOCK=high and DATA=low, request PC comm status
+00009e c060      	rjmp	_PS2KBD_EXIT					;no, exit handdle
+00009f 99b1      	sbic	_PS2KBD_DATA_PORT_ÌNPUT,_PS2KBD_DATA_BIT
+0000a0 c05e      	rjmp	_PS2KBD_EXIT					;no, exit handdle
+0000a1 d05e      	rcall	_PS2KBD_RXD					;get data
+0000a2 f408      	brcc	_PS2KBD_H00					;continue if no error
+0000a3 c05b      	rjmp	_PS2KBD_EXIT					;else exit handdle
+          _PS2KBD_H00:
+0000a4 2799      	clr	AccH						;set to max time 
+0000a5 bf92      	out	TCNT0,AccH					;set Time out condition
+         ;+----------------------------------
+         ;| COMMAND IS SET STATUS ?
+         ;+----------------------------------
+0000a6 3e8d      	cpi	Acc,_PS2KBD_CMD_SETSTATUS			;get status ?
+0000a7 f451      	brne	_PS2KBD_H20					;no, branch
+0000a8 ef8a      	ldi	Acc,_PS2KBD_CODE_ACK
+0000a9 d096      	rcall	_PS2KBD_TXD					;awnser ack
+0000aa d055      	rcall	_PS2KBD_RXD					;get data again
+0000ab f408      	brcc	_PS2KBD_H10
+0000ac c052      	rjmp	_PS2KBD_EXIT					;exit if error
+          _PS2KBD_H10:
+0000ad 9380 0075 	sts	_PS2KBD_STATUSINDICATOR,Acc			;store status
+0000af ef8a      	ldi	Acc,_PS2KBD_CODE_ACK
+0000b0 d08f      	rcall	_PS2KBD_TXD					;awnser ack
+0000b1 c04d      	rjmp	_PS2KBD_EXIT
+         
+         ;+----------------------------------
+         ;| COMMAND IS ECHO ?
+         ;+----------------------------------
+          _PS2KBD_H20:
+0000b2 3e8e      	cpi	Acc,_PS2KBD_CMD_ECHO				;echo ?
+0000b3 f419      	brne	_PS2KBD_H30
+0000b4 ee8e      	ldi	Acc,_PS2KBD_CODE_ECHO				;awnser echo
+0000b5 d08a      	rcall	_PS2KBD_TXD
+0000b6 c048      	rjmp	_PS2KBD_EXIT
+         
+         ;+----------------------------------
+         ;| COMMAND IS TYPEMATIC RATE/DELAY ?
+         ;+----------------------------------
+          _PS2KBD_H30:
+0000b7 3f83      	cpi	Acc,_PS2KBD_CMD_RATEDELAY			;typematic rate/delay ?
+0000b8 f451      	brne	_PS2KBD_H50
+0000b9 ef8a      	ldi	Acc,_PS2KBD_CODE_ACK
+0000ba d085      	rcall	_PS2KBD_TXD					;awnser ack
+0000bb d044      	rcall	_PS2KBD_RXD					;get data again
+0000bc f408      	brcc	_PS2KBD_H40
+0000bd c041      	rjmp	_PS2KBD_EXIT					;exit if error
+          _PS2KBD_H40:
+0000be 9380 0074 	sts	_PS2KBD_RATEDELAY,Acc				;store status
+0000c0 ef8a      	ldi	Acc,_PS2KBD_CODE_ACK
+0000c1 d07e      	rcall	_PS2KBD_TXD					;awnser ack
+0000c2 c03c      	rjmp	_PS2KBD_EXIT					;exit handdle
+         
+         ;+----------------------------------
+         ;| COMMAND IS ENABLE KEYBOARD ?
+         ;+----------------------------------
+          _PS2KBD_H50:
+0000c3 3f84      	cpi	Acc,_PS2KBD_CMD_ENABLE				;enable ?
+0000c4 f419      	brne	_PS2KBD_H60
+0000c5 ef8a      	ldi	Acc,_PS2KBD_CODE_ACK				;awnser ack
+0000c6 d079      	rcall	_PS2KBD_TXD
+0000c7 c037      	rjmp	_PS2KBD_EXIT					;exit handdle
+         
+         ;+----------------------------------
+         ;| COMMAND IS DISABLE KEYBOARD ?
+         ;+----------------------------------
+          _PS2KBD_H60:
+0000c8 3f85      	cpi	Acc,_PS2KBD_CMD_DISABLE				;disable ?
+0000c9 f419      	brne	_PS2KBD_H70
+0000ca ef8a      	ldi	Acc,_PS2KBD_CODE_ACK				;awnser ack
+0000cb d074      	rcall	_PS2KBD_TXD
+0000cc c032      	rjmp	_PS2KBD_EXIT					;exit handdle
+         
+         ;+----------------------------------
+         ;| COMMAND IS RESET KEYBOARD ?
+         ;+----------------------------------
+          _PS2KBD_H70:
+0000cd 3f8f      	cpi	Acc,_PS2KBD_CMD_RESET				;reset ?
+0000ce f471      	brne	_PS2KBD_H80
+0000cf ef8a      	ldi	Acc,_PS2KBD_CODE_ACK				;awnser ack
+0000d0 d06f      	rcall	_PS2KBD_TXD
+0000d1 ea8a      	ldi	Acc,_PS2KBD_CODE_POWERGOOD			;test ok
+0000d2 d06d      	rcall	_PS2KBD_TXD
+0000d3 e78f      	ldi	Acc,0b01111111					;set defalt ratedelay 
+         								;delay 1000Ms
+         								;rate 2 char/s
+0000d4 9380 0074 	sts	_PS2KBD_RATEDELAY,Acc
+0000d6 e082      	ldi	Acc,(1<<_PS2KBD_NUM_LOCK_BIT)			;set locks indicator
+         								;caps lock off
+         								;num lock on
+         								;scroll lock off
+0000d7 9380 0075 	sts	_PS2KBD_STATUSINDICATOR,Acc
+0000d9 e082      	ldi	Acc,2						;set scan code 2
+0000da 9380 0076 	sts	_PS2KBD_SCANCODE,Acc
+0000dc c022      	rjmp	_PS2KBD_EXIT					;exit handdle
+         
+         ;+----------------------------------
+         ;| COMMAND IS READ ID KEYBOARD ?
+         ;+----------------------------------
+          _PS2KBD_H80:
+0000dd 3f82      	cpi	Acc,_PS2KBD_CMD_READID				;read id ?
+0000de f439      	brne	_PS2KBD_H90
+0000df ef8a      	ldi	Acc,_PS2KBD_CODE_ACK				;awnser ack
+0000e0 d05f      	rcall	_PS2KBD_TXD
+0000e1 ea8b      	ldi	Acc,0XAB					;awnser 0XAB
+0000e2 d05d      	rcall	_PS2KBD_TXD
+0000e3 e883      	ldi	Acc,0X83					;awnser 0X83
+0000e4 d05b      	rcall	_PS2KBD_TXD
+0000e5 c019      	rjmp	_PS2KBD_EXIT					;exit handdle
+         
+         ;+----------------------------------
+         ;| SET SCAN CODE
+         ;+----------------------------------
+          _PS2KBD_H90:
+0000e6 3f80      	cpi	Acc,_PS2KBD_CMD_SETSCANCODE			;set scan code ?
+0000e7 f491      	brne	_PS2KBD_H120
+0000e8 ef8a      	ldi	Acc,_PS2KBD_CODE_ACK
+0000e9 d056      	rcall	_PS2KBD_TXD					;awnser ack
+0000ea d015      	rcall	_PS2KBD_RXD					;get data again
+0000eb f408      	brcc	_PS2KBD_H100
+0000ec c012      	rjmp	_PS2KBD_EXIT					;exit handdle
+          _PS2KBD_H100:
+0000ed 2388      	tst	Acc						;zero ?
+0000ee f029      	breq	_PS2KBD_H110
+0000ef 9380 0076 	sts	_PS2KBD_SCANCODE,Acc				;store status
+0000f1 ef8a      	ldi	Acc,_PS2KBD_CODE_ACK
+0000f2 d04d      	rcall	_PS2KBD_TXD					;awnser ack
+0000f3 c00b      	rjmp	_PS2KBD_EXIT					;exit handdle
+          _PS2KBD_H110:
+0000f4 ef8a      	ldi	Acc,_PS2KBD_CODE_ACK				;awnser ack and scancode set if zero sented
+0000f5 d04a      	rcall	_PS2KBD_TXD
+0000f6 9180 0076 	lds	Acc,_PS2KBD_SCANCODE				;last scan code
+0000f8 d047      	rcall	_PS2KBD_TXD
+0000f9 c005      	rjmp	_PS2KBD_EXIT					;exit handdle
+         
+         ;+----------------------------------
+         ;| COMMAND IS SET DEFAULT KEYBOARD ?
+         ;+----------------------------------
+          _PS2KBD_H120:
+0000fa 3f86      	cpi	Acc,_PS2KBD_CMD_DEFAULT				;default set ?
+0000fb f419      	brne	_PS2KBD_H130
+0000fc ef8a      	ldi	Acc,_PS2KBD_CODE_ACK				;awnser	ack
+0000fd d042      	rcall	_PS2KBD_TXD
+0000fe c000      	rjmp	_PS2KBD_EXIT					;exit handdle
+          _PS2KBD_H130:
+          _PS2KBD_EXIT:
+0000ff 9508      	ret
+         
+         ;   |  |  |  |  |  |  |  |  |  |
+         ;+--+--+--+--+--+--+--+--+--+--+--+
+         ;|   PS2KBD_RXD			  |
+         ;|   				  |
+         ;|\  Input  : none	          |
+         ;| | Output : Acc data arrived	  |
+         ;|/	      Cy=0 if data ok     |
+         ;|   Destroy: Flags	          |
+         ;|   obs    : Interrupts disable  |
+         ;+--+--+--+--+--+--+--+--+--+--+--+ 
+         ;   |  |  |  |  |  |  |  |  |  |
+         ;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________________________
+         ;				/ KEYBOARD RECEPTION EVENTS NUMBERS	 						\
+         ;				|											|
+         ;				| EVENT NUMBER  -   2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1 					|
+         ;				| 		    5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0			|
+         ;				| KEYBOARD CLOCK  ---+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-----------------	|
+         ;				|		   ^ | | | | | | | | | | | | | | | | | | | | | |			|
+         ;				|		   | +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ 			|
+         ;				|		   |									|
+         ;				| 		   +- RECEIVE CONDITION	(CLOCK HIGH DATA LOW)				|
+         ;				| KEYBOARD DATA    | +---+---+---+---+---+---+---+---+---+---+---+			|
+         ;				|		   v | D0| D1| D2| D3| D4| D5| D6| D7| P | 1 | 0 +-------------------	|
+         ;				|		  ---+---+---+---+---+---+---+---+---+---+---+---+			|
+         ;				|		      \------ DATA BITS -------------/	       zero inseted by KEYBOARD |
+         ;				|       		      Send by computer 	       ^   ^				|
+         ;				|						       |   |				|
+         ;				|						       |   +---- STOP BIT		|
+         ;				|						       +-------- PARITY BIT (ODD)	|
+         ;				| REMARKS										|
+         ;				| EVENT NUMBER     STATUS								|
+         ;				|											|
+         ;				|          24	    Clear parity counter						|
+         ;				|		    Program data bit as input						|
+         ;				|		    Put Clock line low							|
+         ;				|          23	    get DO clock line high						|
+         ;				|          21	    get D1 clock line high						|
+         ;				|          19	    get D2 clock line high						|
+         ;				|          17	    get D3 clock line high						|
+         ;				|          15	    get D4 clock line high						|
+         ;				|          13	    get D5 clock line high						|
+         ;				|          11	    get D6 clock line high						|
+         ;				|           9	    get D7 clock line high						|
+         ;				|           7	    get P clock line high						|
+         ;				|           5	    get (Stop Bit) clock line high					|
+         ;				|		    clock line low							|
+         ;				|           3      Program data bit as output						|
+         ;				|	     2      process data decode							|
+         ;				| 24..4 step 2	    Output clock line low						|
+         ;				\---------------------------------------------------------------------------------------/
+         
+          _PS2KBD_RXD:
+000100 94f8      	cli
+000101 939f      	push	AccH						;save useds
+000102 930f      	push	AccT
+000103 98b8      	cbi	_PS2KBD_CLOCK_PORT_DIR,_PS2KBD_CLOCK_BIT	;set DATA and CLOCK to input
+000104 98b9      	cbi	_PS2KBD_DATA_PORT_DIR,_PS2KBD_DATA_BIT
+000105 0000      	nop
+          _PS2KBD_R00:
+000106 b386      	in	Acc,_PS2KBD_CLOCK_PORT_ÌNPUT			;see if CLOCK=high and DATA=low, request PC comm status
+000107 b396      	in	AccH,_PS2KBD_DATA_PORT_ÌNPUT
+000108 7081      	andi	Acc,(1<<_PS2KBD_CLOCK_BIT)			;mask bits
+000109 7092      	andi	AccH,(1<<_PS2KBD_DATA_BIT)
+00010a 2b89      	or	Acc,AccH					;bound bits
+00010b 3081      	cpi	Acc,(1<<_PS2KBD_CLOCK_BIT)			;request ?
+00010c f7c9      	brne	_PS2KBD_R00					;no, wait
+00010d d05f      	rcall	_PS2KBD_Del40					;wait 40us
+00010e 9ab8      	sbi	_PS2KBD_CLOCK_PORT_DIR,_PS2KBD_CLOCK_BIT	;set CLOCK as output DATA as input
+00010f 98b9      	cbi	_PS2KBD_DATA_PORT_DIR,_PS2KBD_DATA_BIT
+000110 2799      	clr	AccH						;parity counter
+000111 2788      	clr	Acc
+000112 e008      	ldi	AccT,8						;bit counter
+          PCTO00:
+000113 98c0      	cbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;clock low
+000114 d058      	rcall	_PS2KBD_Del40					;wait 40us
+000115 9488      	clc
+000116 99b1      	sbic	_PS2KBD_DATA_PORT_ÌNPUT,_PS2KBD_DATA_BIT	;read DATA
+000117 9408      	sec
+000118 f408      	brcc	PCTO10						;jump if parity even
+000119 9593      	inc	AccH						;else increment parity bit
+          PCTO10:
+00011a 9587      	ror	Acc						;Acc<--new bit
+00011b 9ac0      	sbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;clock high
+00011c d050      	rcall	_PS2KBD_Del40					;wait 40us
+00011d 950a      	dec	AccT						;until all bits
+00011e f7a1      	brne	PCTO00
+00011f 98c0      	cbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;clock low
+000120 d04c      	rcall	_PS2KBD_Del40					;wait 40us
+000121 938f      	push	Acc						;save data
+000122 9488      	clc
+000123 99b1      	sbic	_PS2KBD_DATA_PORT_ÌNPUT,_PS2KBD_DATA_BIT	;read DATA in that case parity bit
+000124 9408      	sec
+000125 1f88      	rol	Acc	
+000126 959a      	dec	AccH
+000127 2789      	eor	Acc,AccH					;parity odd ?
+000128 7081      	andi	Acc,1						;see bit 0
+000129 f039      	breq	PCTO20						;no, set error
+00012a 918f      	pop	Acc						;restore data
+          PCTO15:
+00012b d009      	rcall	_PS2KBD_PCSTOP
+00012c 9488      	clc							;com ok
+          PCTOEXIT:
+00012d d03f      	rcall 	_PS2KBD_Del40					;wait 40us
+00012e 910f      	pop	AccT						;restore useds
+00012f 919f      	pop	AccH
+000130 9508      	ret
+          PCTO20:
+000131 918f      	pop	Acc
+000132 d002      	rcall	_PS2KBD_PCSTOP
+000133 9408      	sec
+000134 cff8      	rjmp	PCTOEXIT
+         
+         ;+----------------------------
+         ;| SEND PARITY AND STOP BITS 
+         ;+----------------------------
+          _PS2KBD_PCSTOP:
+000135 9ac0      	sbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;clock high stop bit
+000136 d036      	rcall	_PS2KBD_Del40					;wait 40us
+000137 98c0      	cbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;clock low
+000138 d034      	rcall	_PS2KBD_Del40					;wait 40us
+000139 9ab9      	sbi	_PS2KBD_DATA_PORT_DIR,_PS2KBD_DATA_BIT		;set DATA as output
+00013a 98c0      	cbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;clock low (zero ack)
+00013b d031      	rcall	_PS2KBD_Del40					;wait 40us
+00013c 9ac0      	sbi	_PS2KBD_CLOCK_PORT_OUTPUT,_PS2KBD_CLOCK_BIT	;clock high
+00013d d02f      	rcall	_PS2KBD_Del40					;wait 40us
+00013e 98b9      	cbi	_PS2KBD_DATA_PORT_DIR,_PS2KBD_DATA_BIT		;set DATA as input
+00013f 9508      	ret
+         
+         ;+---------------------------------------+
+         ;| AVR-->PC TRANSMISSION ROTINE		 |
+         ;| without Handdle interrupt		 |
+         ;| Input:Acc data to be sented		 |
+         ;| Obs: Interrupts disable		 |
+         ;+=======================================+======================================================
+         ;   |  |  |  |  |  |  |  |  |  |
+         ;+--+--+--+--+--+--+--+--+--+--+--+
+         ;|   PS2KBD_TXD			  |
+         ;|   				  |
+         ;|\			          |
+         ;| | Input  : None		  |
+         ;|/  Output : C Ack bit read      |
+         ;|   Destroy: Acc	          |
+         ;|   			       	  |
+         ;+--+--+--+--+--+--+--+--+--+--+--+ 
+         ;   |  |  |  |  |  |  |  |  |  |
+         ;   \__\__\__\__\__\__\__\__\__\________________________________________________________________________________________
+         ;				/ KEYBOARD TRANSMITION EVENTS NUMBERS	 						\
+         ;				|											|
+         ;				| EVENT NUMBER -   2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1 					|
+         ;				| 		    5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0			|
+         ;				| KEYBOARD CLOCK  --+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-----------------	|
+         ;				|		    | | | | | | | | | | | | | | | | | | | | | |				|
+         ;				|		    +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ +-+ 			|
+         ;				|											|
+         ;				| KEYBOARD DATA     +---+---+---+---+---+---+---+---+---+---+---+			|
+         ;				|		 ---+ 0 | D0| D1| D2| D3| D4| D5| D6| D7| P | 1 +---------------	|
+         ;				|		    +---+---+---+---+---+---+---+---+---+---+---+			|
+         ;				|		      ^  \------ DATA BITS -------------/				|
+         ;				|       START BIT ----+				   	   ^   ^			|
+         ;				|							   |   |			|
+         ;				|							   |   +---- STOP BIT		|
+         ;				|							   +-------- PARITY BIT (ODD)	|
+         ;				| REMARKS										|
+         ;				| EVENT NUMBER     STATUS								|
+         ;				|											|
+         ;				|          24	    Output (Start Bit) 							|
+         ;				|		    Clear parity counter						|
+         ;				|		    Programa data bit as output						|
+         ;				|		    Put Clock line low							|
+         ;				|          22	    Output DO clock line low						|
+         ;				|          20	    Output D1 clock line low						|
+         ;				|          18	    Output D2 clock line low						|
+         ;				|          16	    Output D3 clock line low						|
+         ;				|          14	    Output D4 clock line low						|
+         ;				|          12	    Output D5 clock line low						|
+         ;				|          10	    Output D6 clock line low						|
+         ;				|           8	    Output D7 clock line low						|
+         ;				|           6	    Output P clock line low						|
+         ;				|           4	    Output (Stop Bit)							|
+         ;				|		    clock line low							|
+         ;				|           2      Program data bit as input						|
+         ;				|											|
+         ;				| 25..3 step 2	    Output clock line High						|
+         ;				\---------------------------------------------------------------------------------------/
+         
+          _PS2KBD_TXD:
+000140 94f8      	cli
+000141 938f      	push	Acc				;save useds
+000142 939f      	push	AccH
+000143 930f      	push	AccT
+000144 938f      	push	Acc
+000145       	ldi	Acc,_PORTC_MASK & ~((1<<KEYBOARD_DATA_BIT) | (1<<KEYBOARD_CLOCK_BIT)) ;set DATA e CLOCK input
+error : Undefined variable referenced
+000146       	out	_DDRC,Acc
+error : Undefined variable referenced
+          AVRTO05:					;wait clock release
+000147       	sbis	_PINC,KEYBOARD_CLOCK_BIT
+error : Undefined variable referenced
+000148 cffe      	rjmp	AVRTO05
+000149       	ldi	Acc,_PORTC_MASK | (1<<KEYBOARD_DATA_BIT) ;set DATA BIT as output
+error : Undefined variable referenced
+00014a       	out	_DDRC,Acc
+error : Undefined variable referenced
+00014b       	rcall	Del40
+error : Undefined variable referenced
+00014c 918f      	pop	Acc
+00014d       	cbi	_PORTC,KEYBOARD_DATA_BIT	;put start bit into line
+error : Undefined variable referenced
+00014e d019      	rcall	PCCLOCK				;pulse a clock
+00014f 2799      	clr	AccH				;parity counter
+000150 e008      	ldi	AccT,8				;bit counter
+          AVRTO00:
+000151 9586      	lsr	Acc				;output a bit
+000152 f418      	brcc	AVRTO10
+000153       	sbi	_PORTC,KEYBOARD_DATA_BIT	;send ONE bit
+error : Undefined variable referenced
+000154 9593      	inc	AccH				;parity counter++
+000155 c001      	rjmp	AVRTO20
+          AVRTO10:
+000156       	cbi	_PORTC,KEYBOARD_DATA_BIT	;send ZERO bit
+error : Undefined variable referenced
+          AVRTO20:
+000157 d010      	rcall	PCCLOCK				;pulse a clock
+000158 950a      	dec	AccT				;until all bit sented
+000159 f7b9      	brne	AVRTO00
+00015a fb90      	bst	AccH,0				;Output a parity bit
+00015b f016      	brts	AVRTO30
+00015c       	sbi	_PORTC,KEYBOARD_DATA_BIT	
+error : Undefined variable referenced
+00015d c001      	rjmp	AVRTO40
+          AVRTO30:
+00015e       	cbi	_PORTC,KEYBOARD_DATA_BIT
+error : Undefined variable referenced
+          AVRTO40:
+00015f d008      	rcall	PCCLOCK				;pulse a clock
+000160       	sbi	_PORTC,KEYBOARD_DATA_BIT	;Output as STOP bit
+error : Undefined variable referenced
+000161 d006      	rcall	PCCLOCK				;pulse a clock
+000162       	ldi	Acc,_PORTC_MASK			;set DATA BIT as input
+error : Undefined variable referenced
+000163       	out	_DDRC,Acc
+error : Undefined variable referenced
+000164 910f      	pop	AccT				;restore useds
+000165 919f      	pop	AccH
+000166 918f      	pop	Acc
+000167 9508      	ret
+         
+         ;+-----------------------------------------------+
+         ;| Make a PC clock 				 |
+         ;+-----------------------------------------------+----------------------------------------------
+          PCCLOCK:
+000168       	cbi	_PORTC,KEYBOARD_CLOCK_BIT	;put clock bit low
+error : Undefined variable referenced
+000169       	rcall	Del40				;Delay 20us
+error : Undefined variable referenced
+00016a       	sbi	_PORTC,KEYBOARD_CLOCK_BIT	;put clock bit high
+error : Undefined variable referenced
+00016b       	rcall	Del40				;Delay 20us
+error : Undefined variable referenced
+00016c 9508      	ret
+         
+         ;+-----------------------------------------------+
+         ;| Make a 40us Delay 		          1	 |
+         ;| time equation: (9+Acc*3+3(rcall))*----------- |
+         ;|				      AVR_CLOCK  |
+         ;+-----------------------------------------------+----------------------------------------------
+         
+          .EQU	_PS2KBD_DELAYTIME = 40			;delay time in microseconds
+         
+          _PS2KBD_Del40:
+00016d 938f      	push	Acc
+00016e       	ldi	Acc,((_PS2_DELAYTIME*_AVR_CLOCK)/1000000-11)/3
+error : Undefined variable referenced
+          _PS2KBD_Del00:
+00016f 958a      	dec	Acc
+000170 f7f1      	brne	_PS2KBD_Del00
+000171 918f      	pop	Acc
+000172 9508      	ret
+         
+         
+         ;+------------------------------------------------------+
+         ;| M A I N   I N I T I A L I Z A T I O N  		|
+         ;+------------------------------------------------------+------------------------------------------------------------------
+          _MAIN_INIT:
+         
+         ;+----------------------------
+         ;| PS2 Keyboard initialization
+         ;+----------------------------
+         
+          .EQU	_PS2KBD_CLOCK_PORT_OUTPUT	= PORTB
+          .EQU	_PS2KBD_CLOCK_PORT_DIR		= DDRB
+          .EQU	_PS2KBD_CLOCK_PORT_ÌNPUT	= PINB
+          .EQU	_PS2KBD_CLOCK_BIT		= 0
+         													
+          .EQU	_PS2KBD_DATA_PORT_OUTPUT	= PORTB
+          .EQU	_PS2KBD_DATA_PORT_DIR		= DDRB
+          .EQU	_PS2KBD_DATA_PORT_ÌNPUT		= PINB
+          .EQU	_PS2KBD_DATA_BIT		= 1
+         
+         ;+--------------------------------------+
+         ;| M A I N  T E S T  P R O G R A M	|	
+         ;+--------------------------------------+
+         
+          _MAIN:
+000173 cfff      	rjmp	_MAIN	
+Assembly complete with 19 errors

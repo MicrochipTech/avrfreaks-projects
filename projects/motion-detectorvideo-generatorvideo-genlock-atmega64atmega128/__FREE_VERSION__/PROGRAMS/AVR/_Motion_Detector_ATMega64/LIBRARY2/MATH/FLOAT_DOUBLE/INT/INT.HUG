@@ -1,0 +1,178 @@
+;+------------------------------------------------------------------------------+
+;| DOUBLE PRECISION FLOAT POINT 	I					|
+;| DATE:24/05/2001 VERSION 1.0							|
+;>--------------------------------------------------------------+---------------<
+;| D O U B L E  F L O A T  P O I N T  R O U T I N E S		|
+;| I N T  A N D  F I X (FLOAT TO INTEGER CONVERSION)		|
+;+--------------------------------------------------------------+
+;| OBSERVATION: INT CONVERT TO FIRST NEGATIVE INTEGER LESS THAN |
+;| OR EQUAL TO NUMBER:						|
+;| EX:  INT(-8.4)=-9						|
+;|	INT(-7)=-7						|
+;|	INT(5.45)=5						|
+;|	INT(9.9)=9						|
+;|	FIX(-6.5)=-6						|
+;|	FIX(6.5)=6						|
+;+--------------------------------------------------------------+
+
+
+#ifndef __MATH_FLOAT_INT_FIX__
+
+	#define __MATH_FLOAT_INT_FIX__
+
+	.message "[ (MATH) FLOAT INT & FIX ]"
+
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+
+	#ifndef __MATH_FLOAT_INFINIT__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\INFINIT_RESULT\DFINF.hug"
+	#endif
+
+	#ifndef __MATH_FLOAT_LOAD_STORE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\LOAD_STORE\DFLDXSTX.hug"
+	#endif
+
+	;+----------------------------------------------+
+	;| INTEGER (FIX) OF FLOAT VALUE			|
+	;|				   		|
+	;| Input  : Facc				|
+	;| Output : INT(Facc),Acc FPOK			|
+	;| Destroy: 					|
+	;+----------------------------------------------+
+	_DFFIX:
+		ser	AccTH				;set Fix function
+		jmp 	_DFINT_ENTRY
+	;+----------------------------------------------+
+	;| INTEGER (INT) OF FLOAT VALUE			|
+	;|				   		|
+	;| Input  : Facc				|
+	;| Output : INT(Facc),Acc FPOK			|
+	;| Destroy: 					|
+	;+----------------------------------------------+
+	_DFINT:
+		clr	AccTH				;set Int function
+	_DFINT_ENTRY:
+		mov	Acc,_acc_e			;get exponent
+		subi	Acc,_FBIAS			;extract float point bias
+		tst	Acc				;see if positive ?
+		brpl	_DEFINT00			;yes, branch
+		jmp 	_DFLDFPOK			;number is pure fraction , return then
+	_DEFINT00:
+		cpi	Acc,55				;> 55 ?
+		brlo	_DEFINT10			;no, branch
+		jmp 	_DFLDFPOK			;great number no have fraction, return then
+	_DEFINT10:
+		ldi	AccH,0x80			;my defalt mask to extract integer part only
+		mov	_op1_s,AccH
+		clr	_op1_5
+		clr	_op1_4
+		clr	_op1_3
+		clr	_op1_2
+		clr	_op1_1
+		clr	_op1_0
+		ldi	AccH,0x7F			;my defalt mask to see if fractionary part
+		mov	_op2_s,AccH			;exist
+		ldi	AccH,0xFF
+		mov	_op2_5,AccH
+		mov	_op2_4,AccH
+		mov	_op2_3,AccH
+		mov	_op2_2,AccH
+		mov	_op2_1,AccH
+		mov	_op2_0,AccH
+		clr	AccT				;AccT=fraction=0
+	_DEFINT20:
+		tst	Acc				;mask ready to extract integer part ?
+		breq	_DEFINT40			;no, branch
+		sec					;set carry flag
+		ror	_op1_s				;integer mask
+		ror	_op1_5
+		ror	_op1_4
+		ror	_op1_3
+		ror	_op1_2
+		ror	_op1_1
+		ror	_op1_0
+		lsr	_op2_s				;fractional mask
+		ror	_op2_5
+		ror	_op2_4
+		ror	_op2_3
+		ror	_op2_2
+		ror	_op2_1
+		ror	_op2_0
+		dec	Acc				;until mask  done
+		jmp 	_DEFINT20			;<*NOCHANGE*>
+	_DEFINT40:
+		and	_op2_0,_acc_0			;check if fraction exist
+		and	_op2_1,_acc_1	
+		and	_op2_2,_acc_2
+		and	_op2_3,_acc_3
+		and	_op2_4,_acc_4
+		and	_op2_5,_acc_5
+		and	_op2_s,_acc_s
+		ldi	Acc,0x7f
+		and	_op2_s,Acc
+		breq	_DEFINT45
+		ser	AccT				;AccT=fraction=1
+	_DEFINT45:
+		and	_acc_0,_op1_0			;extrac integer part now
+		and	_acc_1,_op1_1
+		and	_acc_2,_op1_2
+		and	_acc_3,_op1_3
+		and	_acc_4,_op1_4
+		and	_acc_5,_op1_5
+		and	_acc_s,_op1_s			;restore float point bias
+		sbrs	_acc_s,7			;skip if negative number
+		jmp 	_DFLDFPOK			;return, ok
+	_DEFINT50:
+		sbrs	AccT,7				;skip if adjust flag is set
+		jmp 	_DFLDFPOK			;return, ok
+		sbrc	AccTH,7				;skip if INT function
+		jmp 	_DFLDFPOK			;return, ok
+		ldi	Acc,0x80			;one not shifted yet
+		mov	_op1_s,Acc
+		clr	_op1_5				;clear op1 to find 1one position
+		clr	_op1_4
+		clr	_op1_3
+		clr	_op1_2
+		clr	_op1_1
+		clr	_op1_0
+		mov	Acc,_acc_e			;get exponent again
+		subi	Acc,_FBIAS			;extract float point bias
+	_DEFINT60:
+		tst	Acc				;end ?
+		breq	_DEFINT70			;branch if done
+		lsr	_op1_s				;shift mask
+		ror	_op1_5
+		ror	_op1_4
+		ror	_op1_3
+		ror	_op1_2
+		ror	_op1_1
+		ror	_op1_0
+		dec	Acc
+		jmp 	_DEFINT60			;<*NOCHANGE*>
+	_DEFINT70:
+		add	_acc_0,_op1_0			;ready to add one
+		adc	_acc_1,_op1_1
+		adc	_acc_2,_op1_2
+		adc	_acc_3,_op1_3
+		adc	_acc_4,_op1_4
+		adc	_acc_5,_op1_5
+		adc	_acc_s,_op1_s
+		brcc	_DEFINT80			;branch if no carry
+		ror	_acc_s				;else adjust
+		ror	_acc_5
+		ror	_acc_4
+		ror	_acc_3
+		ror	_acc_2
+		ror	_acc_1
+		ror	_acc_0
+		inc	_acc_e				;increment exponent
+	_DEFINT80:
+		jmp 	_DFLDFPOK			;return, ok
+
+#endif
+
+.exit
+	
+

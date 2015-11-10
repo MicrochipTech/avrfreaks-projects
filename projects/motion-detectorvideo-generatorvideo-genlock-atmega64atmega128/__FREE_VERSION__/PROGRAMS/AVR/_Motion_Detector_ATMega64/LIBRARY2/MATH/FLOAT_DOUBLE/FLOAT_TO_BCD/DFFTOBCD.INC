@@ -1,0 +1,343 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+---+
+;|									|
+;| DATE:24/05/2001 VERSION 1.0						|
+;>--------------------------------------------------------------+-------<
+;| D O U B L E   F L O A T  P O I N T  R O U T I N E S	     	|
+;| F L O A T  T O  B C D 				 	|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+;+---------------------------------------------------+
+;| CONVERT DOUBLE FLOAT NUMBER TO BCD NUMBER 	     |
+;|                                                   |
+;| Input  : Floating accumulator		     |
+;| Output : _DF_BCD	Number in BCD		     |
+;| Destroy: Acc,AccH,Flags                           |
+;+---------------------------------------------------+
+#ifndef __MATH_FLOAT_TO_BCD__
+	#define __MATH_FLOAT_TO_BCD__
+	.message "[ (MATH) FLOAT TO BCD ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef __MATH_FLOAT_INFINIT__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\INFINIT_RESULT\DFINF.INC"
+	#endif
+	#ifndef __MATH_FLOAT_NORMALIZE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\NORMALIZE\DFNORM.INC"
+	#endif
+	#ifndef __MATH_FLOAT_ADDSUB__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\ADDSUB\DFADDSUB.INC"
+	#endif
+	#ifndef __MATH_FLOAT_MULDIV__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\MULDIV\DFMULDIV.INC"
+	#endif
+	#ifndef __MATH_FLOAT_LOAD_STORE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\LOAD_STORE\DFLDXSTX.INC"
+	#endif
+	#ifndef __MATH_FLOAT_COMPARE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\COMPARE\DFCPM.INC"
+	#endif
+	_DFFTOBCD:
+		push	ZL
+		push	ZH
+		ldi	ZL,low(_DF_BCD)			;clear floating BCD buffer
+		ldi	ZH,high(_DF_BCD)
+		clr	Acc
+		st	Z+,Acc
+		st	Z+,Acc
+		st	Z+,Acc
+		st	Z+,Acc
+		st	Z+,Acc
+		st	Z+,Acc
+		st	Z+,Acc
+		st	Z+,Acc
+		tst	_acc_e				;float accumulator = zero ?
+		brne	_DFFTOBCD00			;no, branch
+		pop	ZH
+		pop	ZL
+		ret					;else return with BCD clear
+	_DFFTOBCD00:
+		push	_acc_s				;save number signal
+		andi	_acc_s,0b01111111		;X=ABS(X)
+		clr	AccH				;AccH=Exponent count
+	_DFFTOBCD20:
+		rcall	_DFCP1E16			;X<1E16
+		brsh	_DFFTOBCD30			;no, branch
+		push	AccH				;save Exponent
+		_DFMOVACCOP1				;op1=X
+		ldi	Acc,10				;op2=10
+		rcall	_DFATOF
+		_DFMOVACCOP2
+		_DFMMUL					;X=op1*op2
+		pop	AccH				;restore Exponent
+		dec	AccH				;Exponent--
+		rjmp	_DFFTOBCD20
+	_DFFTOBCD30:
+		rcall	_DFCP1E16			;X>=1E16
+		brlo	_DFFTOBCD40			;no, branch
+		push	AccH				;save Exponent
+		_DFMOVACCOP1				;op1=X
+		ldi	Acc,10				;op2=10
+		rcall	_DFATOF
+		_DFMOVACCOP2
+		_DFMDIV					;X=op1/op2
+		pop	AccH				;restore Exponent
+		inc	AccH				;Exponent++
+		rjmp	_DFFTOBCD30
+	_DFFTOBCD40:
+		ldi	ZL,low(_DF_P10)			;p10=1e16
+		ldi	ZH,high(_DF_P10)
+		ldi	Acc,0x00
+		st	Z+,Acc
+		ldi	Acc,0x00
+		st	Z+,Acc
+		ldi	Acc,0x04
+		st	Z+,Acc
+		ldi	Acc,0xbf
+		st	Z+,Acc
+		ldi	Acc,0xc9
+		st	Z+,Acc
+		ldi	Acc,0x1b
+		st	Z+,Acc
+		ldi	Acc,0x0e
+		st	Z+,Acc
+		ldi	Acc,0xb6
+		st	Z+,Acc
+		push	AccH				;Save Exponent
+		ldi	AccH,16				;digits count
+	_DFFTOBCD50:
+		push	AccH
+		ldi	AccH,-1				;C=-1
+	_DFFTOBCD60:
+		inc	AccH				;C++
+		push	AccH				;Save C
+		_DFMOVACCOP1				;op1=X
+		_DFLDOP2	_DF_P10			;op2=p10
+		_DFMSUB					;X=X-p10
+		pop	AccH
+		bst	_acc_s,7			;X<0
+		brtc	_DFFTOBCD60			;no, loop again
+		rcall	_DFBCDL4			;BCD new digit
+		_DFMOVACCOP1				;op1=X
+		_DFLDOP2	_DF_P10			;op2=p10
+		_DFMADD					;X=X+p10
+		push	_acc_0				;save float accumulator X
+		push	_acc_1
+		push	_acc_2
+		push	_acc_3
+		push	_acc_4
+		push	_acc_5
+		push	_acc_s
+		push	_acc_e
+		_DFLDOP1	_DF_P10			;op1=p10
+		ldi	Acc,10				;op2=10
+		rcall	_DFATOF
+		_DFMOVACCOP2
+		_DFMDIV					;p10=p10/10
+		_DFSTACC	_DF_P10
+		pop	_acc_e				;restore float accumulator X
+		pop	_acc_s
+		pop	_acc_5
+		pop	_acc_4
+		pop	_acc_3
+		pop	_acc_2
+		pop	_acc_1
+		pop	_acc_0
+		pop	AccH				;restore digits count
+		dec	AccH				;digits--	
+		brne	_DFFTOBCD50
+		clr	AccH
+		rcall	_DFBCDL4			;to corretly formatting
+		rcall	_DFBCDROUND			;round if need
+		pop	AccH				;restore Exponent
+		subi	AccH,-15			;Exponent+=15
+		lds	Acc,_DF_BCD+7			;Exponent+=(_DF_BCD+7)
+		add	Acc,AccH
+		rcall	_DFBINTOBCD			;convert Exponent to BCD
+		pop	AccH				;restore float signal
+		andi	AccH,0b10000000			;bound mantisa signal into bit 7
+		andi	Acc,0b01111111
+		or	Acc,AccH
+		sts	_DF_BCD+7,Acc			;store it into Exponent position
+		pop	ZH
+		pop	ZL
+		ret
+	;+---------------------------------------------------+
+	;| FLOAT BCD<<4+DIGIT				     |
+	;+---------------------------------------------------+
+	_DFBCDL4:	
+		ldi	Acc,4
+	_DFBCDL400:
+		push	Acc
+		push	AccH
+		ldi	ZL,low(_DF_BCD+8)		;BCD<<4
+		ldi	ZH,high(_DF_BCD+8)
+		ldi	AccH,8
+		clc
+	_DFBCDL410:
+		ld	Acc,-Z
+		rol	Acc
+		st	Z,Acc
+		dec	AccH
+		brne	_DFBCDL410
+		pop	AccH
+		pop	Acc
+		dec	Acc
+		brne	_DFBCDL400
+		lds	Acc,_DF_BCD+7
+		add	Acc,AccH			;BCD<<4+DIGIT
+		sts	_DF_BCD+7,Acc
+		ret
+	;+---------------------------------------------------+
+	;| BINARY TO BCD 				     |
+	;| Input  : Acc binary number			     |
+	;| Output : Acc two digits BCD			     |
+	;| Destroy: AccH,Flags				     |
+	;+---------------------------------------------------+
+	_DFBINTOBCD:
+		push	Acc				;save signal
+		tst	Acc				;see if negative number
+		brpl	_DFBINTOBCD05			;no, branch	
+		neg	Acc				;turn if positive before converting
+	_DFBINTOBCD05:
+		clr	AccH
+	_DFBINTOBCD00:
+		subi	Acc,10				;extract tenth of units
+		brmi	_DFBINTOBCD10			;end , branch
+		inc	AccH				;add one into Tenth count
+		rjmp	_DFBINTOBCD00
+	_DFBINTOBCD10:			
+		subi	Acc,-10				;restore units
+		swap	AccH
+		add	Acc,AccH			;bound tenth with unit
+		pop	AccH				;put signal into bit 6
+		lsr	AccH
+		andi	AccH,0b01000000
+		andi	Acc,0b10111111
+		or	Acc,AccH
+		ret
+	;+---------------------------------------------------+
+	;| MANTISA ROUND				     |
+	;+---------------------------------------------------+
+	_DFBCDROUND:
+		lds	Acc,_DF_BCD+7			;get 15 & 16 digits
+		clr	AccH
+		sts	_DF_BCD+7,AccH
+		andi	Acc,0xf0			;mask 15 digits
+		cpi	Acc,0x50			;<5 ?
+		brlo	_DFBCDROUND20			;yes, branch
+		ldi	ZL,low(_DF_BCD+7)		;Z--> 14 digit
+		ldi	ZH,high(_DF_BCD+7)		;add 1 into least significant bit
+		ldi	AccH,6
+		clr	r0
+	_DFBCDROUND00:
+		ld	Acc,-Z
+		inc	Acc
+		rcall	_DFBCDADJADD
+		st	Z,Acc
+	_DFBCDROUND10:
+		ld	Acc,-Z
+		adc	Acc,r0
+		rcall	_DFBCDADJADD
+		st	Z,Acc
+		dec	AccH
+		brne	_DFBCDROUND10
+		brcc	_DFBCDROUND20			;no, carry at end of round branch
+		lds	Acc,_DF_BCD+7			;else add one into exponent
+		inc	Acc
+		sts	_DF_BCD+7,Acc
+		ldi	Acc,0x10			;set first digits as 1
+		sts	_DF_BCD,Acc
+	_DFBCDROUND20:
+		ret
+	;+--------------------------------------+
+	;| BCD ADJUST AFTER ADDITION		|
+	;| Input: Acc BCD number to be adjusted |
+	;|	  Acc Number Adjusted 		|
+	;+--------------------------------------+
+	_DFBCDADJADD:
+		push	AccH
+		mov	AccH,Acc
+		andi	AccH,0x0f
+		cpi	AccH,0x0a
+		brlo	_DFBCDADJ00
+		subi	AccH,-0x06
+	_DFBCDADJ00:
+		andi	Acc,0xf0
+		cpi	Acc,0xa0
+		brlo	_DFBCDADJ10
+		subi	Acc,-0x60
+	_DFBCDADJ10:	
+		add	Acc,AccH
+		cpi	Acc,0xa0
+		brlo	_DFBCDADJ20
+		subi	Acc,-0x60
+	_DFBCDADJ20:
+		brcc	_DFBCDADJ30
+		clc
+		rjmp	_DFBCDADJ40
+	_DFBCDADJ30:
+		sec
+	_DFBCDADJ40:
+		pop	AccH
+		ret
+	;+---------------------------------------------------+
+	;| FLOAT POINT COMPARE WITH 1E16		     |
+	;|                                                   |
+	;| Input  : Floating accumulator		     |
+	;| Output : Flags				     |
+	;| Obs:						     |
+	;|      Only absolute number my be used byte this ro-|
+	;|	utine					     |
+	;+---------------------------------------------------+
+	_DFCP1E16:
+		ldi	Acc,0x00
+		cp	_acc_0,Acc
+		ldi	Acc,0x00
+		cpc	_acc_1,Acc
+		ldi	Acc,0x04
+		cpc	_acc_2,Acc
+		ldi	Acc,0xbf
+		cpc	_acc_3,Acc
+		ldi	Acc,0xc9
+		cpc	_acc_4,Acc
+		ldi	Acc,0x1b
+		cpc	_acc_5,Acc
+		ldi	Acc,0x0e
+		cpc	_acc_s,Acc
+		ldi	Acc,0xb6
+		cpc	_acc_e,Acc
+		ret
+#endif
+.exit
+	
+	
+

@@ -1,0 +1,149 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+
+;| DATA:November,16,2000					|
+;>--------------------------------------------------------------<
+;| 1 6  B I T S  A V E R A G E  F I L T E R 			|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+#ifndef __MATH_FILTER_AVERAGE16__
+	#define __MATH_FILTER_AVERAGE16__
+	.message "[ (MATH) AVERAGE FILTER 16 BITS ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef __INTFRAC_UBSFB__
+		.INCLUDE "MATH\INTEGER\DIV_S32S32S32\DIV_S32S32S32.INC"
+	#endif
+	;>------------------------------------------------------<
+	;| I M P L E M E N T E D  F U N C T I O N  		|
+	;+------------------------------------------------------+-----------------------------------------------+
+	;| _FILTER_AVG16_SET_VALUE	16 bits input value to be placed into average filter queue		|
+	;|													|
+	;|				ldiaw	1234			;new value to input average filter	|
+	;|				rcall	_FILTER_AVG16_SET_VALUE	;set new filter value			|
+	;+------------------------------------------------------------------------------------------------------+
+	;| _FILTER_AVG16_GET_VALUE	get output 16 bit value from average filter				|
+	;|													|
+	;|				rcall	_FILTER_AVG16_GET_VALUE	;get filtered value from filter		|
+	;+------------------------------------------------------------------------------------------------------+
+	;| _FILTER_AVG16_EXECUTE	Execute filter and return value using last function or AccH:Acc 	|
+	;|													|
+	;|				rcall	_FILTER_AVG16_EXECUTE	;make execution of average filter	|
+	;+------------------------------------------------------------------------------------------------------+
+	;| observation : define using .EQU _FILTER_AVG16_SIZE with the filter size				|
+	;+------------------------------------------------------------------------------------------------------+
+	;>-----+-------+
+	;| OBJ | FILTER|
+	;>-----+-------+----------------------------------------------------------------<
+	;| Purpose									|
+	;| Filter input data using average shift filter					|
+	;>------------------------------------------------------------------------------<
+	;|										|
+	;|	D(N-K)=D(N-K+1)=D(N-K+2)=VALUE
+	;|	DOUT=(D(N)+D(N-1)+D(N-2)+...+D(N-K))/K					|
+	;|										|
+	;>------------------------------------------------------------------------------<
+	
+	.DSEG
+		_FILTER_AVG16_INPUT_VALUE:	.BYTE 2
+		_FILTER_AVG16_BUFFER:		.BYTE _FILTER_AVG16_SIZE*2	;integer values
+		_FILTER_AVG16_OUTPUT_VALUE:	.BYTE 2
+	.CSEG
+	;	>-----+-------+---------------------------------<
+	;	| OBJ | FILTER|Set,Get input value		|
+	;	>-----+-------+---------------------------------<
+	;	| SET FUNCTION					|
+	;	| INPUT: AccH:Acc 				|
+	;	>-----+-------+---------------------------------<
+	;	| GET FUNCTION					|
+	;	| OUTPUT: AccH:Acc 				|
+	;	>-----+-------+---------------------------------<
+	_FILTER_AVG16_SET_VALUE:
+		sts	_FILTER_AVG16_INPUT_VALUE+0,Acc
+		sts	_FILTER_AVG16_INPUT_VALUE+1,AccH
+		ret
+	_FILTER_AVG16_GET_VALUE:
+		lds	Acc,_FILTER_AVG16_OUTPUT_VALUE+0
+		lds	AccH,_FILTER_AVG16_OUTPUT_VALUE+1
+		ret
+	;	>-----+-------+---------------------------------<
+	;	| OBJ | FILTER| Filter data into buffer		|
+	;	>-----+-------+---------------------------------+-------------------------------<
+	;	| GET FUNCTION									|
+	;	| OUTPUT : AccH:Acc								|
+	;	|	   update _FILTER_AVG16_OUTPUT_VALUE word 				|
+	;	| DESTROY: r0..r12,flags							|
+	;	>-------------------------------------------------------------------------------<
+	_FILTER_AVG16_EXECUTE:
+		pushw	x
+		pushw	y
+		clr	r0				;clear my accumulator
+		clr	r1
+		clr	r2
+		clr	r3
+		clr	r6				;zero
+		clr	r7
+		ldix	_FILTER_AVG16_BUFFER+2		;point to data(1)
+		ldiy	_FILTER_AVG16_BUFFER+0		;point to data(0)
+		ldi	Acc,_FILTER_AVG16_SIZE-1		;set filter size counter
+	_FILTER_AVG1600:
+		ld	r4,X+				;get data shift  and accumulate
+		ld	r5,X+
+		st	Y+,r4				;store into new position
+		st	Y+,r5
+		add	r0,r4				;accumulate
+		adc	r1,r5
+		adc	r2,r6
+		adc	r4,r6
+		dec	Acc
+		brne	_FILTER_AVG1600			;until all shifted and acculated
+		lds	r4,_FILTER_AVG16_INPUT_VALUE+0	;add new data
+		lds	r5,_FILTER_AVG16_INPUT_VALUE+1
+		st	Y+,r4				;store new data
+		st	Y+,r5
+		add	r0,r4				;accumulate too
+		adc	r1,r5
+		adc	r2,r6
+		adc	r3,r6
+		ldi	Acc,low(_FILTER_AVG16_SIZE)
+		mov	r4,Acc
+		ldi	Acc,high(_FILTER_AVG16_SIZE)
+		mov	r5,Acc
+		call	_DIV_S32S32S32
+		mov	Acc,r0
+		mov	AccH,r1
+		sts	_FILTER_AVG16_OUTPUT_VALUE+0,Acc
+		sts	_FILTER_AVG16_OUTPUT_VALUE+1,AccH
+		popw	y
+		popw	x
+		ret
+#endif
+.exit
+

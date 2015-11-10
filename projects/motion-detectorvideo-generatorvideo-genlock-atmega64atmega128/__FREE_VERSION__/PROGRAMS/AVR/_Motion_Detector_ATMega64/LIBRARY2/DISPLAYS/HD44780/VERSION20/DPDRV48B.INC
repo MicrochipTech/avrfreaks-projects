@@ -1,0 +1,892 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+
+;|								|
+;| DATE:12/12/2000 VERSION 1.1					|
+;|								|
+;|      IMPLEMENTED FUNCTIONS					|
+;|								|
+;|		_DISP_BUSY					|
+;|		_DISP_CMD					|
+;|		_DISP_DATA					|
+;|		_DISP_INIT					|
+;|		_DISP_SEND_STR					|
+;|		_DISP_SEND_STR_S				|
+;|		_DISP_LOCATE					|
+;|		_DISP_CLS					|
+;|		_DISP_HOME					|
+;|								|
+;| DATE:15/4/2002  VERSION 2.0					|
+;|								|
+;|	NEW FUNCTIONS						|
+;|								|
+;|		_DISP_CMD_WRITE					|
+;|		_DISP_DATA_WRITE				|
+;|		_DISP_DATA_READ					|
+;|		_DISP_DISPLAY					|
+;|		_DISP_SCROLL_LEFT				|
+;|		_DISP_SCROLL_RIGHT				|
+;|		_DISP_CURSOR					|
+;|		_DISP_CURSOR_LEFT				|
+;|		_DISP_CURSOR_RIGHT				|
+;|		_DISP_BLINK					|
+;|		_DISP_SET_CGRAM_ADDR				|
+;|		_DISP_SET_DDRAM_ADDR				|
+;|								|
+;>--------------------------------------------------------------<
+;| D I S P L A Y  D R I V E  4/8  B I T S   V E R S I O N  2 . 0|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;| THIS DRIVE TRY TO KEEP FLASH MEMORY CONSUMPTION TO MINIMUN	|
+;+--------------------------------------------------------------+
+;| C O M M E N T S  A N D  U P D A T E S 			|
+;+--------------------------------------------------------------+
+#ifndef __DISP_HD44780_V2__
+	#define __DISP_HD44780_V2__
+	#ifndef __TIME_DELAYS__ 
+		.include "TIME\DELAYS\DELAYS.INC"	;need libraries
+	#endif
+	.message "+---------------------------------+"
+	.message "|                                 |"
+	.message "| DISPLAY 44780 DRIVE VERSION 2.0 |"
+	.message "|                                 |"
+	.message "+---------------------------------+"
+	;>--------------------------------------------------------------<
+	;| I M P L E M E N T E D  F U N C T I O N S  D E T A I L S	|
+	;+--------------------------------------------------------------+-------------------------------+
+	;|												|
+	;| _DISP_BUSY		VERIFY BUSY STATE OF DISPLAY 						|
+	;|			OBS: INTERNAL USE ONLY							|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_CMD		SEND COMMANDS TO DISPLAY						|
+	;| _DISP_CMD_WRITE	SAMPLE USING DISP_CMD_WRITE TO CLEAR DISPLAY				|
+	;|												|
+	;|			LDI 	ACC,DISP_CMD_CLEAR						|
+	;|			RCALL	_DISP_CMD_WRITE							|
+	;|												|
+	;| FUNCTION DISP_CMD IS OLD DONT USE IN FUTURE PROJECTS						|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_DATA		SEND DATA TO DISPLAY							|
+	;| _DISP_DATA_WRITE	SAMPLE USING DISP_DATA_WRITE TO SEND CHARACTER '*' TO DISPLAY		|
+	;|												|
+	;|			LDI	ACC,'*'								|
+	;|			RCALL	_DISP_DATA_WRITE						|
+	;|												|
+	;| FUNCTION DISP_DATA IS OLD DONT USE IN FUTURE PROJECTS					|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_INIT		INITIALIZE DISPLAY							|
+	;|			DEFINE IN MAIN PROGRAM INITIALIZATION BELOW EQUATES TO DEFINE HARDWARE	|
+	;|			DEPENDENCY INFORMATION							|
+	;|												|
+	;|.EQU	_DISP_PORT_DATA_OUT	= PORTC		;DISPLAY DATA OUTPUT PORT			|
+	;|.EQU	_DISP_PORT_DATA_IN	= PINC		;DISPLAY DATA INPUT PORT			|
+	;|.EQU	_DISP_PORT_DATA_DIR	= DDRC		;DISPLAY DATA DIRECTION				|
+	;|												|
+	;|.EQU	_DISP_PORT_CMD_OUT	= PORTC		;DISPLAY COMMAND PORT OUT			|
+	;|.EQU	_DISP_PORT_CMD_IN	= PINC		;DISPLAY COMMAND PORT IN			|
+	;|.EQU	_DISP_PORT_CMD_DIR	= DDRC		;DISPLAY COMMAND PORT DIRECTION			|
+	;|												|
+	;|.EQU	_DISP_BIT_RS	= 4			;REGISTER SELECT BIT (HIG;H=DATA,LOW=COMMAND)	|
+	;|.EQU	_DISP_BIT_RW	= 5			;READ WRITE BIT  (HIGH=RE;AD,LOW=WRITE)		|
+	;|.EQU	_DISP_BIT_E	= 6			;ENABLE BIT HIGH ACTIVATE;			|
+	;|												|
+	;|.EQU	_DISP_LINE	= _DISP_LINE_2		;DISPLAY LINES NUMBER				|
+	;|.EQU	_DISP_FONT	= _DISP_FONT_5X8	;DISPLAY FONT SIZE				|
+	;|.EQU	_DISP_INTERFACE	= _DISP_4BITS		;DISPLAY 4BITS INTERFACE			|
+	;|.EQU	_DISP_POSITION	= 0			;DISPLAY INTERFACE START BIT POSITION		|
+	;|												|
+	;|			RCALL	_DISP_INIT							|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_SEND_STR	SEND STRING INTO FLASH MEMORY TO DISPLAY				|
+	;|			SAMPLE USING DISP_SEND_STR TO SEND STRING "HELLO WORD"			|
+	;|												|
+	;|			LDI	ZL,LOW(MSG*2)	;Z-->MESSAGE (*2 BECAUSE A AVR HARDWARE)	|
+	;|			LDI	ZH,HIGH(MSG*2)							|
+	;|			RCALL	_DISP_SEND_STR	;CALL FUNCTION					|
+	;|			RJMP	CONTINUE							|
+	;|		MSG:	.DB 	"HELLO WORD",0	;DEFINE MESSAGE INTO FLASH			|
+	;| CONTINUE:											|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_SEND_STR_S	SEND STRING INTO SRAM MEMORY TO DISPLAY					|
+	;|			SAMPLE USING DISP_SEND_STR_S TO SEND STRING "HELLO WORD"		|
+	;|												|
+	;|			LDI	ZL,LOW(MSG)	;Z-->MESSAGE					|
+	;|			LDI	ZH,HIGH(MSG)							|
+	;|			RCALL	_DISP_SEND_STR_S;CALL FUNCTION					|
+	;|		.DSEG				;MSG ALREADY DEFINED INTO SRAM WITH MESSAGE	|
+	;|		MSG:				;HELLO WORLD					|
+	;|		.CSEG				;RETURN TO CODE SEGMENT				|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_LOCATE		SET CURSOR POSITION							|
+	;|			SAMPLE USING DISP_LOCATE TO POSITIONE CURSOR AT LINE 2 COLUMN 10	|
+	;|												|
+	;|			LDI	ACC,2								|
+	;|			LDI	ACCH,10								|
+	;|			RCALL	_DISP_LOCATE							|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_CLS		CLEAR ENTIRE SCREEN AND POSITION CURSOR AT FIRST ROW AND COLUMN		|
+	;|			SAMPLE CODE AS FOLLOWING						|
+	;|												|
+	;|			RCALL	_DISP_CLS							|
+	;|----------------------------------------------------------------------------------------------|
+	;| _DISP_HOME		SET CURSOR POSITION AT FIRST ROW AND COLUMN				|
+	;|			SAMPLE CODE AS FOLLOWING						|
+	;|												|
+	;|			RCALL	_DISP_HOME							|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_DATA_READ	READ CONTENTS OF LAST CURSOR POSITION FROM CGRAM OR DDRAM		|
+	;|												|
+	;|			RCALL	_DISP_DATA_READ	;DATA READ INTO ACC				|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_DISPLAY	SET DISPLAY TO SHOW OR NOT CHARACTERS					|
+	;|												|
+	;|			LDI	ACC,_ON		;TURN ALL CHARACTERS VISIBLE			|
+	;|			RCALL	_DISP_DISPLAY							|
+	;|			LDI	ACC,_OFF	;TURN ALL CHARACTERS INVISIBLE			|
+	;|			RCALL	_DISP_DISPLAY							|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_SCROLL_LEFT	SCROLL ENTIRE DISPLAY CHARACTERS TO THE LEFT				|
+	;|												|
+	;|			RCALL	_DISP_SCROLL_LEFT	;CHARACTER SCROLLED TO LEFT		|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_SCROLL_RIGHT	SCROLL ENTIRE DISPLAY CHARACTERS TO THE RIGHT				|
+	;|												|
+	;|			RCALL	_DISP_SCROLL_RIGHT	;CHARACTER SCROLLED TO RIGHT		|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_CURSOR		TURN CURSOR ON OR OFF							|
+	;|												|
+	;|			LDI	ACC,_ON		;TURN CURSOR VISIBLE				|
+	;|			RCALL	_DISP_CURSOR							|
+	;|			LDI	ACC,_OFF	;TURN CURSOR INVISIBLE				|
+	;|			RCALL	_DISP_CURSOR							|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_CURSOR_LEFT	MOVE CURSOR TO THE LEFT ONE CHARCTER POSITION				|
+	;|												|
+	;|			RCALL	_DISP_CURSOR_LEFT	;MOVE CURSOR TO LEFT			|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_CURSOR_RIGHT	MOVE CURSOR TO THE RIGHT ONE CHARCTER POSITION				|
+	;|												|
+	;|			RCALL	_DISP_CURSOR_RIGHT	;MOVE CURSOR TO RIGHT			|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_BLINK		TURN CURSOR BLINK STATE ON OR OFF					|
+	;|												|
+	;|			LDI	ACC,_ON		;TURN BLINK ON					|
+	;|			RCALL	_DISP_BLINK							|
+	;|			LDI	ACC,_OFF	;TURN BLINK OFF					|
+	;|			RCALL	_DISP_CURSOR							|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_SET_CGRAM_ADDR	SET ADDRESS FOR FUTURE DATA WRITE/READ DISPLAY TO CGRAM AREA		|
+	;|												|
+	;|			LDI	ACC,5			;SET CGRAM ADDRESS TO 5			|
+	;|			RCALL	_DISP_SET_CGRAM_ADDR	;SET ADDRESS				|
+	;|			RCALL	_DISP_DATA_READ		;READ CONTENTS OF CGRAM ADDRESS 5	|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_SET_DDRAM_ADDR	SET ADDRESS FOR FUTURE DATA WRITE/READ DISPLAY TO DDRAM AREA		|
+	;|												|
+	;|			LDI	ACC,5			;SET DDRAM ADDRESS TO 5			|
+	;|			RCALL	_DISP_SET_DDRAM_ADDR	;SET ADDRESS				|
+	;|			RCALL	_DISP_DATA_READ		;READ CONTENTS OF DDRAM ADDRESS 5	|
+	;+----------------------------------------------------------------------------------------------+
+	;| _DISP_REDEFINE_CHAR	REDEFINE CHARACTER 							|
+	;|												|
+	;|			LDI	ACC,2			;REDEFINE CHARACTER CODE 2		|
+	;|			LDI	ZL,LOW(IMAGE*2)		;NEW IMAGE				|
+	;|			LDI	ZH,HIGH(IMAGE*2)						|
+	;|			RCALL	_DISP_REDEFINE_CHAR	;NEW IMAGE TO SET			|
+	;+----------------------------------------------------------------------------------------------+
+	;| OBS: CALL FUNCTION DISP_INIT BEFORE USE ANY OTHER FUNCTION TO INITIALIZE THIS DRIVE CORRECTLY|
+	;|	IF USE THIS SOFTWARE IN DEBUG STATE DEFINE THE FOLLOWING CONSTANT			|
+	;|	 #DEFINE __DISPLAY_DEBUG_STATE__							|
+	;+----------------------------------------------------------------------------------------------+
+	;+------------------------------------------------------------------------------------------------------+
+	;| HARDWARE DEFINITIONS	  										|
+	;|													|
+	;| BEFORE USE THIS DRIVE SET FOLLOWING PARAMETERS							|
+	;|													|
+	;| EXAMPLE:												|
+	;|													|
+	;|.EQU	_DISP_BIT_RS	= 4			;REGISTER SELECT BIT (HIGH=DATA,LOW=COMMAND)		|
+	;|.EQU	_DISP_BIT_RW	= 5			;READ WRITE BIT  (HIGH=READ,LOW=WRITE)			|
+	;|.EQU	_DISP_BIT_E	= 6			;ENABLE BIT HIGH ACTIVATE				|
+	;|													|
+	;|.EQU	_DISP_LINE	= _DISP_LINE_1		;CHOISE 1 OR 2 LINES					|
+	;|			  _DISP_LINE_2									|
+	;|													|
+	;|.EQU	_DISP_FONT	= _DISP_FONT_5X8	;CHOISE FONT 5X8 OR 5X10				|
+	;|			  _DISP_FONT_5X10								|
+	;|													|
+	;|.EQU	_DISP_PORT_DATA_OUT	= PORTB		;DISPLAY DATA OUTPUT PORT				|
+	;|.EQU	_DISP_PORT_DATA_IN	= PINB		;DISPLAY DATA INPUT PORT				|
+	;|.EQU	_DISP_PORT_DATA_DIR	= DDRB		;DISPLAY DATA DIRECTION					|
+	;|													|
+	;|.EQU	_DISP_PORT_CMD_OUT	= PORTD		;DISPLAY COMMAND PORT OUT				|
+	;|.EQU	_DISP_PORT_CMD_IN	= PIND		;DISPLAY COMMAND PORT IN				|
+	;|.EQU	_DISP_PORT_CMD_DIR	= DDRD		;DISPLAY COMMAND PORT DIRECTION				|
+	;|													|
+	;| OBS: DISPLAY FONT SIZE 5X10 WORK ONLY WITH 1 LINE							|
+	;+------------------------------------------------------------------------------------------------------+
+	;+------------------------+
+	;| HARDWARE EQUATES	  |
+	;+------------------------+----------------------------------------------------------------------------------
+	; BITS INFORMATION AND POSITION OF INTERNAL REGISTERS COMMAND
+	;  7   6   5   4   3   2   1   0
+	;| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | Clear display and sets DDRAM address 0 in address counter
+	;| 0 | 0 | 0 | 0 | 0 | 0 | 1 | - | Set DDRAM address 0 in address counter
+	;| 0 | 0 | 0 | 0 | 0 | 1 |I/D| S | I/D=cursor INCREMENT/cursor DECREMENT S=display SHIFT
+	;| 0 | 0 | 0 | 0 | 1 | D | C | B | D  =DISPLAY state C=CURSOR state B=BLINK state
+	;| 0 | 0 | 0 | 1 |S/C|R/L| - | - | S/C=SCREEN shift/CURSOR shift R=RIGHT L=LEFT
+	;| 0 | 0 | 1 | DL| N | F | - | - | DL =DATA LENGTH N=diplay LINES F=character FONT
+	;| 0 | 1 |AGC|AGC|AGC|AGC|AGC|AGC| AGC=CARACTER GENERATOR RAM ADDRESS
+	;| 1 |ADD|ADD|ADD|ADD|ADD|ADD|ADD| ADD=DATA RAM ADDRESS
+	.EQU	_DISP_CMD_CLEAR		= 0B00000001		;CLEAR ENTIRE DISPLAY AREA
+	.EQU	_DISP_CMD_HOME		= 0B00000010		;RETURN DISPLAY CURSOR DO LINE 1 COLUMN 1
+	.EQU	_DISP_CMD_ENTRY_MODE_SET= 0B00000100		;DISPLAY MODE SET
+	.EQU	_DISP_CMD_ON_OFF	= 0B00001000		;DISPLAY ON/OFF
+	.EQU	_DISP_CMD_SHIFT		= 0B00010000		;DISPLAY OR CURSOR SHIFT
+	.EQU	_DISP_CMD_FUNCTION_SET	= 0B00100000		;FUNCTION SET
+	.EQU	_DISP_CMD_CGRAM_ADDR	= 0B01000000		;SET CGRAM ADDRESS CG=CHARACTER GENERATOR 
+	.EQU	_DISP_CMD_DDRAM_ADDR	= 0B10000000		;SET DDRAM ADDRESS DD=DATA DISPLAY
+	.EQU	_DP_BIT_ID 	= 1			;ID=1 cursor increment ID=0 cursor decrement
+	.EQU	_DP_BIT_S  	= 0			;S=1 display shift
+	.EQU	_DP_BIT_D	= 2			;D=1 display ON
+	.EQU	_DP_BIT_C	= 1			;C=1 cursor ON
+	.EQU	_DP_BIT_B	= 0			;B=1 cursor blinking
+	.EQU	_DP_BIT_SC	= 3			;SC=1 display shift SC=0 cursor move
+	.EQU	_DP_BIT_RL	= 2			;RL=1 shift right RL=0 shift left
+	.EQU	_DP_BIT_DL	= 4			;DL=1 8 bits DL=0 4 bits interface
+	.EQU	_DP_BIT_N	= 3			;N=1 2 LINES N=0 1 LINE
+	.EQU	_DP_BIT_F	= 2			;F=1 5X10 DOTS F=0 5X8 DOTS
+	.EQU	_DP_BIT_BUSY	= 7
+	;+-----------------------------+
+	;| SRAM DISPLAY REGISTERS COPY |
+	;+-----------------------------+
+	.DSEG
+	_DISP_REG_2:	.BYTE 1
+	_DISP_REG_3:	.BYTE 1
+	.CSEG
+	;+-----------------------------+
+	;| SOME EQUATIONS	       |
+	;+-----------------------------+
+	.EQU	_DISP_INTER_MASK_EQUATION	= (0xff*_DISP_INTERFACE) | (0x0f<<_DISP_POSITION)	;my equations
+	.EQU	_DISP_INTER_SHIFT_EQUATION	= _DISP_POSITION & (~(_DISP_INTERFACE*0xff))
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   DRIVE INTERFACE COMMAND WRITE 			|
+	;|   DRIVE INTERFACE COMMAND READ 			|
+	;|   DRIVE INTERFACE DATA WRITE 			|
+	;|   DRIVE INTERFACE DATA READ				|
+	;|  				  			|
+	;|\			          			|
+	;| | Input  : Acc data input      			|
+	;|/  Output : Acc data input			        |
+	;|   Destroy: None	          			|
+	;|   			       	  			|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________
+	;				/
+	;				| WRITE OPERATION TIME FLOW
+	;				|
+	;				| RS  ---\   /-----------------------------------------------\   /----
+	;				|	  \ /						      \ /
+	;				|	   +						       +
+	;				|	  /|\						      / \
+	;				|     ---/ | \-----------------------------------------------/   \----
+	;				|	   |<---- Tas --->|  
+	;				| R/W ---\                |                                      /----
+	;				|	  \  		  |			                /
+	;				|	   \		  |<---- TWeh ---->|	       	       /
+	;				|	    \		  |		   |		      / 
+	;				|     -------\-----------------------------------------------/--------
+	;				|			  |		   |
+	;				| E                       | /------------\ |                      
+	;				|	     		  |/		  \|<------ Th ------>|   
+	;				|	    		  |		   |	       	      |  
+	;				|	     		 /		    \		      |  
+	;				|     ------------------/                    \------------------------
+	;				|							      | 
+	;				| DO  --------------------------\   /------------------------\|  /----
+	;				| to	                         \ /			      | /
+	;				| D7	                          +			       +
+	;				|	                         / \			      / \
+	;				|     --------------------------/   \------------------------/   \----
+	;				|
+	;				| READ OPERATION TIME FLOW
+	;				|
+	;				| RS  ---\   /-----------------------------------------------\   /----
+	;				|	  \ /						      \ /
+	;				|	   +						       +
+	;				|	  /|\						      / \
+	;				|     ---/ | \-----------------------------------------------/   \----
+	;				|	   |<---- Tas --->|  
+	;				| R/W -------/------------|----------------------------------\--------
+	;				|	    / 		  |			              \
+	;				|	   / 		  |<---- TWeh ---->|	       	       \
+	;				|	  /   		  |		   |		        \
+	;				|     ---/                |                |                      \---
+	;				|			  |		   |
+	;				| E                       | /------------\ |                      
+	;				|	     		  |/		  \|<------ Th ------>|   
+	;				|	    		  |		   |	       	      |  
+	;				|	     		 /		    \		      |  
+	;				|     ------------------/                    \------------------------
+	;				|							      | 
+	;				| DO  --------------------------\   /------------------------\|  /----
+	;				| to	                         \ /			      | /
+	;				| D7	                          +			       +
+	;				|	                         / \			      / \
+	;				|     --------------------------/   \------------------------/   \----
+	;				|
+	;				\_______________________________________________________________________
+	;+----------------------
+	;| COMMAND WRITE
+	;+----------------------
+	_DISP_INTERFACE_CMD_WRITE:
+		push	AccH						;save useds
+		in	AccH,SREG					;save SREG state
+		cli							;disable interrupts
+		cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RS			;RS=COMMAND
+		cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RW			;RW=WRITE
+		rjmp	_DISP_INTER_ENTER				;Enter 
+	;+----------------------
+	;| DATA WRITE
+	;+----------------------
+	_DISP_INTERFACE_DATA_WRITE:
+		push	AccH						;save useds
+		in	AccH,SREG					;save SREG state
+		cli							;disable interrupts
+		sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RS			;RS=DATA
+		cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RW			;RW=WRITE
+		rjmp	_DISP_INTER_ENTER				;Enter 
+	;+----------------------
+	;| COMMAND READ
+	;+----------------------
+	_DISP_INTERFACE_CMD_READ:
+		push	AccH						;save useds
+		in	AccH,SREG					;save SREG state
+		cli							;disable interrupts
+		cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RS			;RS=COMMAND
+		sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RW			;RW=READ
+		rjmp	_DISP_INTER_ENTER				;Enter 
+	;+----------------------
+	;| DATE READ
+	;+----------------------
+	_DISP_INTERFACE_DATA_READ:
+		push	AccH						;save useds
+		in	AccH,SREG					;save SREG state
+		cli							;disable interrupts
+		sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RS			;RS=DATA
+		sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RW			;RW=READ
+	_DISP_INTER_ENTER:
+		push	AccH						;save SREG state
+		ldi	AccH,_DISP_INTERFACE				;see if interface is 4 bits
+		cpi	AccH,_DISP_4BITS
+		brne	_DISP_INTM10					;no, branch
+		swap	Acc						;else place high nibble to low nibble
+	_DISP_INTM10:
+		in	AccH,_DISP_PORT_DATA_DIR			;get old state
+		ori	AccH,_DISP_INTER_MASK_EQUATION			;assume as output
+		sbic	_DISP_PORT_CMD_OUT,_DISP_BIT_RW			;skip if yes
+		andi	AccH,~(_DISP_INTER_MASK_EQUATION)		;else as input
+		out	_DISP_PORT_DATA_DIR,AccH			;program direction
+		ldi	AccH,_DISP_INTER_SHIFT_EQUATION			;put data into correctly position
+	_DISP_INT00:
+		tst	AccH						;in correctly position  ?
+		breq	_DISP_INT10					;yes, branch
+		lsl	Acc						;else adjust data position
+		dec	AccH						;next bit
+		rjmp	_DISP_INT00
+	_DISP_INT10:
+		andi	Acc,_DISP_INTER_MASK_EQUATION			;mask my data
+		in	AccH,_DISP_PORT_DATA_OUT			;get old data state to preserve pull up configuration
+		andi	AccH,~(_DISP_INTER_MASK_EQUATION)		;mask data
+		or	Acc,AccH					;join mask to data
+		out	_DISP_PORT_DATA_OUT,Acc				;send data
+		rcall	_DISP_INT_DELAY					;Adress setup time delay (Tas)
+		sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_E			;Put Enable in High
+		rcall	_DISP_INT_DELAY					;Enable Width Delay (TWeh)
+		sbic	_DISP_PORT_CMD_OUT,_DISP_BIT_RW			;RW=READ ?
+		in	Acc,_DISP_PORT_DATA_IN				;yes, read data
+		cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_E			;Put Enable in Low
+		rcall	_DISP_INT_DELAY					;Data hold time delay (Th)
+		ldi	AccH,_DISP_INTER_SHIFT_EQUATION			;put data read into correctly position
+	_DISP_INT20:
+		tst	AccH						;in correctly position  ?
+		breq	_DISP_INT30					;yes, branch
+		lsr	Acc						;else adjust data position
+		dec	AccH						;next bit
+		rjmp	_DISP_INT20
+	_DISP_INT30:
+		pop	AccH						;restore SREG state
+		out	SREG,AccH
+		pop	AccH						;restore useds
+	;+-------
+	;| display general delay
+	;+-------
+	_DISP_INT_DELAY:
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   DISPLAY BUSY		  			|
+	;|  				  			|
+	;|\			          			|
+	;| | Input  : none		      			|
+	;|/  Output : none				        |
+	;|   Destroy: none	          			|
+	;|   			       	  			|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________
+	_DISP_BUSY:
+		#ifdef __DEBUG_MODE__
+			ret
+		#endif
+		push	AccH						;save useds
+		push	Acc
+	_DISP_BU00:
+		rcall	_DISP_INTERFACE_CMD_READ			;read busy state
+		ldi	AccH,_DISP_INTERFACE				;see if 4bits interface
+		cpi	AccH,_DISP_4BITS
+		brne	_DISP_BU10					;no, branch
+		push	Acc						;save busy state
+		rcall	_DISP_INTERFACE_CMD_READ			;dummy read
+		pop	Acc						;restore busy state
+		swap	Acc						;place busy to correctly position
+	_DISP_BU10:
+		andi	Acc,(1<<_DP_BIT_BUSY)				;display busy ?
+		brne	_DISP_BU00					;yes, wait
+		rjmp	_DISP_CMD_W00
+	
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   DISPLAY COMMAND WRITE WITH BUSY WAIT STATE		|
+	;|  				  			|
+	;|\			          			|
+	;| | Input  : Acc command to be write     		|
+	;|/  Output : none				        |
+	;|   Destroy: none	          			|
+	;|   			       	  			|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________
+	_DISP_CMD:							;<-- ONLY QUESTION COMPATIBILITY WITH OLD VERSIONS
+	_DISP_CMD_WRITE:
+		rcall	_DISP_BUSY					;wait exit busy state
+		push	AccH
+		push	Acc
+		rcall	_DISP_INTERFACE_CMD_WRITE			;write command high nibble or all byte
+		pop	Acc
+		push	Acc
+		ldi	AccH,_DISP_INTERFACE				;see if 4bits interface
+		cpi	AccH,_DISP_4BITS
+		brne	_DISP_CMD_W00					;no, branch
+		swap	Acc						;send a low nibble
+		rcall	_DISP_INTERFACE_CMD_WRITE			;write command
+	_DISP_CMD_W00:
+		pop	Acc
+		pop	AccH
+		ret
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   DISPLAY DATA WRITE WITH BUSY WAIT STATE		|
+	;|  				  			|
+	;|\			          			|
+	;| | Input  : Acc data to be write     			|
+	;|/  Output : none				        |
+	;|   Destroy: none 	          			|
+	;|   			       	  			|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________
+	_DISP_DATA:							;<-- ONLY QUESTION COMPATIBILITY WITH OLD VERSIONS
+	_DISP_DATA_WRITE:
+		rcall	_DISP_BUSY					;wait exit busy state
+		push	AccH
+		push	Acc
+		rcall	_DISP_INTERFACE_DATA_WRITE			;write a high nibble or all byte
+		pop	Acc
+		push	Acc
+		ldi	AccH,_DISP_INTERFACE				;see if 4bits interface
+		cpi	AccH,_DISP_4BITS
+		brne	_DISP_DATA_W00					;no, branch
+		swap	Acc						;send a low nibble
+		rcall	_DISP_INTERFACE_DATA_WRITE			;write data low
+	_DISP_DATA_W00:
+		rjmp	_DISP_CMD_W00					;restore useds and return
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   DISPLAY DATA READ WITH BUSY WAIT STATE		|
+	;|  				  			|
+	;|\			          			|
+	;| | Input  : none		     			|
+	;|/  Output : none				        |
+	;|   Destroy: Acc data read         			|
+	;|   			       	  			|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________
+	_DISP_DATA_READ:
+		rcall	_DISP_BUSY					;wait exit busy state
+		push	AccH						;save useds
+		rcall	_DISP_INTERFACE_DATA_READ			;read high nibble or all byte
+		ldi	AccH,_DISP_INTERFACE				;see if 4bits interface
+		cpi	AccH,_DISP_4BITS
+		brne	_DISP_DATA_R00					;no, branch
+		mov	AccH,Acc					;else get high nibble
+		swap	AccH
+		andi	AccH,0xf0
+		rcall	_DISP_INTERFACE_DATA_READ			;get low nibble
+		andi	Acc,0x0f					;mask low nible
+		or	Acc,AccH					;add high+low nibble
+	_DISP_DATA_R00:	
+		pop	AccH
+		ret
+	
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+	;|   DISPLAY INITIALIZATION	  			|
+	;|  				  			|
+	;|\			          			|
+	;| | Input  : none		      			|
+	;|/  Output : none				        |
+	;|   Destroy: none	          			|
+	;|   			       	  			|
+	;+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ 
+	;   |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+	;   \__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\__\________________________________________________
+	
+	_DISP_INIT:
+		push	Acc						;save Useds
+		push	AccH
+		in	Acc,SREG					;save SREG
+		cli							;Disable interrupts during initialization
+		sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RS			;Rw=command
+		sbi	_DISP_PORT_CMD_OUT,_DISP_BIT_RW			;RW=read
+		cbi	_DISP_PORT_CMD_OUT,_DISP_BIT_E			;E low
+		sbi	_DISP_PORT_CMD_DIR,_DISP_BIT_RS			;set RS,RW and E output
+		sbi	_DISP_PORT_CMD_DIR,_DISP_BIT_RW
+		sbi	_DISP_PORT_CMD_DIR,_DISP_BIT_E
+		out	SREG,Acc
+		ldi	Acc,low(20)					;wait power supply stabish
+		clr	AccH
+		rcall	_DELAY_MILLISECONDS
+	;+------------------------------
+	;| Set interface lenght to 8 bits and line number e font size
+	;+------------------------------
+		ldi	Acc,_DISP_CMD_FUNCTION_SET | (1<<_DP_BIT_DL) | (_DISP_LINE<<_DP_BIT_N) | (_DISP_FONT<<_DP_BIT_F)
+		rcall	_DISP_INTERFACE_CMD_WRITE			;write command without busy verify
+		rcall	_DISP_W1MS					;wait a milesecond
+		ldi	Acc,_DISP_CMD_FUNCTION_SET | (1<<_DP_BIT_DL) | (_DISP_LINE<<_DP_BIT_N) | (_DISP_FONT<<_DP_BIT_F)
+		rcall	_DISP_INTERFACE_CMD_WRITE			;write command without busy verify
+		rcall	_DISP_W1MS					;wait a milesecond
+		ldi	Acc,_DISP_CMD_FUNCTION_SET | (1<<_DP_BIT_DL) | (_DISP_LINE<<_DP_BIT_N) | (_DISP_FONT<<_DP_BIT_F)
+		rcall	_DISP_INTERFACE_CMD_WRITE			;write command without busy verify
+		rcall	_DISP_W1MS					;wait a milesecond
+		ldi	Acc,_DISP_CMD_FUNCTION_SET | (_DISP_INTERFACE<<_DP_BIT_DL) | (_DISP_LINE<<_DP_BIT_N) | (_DISP_FONT<<_DP_BIT_F)
+		rcall	_DISP_CMD_WRITE					;write command with busy verify
+	;+-------------------------------
+	;| Set SRAM display register copy 
+	;+-------------------------------
+		ldi	Acc,_DISP_CMD_ENTRY_MODE_SET | (1<<_DP_BIT_ID) | (0<<_DP_BIT_S)	;cusor increment, S=0
+		sts	_DISP_REG_2,Acc
+		ldi	Acc,_DISP_CMD_ON_OFF | (1<<_DP_BIT_D) | (1<<_DP_BIT_C) | (0<<_DP_BIT_B);display=on,cursor=on,blink=off
+		sts	_DISP_REG_3,Acc
+	;+------------------------------
+	;| Set register 2
+	;+------------------------------
+		lds	Acc,_DISP_REG_2
+		rcall	_DISP_CMD_WRITE					;write command with busy verify
+	;+------------------------------
+	;| Set register 3
+	;+------------------------------
+		lds	Acc,_DISP_REG_3
+		rcall	_DISP_CMD_WRITE					;write command with busy verify
+	;+------------------------------
+	;| clear display
+	;+------------------------------
+		ldi	Acc,_DISP_CMD_CLEAR
+		rcall	_DISP_CMD_WRITE
+	;+------------------------------------------------------+
+	;|							|
+	;| RETURN POINT WITH ACC AND ACCH RESTORED FROM STACK	|
+	;|							|
+	;+------------------------------------------------------+-------------------------------------------------------------------
+	_DISP_REST_EXIT:
+		pop	AccH
+		pop	Acc
+		ret
+	
+	;+--------------------
+	;| Wait a milesecond
+	;+--------------------
+	_DISP_W1MS:
+		ldi	Acc,1						;load 1 ms parameter
+		clr	AccH
+		rcall	_DELAY_MILLISECONDS				;wait a milesecond
+		ret
+	
+	;+----------------------------------------------+
+	;| DISPLAY CLEAR SCREEN				|
+	;| 						|
+	;| Input:  none					|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_CLS:
+		push	Acc						;save useds
+		ldi	Acc,_DISP_CMD_CLEAR				;load command clear
+	;+----------------------+
+	;|			|
+	;| COMMAND EXECUTION	|
+	;|			|
+	;+----------------------+
+	_DISP_CMD_EXECUTE:
+		rcall	_DISP_CMD_WRITE					;write this command
+		pop	Acc						;restore useds
+		ret							;return
+	;+----------------------------------------------+
+	;| DISPLAY CURSOR HOME				|
+	;| 						|
+	;| Input:  none					|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_HOME:
+		push	Acc						;save useds
+		ldi	Acc,_DISP_CMD_HOME				;load command set home position
+		rjmp	_DISP_CMD_EXECUTE				;execute this command
+	;+----------------------------------------------+
+	;| DISPLAY ON/OFF CONTROL (Only data appear on 	|
+	;| screen is turned hide)			|
+	;| 						|
+	;| Input:  Acc On or Off			|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_DISPLAY:
+		push	Acc
+		push	AccH
+		andi	Acc,(1<<_DP_BIT_D)				;extract bit,set or reset
+									;ON state all bits = one
+		lds	AccH,_DISP_REG_3				;get old state of DISPLAY power
+		andi	AccH,~(1<<_DP_BIT_D)				;clear old state
+	_DISP_REG3_UPDATE:
+		or	Acc,AccH					;set new state
+		sts	_DISP_REG_3,Acc
+		rcall	_DISP_CMD_WRITE					;write command with busy verify
+		rjmp	_DISP_REST_EXIT					;restore and exit
+	;+----------------------------------------------+
+	;| DISPLAY SCROLL TO LEFT			|
+	;| 						|
+	;| Input:  none					|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_SCROLL_LEFT:
+		push	Acc
+		ldi	Acc,_DISP_CMD_SHIFT | (1<<_DP_BIT_SC) | (0<<_DP_BIT_RL)
+		rjmp	_DISP_CMD_EXECUTE				;execute command
+	;+----------------------------------------------+
+	;| DISPLAY SCROLL TO RIGHT			|
+	;| 						|
+	;| Input:  none					|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_SCROLL_RIGHT:
+		push	Acc
+		ldi	Acc,_DISP_CMD_SHIFT | (1<<_DP_BIT_SC) | (1<<_DP_BIT_RL)
+		rjmp	_DISP_CMD_EXECUTE				;execute command
+	;+----------------------------------------------+
+	;| DISPLAY CURSOR ON/OFF CONTROL		|
+	;| 						|
+	;| Input:  Acc On or Off			|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_CURSOR:
+		push	Acc
+		push	AccH
+		andi	Acc,(1<<_DP_BIT_C)				;extract bit,set or reset
+									;ON state all bits = one
+		lds	AccH,_DISP_REG_3				;get old state of CURSOR
+		andi	AccH,~(1<<_DP_BIT_C)				;clear old state
+		rjmp	_DISP_REG3_UPDATE				;update register 3
+	;+----------------------------------------------+
+	;| DISPLAY MOVEMENT CURSOR TO LEFT		|
+	;| 						|
+	;| Input:  none					|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_CURSOR_LEFT:
+		push	Acc
+		ldi	Acc,_DISP_CMD_SHIFT | (0<<_DP_BIT_SC) | (0<<_DP_BIT_RL)
+		rjmp	_DISP_CMD_EXECUTE				;execute command
+	;+----------------------------------------------+
+	;| DISPLAY MOVEMENT CURSOR TO RIGHT		|
+	;| 						|
+	;| Input:  none					|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_CURSOR_RIGHT:
+		push	Acc
+		ldi	Acc,_DISP_CMD_SHIFT | (0<<_DP_BIT_SC) | (1<<_DP_BIT_RL)
+		rjmp	_DISP_CMD_EXECUTE				;execute command
+	;+----------------------------------------------+
+	;| DISPLAY CURSOR BLINK ON/OFF CONTROL		|
+	;| 						|
+	;| Input:  Acc On or Off			|
+	;| Output: none					|
+	;| Destroy:none					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_BLINK:
+		push	Acc
+		push	AccH
+		andi	Acc,(1<<_DP_BIT_B)				;extract bit,set or reset
+									;ON state all bits = one
+		lds	AccH,_DISP_REG_3				;get old state of BLINK 
+		andi	AccH,~(1<<_DP_BIT_B)				;clear old state
+		rjmp	_DISP_REG3_UPDATE				;update register 3
+	;+----------------------------------------------+
+	;| DISPLAY LOCATE CURSOR 			|
+	;| 						|
+	;| Input  :  Acc Row				|
+	;|	     AccH Column			|
+	;| Output :  none				|
+	;| Destroy:  none				|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_LOCATE:
+		push	Acc				;save used
+		push	AccH
+		dec	Acc				;adjust system coordinates 0..n --> 1..n
+		dec	AccH
+		ror	Acc				;transfer line bit to bit 6
+		ror	Acc
+		ror	Acc
+		andi	Acc,0b01000000			;mask line bit
+		ori	Acc,_DISP_CMD_DDRAM_ADDR	;add DDRAM command
+		andi	AccH,0b00111111			;mask columns
+		add	Acc,AccH			;composite locate command
+		pop	AccH
+		rjmp	_DISP_CMD_EXECUTE		;execute,exit and restore
+	;+----------------------------------------------+
+	;| DISPLAY SEND STRING TO DISPLAY FROM FLASH	|
+	;| 						|
+	;| Input  :  Z --> String into FLASH		|
+	;| Output :  none				|
+	;| Destroy:  r0,Z register			|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_SEND_STR:
+		push	Acc				;save used registers
+		push	AccH
+		in 	AccH,SREG			;save SREG state
+		clt					;set transfer from SRAM
+	_DISP_SEND00:
+		lpm					;get data from program memory
+		brtc	_DISP_SEND10			;branch if seted to get from program
+		ld	r0,Z				;else get data from SRAM memory
+	_DISP_SEND10:
+		mov	Acc,r0				;end string ?
+		cpi	Acc,0
+		breq	_DISP_SEND20			;yes , done
+		rcall	_DISP_DATA_WRITE		;send data to display
+		adiw	ZL,1
+		rjmp	_DISP_SEND00
+	_DISP_SEND20:
+		out	SREG,AccH			;restore SREG state
+		rjmp	_DISP_REST_EXIT			;restore and exit
+	
+	;+----------------------------------------------+
+	;| DISPLAY SEND STRING TO DISPLAY FROM SRAM	|
+	;| 						|
+	;| Input  :  Z --> String into SRAM		|
+	;| Output :  none				|
+	;| Destroy:  r0,Z register			|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_SEND_STR_S:
+		push	Acc				;save used registers
+		push	AccH
+		in	AccH,SREG			;save SREG state
+		set					;set transfer from PROGRAM 
+		rjmp	_DISP_SEND00			;send string
+	;+----------------------------------------------+
+	;| DISPLAY SET CGRAM ADDRESS TO BE READ OR WRITE|
+	;| BY DISP_DATA_WRITE OR DISP_DATA_READ FUNCTION|
+	;| 						|
+	;| Input  :  Acc  CGRAM address			|
+	;| Output :  none				|
+	;| Destroy:  					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_SET_CGRAM_ADDR:
+		push	Acc				;save data
+		andi	Acc,0b00111111			;mask only address
+		ori	Acc,_DISP_CMD_CGRAM_ADDR	;add CGRAM COMMAND
+		rjmp	_DISP_CMD_EXECUTE		;write command and exit
+	;+----------------------------------------------+
+	;| DISPLAY SET DDRAM ADDRESS TO BE READ OR WRITE|
+	;| BY DISP_DATA_WRITE OR DISP_DATA_READ FUNCTION|
+	;| 						|
+	;| Input  :  Acc  DDRAM address			|
+	;| Output :  none				|
+	;| Destroy:  					|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_SET_DDRAM_ADDR:
+		push	Acc				;save data
+		andi	Acc,0b01111111			;mask only address
+		ori	Acc,_DISP_CMD_DDRAM_ADDR	;add CGRAM COMMAND
+		rjmp	_DISP_CMD_EXECUTE		;write command and exit
+	;+----------------------------------------------+
+	;| REDEFINES CHARACTER GENERATOR		|
+	;| 						|
+	;| Input  :  Acc  character code 0..7		|
+	;|	     Z--> character new image		|
+	;| Output :  none				|
+	;| Destroy: r0,Z				|
+	;+----------------------------------------------+---------------------------------------------------------------------------
+	_DISP_REDEFINE_CHAR:
+		push	Acc
+		push	AccH
+		lsl	Acc				;multiple of 8 because each char use 8 bytes
+		lsl	Acc
+		lsl	Acc
+		rcall	_DISP_SET_CGRAM_ADDR		;set address to be write
+		ldi	AccH,8
+	_DISP_RE00:
+		lpm					;get image
+		mov	Acc,r0	
+		rcall	_DISP_DATA_WRITE		;redefines it
+		adiw	ZL,1
+		dec	AccH
+		brne	_DISP_RE00
+		rjmp	_DISP_REST_EXIT
+#endif
+.exit
+	
+

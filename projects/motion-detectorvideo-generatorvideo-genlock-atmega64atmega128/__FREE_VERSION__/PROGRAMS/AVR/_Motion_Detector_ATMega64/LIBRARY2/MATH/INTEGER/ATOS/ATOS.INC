@@ -1,0 +1,72 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATE:24/01/2005 VERSION 1.0							|
+;>------------------------------------------------------------------------------<
+;| I N T E G E R  R O U T I N E S	     					|
+;| S I G N E D  B Y T E  T O  S T R I N G 					|
+;+------------------------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM				|
+;+------------------------------------------------------------------------------+
+;+----------------------------------------------------------------------+
+;| _ATOS or _BTOS							|
+;| Convert signed byte to string ASCII with fixed size 4 chars and 	|
+;| with left zero removal with 0 terminator				|
+;|								  	|
+;| Input  : Acc signed byte input				  	|
+;| Output : Z--> SRAM string output with 0			  	|
+;+----------------------------------------------------------------------+
+#ifndef	__INTEGER_ATOS__
+	#define __INTEGER_ATOS__
+	.message "[ (MATH) INTEGER ATOS ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef	__INTEGER_UBTOS__
+		.INCLUDE "MATH\INTEGER\UBTOS\UBTOS.INC"
+	#endif
+	_ATOS:
+	_BTOS:
+		push	Acc				;save useds
+		tst	Acc				;negative ?
+		brpl	_ATOS00				;no, branch
+		NEG	Acc				;complement input value
+		rcall	_UBTOS				;convert
+		sbiw	ZL,1				;put minus sign
+		ldi	Acc,'-'				;set negative
+		st	Z,Acc
+		rjmp	_ATOS10
+	_ATOS00:
+		rcall	_UBTOS				;call unsigned to string
+	_ATOS10:
+		pop	Acc
+		ret
+#endif
+.exit
+

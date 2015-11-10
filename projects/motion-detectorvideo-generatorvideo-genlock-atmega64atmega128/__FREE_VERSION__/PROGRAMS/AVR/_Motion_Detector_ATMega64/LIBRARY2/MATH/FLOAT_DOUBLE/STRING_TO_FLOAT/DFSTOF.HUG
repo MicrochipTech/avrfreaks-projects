@@ -1,0 +1,285 @@
+;<$DS_HEADER>
+;+--------------------------------------------------------------------------------+              
+;|João D´Artagnan A. Oliveira Programmer and Author; 				  |
+;|										  |
+;| All rights reserved.								  |
+;|										  |
+;|   Redistribution and use in source and binary forms, with or without		  |
+;|  modification, are permitted provided that the following conditions are met:	  |
+;|										  |
+;|   * Redistributions of source code must retain the above copyright		  |
+;|     notice, this list of conditions and the following disclaimer.		  |
+;|										  |
+;|   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"  |
+;|   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE    |
+;|   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE   |
+;|   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE     |
+;|   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR	  |
+;|   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF	  |
+;|   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS	  |
+;|   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN	  |
+;|   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)	  |
+;|   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE   |
+;|   POSSIBILITY OF SUCH DAMAGE.						  |
+;|										  |
+;|   Brasília, Brazil November 30,2015 	06:28 am				  |
+;+--------------------------------------------------------------------------------+
+;</$DS_HEADER>
+;+--------------------------------------------------------------+---+-----------+
+;|										|
+;| DATE:24/05/2001 VERSION 1.0							|
+;>--------------------------------------------------------------+---------------<
+;| D O U B L E   F L O A T  P O I N T  R O U T I N E S		|
+;| S T R I N G  T O  F L O A T 					|
+;+--------------------------------------------------------------+
+;| THIS DRIVE HAS INTEND TO USE WITH AVRS WITH SRAM		|
+;+--------------------------------------------------------------+
+#ifndef __MATH_STRING_TO_FLOAT__
+	#define __MATH_STRING_TO_FLOAT__
+	.message "[ (MATH) STRING TO FLOAT ]"
+	;+----------------------+
+	;| NECESSARY INCLUDES	|
+	;+----------------------+
+	#ifndef __MATH_FLOAT_INFINIT__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\INFINIT_RESULT\DFINF.hug"
+	#endif
+	#ifndef __MATH_FLOAT_NORMALIZE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\NORMALIZE\DFNORM.hug"
+	#endif
+	#ifndef __MATH_FLOAT_ADDSUB__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\ADDSUB\DFADDSUB.hug"
+	#endif
+	#ifndef __MATH_FLOAT_MULDIV__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\MULDIV\DFMULDIV.hug"
+	#endif
+	#ifndef __MATH_FLOAT_UNARY__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\UNARY\UNARY.hug"
+	#endif
+	#ifndef __MATH_FLOAT_LOAD_STORE__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\LOAD_STORE\DFLDXSTX.hug"
+	#endif
+	#ifndef	__MATH_FLOAT_XTOF__
+		.INCLUDE	"MATH\FLOAT_DOUBLE\LONG_TO_FLOAT\DFLTOF.hug"
+	#endif
+	;+---------------------------------------------------+
+	;| CONVERT STRING ASCII NUMBER TO DOUBLE FLOAT	     |
+	;|                                                   |
+	;| Input  : Z --> String into SRAM Memory	     |
+	;| Output : Floating Accumulator		     |
+	;|	    Acc Exception code			     |
+	;| Destroy: AccH,Flags	                             |
+	;+---------------------------------------------------+
+	.MACRO	_DFMSSTOF
+		ldi	ZL,low(@0)
+		ldi	ZH,high(@0)
+		call 	_DFSSTOF
+	.ENDMACRO	
+	_DFSSTOF:
+		ldi	Acc,1			;set SRAM data source	
+		sts	_DF_FS,Acc
+		jmp 	_DFSTOF_START		;start conversion
+	;+---------------------------------------------------+
+	;| CONVERT STRING ASCII NUMBER TO DOUBLE FLOAT	     |
+	;|                                                   |
+	;| Input  : Z --> String into Flash Memory	     |
+	;| Output : Floating Accumulator		     |
+	;|	    Acc Exception code			     |
+	;| Destroy: AccH,Flags	                             |
+	;+---------------------------------------------------+
+	.MACRO	_DFMSTOF
+		ldi	ZL,low(@0)
+		ldi	ZH,high(@0)
+		call 	_DFSTOF
+	.ENDMACRO	
+	_DFSTOF:
+		clr	Acc			;clear Flags
+		sts	_DF_FS,Acc		;set FLASH data source
+	_DFSTOF_START:
+		push	ZL			;save pointer
+		push	ZH
+		clr	Acc
+		sts	_DF_FLAGS,Acc
+		sts	_DF_EAC,Acc		;clear EAC
+		ldi	Acc,0			;MAC=0
+		call 	_DFATOF
+		_DFSTACC	_DF_MAC
+		ldi	Acc,10			;P10=10
+		call 	_DFATOF	
+		_DFSTACC	_DF_P10
+		pop	ZH			;restore pointer
+		pop	ZL
+	_DFSTOF00:
+		ld	r0,Z			;get data from SRAM 
+		lds	Acc,_DF_FS		;question source
+		tst	Acc			;source is flash ?
+		brne	_DFSTOF05		;no, branch
+		lpm				;else get character from flash
+	_DFSTOF05:
+		tst	r0			;end of string character ?
+		brne	_DFSTOF10		;no, branch
+		call 	_DFSTOFEXPC
+		ret				;end of conversion 
+	_DFSTOF10:
+		mov	Acc,r0			;Acc=character
+		call 	_DFSTOFCHECK		;check character processing
+		adiw	ZL,1			;next character string
+		jmp 	_DFSTOF00
+	;+-----------------------------------
+	;| Load Op2=10 Op1=Mac
+	;+-----------------------------------
+	_DFSTOF_OP110MAC:
+		ldi	Acc,10
+		call 	_DFATOF			;op2=10
+		_DFMOVACCOP2
+		_DFLDOP1	_DF_MAC		;op1=MAC
+		ret
+	;+-----------------------------------
+	;| Process exponent and mantisa signal compensation
+	;+-----------------------------------
+	_DFSTOFEXPC:
+		lds	Acc,_DF_EAC		;get exponent counter
+	_DFSTOFEXP00:
+		tst	Acc			;last count ?
+		breq	_DFSTOFEXP_EXIT		;yes, exit
+		push	Acc
+		lds	AccH,_DF_FLAGS		;get flags
+		bst	AccH,_DF_BIT_ES		;positive mantisa ?
+		brts	_DFSTOFEXP10		;no, branch
+		call 	_DFSTOF_OP110MAC
+		_DFMMUL				;acc=MAC*10
+		_DFSTACC	_DF_MAC		;MAC=MAC*10
+		jmp 	_DFSTOFEXP20
+	_DFSTOFEXP10:
+		call 	_DFSTOF_OP110MAC
+		_DFMDIV				;acc=MAC/10
+		_DFSTACC	_DF_MAC		;MAC=MAC/10
+	_DFSTOFEXP20:
+		pop	Acc
+		dec	Acc
+		jmp 	_DFSTOFEXP00		;until done
+	_DFSTOFEXP_EXIT:
+		_DFLDACC	_DF_MAC		;float accumulator = float number from string pointed by Z		
+		lds	AccH,_DF_FLAGS		;see if mantisa negative 
+		bst	AccH,_DF_BIT_MS		;negative ?
+		brtc	_DFSTOFEXP30		;no, branch
+		ori	_acc_s,0x80		;turn, acc negative
+	_DFSTOFEXP30:
+		ret
+	;+-----------------------------------
+	;| Process each string character according
+	;+-----------------------------------
+	_DFSTOFCHECK:
+		push	ZL			;save pointer
+		push	ZH
+		cpi	Acc,'+'			;plus sign ?
+		breq	_DFSTOFC_SIGNALS	;yes, process signal
+		cpi	Acc,'-'			;minus sign ?
+		breq	_DFSTOFC_SIGNALS	;yes, process signal
+		cpi	Acc,'.'			;point ?
+		breq	_DFSTOFC_POINT		;yes, process point
+		cpi	Acc,'e'			;e character ?
+		breq	_DFSTOFC_EXPONENT	;yes, process exponent
+		cpi	Acc,'E'			;E chracter ?
+		breq	_DFSTOFC_EXPONENT	;yes, process exponent
+		cpi	Acc,'0'			;digits ?
+		brlo	_DFSTOFC_00		;no, exit
+		cpi	Acc,'9'+1
+		brsh	_DFSTOFC_00		;no, exit
+		jmp 	_DFSTOFC_DIGITS		;else process digits
+	_DFSTOFC_00:
+		jmp 	_DFSTOFC_DONE		;goto done caseelse
+	;+-----------------------------------
+	;| Process mantisa and exponent bit
+	;+-----------------------------------
+	_DFSTOFC_SIGNALS:
+		lds	AccH,_DF_FLAGS		;get flags
+		bst	AccH,_DF_BIT_IDS	;IDS=0 ?
+		brts	_DFSTOFC20		;no, branch
+		cpi	Acc,'-'			;minus signal of mantisa
+		brne	_DFSTOFC10
+		ori	AccH,(1<<_DF_BIT_MS)	;set negative mantisa
+	_DFSTOFC10:
+		ori	AccH,(1<<_DF_BIT_IDS)	;set exponent verification
+		jmp 	_DFSTOFC30
+	_DFSTOFC20:
+		cpi	Acc,'-'			;minus signal of exponent
+		brne	_DFSTOFC30		;no,branch
+		ori	AccH,(1<<_DF_BIT_ES);set negative mantisa
+	_DFSTOFC30:
+		sts	_DF_FLAGS,AccH		;store flags
+		jmp 	_DFSTOFC_DONE		;done this case
+	;+-----------------------------------
+	;| Process point
+	;+-----------------------------------
+	_DFSTOFC_POINT:
+		lds	AccH,_DF_FLAGS		;get flags
+		ori	AccH,(1<<_DF_BIT_DP)	;set point flag
+		sts	_DF_FLAGS,AccH		;store flags
+		jmp 	_DFSTOFC_DONE		;done this case
+	;+-----------------------------------
+	;| Process exponent
+	;+-----------------------------------
+	_DFSTOFC_EXPONENT:
+		lds	AccH,_DF_FLAGS		;get flags
+		ori	AccH,(1<<_DF_BIT_EP)	;set exponent operator flag
+		ori	AccH,(1<<_DF_BIT_IDS)	;set exponent verification
+		sts	_DF_FLAGS,AccH		;store flags
+		jmp 	_DFSTOFC_DONE
+	;+-----------------------------------
+	;| Process Digits
+	;+-----------------------------------
+	_DFSTOFC_DIGITS:
+		lds	AccH,_DF_FLAGS		;get flags
+		bst	AccH,_DF_BIT_EP		;extract mantisa digits ?
+		brts	_DFSTOFC_D10		;no, branch
+		bst	AccH,_DF_BIT_DP		;point reatched ?
+		brts	_DFSTOFC_D00		;yes, branch
+		push	Acc			;save digit
+		call 	_DFSTOF_OP110MAC
+		_DFMMUL				;Acc=MAC*10
+		_DFMOVACCOP1			;op1=MAC*10
+		pop	Acc			;restore digit
+		subi	Acc,'0'			;convert to binary number
+		call 	_DFATOF			;convert to float
+		_DFMOVACCOP2			;op2=digit
+		_DFMADD				;acc=MAC*10+digit
+		_DFSTACC	_DF_MAC		;MAC=MAC*10+digit
+		jmp 	_DFSTOFC_DONE
+	_DFSTOFC_D00:
+		subi	Acc,'0'			;convert to binary number
+		call 	_DFATOF			;convert to float
+		_DFMOVACCOP1			;op1=digit
+		_DFLDOP2	_DF_P10		;op2=P10
+		_DFMDIV				;acc=digit/p10
+		_DFMOVACCOP1			;op1=digit/p10
+		_DFLDOP2	_DF_MAC		;op2=MAC
+		_DFMADD				;acc=MAC+digit/P10
+		_DFSTACC	_DF_MAC		;MAC=MAC+digit/P10
+		ldi	Acc,10
+		call 	_DFATOF			;convert to float
+		_DFMOVACCOP1			;op1=10
+		_DFLDOP2	_DF_P10		;op2=P10
+		_DFMMUL				;acc=P10*10
+		_DFSTACC	_DF_P10		;P10=P10*10
+		jmp 	_DFSTOFC_DONE
+	_DFSTOFC_D10:
+		push	Acc
+		lds	AccH,_DF_EAC		;eac=eac*10+digit
+		lsl	AccH
+		mov	Acc,AccH
+		lsl	AccH
+		lsl	AccH
+		add	AccH,Acc
+		pop	Acc
+		subi	Acc,'0'			;convert to binary number
+		add	AccH,Acc
+		sts	_DF_EAC,AccH		;store new value
+	_DFSTOFC_DONE:
+		ldi	Acc,_FPOK
+		pop	ZH			;restore pointer
+		pop	ZL
+		ret
+#endif
+.exit
+
+
