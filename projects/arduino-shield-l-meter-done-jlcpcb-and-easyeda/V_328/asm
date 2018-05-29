@@ -1,0 +1,953 @@
+//-----------------------------------------------------------
+//---             L meter firmware for AVR                ---
+//--- ATmega328P version for Ardiuno uno R3 shield L_meter ---
+//---                  2016-10-17                         ---
+//-----------------------------------------------------------
+
+//---------------------
+// Lcd = PORTD.0,1,2,3
+// RS=PORTB.0
+// EN=PORTD.5
+// LCD_TYPE = 16 * 2
+//---------------------
+
+//------------------------
+//--- for ATMega 328P ----
+//------------------------
+#define F_CPU 16000000UL
+///-------------------------
+//--- our private deines ---
+//--------------------------
+.equ     RAMSTART   = 0x0100
+.equ     RAMEND     = 0x08ff
+//-
+
+.equ	ADMUX	= 0x7c	; MEMORY MAPPED
+.equ	ADCSRB	= 0x7b	; MEMORY MAPPED
+.equ	ADCSRA	= 0x7a	; MEMORY MAPPED
+.equ	ADCH	= 0x79	; MEMORY MAPPED
+.equ	ADCL	= 0x78	; MEMORY MAPPED
+
+.equ	MCUCR	= 0x35
+.equ	MCUSR	= 0x34
+.equ	SMCR	= 0x33
+
+.equ     ACSR       = 0x30
+
+.equ     DDRB       = 0x04
+.equ     PORTB      = 0x05
+
+.equ     DDRD       = 0x0a
+.equ     PORTD      = 0x0b
+
+.equ     PORTC      = 0x08
+.equ     DDRC       = 0x07
+.equ     PINC       = 0x06
+
+.equ     SPL        = 0x3d
+.equ     SPH        = 0x3e
+
+
+
+
+.equ     SREG       = 0x3f
+//===========================
+.equ     TCNT1L     = 0x84 // !!! MEMORY MAPPED !!!
+.equ     TCNT1H     = 0x85 // !!! MEMORY MAPPED !!!
+
+.equ     TCCR1A     = 0x80 // !!! MEMORY MAPPED !!!
+.equ     TCCR1B     = 0x81 // !!! MEMORY MAPPED !!!
+
+.equ     TIFR1      = 0x16
+.equ     TIMSK1     = 0x6f // !!! MEMORY MAPPED !!!
+
+
+
+.equ     TCNT0      = 0x26
+.equ     TIMSK0     = 0x6e // !!! MEMORY MAPPED
+.equ     TIFR0      = 0x15
+.equ     TCCR0A     = 0x24
+.equ     TCCR0B     = 0x25
+//===========================
+//-
+.def	XL	=	r26
+.def	XH	=	r27
+.def	YL	=	r28
+.def	YH	=	r29
+.def	ZL	=	r30
+.def	ZH	=	r31
+//---------------------------------------------
+//--- controll for change microcontroller's ---
+//---------------------------------------------
+
+.equ     TIMSK1_START_VALUE  = 0b00000001  // IRQ CAPTURE TC1 enable value 
+.equ     TIMER1_START_VALUE  = 0b00000001  // value for run TC1
+
+.EQU     TIMSK0_START_VALUE  = 0b00000001
+.EQU     TIMER0_START_VALUE  = 0b00000111  //00000111
+//--------
+
+
+.equ     ACSR_START_VALUE    = 0b10000000  // start value for ACSR
+.equ     DDRD_START_VALUE    = 0b11101111  // initial inout/output value of PORTD
+.equ     PORTD_START_VALUE   = 0b00010000  // initial inout/output value of PORTD
+
+.equ     start_value_DDRB  = 0b11111111    // changed - OK  
+.equ     start_value_PORTB = 0b00010000    // changed - OK  
+
+
+.equ     ADMUX_START_VALUE    = 0b01000000  // start value for ADMUX
+.equ     ADCSR_START_VALUE    = 0b10001111  // start value for ADCSR
+.equ     SMCR_START_VALUE     = 0b00000011  // start value for ADCSR
+
+//--------
+.equ     OUT_ASCII_BUFF    = RAMSTART+1            // 10 bytes for ASCII decimal string 32bit unsigned value
+.equ     LEN_ASCII_BUFF    = OUT_ASCII_BUFF + 14   // length of ASCII digits
+.equ     MY_LONG_INT       = OUT_ASCII_BUFF + 15   // 4 bytes LONG INTEGER - 32bit unsigned value 
+.equ     STATE_PUSH        = OUT_ASCII_BUFF + 21   // button push state
+
+
+//--------
+.def     var1          =     r1   // divide | multiply - our long integer is here
+.def     var2          =     r2
+.def     var3          =     r3
+.def     var4          =     r4
+.def     var5          =     r5
+
+
+.def     mod10         =     r16  // helps variable for divide | multiply
+.def     mod10hi       =     r20  // helps variable for divide | multiply
+
+.def     cntr_1        =     r17  // helps variable for divide | multiply
+.def     divisor       =     r18  // disor for divide proc
+.def     multiplier    =     r18  // multiplier for multiply routine
+.def     multiplierhi  =     r19  // multiplier for multiply routine
+
+//--------
+          
+          .CSEG
+.ORG     0x0000
+
+//------------------------------
+//-- vectors of interrupts -----
+//------------------------------
+
+               jmp     _RESET_PROC // 0x0000
+               jmp     _RESET_PROC // 0x0002 jmp INT0 ; IRQ0
+               jmp     _RESET_PROC // 0x0004 jmp INT1 ; IRQ1
+               jmp     _RESET_PROC // 0x0006 jmp PCINT0 ; PCINT0
+               jmp     _RESET_PROC // 0x0008 jmp PCINT1 ; PCINT1
+               jmp     _RESET_PROC // 0x000A jmp PCINT2 ; PCINT2
+               jmp     _RESET_PROC // 0x000C jmp WDT ; Watchdog Timeout
+               jmp     _RESET_PROC // 0x000E jmp TIM2_COMPA ; Timer2 CompareA
+               jmp     _RESET_PROC // 0x0010 jmp TIM2_COMPB ; Timer2 CompareB
+               jmp     _RESET_PROC // 0x0012 jmp TIM2_OVF ; Timer2 Overflow
+               jmp     _RESET_PROC // 0x0014 jmp TIM1_CAPT ; Timer1 Capture
+               jmp     _RESET_PROC // 0x0016 jmp TIM1_COMPA ; Timer1 CompareA
+               jmp     _RESET_PROC // 0x0018 jmp TIM1_COMPB ; Timer1 CompareB
+               jmp     TIM1_OVF    // 0x001A jmp TIM1_OVF ; Timer1 Overflow
+               jmp     _RESET_PROC // 0x001C jmp TIM0_COMPA ; Timer0 CompareA
+               jmp     _RESET_PROC // 0x001E jmp TIM0_COMPB ; Timer0 CompareB
+               jmp     TIM0_OVF    // 0x0020 jmp TIM0_OVF ; Timer0 Overflow
+               jmp     _RESET_PROC // 0x0022 jmp SPI_STC ; SPI Transfer Complete
+               jmp     _RESET_PROC // 0x0024 jmp USART_RXC ; USART RX Complete
+               jmp     _RESET_PROC // 0x0026 jmp USART_UDRE ; USART UDR Empty
+               jmp     _RESET_PROC // 0x0028 jmp USART_TXC ; USART TX Complete
+               reti                // 0x002A jmp ADC ; ADC Conversion Complete
+               jmp     _RESET_PROC // 0x002C jmp EE_RDY ; EEPROM Ready
+               jmp     _RESET_PROC // 0x002E jmp ANA_COMP ; Analog Comparator
+               jmp     _RESET_PROC // 0x0030 jmp TWI ; 2-wire Serial
+               jmp     _RESET_PROC // 0x0032 jmp SPM_RDY ; SPM Ready;
+//==============================================================
+_RESET_PROC:
+
+               cli      // not necessary but... maybe other models of AVR's...
+               ldi      yh,high(RAMEND)
+               out      SPH,yh  // stack init
+               ldi      yl,low(RAMEND)
+               out      SPL,yl  // stack init
+               dec      yh
+//====================================================
+
+               rcall    stop_meassure  // set up pinout to ground - discharge...
+
+               rcall    LcdIni
+
+               ldi      zl, low(welcome * 2)
+               ldi      zh, high(welcome * 2) 
+               rcall    _LSc  // print welcome info from 1st line
+
+               clr      ZL
+			   sts      STATE_PUSH, ZL
+
+
+               ldi      zl, low(RAMSTART+1)
+               ldi      zh, high(RAMSTART+1)
+
+//---
+               ldi      r16, 0x20   // clear data ram 32 bytes of variables, string etc...
+               clr      xh
+setcall2:
+               st       Z+, XH
+               dec      r16
+               brne     setcall2
+               RCALL    _Wsec
+//=====================================
+//==========   repeat main loop =======
+//=====================================
+starter:
+//====================================
+rcall w_half
+
+
+
+
+			   ldi      r17, 0x04
+			   out      DDRC, r17
+			   in       r16, PORTC
+			   ori      r16, 0x02
+			   out      PORTC, r16
+
+               in       r16, PINC
+			   andi     r16, 0x02
+			   lsl      r16
+               eor      r16, r17
+
+
+			   lds      r17, STATE_PUSH
+			   eor      r16, r17
+               sts      STATE_PUSH, r16
+			   ldi      r17, 0x04
+			   ori      r16, 0x02
+               eor      r16, r17
+               out      PORTC, R16
+               eor      r16, r17
+               andi     r16, 0x04
+//====================================
+			   breq     HZ_MEASSURE
+//====================================
+L_MEASSURE:
+               rcall    w_half
+               rcall    start_meassure  // OK - let's go rocket :)
+
+               LDI ZL, 200
+               RCALL   _Wms
+			   
+		       SLEEP
+			   LDS     R1, ADCL
+			   push    r1
+               LDS     R1, ADCH
+			   push    r1
+               RCALL    stop_meassure
+               rcall    LcdIni
+
+               rcall    copy_costant
+               pop      multiplierhi
+			   pop      multiplier
+
+
+               rcall    make_mult
+
+               rcall    divide_by_100
+               rcall    divide_by_100
+               rcall    divide_by_10
+               rcall    get_string_pointers
+
+               ldi      r24, 'u'
+               rcall    print_meassure
+               rcall    three_decades_low
+               ldi      r24, 'm'
+               rcall    print_meassure
+               rcall    w_half
+			   rjmp     starter
+//====================================================
+HZ_MEASSURE:
+               rcall    CLEAR_MY_LONG_INT
+               rcall    start_meassure2  // OK - let's go rocket :)
+               RCALL    copy_long_to_registers
+               CLR      R16
+               CLR      R17
+               SEI
+//====================================
+taste:
+               CPI      R16,0
+               BREQ     taste
+               CLI
+               RCALL    copy_registers_to_long
+               RCALL    stop_meassure2
+               rcall    LcdIni
+               rcall    get_string_pointers 
+print_f:
+               ld       r24, Z+
+               rcall    _Lch
+               dec      r17
+               brne     print_f
+
+               LDI      R24, 0x20
+               RCALL    PRINT_HZ
+			   ldi r24, 'z'
+               rcall    _Lch
+
+               ldi      r24, 1
+               rcall    _from_line2
+               rcall    get_string_pointers 
+
+               LDI      R24, 'k'
+               RCALL    print_meassure
+			   ldi r24, 'z'
+               rcall    _Lch
+               rcall   _Wsec
+//====================================================
+               rjmp     starter   // OK repeat over and over again
+//-------------------------
+three_decades_low:
+               push     r24  // save r24
+               ldi      r24, 1
+               rcall    _from_line2
+               rcall    divide_by_100  // delete 2 decades
+			   rcall    divide_by_10   //del 3rd decade
+               rcall    get_string_pointers 
+               pop      r24  // restore r24
+               ret
+//---
+get_string_pointers:
+               rcall    BIN40u_2_ASCII   // first make the properly string
+
+               lds      r17, LEN_ASCII_BUFF
+               ldi      zl,low(OUT_ASCII_BUFF+13)
+               ldi      zh,high(OUT_ASCII_BUFF+13)
+               sub      zl, r17
+               clr      r0
+               sbc      zh, r0
+               ret
+//---
+PRINT_HZ:      PUSH     R24
+print_range:
+               ldi      r24, 32
+               rcall    _Lch
+               pop      r24   // in r24 on the stack was "p" | "n" | "u" | "m" 
+               rcall    _Lch
+               ldi      r24, 'H'
+               rjmp     _Lch
+//---
+print_three_last_digit:
+               cpi      r18, 2
+               breq     print_two_last_digit
+
+               lds      r24, (OUT_ASCII_BUFF+10)
+               rcall    _Lch
+print_two_last_digit:
+               lds      r24, (OUT_ASCII_BUFF+11)
+               rcall    _Lch
+print_last_digit:
+               lds      r24, (OUT_ASCII_BUFF+12)
+               rcall    _Lch
+               rjmp     print_range
+//---
+print_0_dot:
+               rcall    print_0
+print_dot:     
+               ldi      r24, '.'
+               rjmp     _Lch
+//-
+print_0:
+               ldi      r24, 0x30
+               rjmp     _Lch
+//-------------------------
+print_meassure:
+               ldi      r18, 3
+               ldi      r19, 4
+print_fixed_point:
+               push     r24
+               cp       r17, r19 //r17=LEN_ASCII_BUFF
+               brcc     print_from_buff
+               rcall    print_0_dot
+               cp       r17, r18
+               breq     print_three_last_digit
+               rcall    print_0
+               cpi      r17, 2
+               breq     print_two_last_digit
+               rcall    print_0
+               rjmp     print_last_digit
+//---
+print_from_buff:
+               ld       r24, Z+
+               rcall    _Lch
+               dec      r17
+               cp       r17,r18
+               brne     print_from_buff
+
+               rcall    print_dot
+               rjmp     print_three_last_digit
+//-------------------------
+
+//================================================
+stop_meassure:
+
+
+//--------------------------
+//--- disable interrupts ---
+//---    stop   TIMER1   ---
+//--------------------------
+               PUSH     ZL
+               clr      zl
+
+
+
+			   ldi      zl, ACSR_START_VALUE
+               out      ACSR, zl
+			   clr      zl
+			   out      SMCR , ZL
+			   STS      ADMUX, ZL
+               STS      ADCSRA, ZL
+
+ 
+               POP      ZL
+//--------------------------------------------------------------------------
+//-----   PORTD 6 lines as output and ain0 ain1 = input (comparator)   -----
+//--------------------------------------------------------------------------
+PORTS_INIT:
+               PUSH     ZL
+               ldi      ZL, DDRD_START_VALUE     // changed - OK
+               out      DDRD,ZL    // changed - OK
+			   LDI      ZL, start_value_DDRB
+               OUT      DDRB, ZL
+               ldi      ZL, PORTD_START_VALUE     // changed - OK //FROM "clr r23
+               out      PORTD,ZL      // changed - OK !!! - test pin for ain0 and ain1 // pin to GND 
+               LDI      ZL, start_value_PORTB
+			   OUT      PORTB, ZL
+               POP      ZL
+               ret
+//------------------------------------------------
+start_meassure:
+//------------------------
+//--- block interrupts ---
+//------------------------
+               cli
+               rcall    stop_meassure
+
+               clr      zh
+
+
+LDI     R16, ADMUX_START_VALUE
+STS     ADMUX, R16
+LDI     R16, ADCSR_START_VALUE
+STS     ADCSRA, R16
+LDI     R16, SMCR_START_VALUE
+OUT     SMCR, R16
+
+
+
+
+//-----------------------
+//--- clear IRQ flags ---
+//-----------------------
+//---------
+
+//-------------------------
+//--- unlock interrupts ---
+//-------------------------
+               sei  // ok - wait for capture TC1
+               ret
+//***********************************************
+
+
+
+//-----------------------------------------------------------------------------:
+// 32bit Unsigned convert BIN to ASCII
+//
+// Register Variables
+//  Call:  
+//         var[1:4]           = 32bit unsigned value (0x00000000..0xffffffff)
+//         mod10              = <don't care> (high register must be allocated)
+//         cntr_1             = <don't care> (high register must be allocated)
+//
+//
+//  Result:
+//         OUT_ASCII_BUFF[0:9] = 10 bytes will be overwrite as ASCII decimal bin representation
+//         var[1:4]            = (0x00000000)
+//         mod10               = length of ASCII numbers
+//         cntr_1              = 0
+//         xl,xh               = @OUT_ASCII_BUFF first ASCII number
+//
+//---------------
+
+BIN40u_2_ASCII:
+               rcall   copy_long_to_registers
+
+               ldi     xl, low(OUT_ASCII_BUFF+13)
+               ldi     xh, high(OUT_ASCII_BUFF+13)
+
+               ldi     divisor, 10   //divide by 10
+
+BIN_TO_ASCII:
+               rcall   div40u_by_8u  //make divide by 10
+//---------------------------
+               ori     mod10, 0x30   // O_o HERE we gotta our the rest of div10 :] o_O
+               st      -x,mod10      // store as ASCII NUMBER
+               cpi     xl, low(OUT_ASCII_BUFF)
+               brne    BIN_TO_ASCII
+
+               ldi     mod10,12
+
+clr_lead:      ld      cntr_1, x
+               cpi     cntr_1, 0x30
+               brne    stop_it
+               ldi     cntr_1, 0x20
+               st      x+, cntr_1
+               dec     mod10
+               brne    clr_lead
+stop_it:
+               inc     mod10
+               sts     LEN_ASCII_BUFF, mod10  // save how many bytes ASCII NUMBERS strig is here
+               ret
+//---
+//------------------------------------------------------------------
+// ---------- like above - prepare our fixed point value  ----------
+//------------------------------------------------------------------
+divide_by_10:
+               ldi     divisor, 10   
+               rjmp    make_divide
+divide_by_100:
+               ldi     divisor, 100
+make_divide:
+               rcall   copy_long_to_registers               
+               rcall   div40u_by_8u
+               rjmp    copy_registers_to_long
+//-------------
+//------------------------------------------------------------
+//--- divide unsigned 32bit value by 8bit unsigned divisor ---
+//------------------------------------------------------------
+//--- input :                                              ---
+//--- var 1,2,3,4 = 32 bit unsigned value                  ---
+//--- divisor: our 8bit unsigned value of divide           ---
+//------------------------------------------------------------
+//--- output:                                              ---
+//--- mod10 is touched, rest of divide                     ---
+//--- var 1,2,3,4 = RESULT                                 ---
+//--- cntr_1 is touched = 0                                ---
+//------------------------------------------------------------
+div40u_by_8u:
+               clr     mod10          // initialize mod10 = 0
+
+               ldi     cntr_1, 40     // lc = 32 (times bits to shift)
+divloop:                              // simple 32bit_u divide by const 8bit_u
+               lsl     var1          
+               rol     var2
+               rol     var3
+               rol     var4
+			   rol     var5
+               rol     mod10
+               cp      mod10, divisor     // divisor value
+               brcs    divlp2
+               inc     var1
+               sub     mod10, divisor     // divisor value
+divlp2:
+               dec     cntr_1
+               brne    divloop
+               ret
+//---
+//-----------------------------------------------------------------------
+//--- copy from STATIC RAM our 32bit value into registers var 1,2,3,4 ---
+//-----------------------------------------------------------------------
+//--- input : don't care                                              ---
+//--- output :                                                        ---
+//--- var 1,2,3,4 = 32bit value                                       ---
+//--- XL, XH, ZL, ZH, cntr_1 is touched                               ---
+//--- cntr_1 = 0                                                      ---
+//--- XL,XH  = @(var4 + 1)                                            ---
+//--- ZL,ZH  = @(MY_LONG_INT + 4)                                     ---
+//-----------------------------------------------------------------------
+copy_costant:
+               rcall    set_addr_var
+               ldi      zl, low(constans * 2)
+               ldi      zh, high(constans * 2)
+c_const:
+               lpm
+			   adiw    zl, 1
+               st      x+, r0
+			   cpi     XL, 6
+			   brne    c_const
+               rjmp    copy_registers_to_long
+
+copy_long_to_registers:
+               rcall   set_addr_var
+COPY_1:
+               ld      var5, Z+
+               st      x+, var5
+               dec     cntr_1
+               brne    COPY_1
+               ret
+//---
+set_addr_var:
+               ldi     xl, 1
+               clr     xh
+
+set_my_long_addr:
+
+               ldi     zl, low(MY_LONG_INT)
+               ldi     zh, high(MY_LONG_INT)
+               ldi     cntr_1,5
+               ret
+//-------------
+copy_registers_to_long:
+               rcall   set_addr_var
+COPY_2:
+               ld      var1, X+
+               st      Z+, var1
+               dec     cntr_1
+               brne    COPY_2
+               ret
+//-------------
+CLEAR_MY_LONG_INT:
+               rcall   set_my_long_addr
+               clr     r0
+COPY_4:
+               st      Z+, r0
+               dec     cntr_1
+               brne    COPY_4
+               ret
+//-------------
+
+
+//-----------------------------------------------------------------------------:
+
+
+
+//-------------------------------------------------------------------
+//----------   operations for prepare fixed point value   -----------
+//-------------------------------------------------------------------
+MULT_10:
+			   ldi     multiplier, 10
+               clr     multiplierhi
+make_mult:
+               rcall   copy_long_to_registers               
+               rcall   mul40u
+               rjmp    copy_registers_to_long
+//-----------------------------------------------------------------------------
+// 32bit x 8bit unsigned multiply
+//
+// Register Variables
+//  Call:  var1-4         = 32bit multiplicand
+//         multiplier     = multiply 8 bit unsigned value
+//         mod10          = <don't care>
+//         cntr_1         = <don't care> (high register must be allocated)
+//
+//  Result:var1-4         = 32bit result
+//         multiplier     = <not changed>
+//         cntr_1         = 0
+//
+//-------------------------
+mul40u:               
+               ldi     cntr_1,41
+               sub     mod10, mod10  // prepare carry
+			   sub     mod10hi, mod10hi  // prepare carry
+mul_loop:
+               brcc    mul_lp2
+               add     mod10,multiplier
+               adc     mod10hi,multiplierhi
+mul_lp2:
+               ror     mod10hi
+               ror     mod10
+               ror     var5
+               ror     var4
+               ror     var3
+               ror     var2
+               ror     var1
+               dec     cntr_1
+               brne    mul_loop
+               ret
+//-----------------------------------------
+print_hex:          
+               push    r24
+               swap    r24
+               rcall   pr_h1
+               pop     r24
+pr_h1:         andi    r24,0x0f
+               cpi     r24,10
+               brcs    pr_h2
+               subi    r24,-7
+pr_h2:         subi    r24,-'0'
+               rjmp    _Lch
+//----------------------------------------
+
+
+
+//-------------------------
+//---  init LCD display ---
+//-------------------------
+
+//---------------------
+// Lcd = PORTD.0,1,2,3
+// RS=PORTB.0
+// EN=PORTD.5
+// LCD_TYPE = 16 * 2
+//---------------------
+LcdIni:
+
+               RCALL   PORTS_INIT
+
+               cbi     PORTB,0    // changed - OK
+               cbi     PORTD,5    // changed - OK
+               ldi     zl, 0x18
+               rcall   _Wms
+               ldi     r24, 0x03
+               rcall   _LOut
+               ldi     zl, 0x08
+               rcall   _Wms
+               rcall   _LEN
+               ldi     zl,0x0d
+               rcall   _Wus
+               rcall   _LEN
+               cbi     PORTD,0    // changed - OK
+               rcall   _LEN
+               ldi     r24, 0x28
+               rcall   _LCtr
+               ldi     r24, 0x06
+               rcall   _LCtr
+               ldi     r24, 0x0c
+               rcall   _LCtr
+_CLS:
+               ldi     r24, 0x01
+               rcall   _LCtr
+               ldi     zl, 0x04
+               rjmp    _Wms
+//---------------------------
+//--- print char from R24 ---
+//---------------------------
+_Lch:
+               sbi     PORTB,0    // changed - OK
+               rjmp    _LNib
+//---
+_from_line2:
+               ori     r24, 0x40
+_from_line1:
+               ori     r24, 0x80
+               dec     r24
+//---
+_LCtr:         cbi     PORTB,0    // changed - OK
+//---
+_LNib:         mov     r21, r24
+               swap    r24
+               rcall   _LOut
+               mov     r24, r21
+
+_LOut:         in      r23, PORTD    // changed - OK
+               andi    r23, 0xf0    // changed - OK
+               //swap    r24
+               andi    r24, 0x0f    // changed - OK
+               or      r24, r23
+			   ori     r24, PORTD_START_VALUE
+               out     PORTD, r24    // changed - OK
+//---------------------
+//--- EN line setup ---
+//---------------------
+_LEN:          sbi     PORTD, 5    // changed - OK
+               sbi     PORTD, 5    // changed - OK // 2 cycles delay !! FOR 16 MHZ !!!
+               sbi     PORTD, 5    // changed - OK // 2 cycles delay !! FOR 16 MHZ !!!
+               sbi     PORTD, 5    // changed - OK // 2 cycles delay !! FOR 16 MHZ !!!
+               sbi     PORTD, 5    // changed - OK // 2 cycles delay !! FOR 16 MHZ !!!
+               sbi     PORTD, 5    // changed - OK // 2 cycles delay !! FOR 16 MHZ !!!
+               sbi     PORTD, 5    // changed - OK // 2 cycles delay !! FOR 16 MHZ !!!
+               cbi     PORTD, 5    // changed - OK
+               push    zl
+               ldi     zl, 0x04
+               rcall   _Wus
+               pop     zl
+_stop:
+               ret
+//--------------------------------------
+//--- print string from flash memory ---
+//--------------------------------------
+_LSc:          lpm
+               tst     r0
+               breq    _stop
+               mov     r24,r0
+               rcall   _Lch
+               adiw    zl,1
+               rjmp    _LSc
+//------------------------------------------
+_Wsec:
+               ldi     zl, 232
+               rcall   _Wms
+               rcall   _Wms
+w_half:
+               clr     zl
+               rcall   _Wms
+//------------------------------------
+//---- !!! FOR 16MHZ CLOCK  !!!  ------
+//------------------------------------
+
+//----------------------------
+//--- a mili seconds delay ---
+//----------------------------
+_Wms:          ldi     r20, 0x28
+_Wms1:         ldi     r21, 0x85
+_Wms2:         dec     r21
+               brne    _Wms2
+               dec     r20
+               brne    _Wms1
+               dec     zl
+               brne    _Wms
+               ret
+//-----------------------------
+//--- a micro seconds delay ---
+//-----------------------------
+_wus:          ldi     r22, 50
+_wus1:         dec     r22
+               brne    _wus1
+               dec     zl
+               brne    _wus
+               ret
+//--------------------------
+//-- a start info string ---
+//--------------------------
+welcome:
+               .db " CRUEL L meter " , 0
+constans:
+.db 0xDD,0x0e, 0xe9, 0x02, 0x00
+//-------------------
+//-------
+//- EOF -
+//-------
+//------------------------
+//------ IRQ SERVICE -----
+//------------------------
+TIM0_OVF:
+               PUSH    R20
+			   IN      R20, SREG
+               //PUSH    R20
+
+               INC     R2
+			   BRNE    TIM0_EX
+               INC     R3
+			   BRNE    TIM0_EX
+               INC     R4
+TIM0_EX:
+			   //POP     R20
+			   OUT     SREG, R20
+			   POP     R20
+               reti
+//------------------------
+//------ IRQ SERVICE -----
+//------------------------
+TIM1_OVF:
+//-----------------------------------------------
+//-----      read captured TIMER1 value     -----
+//-----      and store her to variable      -----
+//-----------------------------------------------
+               PUSH    R20
+			   IN      R20, SREG
+               PUSH    R20
+
+			   INC R17
+			   CPI R17,244 ;244
+			   BRNE IRQ_NO
+			   SEI
+
+TST5:          LDS   R20, TCNT1L
+			   LDS   R20, TCNT1H
+			   CPI   R20, 0x24
+			   BRNE  TST5
+			   CLI
+			   IN  R1, TCNT0
+			   LDI R16,1
+IRQ_NO:
+			   POP R20
+			   OUT SREG, R20
+			   POP R20
+               reti
+//-----------------------------------
+
+//----------------------------
+//------ IRQ SERVICE END -----
+//----------------------------
+//================================================
+stop_meassure2:
+
+
+//--------------------------
+//--- disable interrupts ---
+//---    stop   TIMER1   ---
+//--------------------------
+               PUSH     ZL
+               clr      zl
+
+               sts      TIMSK1, zl
+               sts      TCCR1B, zl
+               sts      TCCR1A, zl
+
+			   STS      TIMSK0, ZL
+               OUT      TCCR0B, zl
+               OUT      TCCR0A, zl
+
+			   ldi      zl, ACSR_START_VALUE
+               out      ACSR, zl
+
+               in       ZL, TIFR1
+               out      TIFR1, ZL  // clear all IRQ flags
+
+               in       ZL, TIFR0
+               out      TIFR0, ZL  // clear all IRQ flags
+               POP      ZL
+//--------------------------------------------------------------------------
+//-----   PORTD 6 lines as output and ain0 ain1 = input (comparator)   -----
+//--------------------------------------------------------------------------
+rjmp PORTS_INIT
+//------------------------------------------------
+start_meassure2:
+//------------------------
+//--- block interrupts ---
+//------------------------
+               cli
+               rcall    stop_meassure2
+
+
+//---------------------------------
+//-----        Timer1 = 0    ------
+//---------------------------------
+               //rcall    CLEAR_MY_LONG_INT
+               clr      zh
+               sts      TCNT1H,zh
+               sts      TCNT1L,zh
+               sts      TCCR1A, zh
+
+               OUT      TCCR0A, ZH
+               OUT      TCNT0, ZH
+
+
+
+               ldi      r20, TIMSK1_START_VALUE
+               sts      TIMSK1, r20
+               ldi      r20, TIMSK0_START_VALUE
+               sts      TIMSK0, r20
+
+//---------------------------------------------------------------
+//---------           setup prescaler = 1             -----------
+//------       by bits CS12 CS11 CS10 in TCCR1B          --------
+//---------              0    0    1                  -----------
+//----------         PHISICAL START TIMER1           ------------
+//---------------------------------------------------------------
+               LDI      R21, TIMER0_START_VALUE
+
+               ldi      r20,TIMER1_START_VALUE      // CS12 CS11 CS10 = 0 0 1 
+               sts      TCCR1B, r20                 // START TIMER1
+
+ 
+               OUT      TCCR0B, R21
+
+//-----------------------
+//--- clear IRQ flags ---
+//-----------------------
+               in       R24,TIFR1
+               out      TIFR1, R24
+               in       R24,TIFR0
+               out      TIFR0, R24
+//---------
+
+//-------------------------
+//--- unlock interrupts ---
+//-------------------------
+               sei  // ok - wait for capture TC1
+               ret
+//***********************************************
