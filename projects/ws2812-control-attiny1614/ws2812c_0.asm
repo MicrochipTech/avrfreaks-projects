@@ -1,0 +1,109 @@
+;WS2812 CONTROL
+;---------------------------------------------------------------------------------
+;USING ATTINY1614 @ 5V/20MHz, WS2812B LED STRIP
+;FUSE: INT.RC OSC20
+
+;PORTS:		I/O-A0: UPDI		INP-B0:
+;		INP-A1:			INP-B1:
+;		INP-A2:			INP-B2:
+;		INP-A3:			INP-B3:
+;		OUT-A4: WS2812 DATA 
+;		INP-A5:
+;		INP-A6:
+;		INP-A7:
+
+.EQU	LEDCN	=	12*3		;LED NUMBER * 3 COLOUR	
+
+;---------------------------------------------------------------------------------
+
+RESET:		clr	XL			;CLOCK-INIT
+		ldi	XH,$d8
+		out	CPU_CCP,XH
+		sts	CLKCTRL_MCLKCTRLB,XL	;NO PreScaler: 20MHz	
+
+		sbi	VPORTA_DIR,4		;PORTA4-> OUT WS2812 DATA
+
+mainprg:	ldi	ZL,$fa			;MIN.1000*50ns= 50us DELAY
+		ldi	ZH,0			;= WS2812 RESET
+mainprg1:	sbiw	Z,1
+		brne	mainprg1
+
+		ldi	ZL,low(LED01G)
+		ldi	ZH,high(LED01G)		;POINTER->LED DATA
+		ldi	r16,8			;8BIT COUNTER
+		ld	r17,Z+			;FIRST LED COLOUR-DATA
+		ldi	XL,low(LEDCN)
+;		ldi	XH,high(LEDCN)		;FOR >85 LED
+
+dout0:		nop				;DATA-OUT: 4x LOW a' 50ns/INSTR.
+		nop
+		nop
+		nop
+dout1:		sbi	VPORTA_OUT,4		;DATA-OUT: 8x HIGH
+		nop				;BIT0=  8xHIGH + 17xLOW = 1,25uS
+		nop				;BIT1= 16xHIGH +  9xLOW = 1,25uS
+		nop
+		nop
+		lsl	r17			;NEXT BIT FROM CURRENT COLOUR
+		brcs	dout2
+		nop
+		cbi	VPORTA_OUT,4		;DATA-OUT: 8x HIGH/LOW		
+dout2:		nop
+		nop
+		nop
+		nop
+		nop
+		brcs	dout3			;CLOCK CORRECTION
+dout3:		nop
+		cbi	VPORTA_OUT,4		;DATA-OUT: 9x LOW
+		nop
+		dec	r16
+		brne	dout0			;OUTPUT 8 COLOUR BITS
+		ldi	r16,8
+
+		ld	r17,Z+
+		dec	XL			;sbiw X,1 FOR >85 LED
+		brne	dout1			;NEXT COLOUR/LED
+		rjmp	mainprg			;LEDCN LED COLOURS FINISHED
+
+;---------------------------------------------------------------------------------
+.DSEG				;SRAM DECLARATION
+
+				;LEDCN/3 x GRB DATA:
+LED01G:		.BYTE 1		;[3800H] LED 01 GREEN
+LED01R:		.BYTE 1		;[3801H] LED 01 RED
+LED01B:		.BYTE 1		;[3802H] LED 01 BLUE
+LED02G:		.BYTE 1		;[3803H] LED 02 GREEN
+LED02R:		.BYTE 1		;[3804H] LED 02 RED
+LED02B:		.BYTE 1		;[3805H] LED 02 BLUE
+LED03G:		.BYTE 1		;[3806H] LED 03 GREEN
+LED03R:		.BYTE 1		;[3807H] LED 03 RED
+LED03B:		.BYTE 1		;[3808H] LED 03 BLUE
+LED04G:		.BYTE 1		;[3809H] LED 04 GREEN
+LED04R:		.BYTE 1		;[380AH] LED 04 RED
+LED04B:		.BYTE 1		;[380BH] LED 04 BLUE
+LED05G:		.BYTE 1		;[380CH] LED 05 GREEN
+LED05R:		.BYTE 1		;[380DH] LED 05 RED
+LED05B:		.BYTE 1		;[380EH] LED 05 BLUE
+LED06G:		.BYTE 1		;[380FH] LED 06 GREEN
+LED06R:		.BYTE 1		;[3810H] LED 06 RED
+LED06B:		.BYTE 1		;[3811H] LED 06 BLUE
+LED07G:		.BYTE 1		;[3812H] LED 07 GREEN
+LED07R:		.BYTE 1		;[3813H] LED 07 RED
+LED07B:		.BYTE 1		;[3814H] LED 07 BLUE
+LED08G:		.BYTE 1		;[3815H] LED 08 GREEN
+LED08R:		.BYTE 1		;[3816H] LED 08 RED
+LED08B:		.BYTE 1		;[3817H] LED 08 BLUE
+LED09G:		.BYTE 1		;[3818H] LED 09 GREEN
+LED09R:		.BYTE 1		;[3819H] LED 09 RED
+LED09B:		.BYTE 1		;[381AH] LED 09 BLUE
+LED10G:		.BYTE 1		;[381BH] LED 10 GREEN
+LED10R:		.BYTE 1		;[381CH] LED 10 RED
+LED10B:		.BYTE 1		;[381DH] LED 10 BLUE
+LED11G:		.BYTE 1		;[381EH] LED 11 GREEN
+LED11R:		.BYTE 1		;[381FH] LED 11 RED
+LED11B:		.BYTE 1		;[3820H] LED 11 BLUE
+LED12G:		.BYTE 1		;[3821H] LED 12 GREEN
+LED12R:		.BYTE 1		;[3822H] LED 12 RED
+LED12B:		.BYTE 1		;[3823H] LED 12 BLUE
+
