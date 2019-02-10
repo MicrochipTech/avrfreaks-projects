@@ -1,0 +1,580 @@
+
+AVRASM ver. 2.1.30  LCD_I2C.asm Sat Feb 09 22:27:33 2019
+
+LCD_I2C.asm(32): Including file 'm328def.inc'
+LCD_I2C.asm(108): Including file 'LCD.inc'
+LCD_I2C.asm(109): Including file 'delays.inc'
+LCD_I2C.asm(110): Including file 'I2C.inc'
+                 
+                 
+                 ;LCD to I2C board with PCF8574
+                 ;boards available on ebay for under $1 (see photo in zip file)
+                 ;this code works with the default address (no mods to board)
+                 ;i.e. A0, A1, A2 all high or untouched
+                 ;
+                 ;using bit-bang I2C routines from avr300.asm appnote
+                 ;there is no error checking in this version
+                 ;there is no reading I2C or reading from LCD display
+                 ;keep it simple!
+                 ;the "C" version is at least five times the size of this code
+                 ;
+                 ;works on any atmega328p with 16MHz crystal
+                 ;tested in arduino UNO R3 and Arduino NANO
+                 ;
+                 ;program fuses:
+                 ;FuseL: 0xFF
+                 ;FuseH: 0xDE
+                 ;FuseExt: 0xFC
+                 ;
+                 ;Arduino UNO R3 pins or
+                 ;Arduino NANO pins
+                 ;connect SDA to A4
+                 ;connect SCL to A5
+                 ;connect 5V and GND
+                 ;
+                 ;on atmega328p
+                 ;SCL = Pin 28 (PC5)
+                 ;SDA = Pin 27 (PC4)
+                 ;
+                 .list
+                 ;------------------------------------------------
+                 ;for long delays
+                 .def	dcount  =r6
+                 .def	dcount2 =r7
+                 .def	dcount3 =r8
+                 .def	dcount4 =r9
+                 ;
+                 .def	temp		= r16		; 
+                 .def	i2cdata	= r17		; I2C data transfer register
+                 .def	i2cstat	= r19		; I2C bus status register
+                 .def	i2cdelay	= r20		; Delay loop variable
+                 .def	LCD_Reg 	= r21		;
+                 .def	count 	= r22		;
+                 
+                 .equ i2cadr = $4E		; the slave address of the PCF8574
+                 ;
+                 .equ     FirstLine_Add =0x80 	;Base address of first line for 2x16 lcd
+                 .equ     SecondLine_Add=0xC0 	;Base address of second line
+                 ;
+                 ;these are the bits in LCD_Reg (not the I/O)
+                 ;bit 0 is only changed when sending addr byte
+                 ;Bit 0 = R or W bit
+                 .equ i2cwr = 0 			; Write Bit
+                 .equ i2crd = 1 			; Read Bit (not used)
+                 ;
+                 ;Port C
+                 .equ	I2CPORT 	= PORTC	;*Set to correspond to I/O Port used for I2C
+                 .equ	I2CDDR  	= DDRC	;*Set to correspond to I/O Port used for I2C
+                 .equ	I2CPIN  	= PINC	;*Set to correspond to I/O Port used for I2C
+                 ;
+                 .equ	SDAP = 4
+                 .equ	SCLP = 5
+                 ;
+                 .equ	LCD_RS = 0		;low to send command, high to send data	
+                 .equ	LCD_RW = 1		;low = write, high = read
+                 .equ	LCD_E = 2		;high (idle) high to low to send byte
+                 ;
+                 ;LCD_Data = bits 4 - 7	;
+                 ;------------------------------------------------
+                 .cseg
+                 .org 0
+                 ;
+                 Reset:
+000000 c000      	rjmp Begin
+                 
+                 Begin:
+000001 ef0f      	ldi temp,low(RAMEND) 	; Set stackptr to ram end
+000002 bf0d      	out SPL,temp
+000003 e008      	ldi temp, high(RAMEND)
+000004 bf0e      	out SPH, temp
+                 
+000005 d07c      	rcall	i2c_init	   		;Initialize I2C bus
+000006 d029      	rcall	LCD_init
+                 	
+                 Print_Msg:
+                 ;	ldi	LCD_Reg,FirstLine_Add	;cursor to 1st line, first position
+                 ;	rcall	LCD_command			;should already be there from initialize
+                 
+000007 e0f0      	ldi	ZH,HIGH(message1*2) 	;Point to message1
+000008 ebe2      	ldi	ZL,LOW(message1*2)
+000009 e160      	ldi	count,0x10			;max 16 chars per line
+00000a d049      	rcall	WrLCD				;Transmit message
+                 
+00000b ec50      	ldi	LCD_Reg,SecondLine_Add	;cursor to 2nd line, first position
+00000c d014      	rcall	LCD_command			;
+                 
+00000d e0f0      	ldi	ZH,HIGH(message2*2) 	;Point to message2
+00000e ece2      	ldi	ZL,LOW(message2*2)	;
+00000f e160      	ldi	count,0x10			;max 16 chars per line
+000010 d043      	rcall	WrLCD				;Transmit message
+                 ;------------------------------------
+                 loop:	
+000011 cfff      	rjmp loop
+                 ;------------------------------------
+                 .include "LCD.inc"
+                 
+000012 935f      	push	LCD_Reg			;save LCD_Reg (it's destroyed in between)
+                 
+000013 7f50      	cbr	LCD_Reg, 0b00001111	;we have to write the high nibble of our LCD_Reg first
+                 						;so mask off the low nibble
+000014 6055      	sbr	LCD_Reg,(1<<LCD_RS) | (1<<LCD_E) 	;LCD_RS must be high to send data
+                 ;	sbr	LCD_Reg,(1<<LCD_RS)|(1<<LCD_E)|(1<<BackLight)	;if you have a BackLight
+000015 d078      	rcall	WriteI2C
+000016 d016      	rcall	PulseE			;strobe Enable
+                 
+000017 915f      	pop	LCD_Reg			;restore the LCD_Reg
+000018 9552      	swap	LCD_Reg			;write the LOW nibble of the LCD_Reg to
+000019 7f50      	cbr	LCD_Reg, 0b00001111	;HIGH port nibble
+                 
+00001a 6055      	sbr	LCD_Reg,(1<<LCD_RS) | (1<<LCD_E) 	;LCD_RS must be high to send data
+                 ;	sbr	LCD_Reg,(1<<LCD_RS)|(1<<LCD_E)|(1<<BackLight)	;if you have a BackLight
+00001b d072      	rcall	WriteI2C
+00001c d010      	rcall	PulseE			;strobe Enable
+                 
+00001d e002      	ldi	temp,2			;2 mS delay
+00001e 2e60      	mov	dcount,temp
+00001f d049      	rcall	DelaymS
+000020 9508      	ret
+                 ;-------------------------------------------------------------------
+                 lcd_command:			;same as LCD_putchar, but with RS low!
+000021 935f      	push	LCD_Reg		;send the upper nibble first
+                 
+000022 7f50      	cbr	LCD_Reg, 0b00001111	;clr lower nibble
+000023 6054      	sbr	LCD_Reg,(1<<LCD_E)	;E high
+                 ;	sbr	LCD_Reg,(1<<LCD_E)|(1<<BackLight)	;if you have a BackLight
+000024 d069      	rcall	WriteI2C
+000025 d007      	rcall	PulseE
+                 	
+000026 915f      	pop	LCD_Reg			;send the lower nibble
+000027 9552      	swap	LCD_Reg
+                 
+000028 7f50      	cbr	LCD_Reg, 0b00001111	;clr the lower nibble
+000029 6054      	sbr	LCD_Reg,(1<<LCD_E)	;E high
+                 ;	sbr	LCD_Reg,(1<<LCD_E)|(1<<BackLight)	;if you have a BackLight
+00002a d063      	rcall	WriteI2C
+00002b d001      	rcall	PulseE
+00002c 9508      	ret
+                 ;-------------------------------------
+                 PulseE:
+00002d 7f5b      	cbr	LCD_Reg,(1<<LCD_E) 	;strobe E
+00002e d05f      	rcall	WriteI2C
+00002f 9508      	ret
+                 ;--------------------------------------
+                 LCD_init:
+000030 e604      	ldi	temp,100			;100 mS delay
+000031 2e60      	mov	dcount,temp
+000032 d036      	rcall	DelaymS
+                 
+000033 e063      	ldi	count,3			;send it three times
+                 
+                 LCD_Init_Lp:
+000034 e350      	ldi	LCD_Reg, 0x30		;LCD is still in 8-BIT MODE	
+                 						
+000035 6054      	sbr	LCD_Reg,(1<<LCD_E)	;E high (idle)
+                 ;	sbr	LCD_Reg,(1<<LCD_E)|(1<<BackLight)	;if you have a BackLight
+000036 d057      	rcall	WriteI2C
+000037 dff5      	rcall	PulseE
+                 
+000038 e00a      	ldi	temp,10			;10 mS delay
+000039 2e60      	mov	dcount,temp
+00003a d02e      	rcall	DelaymS
+                 
+00003b 956a      	dec	count
+00003c f7b9      	brne	LCD_Init_Lp			;end of 0x30 cmd loop
+                 
+00003d e250      	ldi	LCD_Reg, 0x20		;change to 4-bit mode.
+                 						;LCD is still in 8-BIT MODE
+00003e 6054      	sbr	LCD_Reg,(1<<LCD_E)	;E high (idle)
+                 ;	sbr	LCD_Reg,(1<<LCD_E)|(1<<BackLight)	;if you have a BackLight
+00003f d04e      	rcall	WriteI2C
+000040 dfec      	rcall	PulseE
+                 
+000041 d037      	rcall	Delay100us
+                 	
+000042 e258      	ldi	LCD_Reg, 0x28		;NOW we are in 4-BIT MODE, 2 lines, 5*7 font 
+000043 dfdd      	rcall	LCD_command			;
+                 
+000044 d034      	rcall	Delay100us
+                 
+000045 e05c      	ldi	LCD_Reg, 0x0C		;Display ON, cursor OFF, blink OFF
+                 ;	ldi	LCD_Reg, 0x0F		;Display on, cursor on, blinking ON
+000046 dfda      	rcall	LCD_command
+                 
+000047 d031      	rcall	Delay100us
+                 
+000048 e051      	ldi	LCD_Reg, 0x01		;clear display, cursor -> home
+000049 dfd7      	rcall	LCD_command
+                 	
+00004a e005      	ldi	temp,5			;need > 4 mS delay
+00004b 2e60      	mov	dcount,temp
+00004c d01c      	rcall	DelaymS
+                 
+00004d e056      	ldi	LCD_Reg, 0x06		;auto-inc cursor
+00004e dfd2      	rcall	LCD_command
+                 
+00004f d029      	rcall	Delay100us
+                 
+000050 e052      	ldi	LCD_Reg, 0x02		;return cursor to Home Display
+000051 dfcf      	rcall	LCD_command
+                 
+000052 d026      	rcall	Delay100us
+000053 9508      	ret
+                 ;---------Writes String to LCD display from Z pointer -------------
+                 WrLCD:
+000054 9155      	lpm	LCD_Reg,Z+
+000055 dfbc      	rcall	lcd_putchar
+000056 956a      	dec	count		;
+000057 f7e1      	brne	WrLCD		;
+000058 9508      	ret
+                 ;-------------------------------------
+                 message1:
+000059 6548
+00005a 6c6c
+00005b 2c6f
+00005c 4120
+00005d 5256
+00005e 5246
+00005f 4145
+000060 534b      .db	"Hello, AVRFREAKS"
+                 
+                 message2:
+000061 2020
+000062 5641
+000063 2052
+000064 4f46
+000065 5552
+000066 204d
+000067 2020
+000068 2020      .db	"  AVR FORUM     "
+                 .include "delays.inc"
+                 
+                 ;**** Constant declarations Data Rate for delay ****
+                 ;.equ     Crystal = 7372          ;
+                 ;.equ     Crystal = 3686          ;
+                 .equ     Crystal = 16000         ;
+                 ;***************************************************************
+                 ;*
+                 ;* FUNCTION
+                 ;*	delay
+                 ;*
+                 ;* DESCRIPTION
+                 ;* Make delay 1mS (x dcount).
+                 ;* uses dcount, dcount2, and dcount3
+                 ;* come here with a value in dcount (1 = 1mS)
+                 ;***************************************************************
+                 DelaymS:	
+000069 e208      	ldi	temp,40
+00006a 2e80      	mov	dcount3,temp
+                 dl2:
+00006b e805      	ldi	temp,(Crystal/120)
+00006c 2e70      	mov	dcount2,temp
+                 dl1:
+00006d 947a      	dec	dcount2
+00006e f7f1      	brne	dl1
+                 
+00006f 948a      	dec	dcount3
+000070 f7d1      	brne	dl2
+                 
+000071 946a      	dec	dcount
+000072 f7b1      	brne	DelaymS
+000073 9508      	ret
+                 ;***************************************************************
+                 ; 40us at 16 MHz
+                 ;
+                 Delay40us:
+000074 ed03      	ldi	temp,211
+000075 2e60      	mov	dcount,temp
+                 
+                 D40_uS:
+000076 946a      	dec	dcount
+000077 f7f1      	brne	D40_uS
+000078 9508      	ret
+                 ;***************************************************************
+                 ; 100us at 16 MHz
+                 ;
+                 Delay100us:
+000079 e003      	ldi	temp,3
+00007a 2e60      	mov	dcount,temp
+                 
+00007b e100      	ldi	temp,16
+00007c 2e70      	mov	dcount2,temp
+                 
+                 D100_uS:
+00007d 947a      	dec	dcount2
+00007e f7f1      	brne	D100_uS
+00007f 946a      	dec	dcount
+000080 f7e1      	brne	D100_uS
+000081 9508      	ret
+                 ;***************************************************************
+                 .include "I2C.inc"
+                 
+                 ;*
+                 ;* FUNCTION
+                 ;*	i2c_init
+                 ;*
+                 ;* DESCRIPTION
+                 ;*	Initialization of the I2C bus interface.
+                 ;*
+                 ;* USAGE
+                 ;*	Call this function once to initialize the I2C bus. No parameters
+                 ;*	are required.
+                 ;*
+                 ;* RETURN
+                 ;*	None
+                 ;*
+                 ;* NOTE
+                 ;*	PORTD and I2CDDR pins not used by the I2C bus interface will be
+                 ;*	set to Hi-Z (!).
+                 ;*
+                 ;* COMMENT
+                 ;*	This function can be combined with other PORTD initializations.
+                 ;*
+                 ;***************************************************************************
+                 i2c_init:
+000082 2700      	clr	temp		; 
+                 				; 
+000083 b905      	out	PORTB,temp	; set I2C pins to open collector
+000084 b904      	out	DDRB,temp
+000085 9508      	ret
+                 ;
+                 ;***************************************************************************
+                 ;*
+                 ;* FUNCTION
+                 ;*	i2c_hp_delay
+                 ;*	i2c_qp_delay
+                 ;*
+                 ;* DESCRIPTION
+                 ;*	hp - half i2c clock period delay (normal: 5.0us / fast: 1.3us)
+                 ;*	qp - quarter i2c clock period delay (normal: 2.5us / fast: 0.6us)
+                 ;*
+                 ;*	Adjusted for arduino board with 16MHz clock
+                 ;*
+                 ;* USAGE
+                 ;*	no parameters
+                 ;*
+                 ;* RETURN
+                 ;*	none
+                 ;*
+                 ;***************************************************************************
+                 
+                 i2c_hp_delay:
+000086 e148      	ldi	i2cdelay,24		;5uS delay @ 16MHz
+                 
+                 i2c_hp_delay_loop:
+000087 954a      	dec	i2cdelay
+000088 f7f1      	brne	i2c_hp_delay_loop
+000089 9508      	ret
+                 
+                 i2c_qp_delay:
+00008a e04b      	ldi	i2cdelay,11		;2.5uS delay @ 16MHz
+                 
+                 i2c_qp_delay_loop:
+00008b 954a      	dec	i2cdelay
+00008c f7f1      	brne	i2c_qp_delay_loop
+00008d 9508      	ret
+                 ;
+                 ;***************************************************************************
+                 WriteI2C:
+00008e d004      	rcall	i2c_start		;send start bit and address & get ack bit
+                 ;	brcs	errorloop		;not enabled in this version
+                 
+00008f 2f15      	mov	i2cdata,LCD_Reg	;
+000090 d005      	rcall	i2c_write		;send data byte, get ack bit and send stop bit
+                 ;	brcs	errorloop		;not enabled in this version
+                 
+000091 d01f      	rcall	i2c_stop		;
+000092 9508      	ret
+                 
+                 ;errorloop				;resend X amount of times if you want
+                 ;	rjmp	errorloop
+                 ;***************************************************************************
+                 ;*
+                 ;* FUNCTION
+                 ;*	i2c_start
+                 ;*
+                 ;* DESCRIPTION
+                 ;*	Generates start condition and sends slave address.
+                 ;*
+                 ;* USAGE
+                 ;*	i2cadr - Contains the slave address and transfer direction.
+                 ;*
+                 ;* RETURN
+                 ;*	Carry flag - Cleared if a slave responds to the address.
+                 ;*
+                 ;* NOTE
+                 ;*	IMPORTANT! : This function must be directly followed by i2c_write.
+                 ;*
+                 ;***************************************************************************
+                 ;
+                 i2c_start:	
+000093 e41e      	ldi	i2cdata,i2cadr	; copy address to transmitt register
+000094 9a3c      	sbi	I2CDDR,SDAP		; data line low (start bit)
+000095 dff4      	rcall	i2c_qp_delay	; quarter period delay
+                 ;
+                 ;continue to i2c_write
+                 ;
+                 ;***************************************************************************
+                 ;*
+                 ;* FUNCTION
+                 ;*	i2c_write
+                 ;*
+                 ;* DESCRIPTION
+                 ;*	Writes data (one byte) to the I2C bus. Also used for sending
+                 ;*	the address.
+                 ;*
+                 ;* USAGE
+                 ;*	i2cdata - Contains data to be transmitted.
+                 ;*
+                 ;* RETURN
+                 ;*	Carry flag - Set if the slave respond transfer.
+                 ;*
+                 ;* NOTE
+                 ;*	IMPORTANT! : This function must be directly followed by i2c_get_ack.
+                 ;*
+                 ;***************************************************************************
+                 
+                 i2c_write:
+000096 9408      	sec				; set carry flag
+000097 1f11      	rol	i2cdata		; shift in carry and out bit one
+000098 c001      	rjmp	i2c_write_first
+                 
+                 i2c_write_bit:
+000099 0f11      	lsl	i2cdata		; if transmit register empty
+                 
+                 i2c_write_first:
+00009a f059      	breq	i2c_get_ack		; goto get acknowledge
+00009b 9a3d      	sbi	I2CDDR,SCLP		; force SCL low
+                 
+00009c f418      	brcc	i2c_write_low	; if bit high
+00009d 0000      	nop				;(equalize number of cycles)
+00009e 983c      	cbi	I2CDDR,SDAP		;release SDA
+00009f c002      	rjmp	i2c_write_high
+                 
+                 i2c_write_low:			; else
+0000a0 9a3c      	sbi	I2CDDR,SDAP		; force SDA low
+0000a1 c000      	rjmp	i2c_write_high	; (equalize number of cycles)
+                 
+                 i2c_write_high:
+0000a2 dfe3      	rcall	i2c_hp_delay	; half period delay
+0000a3 983d      	cbi	I2CDDR,SCLP		; release SCL
+0000a4 dfe1      	rcall	i2c_hp_delay	; half period delay
+                 
+0000a5 cff3      	rjmp	i2c_write_bit
+                 ;***************************************************************************
+                 ;*
+                 ;* FUNCTION
+                 ;*	i2c_get_ack
+                 ;*
+                 ;* DESCRIPTION
+                 ;*	Get slave acknowledge response.
+                 ;*
+                 ;* USAGE
+                 ;*	(used only by i2c_write in this version)
+                 ;*
+                 ;* RETURN
+                 ;*	Carry flag - Cleared if a slave responds to a request.
+                 ;*
+                 ;***************************************************************************
+                 
+                 i2c_get_ack:
+0000a6 9a3d      	sbi	I2CDDR,SCLP		; force SCL low
+0000a7 983c      	cbi	I2CDDR,SDAP		; release SDA
+0000a8 dfdd      	rcall	i2c_hp_delay		; half period delay
+0000a9 983d      	cbi	I2CDDR,SCLP		; release SCL
+                 
+                 i2c_get_ack_wait:
+0000aa 9b35      	sbis	I2CPIN,SCLP		; wait SCL high 
+                 					;(In case wait states are inserted)
+0000ab cffe      	rjmp	i2c_get_ack_wait
+                 
+0000ac 9488      	clc				; clear carry flag
+0000ad 9934      	sbic	I2CPIN,SDAP		; if SDA is high
+0000ae 9408      	sec				; set carry flag
+0000af dfd6      	rcall	i2c_hp_delay	; half period delay
+0000b0 9508      	ret
+                 ;
+                 ;***************************************************************************
+                 ;*
+                 ;* FUNCTION
+                 ;*	i2c_stop
+                 ;*
+                 ;* DESCRIPTION
+                 ;*	Assert stop condition.
+                 ;*
+                 ;* USAGE
+                 ;*	No parameters.
+                 ;*
+                 ;* RETURN
+                 ;*	None.
+                 ;*
+                 ;***************************************************************************
+                 ;
+                 i2c_stop:
+0000b1 9a3d      	sbi	I2CDDR,SCLP		; force SCL low
+0000b2 9a3c      	sbi	I2CDDR,SDAP		; force SDA low
+0000b3 dfd2      	rcall	i2c_hp_delay	; half period delay
+0000b4 983d      	cbi	I2CDDR,SCLP		; release SCL
+0000b5 dfd4      	rcall	i2c_qp_delay	; quarter period delay
+0000b6 983c      	cbi	I2CDDR,SDAP		; release SDA
+0000b7 dfce      	rcall	i2c_hp_delay	; half period delay
+0000b8 9508      	ret
+                 ;
+                 ;don't need the bootloader unless you want to program with arduino IDE
+                 ;if so, uncomment the next two lines
+                 ;.org FIRSTBOOTSTART
+                 ;.include "bootloader.inc"
+                 ;-------------------------------------
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATmega328 register use summary:
+r0 :   0 r1 :   0 r2 :   0 r3 :   0 r4 :   0 r5 :   0 r6 :   9 r7 :   4 
+r8 :   2 r9 :   0 r10:   0 r11:   0 r12:   0 r13:   0 r14:   0 r15:   0 
+r16:  25 r17:   4 r18:   0 r19:   0 r20:   4 r21:  27 r22:   5 r23:   0 
+r24:   0 r25:   0 r26:   0 r27:   0 r28:   0 r29:   0 r30:   2 r31:   2 
+x  :   0 y  :   0 z  :   1 
+Registers used: 11 out of 35 (31.4%)
+
+ATmega328 instruction use summary:
+.lds  :   0 .sts  :   0 adc   :   0 add   :   0 adiw  :   0 and   :   0 
+andi  :   0 asr   :   0 bclr  :   0 bld   :   0 brbc  :   0 brbs  :   0 
+brcc  :   1 brcs  :   0 break :   0 breq  :   1 brge  :   0 brhc  :   0 
+brhs  :   0 brid  :   0 brie  :   0 brlo  :   0 brlt  :   0 brmi  :   0 
+brne  :  10 brpl  :   0 brsh  :   0 brtc  :   0 brts  :   0 brvc  :   0 
+brvs  :   0 bset  :   0 bst   :   0 call  :   0 cbi   :   6 cbr   :   5 
+clc   :   1 clh   :   0 cli   :   0 cln   :   0 clr   :   1 cls   :   0 
+clt   :   0 clv   :   0 clz   :   0 com   :   0 cp    :   0 cpc   :   0 
+cpi   :   0 cpse  :   0 dec   :  10 eor   :   0 fmul  :   0 fmuls :   0 
+fmulsu:   0 icall :   0 ijmp  :   0 in    :   0 inc   :   0 jmp   :   0 
+ld    :   0 ldd   :   0 ldi   :  29 lds   :   0 lpm   :   1 lsl   :   1 
+lsr   :   0 mov   :  10 movw  :   0 mul   :   0 muls  :   0 mulsu :   0 
+neg   :   0 nop   :   1 or    :   0 ori   :   0 out   :   4 pop   :   2 
+push  :   2 rcall :  44 ret   :  14 reti  :   0 rjmp  :   7 rol   :   1 
+ror   :   0 sbc   :   0 sbci  :   0 sbi   :   6 sbic  :   1 sbis  :   1 
+sbiw  :   0 sbr   :   6 sbrc  :   0 sbrs  :   0 sec   :   2 seh   :   0 
+sei   :   0 sen   :   0 ser   :   0 ses   :   0 set   :   0 sev   :   0 
+sez   :   0 sleep :   0 spm   :   0 st    :   0 std   :   0 sts   :   0 
+sub   :   0 subi  :   0 swap  :   2 tst   :   0 wdr   :   0 
+Instructions used: 26 out of 113 (23.0%)
+
+ATmega328 memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x000172    338     32    370   32768   1.1%
+[.dseg] 0x000100 0x000100      0      0      0    2048   0.0%
+[.eseg] 0x000000 0x000000      0      0      0    1024   0.0%
+
+Assembly complete, 0 errors, 0 warnings
