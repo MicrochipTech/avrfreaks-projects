@@ -1,0 +1,46 @@
+
+Text file used to check the operation of the Atmega 328 text programmer and the application with which it is paired.  Text ahead of the line of “stars” is ignored and can be used to provide introductory text.
+
+**********************************************
+
+
+
+Programming text directly into flash:
+
+The Atmega 328 has 32,768 bytes of flash which is divided into two partitions.
+
+The first partition extends from locations zero to 0x6FFF (28,672 bytes).
+
+The second partition extends from locations 0x7000 to 0x7FFF (4096 bytes).
+
+Flash is also partitioned into pages, each of 128 bytes.
+
+The first partition is known as the Read While Write partition and has 224 pages.
+
+The second partition is known as the Non Read While Write partition and has 32 pages.
+
+Code running in the NRWW partition can program the RWW partition.
+
+Code running in either partition can read the entire flash.
+
+The NRWW partition can be used to host a program that copies a text file directly to flash in the RWW partition. This text can then be read by the main application that resides in the RWW partition.
+
+Several kbytes of text would be totally impractical if embedded in the C file of the main application. They can be accommodated in the RWW flash partition while reducing the space available for the main application from say 28,672 bytes to 26,672 bytes for 2kB of text.
+
+A text programmer is presented in this posting.  Its hex file is appended to that of the main application and the target device is programmed with both applications at the same time.
+
+The text programmer code starts at location 0x7000.  The text starts at location 0x6FFFF and expands towards the main application which starts at location zero.  
+
+Following a reset program control always goes to line 0x7000.  The text writer code runs and starts by checking location 0x6FFF to see if it has been programmed.  If it has, then a jump to location zero is executed and the main application runs.  It it has not then a text file is requested.
+
+
+The NRWW partition can also be referred to as the bootloader partition.  However the bootloader partition can be setup so that it only occupies part of the NRWW partition. A cut down version of the text programmer that could be loaded into flash at address 0x7800 would leave an extra 2048 bytes (16 pages) available for the application program. There is a problem however: code that is running in the NRWW partition can normally only write to the RWW partition. It is possible to make it also write to the NRWW partition but the processor is halted during the writing process.
+
+This text file was prepared using a word processor however it was saved as a .txt file.  As an alternative the mouse was used to copy and paste the text into a “notepad” .txt file.  The .txt file was then downloaded to the target device when requested.  
+
+Assembly routines required to write to the flash and read from it were initially copied from the bootloader program.  However the way the two programs work is different and a bug was observed as a result of which occasional gaps appeared in the text. This is probably because the requirement to initiate the “spm” (store program memory) command within 3 clock cycles of setting the SPMCSR register was occasionally violated by UART interrupts.   “cli/sei” commands were therefore added to the “do_spm” assembly subroutine to stop this happening.  As the bootloader has already been tested fairly extensively and is deemed OK this change is not being copied to its assembly routines. 
+
+A basic main application is also posted along side the text programmer.  It is anticipated that this application and its subroutines would be embedded in more complex user applications.  This has in fact been done for test purposes and no problems have been found.
+
+A simple test project has also been developed in which the messages above are defined in C.  Each message was printed out when requested by the user.  However it only worked for the first 14 messages.  An attempt to include the 15th caused the program to go unstable.
+
