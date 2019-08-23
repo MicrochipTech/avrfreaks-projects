@@ -1,0 +1,39 @@
+
+Text file used to check the operation of the Atmega 328 hex/text bootloader plus autoCal application.  Text ahead of the line of “stars” is ignored and can be used to provide introductory text.
+
+**********************************************
+1. Programming both hex for text files directly into flash:
+
+2. The Atmega 328 has 32,768 bytes of flash which is divided into two partitions.
+
+3. The first partition extends from locations zero to 0x6FFF (28,672 bytes).
+
+4. The second partition extends from locations 0x7000 to 0x7FFF (4096 bytes).
+
+5. Flash is also partitioned into pages, each of 128 bytes.
+
+6. The first partition is known as the Read While Write partition and has 224 pages.
+
+7. The second partition is known as the Non Read While Write partition and has 32 pages.
+
+8. Code running in the NRWW partition can program the RWW partition.
+
+9. Code running in either partition can read the entire flash.
+
+10. The NRWW partition can be used to host a bootloader that programs applications and also copies text files directly to flash in the RWW partition. This text can then be read by the main application.
+
+11. Several kbytes of text would be totally impractical if embedded in the C file of the main application. They can be accommodated in the RWW flash partition while reducing the space available for the main application from say 27,776 bytes to 25,776 bytes for 2kB of text.
+
+12. The bootloader code starts at location 0x7000.  The text starts at location 0x6C7F and expands towards the main application which starts at location zero.
+
+13. The autoCal subroutine starts at location 0x6C80 and runs to location 0x6FFF. It occupies 7 pages of flash leaving 217 pages to be partitioned between an application and its text strings.
+
+14. All resets cause program control to go to address 0x7000.  The cause of the reset is then tested.  If it is an external reset the bootloader runs.  Users can either program an application, copy a text file or run the application. A combined POR/Ext reset causes the autoCal subroutine to run after which control passes back to address 0x7000 and the bootloader runs. For isolated POR resets, WDT and BOR resets resets the user application is launched.
+
+15. For many devices that are clocked from the internal RC clock and all that use an external resonator the autoCal routine will never be used. For some devices it will be essential however. It may also be useful during development of user applications that modify the OSCCAL value.
+
+16. A basic main application is also posted along side the bootloader.  It is anticipated that this application and its subroutines would be embedded in more complex user applications.  This has in fact been done for test purposes and no problems have been found.
+
+17. The only reason that it has been found possible to link the hex and text programmers into a single bootloader is because verification has been abandoned.  It has been found in practice that the bootloader either works all of the time or none of it.  Verification was essential during program development but is no longer really required.
+
+18.  Any number of programs can be placed in flash, however there are only ever two interrupt vector tables, one located at address zero and the other at the start of the bootloader section. The programs are launched using “jump” commands and all have to end in a reset that either takes them to the main application at address zero or the bootloader program.
