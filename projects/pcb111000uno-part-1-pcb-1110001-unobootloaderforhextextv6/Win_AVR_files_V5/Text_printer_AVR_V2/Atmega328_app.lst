@@ -1,0 +1,493 @@
+   1               	# 1 "Atmega328_app.S"
+   1               	;Basic assembler subroutines develped for use with the Atmega 328 bootloader program
+   0               	
+   0               	
+   2               	
+   3               	;The HW subroutines required to clock commands and data 
+   4               	;in and out of a target device have been replaced by the
+   5               	;following assembly routines which are based on prototytpes
+   6               	;given in the Atmega 328 data sheet in the section
+   7               	;"27. Boot Loader Support- Read-While-Write Self-Programming"
+   8               	
+   9               	
+  10               	
+  11               	#include <avr/io.h>			
+   1               	/* Copyright (c) 2002,2003,2005,2006,2007 Marek Michalkiewicz, Joerg Wunsch
+   2               	   Copyright (c) 2007 Eric B. Weddington
+   3               	   All rights reserved.
+   4               	
+   5               	   Redistribution and use in source and binary forms, with or without
+   6               	   modification, are permitted provided that the following conditions are met:
+   7               	
+   8               	   * Redistributions of source code must retain the above copyright
+   9               	     notice, this list of conditions and the following disclaimer.
+  10               	
+  11               	   * Redistributions in binary form must reproduce the above copyright
+  12               	     notice, this list of conditions and the following disclaimer in
+  13               	     the documentation and/or other materials provided with the
+  14               	     distribution.
+  15               	
+  16               	   * Neither the name of the copyright holders nor the names of
+  17               	     contributors may be used to endorse or promote products derived
+  18               	     from this software without specific prior written permission.
+  19               	
+  20               	  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  21               	  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  22               	  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  23               	  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  24               	  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  25               	  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  26               	  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  27               	  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  28               	  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  29               	  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  30               	  POSSIBILITY OF SUCH DAMAGE. */
+  31               	
+  32               	/* $Id: io.h,v 1.52.2.28 2009/12/20 17:02:53 arcanum Exp $ */
+  33               	
+  34               	/** \file */
+  35               	/** \defgroup avr_io <avr/io.h>: AVR device-specific IO definitions
+  36               	    \code #include <avr/io.h> \endcode
+  37               	
+  38               	    This header file includes the apropriate IO definitions for the
+  39               	    device that has been specified by the <tt>-mmcu=</tt> compiler
+  40               	    command-line switch.  This is done by diverting to the appropriate
+  41               	    file <tt>&lt;avr/io</tt><em>XXXX</em><tt>.h&gt;</tt> which should
+  42               	    never be included directly.  Some register names common to all
+  43               	    AVR devices are defined directly within <tt>&lt;avr/common.h&gt;</tt>,
+  44               	    which is included in <tt>&lt;avr/io.h&gt;</tt>,
+  45               	    but most of the details come from the respective include file.
+  46               	
+  47               	    Note that this file always includes the following files:
+  48               	    \code 
+  49               	    #include <avr/sfr_defs.h>
+  50               	    #include <avr/portpins.h>
+  51               	    #include <avr/common.h>
+  52               	    #include <avr/version.h>
+  53               	    \endcode
+  54               	    See \ref avr_sfr for more details about that header file.
+  55               	
+  56               	    Included are definitions of the IO register set and their
+  57               	    respective bit values as specified in the Atmel documentation.
+  58               	    Note that inconsistencies in naming conventions,
+  59               	    so even identical functions sometimes get different names on
+  60               	    different devices.
+  61               	
+  62               	    Also included are the specific names useable for interrupt
+  63               	    function definitions as documented
+  64               	    \ref avr_signames "here".
+  65               	
+  66               	    Finally, the following macros are defined:
+  67               	
+  68               	    - \b RAMEND
+  69               	    <br>
+  70               	    The last on-chip RAM address.
+  71               	    <br>
+  72               	    - \b XRAMEND
+  73               	    <br>
+  74               	    The last possible RAM location that is addressable. This is equal to 
+  75               	    RAMEND for devices that do not allow for external RAM. For devices 
+  76               	    that allow external RAM, this will be larger than RAMEND.
+  77               	    <br>
+  78               	    - \b E2END
+  79               	    <br>
+  80               	    The last EEPROM address.
+  81               	    <br>
+  82               	    - \b FLASHEND
+  83               	    <br>
+  84               	    The last byte address in the Flash program space.
+  85               	    <br>
+  86               	    - \b SPM_PAGESIZE
+  87               	    <br>
+  88               	    For devices with bootloader support, the flash pagesize
+  89               	    (in bytes) to be used for the \c SPM instruction. 
+  90               	    - \b E2PAGESIZE
+  91               	    <br>
+  92               	    The size of the EEPROM page.
+  93               	    
+  94               	*/
+  95               	
+  96               	#ifndef _AVR_IO_H_
+  97               	#define _AVR_IO_H_
+  98               	
+  99               	#include <avr/sfr_defs.h>
+   1               	/* Copyright (c) 2002, Marek Michalkiewicz <marekm@amelek.gda.pl>
+ 100               	
+ 101               	#if defined (__AVR_AT94K__)
+ 102               	#  include <avr/ioat94k.h>
+ 103               	#elif defined (__AVR_AT43USB320__)
+ 104               	#  include <avr/io43u32x.h>
+ 105               	#elif defined (__AVR_AT43USB355__)
+ 106               	#  include <avr/io43u35x.h>
+ 107               	#elif defined (__AVR_AT76C711__)
+ 108               	#  include <avr/io76c711.h>
+ 109               	#elif defined (__AVR_AT86RF401__)
+ 110               	#  include <avr/io86r401.h>
+ 111               	#elif defined (__AVR_AT90PWM1__)
+ 112               	#  include <avr/io90pwm1.h>
+ 113               	#elif defined (__AVR_AT90PWM2__)
+ 114               	#  include <avr/io90pwmx.h>
+ 115               	#elif defined (__AVR_AT90PWM2B__)
+ 116               	#  include <avr/io90pwm2b.h>
+ 117               	#elif defined (__AVR_AT90PWM3__)
+ 118               	#  include <avr/io90pwmx.h>
+ 119               	#elif defined (__AVR_AT90PWM3B__)
+ 120               	#  include <avr/io90pwm3b.h>
+ 121               	#elif defined (__AVR_AT90PWM216__)
+ 122               	#  include <avr/io90pwm216.h>
+ 123               	#elif defined (__AVR_AT90PWM316__)
+ 124               	#  include <avr/io90pwm316.h>
+ 125               	#elif defined (__AVR_AT90PWM81__)
+ 126               	#  include <avr/io90pwm81.h>
+ 127               	#elif defined (__AVR_ATmega8U2__)
+ 128               	#  include <avr/iom8u2.h>
+ 129               	#elif defined (__AVR_ATmega16M1__)
+ 130               	#  include <avr/iom16m1.h>
+ 131               	#elif defined (__AVR_ATmega16U2__)
+ 132               	#  include <avr/iom16u2.h>
+ 133               	#elif defined (__AVR_ATmega16U4__)
+ 134               	#  include <avr/iom16u4.h>
+ 135               	#elif defined (__AVR_ATmega32C1__)
+ 136               	#  include <avr/iom32c1.h>
+ 137               	#elif defined (__AVR_ATmega32M1__)
+ 138               	#  include <avr/iom32m1.h>
+ 139               	#elif defined (__AVR_ATmega32U2__)
+ 140               	#  include <avr/iom32u2.h>
+ 141               	#elif defined (__AVR_ATmega32U4__)
+ 142               	#  include <avr/iom32u4.h>
+ 143               	#elif defined (__AVR_ATmega32U6__)
+ 144               	#  include <avr/iom32u6.h>
+ 145               	#elif defined (__AVR_ATmega64C1__)
+ 146               	#  include <avr/iom64c1.h>
+ 147               	#elif defined (__AVR_ATmega64M1__)
+ 148               	#  include <avr/iom64m1.h>
+ 149               	#elif defined (__AVR_ATmega128__)
+ 150               	#  include <avr/iom128.h>
+ 151               	#elif defined (__AVR_ATmega1280__)
+ 152               	#  include <avr/iom1280.h>
+ 153               	#elif defined (__AVR_ATmega1281__)
+ 154               	#  include <avr/iom1281.h>
+ 155               	#elif defined (__AVR_ATmega1284P__)
+ 156               	#  include <avr/iom1284p.h>
+ 157               	#elif defined (__AVR_ATmega128RFA1__)
+ 158               	#  include <avr/iom128rfa1.h>
+ 159               	#elif defined (__AVR_ATmega2560__)
+ 160               	#  include <avr/iom2560.h>
+ 161               	#elif defined (__AVR_ATmega2561__)
+ 162               	#  include <avr/iom2561.h>
+ 163               	#elif defined (__AVR_AT90CAN32__)
+ 164               	#  include <avr/iocan32.h>
+ 165               	#elif defined (__AVR_AT90CAN64__)
+ 166               	#  include <avr/iocan64.h>
+ 167               	#elif defined (__AVR_AT90CAN128__)
+ 168               	#  include <avr/iocan128.h>
+ 169               	#elif defined (__AVR_AT90USB82__)
+ 170               	#  include <avr/iousb82.h>
+ 171               	#elif defined (__AVR_AT90USB162__)
+ 172               	#  include <avr/iousb162.h>
+ 173               	#elif defined (__AVR_AT90USB646__)
+ 174               	#  include <avr/iousb646.h>
+ 175               	#elif defined (__AVR_AT90USB647__)
+ 176               	#  include <avr/iousb647.h>
+ 177               	#elif defined (__AVR_AT90USB1286__)
+ 178               	#  include <avr/iousb1286.h>
+ 179               	#elif defined (__AVR_AT90USB1287__)
+ 180               	#  include <avr/iousb1287.h>
+ 181               	#elif defined (__AVR_ATmega64__)
+ 182               	#  include <avr/iom64.h>
+ 183               	#elif defined (__AVR_ATmega640__)
+ 184               	#  include <avr/iom640.h>
+ 185               	#elif defined (__AVR_ATmega644__) || defined (__AVR_ATmega644A__)
+ 186               	#  include <avr/iom644.h>
+ 187               	#elif defined (__AVR_ATmega644P__)
+ 188               	#  include <avr/iom644p.h>
+ 189               	#elif defined (__AVR_ATmega644PA__)
+ 190               	#  include <avr/iom644pa.h>
+ 191               	#elif defined (__AVR_ATmega645__) || defined (__AVR_ATmega645A__) || defined (__AVR_ATmega645P__)
+ 192               	#  include <avr/iom645.h>
+ 193               	#elif defined (__AVR_ATmega6450__) || defined (__AVR_ATmega6450A__) || defined (__AVR_ATmega6450P__
+ 194               	#  include <avr/iom6450.h>
+ 195               	#elif defined (__AVR_ATmega649__) || defined (__AVR_ATmega649A__)
+ 196               	#  include <avr/iom649.h>
+ 197               	#elif defined (__AVR_ATmega6490__) || defined (__AVR_ATmega6490A__) || defined (__AVR_ATmega6490P__
+ 198               	#  include <avr/iom6490.h>
+ 199               	#elif defined (__AVR_ATmega649P__)
+ 200               	#  include <avr/iom649p.h>
+ 201               	#elif defined (__AVR_ATmega64HVE__)
+ 202               	#  include <avr/iom64hve.h>
+ 203               	#elif defined (__AVR_ATmega103__)
+ 204               	#  include <avr/iom103.h>
+ 205               	#elif defined (__AVR_ATmega32__)
+ 206               	#  include <avr/iom32.h>
+ 207               	#elif defined (__AVR_ATmega323__)
+ 208               	#  include <avr/iom323.h>
+ 209               	#elif defined (__AVR_ATmega324P__) || defined (__AVR_ATmega324A__)
+ 210               	#  include <avr/iom324.h>
+ 211               	#elif defined (__AVR_ATmega324PA__)
+ 212               	#  include <avr/iom324pa.h>
+ 213               	#elif defined (__AVR_ATmega325__)
+ 214               	#  include <avr/iom325.h>
+ 215               	#elif defined (__AVR_ATmega325P__)
+ 216               	#  include <avr/iom325.h>
+ 217               	#elif defined (__AVR_ATmega3250__)
+ 218               	#  include <avr/iom3250.h>
+ 219               	#elif defined (__AVR_ATmega3250P__)
+ 220               	#  include <avr/iom3250.h>
+ 221               	#elif defined (__AVR_ATmega328P__) || defined (__AVR_ATmega328__)
+ 222               	#  include <avr/iom328p.h>
+   1               	/* Copyright (c) 2007 Atmel Corporation
+ 223               	#elif defined (__AVR_ATmega329__)
+ 224               	#  include <avr/iom329.h>
+ 225               	#elif defined (__AVR_ATmega329P__) || defined (__AVR_ATmega329PA__)
+ 226               	#  include <avr/iom329.h>
+ 227               	#elif defined (__AVR_ATmega3290__)
+ 228               	#  include <avr/iom3290.h>
+ 229               	#elif defined (__AVR_ATmega3290P__)
+ 230               	#  include <avr/iom3290.h>
+ 231               	#elif defined (__AVR_ATmega32HVB__)
+ 232               	#  include <avr/iom32hvb.h>
+ 233               	#elif defined (__AVR_ATmega406__)
+ 234               	#  include <avr/iom406.h>
+ 235               	#elif defined (__AVR_ATmega16__)
+ 236               	#  include <avr/iom16.h>
+ 237               	#elif defined (__AVR_ATmega16A__)
+ 238               	#  include <avr/iom16a.h>
+ 239               	#elif defined (__AVR_ATmega161__)
+ 240               	#  include <avr/iom161.h>
+ 241               	#elif defined (__AVR_ATmega162__)
+ 242               	#  include <avr/iom162.h>
+ 243               	#elif defined (__AVR_ATmega163__)
+ 244               	#  include <avr/iom163.h>
+ 245               	#elif defined (__AVR_ATmega164P__) || defined (__AVR_ATmega164A__)
+ 246               	#  include <avr/iom164.h>
+ 247               	#elif defined (__AVR_ATmega165__) || defined (__AVR_ATmega165A__)
+ 248               	#  include <avr/iom165.h>
+ 249               	#elif defined (__AVR_ATmega165P__)
+ 250               	#  include <avr/iom165p.h>
+ 251               	#elif defined (__AVR_ATmega168__) || defined (__AVR_ATmega168A__)
+ 252               	#  include <avr/iom168.h>
+ 253               	#elif defined (__AVR_ATmega168P__)
+ 254               	#  include <avr/iom168p.h>
+ 255               	#elif defined (__AVR_ATmega169__) || defined (__AVR_ATmega169A__)
+ 256               	#  include <avr/iom169.h>
+ 257               	#elif defined (__AVR_ATmega169P__)
+ 258               	#  include <avr/iom169p.h>
+ 259               	#elif defined (__AVR_ATmega169PA__)
+ 260               	#  include <avr/iom169pa.h>
+ 261               	#elif defined (__AVR_ATmega8HVA__)
+ 262               	#  include <avr/iom8hva.h>
+ 263               	#elif defined (__AVR_ATmega16HVA__)
+ 264               	#  include <avr/iom16hva.h>
+ 265               	#elif defined (__AVR_ATmega16HVA2__)
+ 266               	#  include <avr/iom16hva2.h>
+ 267               	#elif defined (__AVR_ATmega16HVB__)
+ 268               	#  include <avr/iom16hvb.h>
+ 269               	#elif defined (__AVR_ATmega8__)
+ 270               	#  include <avr/iom8.h>
+ 271               	#elif defined (__AVR_ATmega48__) || defined (__AVR_ATmega48A__)
+ 272               	#  include <avr/iom48.h>
+ 273               	#elif defined (__AVR_ATmega48P__)
+ 274               	#  include <avr/iom48p.h>
+ 275               	#elif defined (__AVR_ATmega88__) || defined (__AVR_ATmega88A__)
+ 276               	#  include <avr/iom88.h>
+ 277               	#elif defined (__AVR_ATmega88P__)
+ 278               	#  include <avr/iom88p.h>
+ 279               	#elif defined (__AVR_ATmega88PA__)
+ 280               	#  include <avr/iom88pa.h>
+ 281               	#elif defined (__AVR_ATmega8515__)
+ 282               	#  include <avr/iom8515.h>
+ 283               	#elif defined (__AVR_ATmega8535__)
+ 284               	#  include <avr/iom8535.h>
+ 285               	#elif defined (__AVR_AT90S8535__)
+ 286               	#  include <avr/io8535.h>
+ 287               	#elif defined (__AVR_AT90C8534__)
+ 288               	#  include <avr/io8534.h>
+ 289               	#elif defined (__AVR_AT90S8515__)
+ 290               	#  include <avr/io8515.h>
+ 291               	#elif defined (__AVR_AT90S4434__)
+ 292               	#  include <avr/io4434.h>
+ 293               	#elif defined (__AVR_AT90S4433__)
+ 294               	#  include <avr/io4433.h>
+ 295               	#elif defined (__AVR_AT90S4414__)
+ 296               	#  include <avr/io4414.h>
+ 297               	#elif defined (__AVR_ATtiny22__)
+ 298               	#  include <avr/iotn22.h>
+ 299               	#elif defined (__AVR_ATtiny26__)
+ 300               	#  include <avr/iotn26.h>
+ 301               	#elif defined (__AVR_AT90S2343__)
+ 302               	#  include <avr/io2343.h>
+ 303               	#elif defined (__AVR_AT90S2333__)
+ 304               	#  include <avr/io2333.h>
+ 305               	#elif defined (__AVR_AT90S2323__)
+ 306               	#  include <avr/io2323.h>
+ 307               	#elif defined (__AVR_AT90S2313__)
+ 308               	#  include <avr/io2313.h>
+ 309               	#elif defined (__AVR_ATtiny2313__)
+ 310               	#  include <avr/iotn2313.h>
+ 311               	#elif defined (__AVR_ATtiny2313A__)
+ 312               	#  include <avr/iotn2313a.h>
+ 313               	#elif defined (__AVR_ATtiny13__)
+ 314               	#  include <avr/iotn13.h>
+ 315               	#elif defined (__AVR_ATtiny13A__)
+ 316               	#  include <avr/iotn13a.h>
+ 317               	#elif defined (__AVR_ATtiny25__)
+ 318               	#  include <avr/iotn25.h>
+ 319               	#elif defined (__AVR_ATtiny4313__)
+ 320               	#  include <avr/iotn4313.h>
+ 321               	#elif defined (__AVR_ATtiny45__)
+ 322               	#  include <avr/iotn45.h>
+ 323               	#elif defined (__AVR_ATtiny85__)
+ 324               	#  include <avr/iotn85.h>
+ 325               	#elif defined (__AVR_ATtiny24__)
+ 326               	#  include <avr/iotn24.h>
+ 327               	#elif defined (__AVR_ATtiny24A__)
+ 328               	#  include <avr/iotn24a.h>
+ 329               	#elif defined (__AVR_ATtiny44__)
+ 330               	#  include <avr/iotn44.h>
+ 331               	#elif defined (__AVR_ATtiny44A__)
+ 332               	#  include <avr/iotn44a.h>
+ 333               	#elif defined (__AVR_ATtiny84__)
+ 334               	#  include <avr/iotn84.h>
+ 335               	#elif defined (__AVR_ATtiny261__)
+ 336               	#  include <avr/iotn261.h>
+ 337               	#elif defined (__AVR_ATtiny261A__)
+ 338               	#  include <avr/iotn261a.h>
+ 339               	#elif defined (__AVR_ATtiny461__)
+ 340               	#  include <avr/iotn461.h>
+ 341               	#elif defined (__AVR_ATtiny461A__)
+ 342               	#  include <avr/iotn461a.h>
+ 343               	#elif defined (__AVR_ATtiny861__)
+ 344               	#  include <avr/iotn861.h>
+ 345               	#elif defined (__AVR_ATtiny861A__)
+ 346               	#  include <avr/iotn861a.h>
+ 347               	#elif defined (__AVR_ATtiny43U__)
+ 348               	#  include <avr/iotn43u.h>
+ 349               	#elif defined (__AVR_ATtiny48__)
+ 350               	#  include <avr/iotn48.h>
+ 351               	#elif defined (__AVR_ATtiny88__)
+ 352               	#  include <avr/iotn88.h>
+ 353               	#elif defined (__AVR_ATtiny87__)
+ 354               	#  include <avr/iotn87.h>
+ 355               	#elif defined (__AVR_ATtiny167__)
+ 356               	#  include <avr/iotn167.h>
+ 357               	#elif defined (__AVR_AT90SCR100__)
+ 358               	#  include <avr/io90scr100.h>
+ 359               	#elif defined (__AVR_ATxmega16A4__)
+ 360               	#  include <avr/iox16a4.h>
+ 361               	#elif defined (__AVR_ATxmega16D4__)
+ 362               	#  include <avr/iox16d4.h>
+ 363               	#elif defined (__AVR_ATxmega32A4__)
+ 364               	#  include <avr/iox32a4.h>
+ 365               	#elif defined (__AVR_ATxmega32D4__)
+ 366               	#  include <avr/iox32d4.h>
+ 367               	#elif defined (__AVR_ATxmega64A1__)
+ 368               	#  include <avr/iox64a1.h>
+ 369               	#elif defined (__AVR_ATxmega64A3__)
+ 370               	#  include <avr/iox64a3.h>
+ 371               	#elif defined (__AVR_ATxmega64D3__)
+ 372               	#  include <avr/iox64d3.h>
+ 373               	#elif defined (__AVR_ATxmega128A1__)
+ 374               	#  include <avr/iox128a1.h>
+ 375               	#elif defined (__AVR_ATxmega128A3__)
+ 376               	#  include <avr/iox128a3.h>
+ 377               	#elif defined (__AVR_ATxmega128D3__)
+ 378               	#  include <avr/iox128d3.h>
+ 379               	#elif defined (__AVR_ATxmega192A3__)
+ 380               	#  include <avr/iox192a3.h>
+ 381               	#elif defined (__AVR_ATxmega192D3__)
+ 382               	#  include <avr/iox192d3.h>
+ 383               	#elif defined (__AVR_ATxmega256A3__)
+ 384               	#  include <avr/iox256a3.h>
+ 385               	#elif defined (__AVR_ATxmega256A3B__)
+ 386               	#  include <avr/iox256a3b.h>
+ 387               	#elif defined (__AVR_ATxmega256D3__)
+ 388               	#  include <avr/iox256d3.h>
+ 389               	#elif defined (__AVR_ATA6289__)
+ 390               	#  include <avr/ioa6289.h>
+ 391               	/* avr1: the following only supported for assembler programs */
+ 392               	#elif defined (__AVR_ATtiny28__)
+ 393               	#  include <avr/iotn28.h>
+ 394               	#elif defined (__AVR_AT90S1200__)
+ 395               	#  include <avr/io1200.h>
+ 396               	#elif defined (__AVR_ATtiny15__)
+ 397               	#  include <avr/iotn15.h>
+ 398               	#elif defined (__AVR_ATtiny12__)
+ 399               	#  include <avr/iotn12.h>
+ 400               	#elif defined (__AVR_ATtiny11__)
+ 401               	#  include <avr/iotn11.h>
+ 402               	#else
+ 403               	#  if !defined(__COMPILING_AVR_LIBC__)
+ 404               	#    warning "device type not defined"
+ 405               	#  endif
+ 406               	#endif
+ 407               	
+ 408               	#include <avr/portpins.h>
+   1               	/* Copyright (c) 2003  Theodore A. Roth
+ 409               	
+ 410               	#include <avr/common.h>
+   1               	/* Copyright (c) 2007 Eric B. Weddington
+ 411               	
+ 412               	#include <avr/version.h>
+   1               	/* Copyright (c) 2005, Joerg Wunsch                               -*- c -*-
+ 413               	
+ 414               	/* Include fuse.h after individual IO header files. */
+ 415               	#include <avr/fuse.h>
+   1               	/* Copyright (c) 2007, Atmel Corporation
+ 416               	
+ 417               	/* Include lock.h after individual IO header files. */
+ 418               	#include <avr/lock.h>
+   1               	/* Copyright (c) 2007, Atmel Corporation
+ 419               	
+  12               	
+  13               	.extern Flash_readout			;
+  14               	.extern Prog_mem_address_H		;Address in flash to read from, the address of the page to write or era
+  15               	.extern Prog_mem_address_L		;the next address on the page buffer, or the address of a configuration
+  16               	
+  17               	
+  18               	.global read_flash				;Assembly subroutines
+  19               	
+  20               	
+  21               	
+  22               	;***************************************************
+  23               	read_flash:						
+  24:Atmega328_app.S **** push r0;
+  25:Atmega328_app.S **** push ZH
+  26:Atmega328_app.S **** push ZL
+  27:Atmega328_app.S **** lds ZH, Prog_mem_address_H;
+  28:Atmega328_app.S **** lds ZL, Prog_mem_address_L;
+  29:Atmega328_app.S **** lpm r0, Z;
+  30:Atmega328_app.S **** sts Flash_readout,  r0;
+  31               	
+  32:Atmega328_app.S **** pop ZL
+  33:Atmega328_app.S **** pop ZH
+  34:Atmega328_app.S **** pop r0;
+  35:Atmega328_app.S **** ret	
+  36               	
+  37               	
+  38               	
+  39               	
+  40               	
+  41               	
+  42               	
+  43               	;**************************************************
+  44               	do_spm:
+  45:Atmega328_app.S **** push r16
+  46               	Wait_spm_2:
+  47:Atmega328_app.S **** 	lds r16, SPMCSR					;load direct from SRAM. r16 becomes SPMCSR
+  48:Atmega328_app.S **** 	sbrc r16, SELFPRGEN				;skip if bit in register cleared
+  49:Atmega328_app.S **** 	rjmp Wait_spm_2					;relative jump
+  50:Atmega328_app.S **** cli
+  51:Atmega328_app.S **** sts SPMCSR, r20						;store direct to SRAM. SPMCSR becomes r20					
+  52:Atmega328_app.S **** spm									;store program memory command
+  53:Atmega328_app.S **** sei
+  54:Atmega328_app.S **** pop r16
+  55:Atmega328_app.S **** ret
+DEFINED SYMBOLS
+     Atmega328_app.S:23     .text:00000000 read_flash
+     Atmega328_app.S:44     .text:0000001c do_spm
+     Atmega328_app.S:46     .text:0000001e Wait_spm_2
+
+UNDEFINED SYMBOLS
+Prog_mem_address_H
+Prog_mem_address_L
+Flash_readout
