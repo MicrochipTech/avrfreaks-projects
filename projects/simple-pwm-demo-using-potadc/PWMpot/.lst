@@ -1,0 +1,389 @@
+NOTE: Code bytes are displayed in order matching the disassembly format in AVR documentation.
+  For example, 'CALL 2B16' (example only, only labels should normally be used) is displayed as
+  0x940E2B16 rather than in little endian byte order.
+
+Interrupt Vectors
+
+Program Code (text area)
+_exit:
+    0011C CFFF      RJMP	_exit
+FILE: C:\Users\jim.cordill\Documents\Code\PWMpot\init.c
+(0001) //ICC-AVR application builder : 7/27/2017 9:52:14 AM
+(0002) // Target : M8
+(0003) // Crystal: 1.0000Mhz
+(0004) // NOTE: WHILE WE STRIVE TO GENERATE CORRECT CODE FOR ALL SUPPORTED DEVICES,
+(0005) //   THE APPBUILDER MAY GENERATE INCORRECT CODE AT TIMES. IF YOU FIND ANY
+(0006) //   ISSUES. PLEASE EMAIL support@imagecraft.com. THANK YOU
+(0007) // The SPI module seems to have issues. We are looking into it.
+(0008) 
+(0009) #include <iccioavr.h>
+(0010) #include <avrdef.h>
+(0011) #include "init.h"
+(0012) 
+(0013) void port_init(void)
+(0014) {
+(0015)     PORTB = 0x00;
+_port_init:
+    0011D 2422      CLR	R2
+    0011E BA28      OUT	0x18,R2
+(0016)     DDRB  = 0x02; //PB1 PWM output
+    0011F E082      LDI	R24,2
+    00120 BB87      OUT	0x17,R24
+(0017)     PORTC = 0x00;
+    00121 BA25      OUT	0x15,R2
+(0018)     DDRC  = 0x00;
+    00122 BA24      OUT	0x14,R2
+(0019)     PORTD = 0x01; // RXD pull up on
+    00123 E081      LDI	R24,1
+    00124 BB82      OUT	0x12,R24
+(0020)     DDRD  = 0x02; // TXD output
+    00125 E082      LDI	R24,2
+    00126 BB81      OUT	0x11,R24
+(0021) 
+(0022)     PORTD = 0x02; // TXD idle high
+    00127 BB82      OUT	0x12,R24
+    00128 9508      RET
+(0023) }
+(0024) 
+(0025) //TIMER1 initialize - prescale:1
+(0026) // WGM: 7 PWM 10bit fast, TOP=0x03FF
+(0027) // desired value: 1KHz
+(0028) // actual value:  0.977KHz (2.4%)
+(0029) void timer1_init(void)
+(0030) {
+(0031)     TCCR1B = 0x00; //stop
+_timer1_init:
+    00129 2422      CLR	R2
+    0012A BC2E      OUT	0x2E,R2
+(0032)     TCNT1H = 0xFC; //setup
+    0012B EF8C      LDI	R24,0xFC
+    0012C BD8D      OUT	0x2D,R24
+(0033)     TCNT1L = 0x01;
+    0012D E081      LDI	R24,1
+    0012E BD8C      OUT	0x2C,R24
+(0034)     OCR1AH = 0x03;
+    0012F E083      LDI	R24,3
+    00130 BD8B      OUT	0x2B,R24
+(0035)     OCR1AL = 0xFF;
+    00131 EF8F      LDI	R24,0xFF
+    00132 BD8A      OUT	0x2A,R24
+(0036)     OCR1BH = 0x03;
+    00133 E083      LDI	R24,3
+    00134 BD89      OUT	0x29,R24
+(0037)     OCR1BL = 0xFF;
+    00135 EF8F      LDI	R24,0xFF
+    00136 BD88      OUT	0x28,R24
+(0038)     ICR1H  = 0x03;
+    00137 E083      LDI	R24,3
+    00138 BD87      OUT	0x27,R24
+(0039)     ICR1L  = 0xFF;
+    00139 EF8F      LDI	R24,0xFF
+    0013A BD86      OUT	0x26,R24
+(0040)     TCCR1A = 0x83;
+    0013B E883      LDI	R24,0x83
+    0013C BD8F      OUT	0x2F,R24
+(0041)     TCCR1B = 0x09; //start Timer
+    0013D E089      LDI	R24,0x9
+    0013E BD8E      OUT	0x2E,R24
+    0013F 9508      RET
+(0042) }
+(0043) 
+(0044) //UART0 initialize
+(0045) // desired baud rate: 4800
+(0046) // actual: baud rate:4808 (0.2%)
+(0047) void uart0_init(void)
+(0048) {
+(0049)     UCSRB = 0x00; //disable while setting baud rate
+_uart0_init:
+    00140 2422      CLR	R2
+    00141 B82A      OUT	0x0A,R2
+(0050)     UCSRA = 0x00;
+    00142 B82B      OUT	0x0B,R2
+(0051)     UCSRC = BIT(URSEL) | 0x06;  //8N1 default
+    00143 E886      LDI	R24,0x86
+    00144 BD80      OUT	0x20,R24
+(0052)     UBRRL = 0x0C; //set baud rate lo
+    00145 E08C      LDI	R24,0xC
+    00146 B989      OUT	0x09,R24
+(0053)     UBRRH = 0x00; //set baud rate hi
+    00147 BC20      OUT	0x20,R2
+(0054)     UCSRB = BIT(TXEN);
+    00148 E088      LDI	R24,0x8
+    00149 B98A      OUT	0x0A,R24
+    0014A 9508      RET
+(0055) }
+(0056) 
+(0057) //ADC initialize
+(0058) // Conversion time: 104uS
+(0059) void adc_init(void)
+(0060) {
+(0061)     ADCSRA = 0x00; //disable adc
+_adc_init:
+    0014B 2422      CLR	R2
+    0014C B826      OUT	0x06,R2
+(0062)     ADMUX = (1<<REFS0); //AREF internal, ADC(0)
+    0014D E480      LDI	R24,0x40
+    0014E B987      OUT	0x07,R24
+(0063)     ACSR  = (1<<ACD); //AC disable
+    0014F E880      LDI	R24,0x80
+    00150 B988      OUT	0x08,R24
+(0064)     ADCSRA |= (1<<ADEN)|(3<<ADPS0); // set ADC prescaler to , 1MHz / 8 = 125kHz
+    00151 B186      IN	R24,0x06
+    00152 6883      ORI	R24,0x83
+    00153 B986      OUT	0x06,R24
+    00154 9508      RET
+(0065) }
+(0066) 
+(0067) //call this routine to initialize all peripherals
+(0068) void init_devices(void)
+(0069) {
+(0070) //stop errant interrupts until set up
+(0071)     INTR_OFF();
+_init_devices:
+    00155 94F8      BCLR	7
+(0072)     port_init();
+    00156 DFC6      RCALL	_port_init
+(0073)     timer1_init();
+    00157 DFD1      RCALL	_timer1_init
+(0074)     uart0_init();
+    00158 DFE7      RCALL	_uart0_init
+(0075)     adc_init();
+    00159 DFF1      RCALL	_adc_init
+(0076) 
+(0077)     MCUCR = 0x00;
+    0015A 2422      CLR	R2
+    0015B BE25      OUT	0x35,R2
+(0078)     GICR  = 0x00;
+    0015C BE2B      OUT	0x3B,R2
+(0079)     TIMSK = 0x00; //timer interrupt sources
+    0015D BE29      OUT	0x39,R2
+(0080)     INTR_ON();  //enable global interrupts
+    0015E 9478      BSET	7
+    0015F 9508      RET
+(0081) //all peripherals are now initialized
+(0082) }
+(0083) 
+    0015F 9508      RET
+FILE: C:\Users\jim.cordill\Documents\Code\PWMpot\main.c
+(0001) /*
+(0002)  * Compiler ImageCraft C for Mega8(16)
+(0003)  * Read poteniometer connected to ADC0 and set PWM duty cycle and
+(0004)  * send ADC value to serial USART
+(0005)  */
+(0006) #define F_CPU 1000000UL
+(0007) #include <iccioavr.h> //<avr/io.h>  gcc io header
+(0008) #include <stdint.h>
+(0009) #include <stdio.h>
+(0010) //#include <delay.h>  //not used
+(0011) 
+(0012) #include "init.h"
+(0013) 
+(0014) // Macro definitions
+(0015) //#define SetBit(port,bit)  (port |= (1<<bit))   //set bit in port
+(0016) //#define ClrBit(port,bit)  (port &= ~(1<<bit))  //clear bit in port
+(0017) 
+(0018) /*****************************************************************************
+(0019) *
+(0020) *   Function name : ADC_read
+(0021) *
+(0022) *   Returns :       uint16_t ADC (10 bit value)
+(0023) *
+(0024) *   Parameters :    none
+(0025) *
+(0026) *   Purpose :       Do one Analog to Digital Conversion
+(0027) *
+(0028) *****************************************************************************/
+(0029) uint16_t ADC_read(void)
+(0030) {
+(0031)     ADCSRA |= (1<<ADSC);        // do single conversion
+_ADC_read:
+    00160 9A36      SBI	0x06,6
+(0032)     while(ADCSRA & (1<<ADSC)) {};   // wait for conversion done, ADSC flag active
+    00161 9936      SBIC	0x06,6
+    00162 CFFE      RJMP	0x0161
+(0033)     return ADC;
+    00163 B104      IN	R16,0x04
+    00164 B115      IN	R17,0x05
+    00165 9508      RET
+(0034) }
+_ADC_ref:
+  ref                  --> R20
+    00166 934A      ST	-Y,R20
+    00167 2F40      MOV	R20,R16
+(0035) 
+(0036) /*****************************************************************************
+(0037) *
+(0038) *   Function name : ADC_ref
+(0039) *
+(0040) *   Returns :       none (with reference set)
+(0041) *
+(0042) *   Parameters :    Reference value (0-3, 0=internal AREF off, 1=AVCC, 2=Reserved, 3=internal 2.56v)
+(0043) *
+(0044) *   Purpose :       Sets new ADC reference
+(0045) *
+(0046) *****************************************************************************/
+(0047) void ADC_ref(uint8_t ref)
+(0048) {
+(0049)     ADMUX &= 0xC0;         //clear ADC reference
+    00168 B187      IN	R24,0x07
+    00169 7C80      ANDI	R24,0xC0
+    0016A B987      OUT	0x07,R24
+(0050)     ref = ref & 0x03;      //limit ref to valid values(0-3)
+    0016B 7043      ANDI	R20,3
+(0051)     ADMUX |= (ref<<REFS0); //set new reference
+    0016C 2E24      MOV	R2,R20
+    0016D 0C22      LSL	R2
+    0016E 0C22      LSL	R2
+    0016F 0C22      LSL	R2
+    00170 0C22      LSL	R2
+    00171 0C22      LSL	R2
+    00172 0C22      LSL	R2
+    00173 B037      IN	R3,0x07
+    00174 2832      OR	R3,R2
+    00175 B837      OUT	0x07,R3
+(0052)     ADC_read(); //do dummy read affter reference change
+    00176 DFE9      RCALL	_ADC_read
+    00177 9149      LD	R20,Y+
+    00178 9508      RET
+(0053) }
+_ADC_read_ch:
+  ADC_var              --> R10
+  i                    --> R20
+  ch                   --> R20
+    00179 D081      RCALL	push_xgset300C
+    0017A 2F40      MOV	R20,R16
+(0054) 
+(0055) /*****************************************************************************
+(0056) *
+(0057) *   Function name : ADC_read_ch
+(0058) *
+(0059) *   Returns :       uint16_t ADC (10 bit value) Average of 8 readings
+(0060) *
+(0061) *   Parameters :    uint8_t ADC MUX channel (0-15)
+(0062) *
+(0063) *   Purpose :       Do a Analog to Digital Conversion with noise reduction(averaging)
+(0064) *
+(0065) *****************************************************************************/
+(0066) uint16_t ADC_read_ch(uint8_t ch)
+(0067) {
+(0068) #define ADCAVG 8  //set number of times to average (1-16)
+(0069)     uint8_t i;
+(0070)     uint16_t ADC_var = 0;
+    0017B 24AA      CLR	R10
+    0017C 24BB      CLR	R11
+(0071) 
+(0072)     /* select (ch)annel input */
+(0073)     ADMUX &= 0xf0;        //clear mux channel;
+    0017D B187      IN	R24,0x07
+    0017E 7F80      ANDI	R24,0xF0
+    0017F B987      OUT	0x07,R24
+(0074)     ADMUX |= (ch & 0x0f); //select new mux channel
+    00180 2F84      MOV	R24,R20
+    00181 708F      ANDI	R24,0xF
+    00182 B027      IN	R2,0x07
+    00183 2A28      OR	R2,R24
+    00184 B827      OUT	0x07,R2
+(0075) 
+(0076)     for (i=0; i<ADCAVG; i++)
+    00185 2744      CLR	R20
+    00186 C004      RJMP	0x018B
+(0077)     {
+(0078)         ADC_var += ADC_read();
+    00187 DFD8      RCALL	_ADC_read
+    00188 0EA0      ADD	R10,R16
+    00189 1EB1      ADC	R11,R17
+    0018A 9543      INC	R20
+    0018B 3048      CPI	R20,0x8
+    0018C F3D0      BCS	0x0187
+(0079)     }
+(0080) 
+(0081)     return ADC_var/ADCAVG;
+    0018D 0185      MOVW	R16,R10
+    0018E 9516      LSR	R17
+    0018F 9507      ROR	R16
+    00190 9516      LSR	R17
+    00191 9507      ROR	R16
+    00192 9516      LSR	R17
+    00193 9507      ROR	R16
+    00194 C06B      RJMP	pop_xgset300C
+    00195 9508      RET
+(0082) }
+_putchar$device_specific$|_putchar:
+  c                    --> R20
+    00196 934A      ST	-Y,R20
+    00197 2F40      MOV	R20,R16
+(0083) 
+(0084) /* This putchar works with the M8 UART. It will work with other devices
+(0085)  * if their UART registers use the same names.
+(0086)  * For ICC this function links clibs(printf) to USART
+(0087)  */
+(0088) int putchar(unsigned char c)
+(0089) {
+(0090)     /* if char is LF, send CR first */
+(0091)     if (c == '\n')
+    00198 304A      CPI	R20,0xA
+    00199 F411      BNE	0x019C
+(0092)         putchar('\r');
+    0019A E00D      LDI	R16,0xD
+    0019B DFFA      RCALL	_putchar$device_specific$|_putchar
+(0093)     /* Wait for empty transmit buffer */
+(0094)     while ( !(UCSRA & (1<<UDRE)) )
+    0019C 9B5D      SBIS	0x0B,5
+    0019D CFFE      RJMP	0x019C
+(0095)         ;
+(0096)     UDR = c;
+    0019E B94C      OUT	0x0C,R20
+(0097)     return c;
+    0019F 2F04      MOV	R16,R20
+    001A0 2711      CLR	R17
+    001A1 9149      LD	R20,Y+
+    001A2 9508      RET
+(0098) }
+(0099) 
+(0100) int main(void)
+(0101) {
+(0102)     uint16_t pot_value;  // holds ADC value of poteniometer
+(0103) 
+(0104)     init_devices(); // init ports, timer, usart, and ADC
+_main:
+  pot_value            --> R10
+    001A3 DFB1      RCALL	_init_devices
+(0105)     ADC_ref(1);     // use internal AVCC
+    001A4 E001      LDI	R16,1
+    001A5 DFC0      RCALL	_ADC_ref
+(0106) 
+(0107)     do
+(0108)     {
+(0109)         pot_value = ADC_read_ch(0);    //read ADC(0) voltage from poteniometer UNO A0
+    001A6 2700      CLR	R16
+    001A7 DFD1      RCALL	_ADC_read_ch
+    001A8 0158      MOVW	R10,R16
+(0110)         OCR1A = pot_value;             //set PWM value (Dim an LED!) PORTB1 UNO D9
+    001A9 BD1B      OUT	0x2B,R17
+    001AA BD0A      OUT	0x2A,R16
+(0111)         printf("ADC value = %u \n", pot_value); //send ADC data to terminal UNO Serial Monitor
+    001AB 0195      MOVW	R18,R10
+    001AC E600      LDI	R16,0x60
+    001AD E010      LDI	R17,0
+    001AE D23E      RCALL	_printf
+(0112)         //insert delay here if desired (100ms)
+(0113)     }
+(0114)     while(1); //forever loop
+    001AF CFF6      RJMP	0x01A6
+    001B0 9508      RET
+(0115) 
+(0116)     return 0;
+(0117) }
+<LIBRARY>|_strlen:
+    001B1 2FE0      MOV	R30,R16
+    001B2 2FF1      MOV	R31,R17
+    001B3 27AA      CLR	R26
+    001B4 27BB      CLR	R27
+    001B5 9001      LD	R0,Z+
+    001B6 2000      TST	R0
+    001B7 F011      BEQ	0x01BA
+    001B8 9611      ADIW	R26,1
+    001B9 CFFB      RJMP	0x01B5
+    001BA 2F0A      MOV	R16,R26
+    001BB 2F1B      MOV	R17,R27
+    001BC 9508      RET
