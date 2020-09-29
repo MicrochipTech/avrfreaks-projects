@@ -1,0 +1,2016 @@
+; *******************************************************
+; * Frequencycounter, RPM-Meter and Voltmeter           *
+; * for ATmega8 at 16 MHz crystal clock frequency       *
+; * with prescaler /1 or /16                            *
+; * Version 0.3 (C)2009 by info!at!avr-asm-tutorial.net *
+; *******************************************************
+;
+#define CPU 		"atmega8"
+#define F_CPU		16000000	;  Clock frequency processor in cycles/s
+
+#define DEBUG			0
+#define DEBUG_PULSE		0
+#define UART			1		; Uart active
+
+
+; attached prescaler on port C
+pin prescaler = C5		; bit 5 enables prescaler by 16
+pin pinLcdE   = B5      ; LCD E port bit on Port B
+pin pinLcdRs  = B4 		; Lcd RS port bit on Port B
+
+#define BYTE1(x)    ((x) & 0xff)
+#define BYTE2(x)    ((x >> 8) & 0xff)
+#define BYTE3(x)    ((x >> 16) & 0xff)
+#define BYTE4(x)    ((x >> 24) & 0xff)
+
+#define F_CARRY     SREG->C
+#define F_ZERO      SREG->Z
+
+;
+; ================================================
+;          Other hardware depending stuff
+; ================================================
+;
+
+#if UART
+	#define cBaud  9600 	; If Uart active, define Baudrate
+#endif
+;
+; ================================================
+;       Constants for voltage measurement
+; ================================================
+;
+; Resistor network as pre-divider for the ADC
+; --------------------------------------
+; R1   R2(k) Meas  Accur.  MaxVoltage
+; kOhm kOhm  Volt  mV/dig  Volt
+; --------------------------------------
+; 1000 1000   5,12    5    10
+; 1000  820   5,68    6    11
+; 1000  680   6,32    6    12
+; 1000  560   7,13    7    14
+; 1000  470   8,01    8    15
+; 1000  330  10,32   10    20
+; 1000  270  12,04   12    23
+; 1000  220  14,20   14    27
+; 1000  180  16,78   16    32
+; 1000  150  19,63   19    38
+; 1000  120  23,98   23    46
+; 1000  100  28,16   28    55
+;
+#define cR1   1000 		; Resistor between ADC input and measured voltage
+#define cR2   1000 		; Resistor between ADC input and ground
+#define cRin  8250 		; Input resistance ADC, experimental 
+
+;
+; Other sSoft switches
+;
+#define cNMode    3 		; number of measurements before mode changes
+#define cDecSep   '.' 		; decimal separator for numbers displayed
+#define c1kSep    ',' 		; thousands separator
+#define nMeasm    4 		; number of measurements per second
+
+#if (nMeasm < 4) || (nMeasm > 7)
+	#error "Number of measurements outside acceptable range"
+#endif
+;
+; ================================================
+;           Hardware connections
+; ================================================
+;                     ___   ___
+;              RESET |1  |_| 28| Prescaler divide by 16 output   (PC5)
+;                RXD |2   A  27| 
+;                TXD |3   T  26| 
+; (PD2,INT0)Time inp |4   M  25| 
+;                    |5   E  24| Mode select input, 0..2.56 V    (PC1, ADC1 -> ENC-B)
+; (PD4,R0)  Count in |6   L  23| Voltage input, 0..2.56 V        (PC0, ADC1 -> ENC-A)	
+;                VCC |7      22| GND
+;                GND |8   A  21| AREF (+2.56 V, output)
+;              XTAL1 |9   T  20| AVCC input
+;              XTAL2 |10  m  19| SCK/LCD-E                       (PB5)
+;                    |11  e  18| MISO/LCD-RS                     (PB4)
+;                    |12  g  17| MOSI/LCD-D7                     (PB3)
+;                    |13  a  16| LCD-D6                          (PB2)
+; (PB0)       LCD-D4 |14  8  15| LCD-D5                          (PB1)
+;                    |_________|
+;
+;
+; ================================================
+;           Derived constants
+; ================================================
+;
+#define cR2c          (cR2 * cRin) / (cR2 + cRin)
+#define cMultiplier   (641 * (cR1+cR2c))/cR2c 			; used for voltage multiplication
+#define cMaxVoltage   (1024*cMultiplier/256) 		          ; in mV
+
+#define cSafeVoltage  (cMaxVoltage * 5000) / 2560
+#define cTDiv         (1000/nMeasm) 						; interval per measurement update
+
+
+; calculating the CTC and prescaler values for TC1 (frequency measurement)
+#define cCmp1F  F_CPU / 32 			; CTC compare value with counter prescaler = 8
+#define cPre1F  bitmask(WGM10, CS11) 	; CTC and counter prescaler = 8
+#if F_CPU > 2097120
+	#define cCmp1F  F_CPU/256 				; CTC compare value with counter prescaler = 64
+	#define cPre1F  bitmask(WGM10, CS11, CS10) 	; counter prescaler = 64
+#endif
+#if F_CPU > 16776960
+	#define cCmp1F  F_CPU / 1024 			; CTC compare value with counter prescaler = 256
+	#define cPre1F  bitmask(WGM10, CS12) 	; counter prescaler = 256
+#endif
+
+; calculating the CTC and counter prescaler values for TC2 (LCD/UART update) 
+#define cCmp2  F_CPU/8000
+#define cPre2  bitmask(CS21) 				; counter prescaler = 8
+#if F_CPU > 2040000
+	#define cCmp2  F_CPU / 32000
+	#define cPre2  bitmask(CS21, CS20) 	; counter prescaler = 32
+#endif
+#if F_CPU > 8160000
+	#define cCmp2  F_CPU/64000
+	#define cPre2  bitmask(CS22) 			; counter prescaler = 64
+#endif
+#if F_CPU > 16320000
+	#define cCmp2  F_CPU/128000 		; counter prescaler = 128
+	#define cPre2  bitmask(CS22, CS20) 
+#endif
+;
+; Uart constants
+;
+#if UART
+    #define cNul       0x00
+	#define cClrScr    0x0C
+	#define cCR        0x0D
+	#define cLF        0x0A
+#endif
+
+;
+; Debug definitions for testing
+;
+; (none)
+;
+; ================================================
+;            Register definitons
+; ================================================
+;
+; R0 used for LPM and for calculation purposes
+use r1 as rRes1		; Result byte 1
+use r2 as rRes2  		; Result byte 2
+use r3 as rRes3 		; Result byte 3
+use r4 as rRes4 		; Result byte 4
+use r5 as rDiv1 		; Divisor byte 1
+use r6 as rDiv2 		; Divisor byte 2
+use r7 as rDiv3 		; Divisor byte 3
+use r8 as rDiv4 		; Divisor byte 4
+use r9 as rCpy1  		; Copy byte 1
+use r10 as rCpy2 		; Copy byte 2
+use r11 as rCpy3 		; Copy byte 3
+use r12 as rCpy4 		; Copy byte 4
+use r13 as rCtr1 		; Counter/Timer byte 1
+use r14 as rCtr2 		; Counter/Timer byte 2
+use r15 as rCtr3 		; Counter/Timer byte 3
+use r16 as rmp 		    ; Multipurpose register outside interrupts
+use r17 as rimp 		; Multipurpose register inside interrupts
+use r18 as rSreg  		; Save status register inside interrupts
+use r19 as rTDiv  		; Internal divider for TC2 count down
+use r20 as rMode 		; Current mode of operation
+use r21 as rNMode 		; Number of inadequate measurements
+use r22 as rir  		; interim calculation register
+use r23 as rFlg 		; Flag register
+
+#define bCyc          2  ; measure cycle ended
+#define bMode         3 	; measuring mode, 1 = frequency, 0 = time
+#define bEdge         4 	; measured edge, 1 = rising, 0 = falling
+#define bOvf          5 	; overflow bit
+#define bUartRxLine   7 	; Uart line complete flag bit
+
+use r24 as rDelL 		; delay counter for LCD, LSB
+use r25 as rDelH 		; dto., MSB
+; X = R26..R27 used for calculation purposes
+; Y = R28..R29: free
+; Z = R30..R31 used for LPM and calculation purposes
+;
+; ================================================
+;             SRAM definitions
+; ================================================
+;
+
+;
+; Result display space in SRAM
+;
+var s_video_mem: byte[32]
+
+;
+; Uart receive buffer space in SRAM
+;   sUartRxBs is buffer start
+;   sUartRxBe is buffer end
+;   sUartRxBp is buffer input position
+;
+#if UART
+#define UartRxbLen 38 			; Buffer length in bytes
+;
+var sUartFlag: byte				; flag register for Uart
+
+#define bUMonU  0 		; displays voltage over Uart
+#define bUMonF 1 		; displays frequency over Uart
+		; free: bits 2..7
+var sUartMonUCnt: byte 			; counter for Monitoring voltage
+var sUartMonURpt: byte			; counter preset for monitoring voltage
+var sUartMonFCnt: byte			; counter for Monitoring frequency
+var sUartMonFRpt: byte			; counter preset for monitoring voltage
+var sUartRxBp: byte				; buffer pointer
+var sUartRxBs: byte[UartRxbLen]	; buffer
+#define sUartRxBe sUartRxBs + sizeof(sUartRxBs)				; buffer end
+#endif
+;
+; Main interval timer characteristics
+;
+var sTMeas: byte				; ms per measuring interval (default: 250)
+
+;
+; Interim storage for counter value during time measurement
+;
+var sCtr: byte[4]
+;
+; ================================================
+;          Selected mode flags
+; ================================================
+;
+;  Mode   Measuring  Prescale  Display
+;  ---------------------------------------------
+;   0     Frequency   16       Frequency
+;   1     Frequency    1       Frequency
+;   2     Time HL      1       Frequency
+;   3     Time HL      1       Rounds per Minute
+;   4     Time HL      1       Time
+;   5     Time H       1       Time
+;   6     Time L       1       Time
+;   7     PW ratio H   1       Pulse width ratio H %
+;   8     PW ratio L   1       Pulse width ratio L %
+;   9     none         -       Voltage only
+;                              (for a single line LCD)
+;
+#define cModeFrequency16     0
+#define cModeFrequency       1
+#define cModeTimeFreq        2
+#define cModeTimeRpm         3
+#define cModeTimeTimeHL      4
+#define cModeTimeTimeH       5
+#define cModeTimeTimeL       6
+#define cModeTimePwrH        7
+#define cModeTimePwrL        8
+#define cModeVoltage         9
+;
+var sModeSlct: byte			; Selected mode
+var sModeNext: byte			; next selected mode
+var sEncoderPrev: byte		; Encoder previous value
+
+;
+; ==================================================
+;   Info on timer and counter interrupt operation
+; ==================================================
+;
+; Clock => Presc2 => TC2 => CTC => rTDiv =>
+;
+; Main interval timer TC2
+;    - uses TC2 as 8-bit-CTC, with compare interrupt
+;    - starts a ADC conversion
+;    - on ADC conversion complete:
+;      * store ADC result
+;      * convert ADC result
+;      * if a new counter result: convert this
+;      * if Uart connected and monitoring f/U: display on Uart
+;      * if LCD connected and display mode: display f/U result  
+; 
+; Operation at 16 MHz clock:
+;   F_CPU => Prescaler/128 => CTC(125) => rTDiv(250)
+;   16MHz =>   125 kHz     =>  1 kHz   =>   4 Hz
+;
+; Frequeny counting modes (Mode = 0 and 1)
+;    - uses TC0 as 8-bit-counter to count positive edges
+;    - uses TC1 as 16-bit-counter to time-out the counter after 250 ms
+;
+; Timer modes (Mode = 2 to 8)
+;    - uses edge detection on external INT0 for timeout
+;    - uses TC1 as 16-bit-counter to time-out from edge to edge
+;
+; Voltage only (Mode = 9)
+;    - Timers TC0 and TC1 off
+;    - Timer TC2 times interval
+;
+; ==============================================
+;   Reset and Interrupt Vectors starting here
+; ==============================================
+;
+vectors {
+	RESET:                  ; External Pin, Power-on Reset, Brown-out Reset and Watchdog Reset
+		rjmp main
+	INT0:                   ; External Interrupt Request 0
+		rjmp Int0Int
+	TIMER2_COMP:            ; Timer/Counter2 Compare Match
+		rjmp TC2CmpInt
+	TIMER1_COMPA:           ; Timer/Counter1 Compare Match A
+		rjmp Tc1CmpAInt
+
+	TIMER1_OVF:             ; Timer/Counter1 Overflow
+		rjmp Tc1OvfInt
+	TIMER0_OVF:             ; Timer/Counter0 Overflow
+		rjmp TC0OvfInt
+#if UART
+	USART_RXC:              ; USART, Rx Complete
+		rjmp SioRxCIsr
+#endif
+}
+;
+; =============================================
+;
+;     Interrupt Service Routines
+;
+; =============================================
+;
+; TC2 Compare Match Interrupt
+;   counts rTDiv down, if zero: starts an AD conversion
+;
+proc TC2CmpInt() {
+	rSreg = SREG 		; save SREG
+	rTDiv-- 				; count down
+	brne	done 		     ; not zero, interval not ended
+	lds	rTDiv, sTMeas 		; restart interval timer
+done:
+	SREG = rSreg 		; restore SREG
+	reti
+}
+;
+; External Interrupt INT0 Service Routine
+;   active in modes 2 to 6 (measuring the signal duration),
+;   detects positive going edges of the input
+;   INT1, TC1 is in free running mode,
+;   reads the current counter state of TC1,
+;   copies it to the result registers,
+;   clears the counter and restarts it
+;
+proc Int0Int() {
+	rSreg = SREG 		; 1, save SREG
+	sbrc	rFlg, bCyc 		; 2/3, check if cycle flag signals ok for copy
+	rjmp	end 			; 4, no, last result hasn't been read
+	rCpy1 = TCNT1L 		; 4, read timer 1 LSB
+	rCpy2 = TCNT1H 		; 5, dto., MSB
+	rCpy3 = rCtr2 			; 6, copy the counter bytes
+	rCpy4 = rCtr3 			; 7
+	rFlg[bCyc] = 1			; 8, set cycle end flag bit
+	rFlg[bEdge] = 0	 	; 9, set falling edge
+	sbic	PIND, 2 			; 10/11, check if input = 0
+	rFlg[bEdge] = 1		; 11, no, set edge flag to rising
+end:				; 4/11
+	ldi	rimp, 0 			; 5/12, reset the timer
+	TCNT1H = rimp 		; 6/13, set TC1 zero to restart
+	TCNT1L = rimp 		; 7/14
+	rCtr1 = rimp 			; 8/15, clear the upper bytes
+	rCtr2 = rimp 			; 9/16
+	rCtr3 = rimp 			; 10/17
+	SREG = rSreg 		; 11/18, restore SREG
+	reti 				; 15/22
+}
+;
+; TC1 Compare Match A Interrupt Service Routine
+;   active in modes 0 and 1 (measuring the number of
+;   sigals on the T1 input), timeout every 0.25s,
+;   reads the counter TC0, copies the count to
+;   the result registers and clears TC0
+;
+proc Tc1CmpAInt() {
+	rSreg = SREG 		; 1, save SREG
+	sbrc	rFlg, bCyc 		; 2/3, check if cycle flag signals ok for copy
+	rjmp end 			; 4, no, last result hasn't been read
+	rCpy1 = TCNT0 		; 4, read counter TC0
+	rCpy2 = rCtr1			; 5, copy counter bytes to result
+	rCpy3 = rCtr2 			; 6
+	rCpy4 = rCtr3 			; 7
+	rFlg[bCyc] = 1			; 8, set cycle end flag bit
+end:	 				; 4/8
+	ldi	rimp, 0 			; 5/9, clear counter
+	TCNT0 = rimp 		; 6/10
+	rCtr1 = rimp 			; 7/11, clear counter bytes
+	rCtr2 = rimp 			; 8/12
+	rCtr3 = rimp 			; 9/13
+	SREG = rSreg 		; 10/14, restore SREG
+	reti 	; 			14/18
+}
+;
+; TC1 Overflow Interrupt Service Routine
+;   active in modes 2 to 6 counting clock cycles to measure time
+;   increases the upper bytes and detects overflows
+;
+proc Tc1OvfInt() {
+	rSreg = SREG 			; 1, save SREG
+	rCtr2++					; 2, increase byte 3 of the counter
+	brne	end		 			; 3/4, no overflow
+	rCtr3++					; 4, increase byte 4 of the counter
+	brne	end 			; 5/6, no overflow
+	rFlg |= (1<<bOvf)|(1<<bCyc) ; 6, set overflow and end of cycle bit
+end: 						; 4/6
+	SREG = rSreg 			; 5/7, restore SREG
+	reti						; 9/11
+}
+;
+; TC0 Overflow Interrupt Service Routine
+;   active in modes 0 and 1 counting positive edges on T1
+;   increases the upper bytes and detects overflows
+;
+proc TC0OvfInt() {
+	rSreg = SREG 			; 1, save SREG
+	rCtr1++		 			; 2, increase byte 2 of the counter
+	brne	end 				; 3/4, no overflow
+	rCtr2++	 				; 4, increase byte 3 of the counter
+	brne	end		 			; 5/6, no overflow
+	rCtr3++					; 6, increase byte 4 of the counter
+	brne	end		 			; 7/8, no overflow
+	rFlg |= (1<<bOvf)|(1<<bCyc)   ; 8, set overflow bit
+end: 						; 4/6/8
+	SREG = rSreg 			; 5/7/9, restore SREG
+	reti 					; 9/11/13
+}
+;
+; Uart RxC Interrupt Service Routine
+;   receives a character, signals errors, echoes it back,
+;   puts it into the SRAM line buffer, checks for carriage
+;   return characters, if yes echoes additional linefeed
+;   and sets line-complete flag
+;
+#if UART
+proc SioRxCIsr() {
+	rSreg = SREG 					; 1, Save SReg
+	rimp = UCSRA 					; 2, Read error flags
+	rimp &= bitmask(FE, DOR, UPE) 	; 3, isolate error bits
+	rimp = UDR 					; 4, read character from UART
+	breq l1 							; 5/6, no errors
+	rimp = '*'						; 6, signal an error
+	UDR = rimp						; 7
+	rjmp	l4 							; 9, return from int
+l1: 								; 6
+	UDR = rimp						; 7, echo the character
+	push	ZH ZL 					; 9, 11, Save Z register
+	ZH = high(sUartRxBs) 			; 12, Load Position for next RX char
+	ZL = sUartRxBp 					; 14
+	mem[Z++] = rimp					; 16, save char in buffer
+	cpi	ZL, low(sUartRxBe+1) 			; 17, End of buffer?
+	brcc l2		 					; 18/19, Buffer overflow
+	sUartRxBp = ZL 					; 20, Save next pointer position
+l2: 								; 19/20
+	cpi	rimp, cCR 					; 20/21, Carriage Return?
+	brne l3 							; 21/22/23, No, go on
+	rimp = cLF	 					; 22/23, Echo linefeed
+	UDR = rimp 					; 23/24
+	rFlg[bUartRxLine] = 1 				; 24/25, Set line complete flag
+	rjmp	l3a
+l3: 								; 22/23/24/25
+	cpi	rimp, cLF
+	brne	l3a
+	rFlg[bUartRxLine] = 1 				
+l3a:
+	pop	ZL ZH						; 24/25/26/27, 26/27/28/29, restore Z-register
+l4:									; 9/26/27/28/29
+	SREG = rSreg					; 10/27/28/29/30, restore SREG
+	reti								; 14/31/32/33/34, return from Int
+}	
+#endif
+;
+; ================================================
+;          Common subroutines
+; ================================================
+;
+; Setting timer/counter modes for measuring
+;
+proc SetModeName() {
+	rcall LcdRs4 (0xC0)	; line 2
+	rcall Delay40us 	; delay 40 us
+	Z = MODE_0
+
+	rmp = rMode << 4	; mode * 16
+
+	XL = 0
+	Z += XL.rmp
+	X = s_video_mem + 16
+	
+	loop (rmp = 16) {
+		r0 = prg[Z]
+		Z++		            ; TODO
+		mem[X++] = r0
+	}
+	rcall LcdText (len: 16)
+	ret
+
+MODE_0: byte[] "1.Frequency (16)"
+MODE_1:	byte[] "2.Frequency     "
+MODE_2:	byte[] "3.Time HL, f    "
+MODE_3:	byte[] "4.Time HL, rpm  "
+MODE_4:	byte[] "5.Time HL, us   "
+MODE_5:	byte[] "6.Time H        "
+MODE_6:	byte[] "7.Time L        "
+MODE_7:	byte[] "8.PW ratio H    "
+MODE_8:	byte[] "9.PW ratio L    "
+MODE_9:	byte[] "0.--------------"
+}
+;   0     Frequency   16       Frequency
+;   1     Frequency    1       Frequency
+;   2     Time HL      1       Frequency
+;   3     Time HL      1       Rounds per Minute
+;   4     Time HL      1       Time
+;   5     Time H       1       Time
+;   6     Time L       1       Time
+;   7     PW ratio H   1       Pulse width ratio H %
+;   8     PW ratio L   1       Pulse width ratio L %
+;   9     none         -       Voltage only
+
+	
+proc SetModeNext() {
+	rcall	ClrTc 				; clear the timers TC0 and TC1, disable INT0
+	rMode = rmp = sModeNext 		; read next mode
+	rcall	SetModeName
+
+	rMode = rmp = sModeNext 		; read next mode
+
+	Z = SetModeTab/2
+	ZL += rmp
+	ldi		rmp, 0
+	adc		ZH, rmp
+	ijmp
+
+
+
+;	rcall ClrTc ; clear the timers TC0 and TC1, disable INT0
+;	lds rmp,sModeNext ; read next mode
+;	mov rMode,rmp ; copy to current mode
+;	ldi ZH,HIGH(SetModeTab)
+;	ldi ZL,LOW(SetModeTab)
+;	add ZL,rmp
+;	ldi rmp,0
+;	adc ZH,rmp
+;	ijmp
+	
+; Table mode setting
+SetModeTab:
+	rjmp		SetMode0		; f div 16, f
+	rjmp		SetMode1		; f, f
+	rjmp		SetModeT		; t, f
+	rjmp		SetModeT		; t, u
+	rjmp		SetModeT		; t, t
+	rjmp		SetModeE 		; th, t
+	rjmp		SetModeE		; tl, t
+	rjmp		SetModeE		; th, p
+	rjmp		SetModeE		; tl, p
+	ret 				        ; U, U
+}
+;
+; Set counters/timers to mode 0
+;   TC0 counts input signals (positive edges)
+;   TC1 times the gate at 250 ms
+;   INT0 disabled
+;   
+proc SetMode0() {
+	prescaler->port = 0		; enable prescaler
+	rjmp	SetModeF 			; frequency measurement
+}
+;
+; Set counters/timers to mode 1
+;
+proc SetMode1() {
+	prescaler->port = 1 	; disable prescaler
+}
+
+; Set timer/counter mode to frequency measurement
+proc SetModeF() {
+	OCR1AH = rmp = high(cCmp1F)		; set the compare match high value
+	OCR1AL = rmp = low(cCmp1F) 		; set the compare match low value
+	OCR1BH = rmp = 0xff				; disable the compare match B
+	OCR1BL = rmp
+	TCCR1A = rmp = 0				; CTC mode
+	TCCR1B = rmp = cPre1F 			; set the prescaler value for TC1
+	TCCR0 = rmp = bitmask(CS02, CS01, CS00) 	; count rising edges on T0
+	TIMSK = rmp = bitmask(OCIE2, OCIE1A, TOIE0) ; enable TC2Cmp, TC1CmpAInt and TC0OverflowInt
+	ret
+}
+;
+; Set timer/counter mode to time measurement
+;
+proc SetModeT() {
+	prescaler->port = 1					; disable prescaler
+	TCCR1A = rmp = 0				; timing mode
+	TCCR1B = rmp = bitmask(CS10) 			; count with prescaler = 1
+	MCUCR = rmp = bitmask(SE, ISC01, ISC00)	; sleep enable, positive edges on INT0 interrupt
+	GICR = rmp = bitmask(INT0)					; enable INT0 interrupt
+	TIMSK = rmp = bitmask(OCIE2, TOIE1)		; enable TC2Cmp, TC1Ovflw
+	ret
+}
+;
+; Set timer/counter mode to time measurement, all edges
+;
+proc SetModeE() {
+	prescaler->port = 1						; disable prescaler
+	TCCR1A = rmp = 0 					; timing mode
+	TCCR1B = rmp = bitmask(CS10) 				; count with prescaler = 1
+	MCUCR = rmp = bitmask(SE, ISC00) 		; sleep enable, any logical change on INT0 interrupts
+	GICR = rmp = bitmask(INT0) 				; enable INT0 interrupt
+	TIMSK = rmp = bitmask(OCIE2, TOIE1) 	; enable TC2Cmp, TC1Ovflw
+	ret
+}
+;
+;
+; clears the timers and resets the upper bytes
+;
+proc ClrTc() {
+	GICR = rmp = 0			; disable INT0
+	rmp = 0					; TODO !!! stop the counters/timers
+	TCCR0 = rmp 			; stop TC0 counting/timing
+	TCCR1B = rmp			; stop TC1 counting/timing
+	TCNT0 = rmp			; clear TC0
+	TCNT1L = rmp			; clear TC1
+	TCNT1H = rmp
+	rCtr1 = 0				; clear upper bytes
+	rCtr2 = 0
+	rCtr3 = 0
+	TIMSK = rmp = bitmask(OCIE2)			; enable only output compare of TC2 ints, timer int disable
+	ret
+}
+;
+; =======================================================
+;                 Math routines
+; =======================================================
+;
+; Divides F_CPU/256 by the timer value in rDiv4:rDiv3:rDiv2:rDiv1
+;   yields frequency in R4:R3:R2:(Fract):R1
+;
+proc Divide() {
+	rmp = 0 ; rmp:R0:ZH:ZL:XH:XL is divisor
+	r0 = 0
+	ZH = 0
+	ZL = BYTE3(F_CPU/256) ; set divisor
+	XH = BYTE2(F_CPU/256)
+	XL = BYTE1(F_CPU/256)
+	rRes1 = 0 ; set result
+	rRes1++
+	rRes2 = 0
+	rRes3 = 0
+	rRes4 = 0
+
+	do {
+		rmp.r0.ZH.ZL.XH.XL <<= 1		; multiply divisor by 2
+		if (rmp.r0.ZH.ZL >= rDiv4.rDiv3.rDiv2.rDiv1) {		; compare with divident
+			rmp.r0.ZH.ZL -= rDiv4.rDiv3.rDiv2.rDiv1
+			F_CARRY = 1
+		} else {
+			F_CARRY = 0
+		}
+		rol rRes1
+		rol rRes2
+		rol rRes3
+		rol rRes4
+	} while (!F_CARRY)
+	ret
+}
+;
+; Multiply measured time in rRes4:rRes3:rRes2:rRes1 by 65536 / fq(MHz)
+;   rmp:R0 are the upper bytes of the input
+;   ZH:ZL:rDiv4:rDiv3:rDiv2:rDiv1 is the interim result
+;   XH:XL is the multiplicator
+;   result is in rRes4:rRes3:rRes2:rRes1
+;
+;#define cMulti  65536000 / (F_CPU/1000)
+#define cMulti  (65536000/(F_CPU/1000))
+;
+proc Multiply() {
+	X = cMulti		; set multiplicator
+	ZH = 0
+	ZL = 0
+	rDiv4 = 0
+	rDiv3 = 0
+	rDiv2 = 0
+	rDiv1 = 0
+	r0 = 0
+	rmp = 0
+
+	loop {
+		if (XL != 0) goto l2
+		;cpi XL, 0
+		;brne @2
+		if (XH != 0) break
+		;cpi XH, 0
+		;breq @4
+l2:
+		XL.XH >>= 1
+		if (F_CARRY) {
+			ZH.ZL.rDiv4.rDiv3.rDiv2.rDiv1 += rmp.r0.rRes4.rRes3.rRes2.rRes1
+		}
+		rmp.r0.rRes4.rRes3.rRes2.rRes1 <<= 1
+	}
+;@4:
+	rmp = 128 ; round result
+	r0 = 0
+	ZH.ZL.rDiv4.rDiv3.rDiv2 += r0.r0.r0.r0.rmp
+	rRes4.rRes3.rRes2.rRes1 = ZH.ZL.rDiv4.rDiv3
+	ret
+}
+	
+;
+; Display seconds at buffer end
+;
+proc DisplSec() {
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp = 'u'
+	mem[X++] = rmp = 's'
+	mem[X] = rmp = ' '
+	ret
+}
+;
+; An overflow has occurred during pulse width calculation
+;
+proc PulseOvflw(v: rmp) {
+	X = s_video_mem
+	mem[X++] = rmp
+
+	Z = TxtPOvflw16
+	loop (rmp = 15) {
+		r0 = prg[Z]
+		Z++	; TODO use prg[Z++]
+		mem[X++] = r0
+	}
+	ret
+TxtPOvflw16:
+	byte[] ":error calcul.! "
+}
+;
+; ======================================================
+;     Pulse width calculations 
+; ======================================================
+;
+; Calculate the pulse width ratio
+;   active cycle time is in rDelH:rDelL:R0:rmp
+;   total cycle time is in rDiv
+;   result will be in rRes
+;   overflow: carry flag is set
+;
+proc CalcPwO() { ; overflow
+	F_CARRY = 1
+	ret
+}
+	
+proc CalcPw() {
+	rRes4.rRes3.rRes2.rRes1 = rDelH.rDelL.r0.rmp		; copy active cycle time to rRes
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 2
+	if (F_CARRY) goto CalcPwO 		; overflow
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 4
+	if (F_CARRY) goto CalcPwO 		; overflow
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 8
+	if (F_CARRY) goto CalcPwO 		; overflow
+	X = rRes2.rRes1
+	Z = rRes4.rRes3
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 16
+	if (F_CARRY) goto CalcPwO 		; overflow
+	rRes4.rRes3.rRes2.rRes1 += ZH.ZL.XH.XL		; * 24
+	ZH = 0 ; clear the four MSBs of divisor
+	ZL = 0
+	XH = 0
+	XL = rDelH ; * 256
+	rDelH = rDelL
+	rDelL = r0
+	r0 = rmp
+	rmp = 0
+
+	XH.XL.rDelH.rDelL.r0 <<= 1		; * 512
+	XH.XL.rDelH.rDelL.r0 <<= 1		; * 1024
+	
+	XH.XL.rDelH.rDelL.r0.rmp -= ZH.ZH.rRes4.rRes3.rRes2.rRes1		; * 1000
+	if (ZH.ZL.XH.XL >= rDiv4.rDiv3.rDiv2.rDiv1) goto CalcPwO		; overflow?
+	rRes1 = 0 ; clear result
+	rRes1++
+	rRes2 = 0
+	rRes3 = 0
+	rRes4 = 0
+;@loop: ; dividing loop
+	do {
+		ZH.ZL.XH.XL.rDelH.rDelL.r0.rmp <<= 1
+		if (ZH.ZL.XH.XL >= rDiv4.rDiv3.rDiv2.rDiv1) { ; smaller, roll zero in
+			ZH.ZL.XH.XL -= rDiv4.rDiv3.rDiv2.rDiv1				 ; subtract divisor
+			F_CARRY = 1 	; roll one in
+		} else {
+			F_CARRY = 0
+		}
+		rol rRes1
+		rol rRes2
+		rol rRes3
+		rol rRes4
+	} while (!F_CARRY)
+	
+	ZH.ZL.XH.XL.rDelL <<= 1	; round result
+	if (ZH.ZL.XH.XL >= rDiv4.rDiv3.rDiv2.rDiv1) {
+		rmp = 1 ; round up
+		rRes1 += rmp
+		ldi rmp, 0
+		adc rRes2, rmp
+		adc rRes3, rmp
+		adc rRes4, rmp
+	}
+	if (rRes4 != 0) goto Error
+	if (rRes3 != 0) goto Error
+	;if (rRes2.rRes1 >= (rmp)1001)
+	rmp = low(1001)
+	cp rRes1, rmp
+	rmp = high(1001)
+	cpc rRes2, rmp
+	if (!F_CARRY) goto Error
+	F_CARRY = 0 	; no error
+	ret
+Error:
+	F_CARRY = 1
+	ret
+}
+;
+; Display the binary in R2:R1 in the form "  100,0%"
+;
+proc DisplPw() {
+	X = s_video_mem
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp
+	r0 = 0
+	rcall	DisplDecX2 (1000)
+	rcall	DisplDecX2 (100)
+	ZL = 10	
+	r0++
+	rcall DisplDecX2
+	mem[X++] = rmp = cDecSep
+	mem[X++] = rmp = '0' + rRes1
+	mem[X++] = rmp = '%'
+	ZL = ' '
+	loop (rmp = 8) {
+		mem[X++] = ZL
+	}
+	ret
+}
+
+;
+; If the first characters in the result buffer are empty,
+;   place the character in ZL here and add equal, if possible
+;
+proc DisplMode (val: ZL) {
+	X = s_video_mem+1
+	rmp = mem[X] 							; read second char
+	if (rmp == ' ') {
+		mem[X] = rmp = '='
+	}
+	; TODO use mem[--X]
+	X--
+	rmp = mem[X] 							; read first char
+	if (rmp == ' ') {
+		mem[X] = ZL
+	}
+	ret
+}
+;
+;=================================================
+;        Display binary numbers as decimal
+;=================================================
+;
+; Converts a binary in R2:R1 to a digit in X
+;   binary in Z
+;
+proc DecConv() {
+	rmp = 0
+l1:
+	if (r2.r1 >= ZH.ZL) { ; ended subtraction
+		r2.r1 -= Z 
+		rmp++
+		rjmp l1
+	}
+	if (rmp != 0 || r0 != 0) goto l3
+	rmp = ' ' ; suppress leading zero
+	rjmp end
+l3:
+	rmp += '0'
+end:
+	mem[X++] = rmp
+	ret	
+}
+;
+; Display fractional number in R3:R2:(Fract)R1
+;
+proc DisplFrac() {
+	X = s_video_mem
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp
+
+	r0 = 0
+	rcall DisplDecY2 (10000)
+	rcall DisplDecY2 (1000)
+
+	rmp = c1kSep
+	if (r0 == 0) {
+		rmp = ' '
+	}
+	mem[X++] = rmp
+
+	rcall DisplDecY1 (val: 100)
+	rcall DisplDecY1 (val: 10)
+	mem[X++] = rmp = '0' + r2
+	
+	if (r1 == 0) {
+		mem[X++] = rmp = ' '
+		mem[X++] = rmp = 'H'
+		mem[X++] = rmp = 'z'
+		mem[X++] = rmp = ' '
+		mem[X++] = rmp
+		mem[X++] = rmp
+		mem[X++] = rmp
+		ret
+	}
+	mem[X++] = rmp = cDecSep
+	
+	loop (ZL = 3) {
+		rRes3 = 0
+		rRes2 = 0
+		r0 = rRes1 ; * 1
+		rRes2.rRes1 += rRes3.rRes1	; *2
+		rRes2.rRes1 <<= 1	; *4
+		rRes2.rRes1 += rRes3.r0
+		rRes2.rRes1 <<= 1	; *10
+		
+		mem[X++] = rmp = '0' + rRes2
+	}
+
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp = 'H'
+	mem[X++] = rmp = 'z'
+	mem[X++] = rmp = ' '
+	ret
+}
+;
+; Convert a decimal in R4:R3:R2, decimal in ZH:ZL
+;
+proc DisplDecY2 (val: Z) {
+	rDiv1 = 0 ; rDiv1 is counter
+	rDiv2 = 0 ; overflow byte
+
+	loop {
+		if (rRes4.rRes3.rRes2 < rDiv2.ZH.ZL) break
+		rRes4.rRes3.rRes2 -= rDiv2.ZH.ZL
+		rDiv1++
+	}
+	rmp = '0' + rDiv1
+	r0 += rDiv1
+	if (r0 == 0) {
+		rmp = ' '
+	}
+	mem[X++] = rmp
+	ret
+}
+;
+; Convert a decimal decimal in R:R2, decimal in ZL
+;
+proc DisplDecY1 (val: ZL) {
+	rDiv1 = 0 ; rDiv1 is counter
+	rDiv2 = 0 ; overflow byte
+
+	loop {
+		if (rRes3.rRes2 < rDiv2.ZL) break
+		rRes3.rRes2 -= rDiv2.ZL
+		rDiv1++
+	}
+	rmp = '0' + rDiv1
+	r0 += rDiv1
+	if (r0 == 0) {
+		rmp = ' '
+	}
+	mem[X++] = rmp
+	ret
+}
+;
+; Display a 4-byte-binary in decimal format on result line 1
+;   8-bit-display: "12345678"
+;   16-bit-display: "  12.345.678 Hz "
+;
+proc Displ4Dec() {
+	rmp = BYTE1(100000000) ; check overflow
+	cp rRes1, rmp
+	rmp = BYTE2(100000000)
+	cpc rRes2, rmp
+	rmp = BYTE3(100000000)
+	cpc rRes3, rmp
+	rmp = BYTE4(100000000)
+	cpc rRes4, rmp
+	if (!F_CARRY) {
+		rjmp CycleOvf
+	}
+	r0 = 0 ; suppress leading zeroes
+	X = s_video_mem	; X to result buffer
+
+	mem[X++] = rmp = ' '	; clear the first two digits
+	mem[X++] = rmp
+
+	rcall DisplDecX3 (10000000)	; 10 m
+	rcall DisplDecX3 (1000000)	; 1 mio
+
+	rmp = c1kSep ; set separator
+	if (r0 == 0) {
+		rmp = ' '
+	}
+	mem[X++] = rmp
+
+	rcall DisplDecX3 (100000)	; 100 k
+	rcall DisplDecX2 (10000)		; 10 k
+	rcall DisplDecX2 (1000)		; 1 k
+
+	rmp = c1kSep ; set separator
+	if (r0 == 0) {
+		rmp = ' '
+	}
+	mem[X++] = rmp
+	rcall DisplDecX1 (100)
+	rcall DisplDecX1 (10)
+	mem[X++] = rmp = '0' + r1
+	ret
+}
+;
+; Convert a decimal in R3:R2:R1, decimal in ZH:ZL:rmp
+;
+proc DisplDecX3 (val: ZH.ZL.rmp) {
+	rDiv1 = 0 ; rDiv1 is counter
+	rDiv2 = 0 ; subtractor for byte 4
+
+	loop {
+		if (rRes4.rRes3.rRes2.rRes1 < rDiv2.ZH.ZL.rmp) break
+		rRes4.rRes3.rRes2.rRes1 -= rDiv2.ZH.ZL.rmp
+		rDiv1++
+	}
+	rmp = '0' + rDiv1
+	r0 += rDiv1
+	if (r0 == 0) {
+		rmp = ' '
+	}
+	mem[X++] = rmp
+	ret
+}
+;
+; Convert a decimal in R3:R2:R1, decimal in ZH:ZL
+;
+proc DisplDecX2 (val: Z) {
+	rDiv1 = 0 ; rDiv1 is counter
+	rDiv2 = 0 ; next byte overflow
+
+	loop {
+		if (rRes3.rRes2.rRes1 < rDiv2.ZH.ZL) break
+		rRes3.rRes2.rRes1 -= rDiv2.ZH.ZL
+		rDiv1++
+	}
+	rmp = '0' + rDiv1
+	r0 += rDiv1
+	if (r0 == 0) {
+		rmp = ' '
+	}
+	mem[X++] = rmp
+	ret
+}
+;
+; Convert a decimal in R2:R1, decimal in ZL
+;
+proc DisplDecX1 (val: ZL) {
+	rDiv1 = 0 ; rDiv1 is counter
+	rDiv2 = 0 ; next byte overflow
+
+	loop {
+		if (rRes2.rRes1 < rDiv2.ZL) break
+		rRes2.rRes1 -= rDiv2.ZL
+		rDiv1++
+	}
+
+	rmp = '0' + rDiv1
+	r0 += rDiv1
+	if (r0 == 0) {
+		rmp = ' '
+	}
+
+	mem[X++] = rmp
+	ret
+}
+;
+;=================================================
+;             Delay routines
+;=================================================
+;
+proc Delay50ms() {
+	rjmp DelayZ (50000)
+}
+
+proc Delay10ms() {
+	rjmp DelayZ (10000)
+}
+
+proc Delay15ms() {
+	rjmp DelayZ (15000)
+}
+
+proc Delay4_1ms() {
+	rjmp DelayZ (4100)
+}
+
+proc Delay1_64ms() {
+	rjmp DelayZ (1640)
+}
+
+proc Delay100us() {
+	rjmp DelayZ (100)
+}
+
+proc Delay40us() {
+	rjmp DelayZ (40)
+}
+
+;
+; Delays execution for Z microseconds
+;
+proc DelayZ (ms: rDelH.rDelL) {
+#if F_CPU > 18000000
+	nop					; TODO use nop2
+	nop
+#endif
+#if F_CPU > 16000000
+	nop
+	nop
+#endif
+#if F_CPU > 14000000
+	nop
+	nop
+#endif
+#if F_CPU > 12000000
+	nop
+	nop
+#endif
+#if F_CPU > 10000000
+	nop
+	nop
+#endif
+#if F_CPU > 8000000
+	nop
+	nop
+#endif
+#if F_CPU > 6000000
+	nop
+	nop
+#endif
+#if F_CPU > 4000000
+	nop
+	nop
+#endif
+	rDelH.rDelL -= 1
+	if (!F_ZERO) goto DelayZ ; 2
+	ret
+}
+;
+; =========================================
+; Main Program Start
+; =========================================
+;
+proc main() {
+	SPH = rmp = high(RAMEND) ; set stack pointer
+	SPL = rmp = low(RAMEND)
+	rFlg = 0 ; set flags to default
+;
+
+#if DEBUG
+#define number  100000000
+	rDiv4 = rRes4 = rmp = BYTE4(number) 
+	rDiv3 = rRes3 = rmp = BYTE3(number)
+	rDiv2 = rRes2 = rmp = BYTE2(number)
+	rDiv1 = rRes1 = rmp = BYTE1(number)
+	rcall CycleM6
+
+	loop {
+	}
+#endif
+#if DEBUG_PULSE
+#define nhigh  100000000
+#define nlow   15000
+	rmp = BYTE4(nhigh)
+	sts sCtr+3, rmp
+	rmp = BYTE3(nhigh)
+	sts sCtr+2, rmp
+	rmp = BYTE2(nhigh)
+	sts sCtr+1, rmp
+	rmp = BYTE1(nhigh)
+	sts sCtr,rmp
+	
+	rDiv4 = rRes4 = rmp = BYTE4(nlow)
+	rDiv3 = rRes3 = rmp = BYTE3(nlow)
+	rDiv2 = rRes2 = rmp = BYTE2(nlow)
+	rDiv1 = rRes1 = rmp  = BYTE1(nlow)
+	rFlg[bEdge] = 1
+	rcall CycleM7
+	loop {
+	}
+#endif
+;
+; Clear the output storage
+;
+	Z = s_video_mem
+	r0 = rmp = ' '
+	loop (rmp = 32) {
+		mem[Z++] = r0
+	}
+;
+; Init the Uart
+;
+#if UART
+	rcall UartInit
+	sUartFlag = rmp = 1<<bUMonU ; monitor U over Uart
+	sUartMonURpt = rmp = 20 ; set repeat default value (5 seconds)
+	sUartMonUCnt = rmp = 1
+	sUartMonFCnt = rmp = 4 ; 1 second
+#endif
+
+	rcall LcdInit					; Init the LCD
+	
+	ACSR = rmp = bitmask(ACD)			; Disable the Analog comparator
+
+	; Disable the external prescaler by 16
+	prescaler->ddr = 1				; set prescaler port bit to output
+	prescaler->port = 1					; disable prescaler
+
+	; Init encoder
+	DDRC->0 = 0
+	DDRC->1 = 0
+	PORTC->0 = 1
+	PORTC->1 = 1
+
+	sEncoderPrev = rmp = PINC & 3
+	
+	; Start main interval timer
+	OCR2 = rmp = cCmp2				; set Compare Match
+	TCCR2 = rmp = cPre2 | bitmask(WGM21)	; CTC mode and prescaler
+	TIMSK = rmp = bitmask(OCIE2) 			; Start timer/counter TC2 interrupts
+	sModeNext = rmp = 1					; Set initial mode to mode 1
+	rcall SetModeNext
+	sei 								; enable interrupts
+;
+; --------[main loop] start --------------------
+main_loop:
+	sleep 								; send CPU to sleep
+	nop
+	; if meassure cycle ended then call Cycle()
+	if (rFlg[bCyc]) rcall Cycle							; calculate and display result
+	; if adc conversation ended then call Interval
+	rcall Interval
+#if UART
+	; if Uart line complete rhen can UartRxLine
+	if (rFlg[bUartRxLine]) rcall UartRxLine						; call line complete
+#endif
+	rjmp main_loop 						; go to sleep
+; --------[main loop] end --------------------	
+;
+; Timer interval for calculation and display
+;
+}
+
+
+proc Interval() {
+	ZL = sEncoderPrev
+	ZL <<= 2
+	sEncoderPrev = rmp = PINC & 3
+	ZL |= rmp			; encoder value in ZL
+
+	ZH = rMode
+
+	if (ZL == 1 || ZL == 7 || ZL == 8 || ZL == 14) goto clockwise
+	if (ZL == 2 || ZL == 4 || ZL == 11 || ZL == 13) goto counterclockwise
+	rjmp	noChanges
+clockwise:
+	ZH++
+	if (ZH < 9) goto done
+	ZH = 8			; set to 9
+	rjmp done
+counterclockwise:
+	if (ZH != 0) {
+		ZH--
+	}
+done:
+
+	sModeNext = ZH 			; store next mode
+	if (rMode != ZH) {
+		cli
+		rcall Delay50ms
+		rcall Delay50ms
+		sEncoderPrev = rmp = PINC & 3
+		sei
+		
+		rcall SetModeNext ; start new mode
+	}
+noChanges:
+
+
+;	rcall cAdc2U 			; convert to text
+	rcall LcdDisplayFT
+	rcall LcdDisplayU
+	
+#if UART
+	rcall UartMonU
+#endif
+	ret
+}	
+;
+; Frequency/Time measuring cycle ended, calculate results
+;
+proc Cycle() {
+	if (rFlg[bOvf]) goto CycleOvf
+	rRes4.rRes3.rRes2.rRes1 = rCpy4.rCpy3.rCpy2.rCpy1		; copy counter
+	cbr rFlg, (1<<bCyc)|(1<<bOvf) ; clear cycle flag and overflow
+	rDiv4.rDiv3.rDiv2.rDiv1 = rRes4.rRes3.rRes2.rRes1		; copy again
+#if UART
+	Z = UartMonF/2		; put monitoring frequency on stack
+	;ldi ZH, HIGH(UartMonF) ; put monitoring frequency on stack
+	;ldi ZL, LOW(UartMonF)
+	push ZL ZH
+#endif
+	; calculate and display result
+	Z = CycleTab/2		; point to mode table
+	ZL += rMode ; displace table by mode
+	if (F_CARRY) {
+		ZH++
+	}
+	ijmp ; call the calculation routine
+
+@CycleOvf:	; overflow occurred
+	cbr rFlg, (1<<bCyc)|(1<<bOvf) ; clear cycle flag and overflow
+	X = s_video_mem	; point to result buffer
+	Z = TxtOvf16		; point to long message
+	loop (rmp = 16) {
+		r0 = prg[Z]
+		Z++		; TODO !!! use [Z++]
+		mem[X++] = r0
+	}
+	ret
+
+;
+TxtOvf16:
+	byte[] "  overflow      "
+
+; Table with routines for the 8 modes
+CycleTab:
+	rjmp CycleM0
+	rjmp CycleM1
+	rjmp CycleM2
+	rjmp CycleM3
+	rjmp CycleM4
+	rjmp CycleM5
+	rjmp CycleM6
+	rjmp CycleM7
+	rjmp CycleM8
+	ret ; voltage only
+}
+;
+; Mode 0: Measured prescaled frequency, display frequency
+;
+proc CycleM0() {
+	rDiv1 = 0 ; for detecting an overflow in R5
+	rDiv1.rRes4.rRes3.rRes2.rRes1 <<= 6		; * 64
+		
+	if (rDiv1 != 0) {
+		rjmp CycleOvf
+	}
+
+	rcall Displ4Dec
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp = 'H'
+	mem[X++] = rmp = 'z'
+	mem[X] = rmp = ' '
+	rjmp DisplMode ('F')
+}
+
+;
+; Mode 1: Frequency measured, prescale = 1, display frequency
+;
+proc CycleM1() {
+	rDiv1 = 0 ; detect overflow in rDiv1
+	rDiv1.rRes4.rRes3.rRes2.rRes1 <<= 2		; * 4
+	if (rDiv1 != 0) {
+		rjmp CycleOvf
+	}
+	
+	rcall Displ4Dec
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp = 'H'
+	mem[X++] = rmp = 'z'
+	mem[X] = rmp = ' '
+	rjmp	DisplMode ('f')
+}
+;
+; Mode 2: Time measured, prescale = 1, display frequency
+;
+proc CycleM2() {
+	rcall Divide
+;	if (rRes4 != 0) goto to_big
+;	rcall DisplFrac
+;	rcall DisplMode ('v')
+;	ret
+;to_big:
+	if (rRes4 == 0) {
+		rcall DisplFrac
+		rcall DisplMode ('v')
+		ret
+	}
+
+	rRes3.rRes2.rRes1 = rRes4.rRes3.rRes2		; number too big, skip fraction
+	rRes4 = 0
+	rcall Displ4Dec
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp = 'H'
+	mem[X++] = rmp = 'z'
+	mem[X] = rmp = ' '
+	rcall DisplMode ('v')
+	ret
+}
+;
+; Measure time, display rounds per minute
+;
+proc CycleM3() {
+	rcall Divide
+	r0 = 0 ; overflow detection
+	rmp = 0
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 2
+	;r0 += rmp + F_CARRY
+	adc r0, rmp
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 4
+	adc r0,rmp
+	rDiv4.rDiv3.rDiv2.rDiv1 = rRes4.rRes3.rRes2.rRes1
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 8
+	adc r0,rmp
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 16
+	adc r0,rmp
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 32
+	adc r0,rmp
+	rRes4.rRes3.rRes2.rRes1 <<= 1		; * 64
+	adc r0,rmp
+	if (r0 != 0) {
+		rjmp CycleOvf
+	}
+	rRes4.rRes3.rRes2.rRes1 -= rDiv4.rDiv3.rDiv2.rDiv1
+	rRes3.rRes2.rRes1 = rRes4.rRes3.rRes2
+	rRes4 = 0
+	rcall Displ4Dec
+	mem[X++] = rmp = ' '
+	mem[X++] = rmp = 'r'
+	mem[X++] = rmp = 'p'
+	mem[X++] = rmp = 'm'
+	rcall DisplMode ('u')
+	ret
+}
+;
+; Measure time high+low, display time
+;
+proc CycleM4() {
+	rcall Multiply
+	rcall Displ4Dec
+	rcall DisplSec
+	rcall DisplMode ('t')	; TODO use rjmp
+	ret
+}
+
+;
+; Measure time high, display time
+;
+proc CycleM5() {
+	if (rFlg[bEdge]) {
+		rcall Multiply
+		rcall Displ4Dec
+		rcall DisplSec
+		rcall DisplMode ('h')
+	}
+	ret
+}
+;
+; Measure time low, display time
+;
+proc CycleM6() {
+	if (!rFlg[bEdge]) {
+		rcall Multiply
+		rcall Displ4Dec
+		rcall DisplSec
+		rcall DisplMode ('l')
+	}
+	ret
+}
+;
+; Measure time high and low, display pulse width ratio high in %
+;   if the edge was negative, store the measured time, if positive calculate
+;   rRes and rDiv hold the active low time, sCtr the last active high time
+;   to CalcPw: rDelH:rDelL:R0:rmp = active high time
+;
+proc CycleM7() {
+	if (rFlg[bEdge]) {	; TODO !!!!! move Z = sCtr brefore this line !!!
+		Z = sCtr			; edge is high, calculate
+		rRes1 = mem[Z++]	; copy counter value
+		rRes2 = mem[Z++]
+		rRes3 = mem[Z++]
+		rRes4 = mem[Z++]
+		rDiv4.rDiv3.rDiv2.rDiv1 += rRes4.rRes3.rRes2.rRes1		; add to total time
+		if (F_CARRY) goto overflow
+		rDelH.rDelL.r0.rmp = rRes4.rRes3.rRes2.rRes1				; copy high value to divisor
+		rcall CalcPw ; calculate the ratio
+		if (F_CARRY) goto overflow
+		rcall DisplPw ; display the ratio
+		rjmp DisplMode ('P')
+	}
+	Z = sCtr
+	mem[Z++] = rRes1 ; copy counter value
+	mem[Z++] = rRes2
+	mem[Z++] = rRes3
+	mem[Z++] = rRes4
+	ret
+overflow:
+	rjmp PulseOvflw ('P')
+}
+;
+; Measure time high and low, display pulse width ratio low in %
+;   if the edge was negative, store the measured time, if positive calculate
+;   rRes and rDiv hold the active low time, sCtr the last active high time
+;   to CalcPw: rDelH:rDelL:R0:rmp = active low time
+;
+proc CycleM8() {
+	if (rFlg[bEdge]) {		; TODO !!!!! move Z = sCtr brefore this line !!!
+		Z = sCtr		; edge is high, calculate
+		rmp = mem[Z++]	; read high-time
+		r0 = mem[Z++]
+		rDelL = mem[Z++]
+		rDelH = mem[Z]
+		rDiv4.rDiv3.rDiv2.rDiv1 += rDelH.rDelL.r0.rmp		; add to total time
+		rDelH.rDelL.r0.rmp = rRes4.rRes3.rRes2.rRes1
+		rcall CalcPw ; calculate the ratio
+		if (F_CARRY) goto overflow
+		rcall DisplPw ; display the ratio
+		rjmp DisplMode ('p')
+	}
+	Z = sCtr
+	mem[Z++] = rRes1 ; copy counter value
+	mem[Z++] = rRes2
+	mem[Z++] = rRes3
+	mem[Z++] = rRes4
+	ret
+overflow:
+	rjmp	PulseOvflw ('p')
+}
+;
+; ===========================================
+; Lcd display routines
+; ===========================================
+;
+;
+; LcdE pulses the E output for at least 1 us
+;
+proc LcdE() {
+	pinLcdE->port = 1
+	#if F_CPU > 14000000
+		nop
+		nop
+	#endif
+	#if F_CPU > 12000000
+		nop
+		nop
+	#endif
+	#if F_CPU > 10000000
+		nop
+		nop
+	#endif
+	#if F_CPU > 8000000
+		nop
+		nop
+	#endif
+	#if F_CPU > 6000000
+		nop
+		nop
+	#endif
+	#if F_CPU > 4000000
+		nop
+		nop
+	#endif
+	#if F_CPU > 2000000
+		nop
+		nop
+	#endif
+	nop
+	nop
+	pinLcdE->port = 0
+	ret
+}
+;
+; outputs the content of rmp (temporary 8-Bit-Interface during startup)
+;
+proc LcdRs8 (val: rmp) {
+	PORTB = val
+	rcall LcdE		; TODO !!! rjmp
+	ret
+}
+;
+; write rmp as 4-bit-command to the LCD
+;
+proc LcdRs4 (val: rmp) {
+	r0 = rmp 			; copy rmp
+	swap rmp 			; upper nibble to lower nibble
+	rmp &= 0x0F 		; clear upper nibble
+	PORTB = rmp 	; write to display interface
+	rcall LcdE 		; pulse E
+	PORTB = rmp = r0 & 0x0F ; copy original back and clear upper nibble
+	rcall LcdE
+	rmp = r0 ; restore rmp
+
+	; TODO add delay 40 us here !!!
+	ret
+}
+;
+; write rmp as data over 4-bit-interface to the LCD
+;
+proc LcdData4 (val: r0) {
+	push	rmp
+	rmp = r0
+	swap	rmp 			; upper nibble to lower nibble
+	rmp &= 0x0F 		; clear upper nibble
+	rmp[pinLcdRs] = 1 	; set Rs to one
+	PORTB = rmp 	; write to display interface
+	rcall LcdE 		; pulse E
+	rmp = r0 & 0x0F 	; copy original again and clear upper nibble
+	rmp[pinLcdRs] = 1	; set Rs to one
+	PORTB = rmp 	; write to display interface
+	rcall LcdE
+	rcall Delay40us
+	pop rmp
+	ret
+}
+;
+; writes the text in flash to the LCD, number of
+; characters in rmp
+;
+proc LcdText (len: r16) {
+	loop (len) {
+		rcall	LcdData4 (prg[Z++])			; write to 
+		rcall	Delay40us
+	}
+	ret
+}
+;
+; Inits the LCD with a 4-bit-interface
+;
+proc LcdInit() {
+	DDRB = rmp = 0x0F | bitmask(pinLcdE, pinLcdRs)
+	PORTB = rmp = 0
+	rcall Delay15ms ; wait for complete self-init
+	rcall LcdRs8 (0x03)		; Function set 8-bit interface
+	rcall Delay4_1ms
+	rcall LcdRs8 (0x03)		; Function set 8-bit interface
+	rcall Delay100us
+	rcall LcdRs8 (0x03)		; Function set 8-bit interface
+	rcall Delay40us
+	rcall LcdRs8 (0x02)		; Function set 4-bit-interface
+	rcall Delay40us
+	rcall LcdRs4 (0x28)		; 4-bit-interface, two line display
+	rcall Delay40us
+	rcall LcdRs4 (0x08)		; display off
+	rcall Delay40us
+	rcall LcdRs4 (0x01)		; display clear
+	rcall Delay1_64ms
+	rcall LcdRs4 (0x06)		; increment, don't shift
+	rcall Delay40us
+	rcall LcdRs4 (0x0C)		; display on
+	rcall Delay40us
+	rcall LcdRs4 (0x80)		; position on line 1
+	rcall Delay40us
+	Z = LcdInitTxt16
+	rcall LcdText (16)
+
+	;;; !!! TODO remove --------------[
+;	ldi	rmp, 0xC0 ; line 2
+;	rcall LcdRs4
+;	rcall delay40us ; delay 40 us
+;	ldi	XH, HIGH(s_video_mem+25)
+;	ldi	XL, LOW(s_video_mem+25)
+;	ldi	ZH, HIGH(2*LcdInitTxtMode)
+;	ldi	ZL, LOW(2*LcdInitTxtMode)
+;	ldi	rmp, 6					; len(" Mode=") = 6
+;LcdInitMode:
+;	lpm
+;	adiw	ZL, 1
+;	st	X+, R0
+;	dec	rmp
+;	brne LcdInitMode
+;	ldi	rmp,16
+;	rcall LcdText
+	;;;; ]------------------------
+	
+	ret
+LcdInitTxt16:
+	byte[] "Freq-counter V01"
+	byte[] " (C)2005 DG4FAC "
+}
+;LcdInitTxtMode:
+;	.DB " Mode="
+;
+; Display frequency/time on Lcd
+;
+proc LcdDisplayFT() {
+	rcall LcdRs4 (0x80)				; set display position to line 1
+	rcall Delay40us
+	Z = s_video_mem
+
+	loop (rmp = 16) {
+		rcall LcdData4 (mem[Z++])				; display on LCD
+	}
+	ret
+}
+;
+; Display voltage on the display
+;
+proc LcdDisplayU() {
+;	lds	rmp, sModeNext
+;	subi	rmp, -'0'
+;	sts	s_video_mem+31, rmp
+
+	rcall LcdRs4 (0xC0) ; set output position, output to line 2
+	rcall Delay40us
+	Z = s_video_mem + 16		; point to result
+	loop (rmp = 16) {
+		rcall LcdData4 (mem[Z++])			; write r0 as data over 4-bit-interface to the LCD
+	}
+	ret
+}
+
+
+;
+; ===========================================
+;   Uart routines
+; ===========================================
+;
+#if UART
+#define cUbrr()  (F_CPU/cBaud/16)-1 ; calculating UBRR single speed
+proc UartInit() { ; Init the Uart on startup
+	sUartRxBp = rmp = low(sUartRxBs) 			; set buffer pointer to start
+	UBRRH = rmp = high(cUbrr) 			; set URSEL to zero, set baudrate msb
+	UBRRL = rmp = low(cUbrr) 				; set baudrate lsb
+	UCSRC = rmp = bitmask(URSEL, UCSZ1, UCSZ0) ; set 8 bit characters
+	UCSRB = rmp = bitmask(RXCIE, RXEN, TXEN) ; enable RX/TX and RX-Ints
+	rcall Delay10ms ; delay for 10 ms duration
+	rjmp UartSendTxt (txtUartInit)
+;
+; Uart receive buffer space in SRAM
+;   sUartRxBs is buffer start
+;   sUartRxBe is buffer end
+;   sUartRxBp is buffer input position
+;	.EQU UartRxbLen = 38 ; Buffer length in bytes
+;	sUartFlag: ; flag register for Uart
+;		.BYTE 1
+;		.EQU bUMonU = 0 ; displays voltage over Uart
+;		.EQU bUMonF = 1 ; displays frequency over Uart
+;		; free: bits 2..7
+;	sUartMonUCnt: ; counter for Monitoring voltage
+;		.BYTE 1
+;	sUartMonURpt: ; counter preset for monitoring voltage
+;		.BYTE 1
+;	sUartRxBp: ; buffer pointer
+;		.BYTE 1
+;	sUartRxBs: ; buffer
+;		.BYTE UartRxbLen
+;	sUartRxBe: ; buffer end
+;	.EQU cNul = $00
+;	.EQU cClrScr = $0C
+;	.EQU cCR = $0D
+;	.EQU cLF = $0A
+;
+}
+
+proc UartRxLine() {
+	rFlg[bUartRxLine] = 0		; clear line complete flag
+	sUartRxBp = rmp = low(sUartRxBs) ; set buffer pointer to start
+	Z = UartReturn/2
+	push ZL ZH
+	Z = sUartRxBs
+	rmp = mem[Z++]			 ; read first character
+	if (rmp == 'h' || rmp == '?')	goto help
+	if (rmp == 'U') {		; monitor U on
+		rcall UartGetPar
+		F_CARRY = 1
+		rjmp USetC
+	}
+	if (rmp == 'u') {		; monitor U off
+		F_CARRY = 0
+		rjmp USetC
+	}
+	if (rmp == 'F') {		; monitor F on
+		rcall UartGetPar
+		F_CARRY = 1
+		rjmp FSetC
+	}
+	if (rmp == 'f') {		; monitor f off
+		F_CARRY = 0
+		rjmp FSetC
+	}
+	if (rmp == 'p') goto param		; parameter?
+	Z = txtUartUnknown
+	ret
+help:
+	Z = txtUartHelp
+	ret
+USetC:
+	rmp = sUartFlag
+	if (!F_CARRY) {
+		rmp[bUMonU] = 0
+		sUartFlag = rmp
+		Z = txtUartUOff
+		ret
+	}
+	if (F_ZERO) {
+		sUartMonURpt = r0
+		sUartMonUCnt = r0
+	}
+	rmp[bUMonU] = 1
+	sUartFlag = rmp
+	Z = txtUartUOn
+	ret
+FSetC:
+	rmp = sUartFlag
+	if (!F_CARRY) {
+		rmp[bUMonF] = 0
+		sUartFlag = rmp
+		Z = txtUartFOff
+		ret
+	}
+	if (F_ZERO) {
+		sUartMonFRpt = r0
+		sUartMonFCnt = r0
+	}
+	rmp[bUMonF] = 1
+	sUartFlag = rmp
+	Z = txtUartFOn
+	ret
+param:
+	Z = txtUartNul
+	rcall UartSendChar ('U')
+	rcall UartSendChar ('=')
+	rcall UartSendChar ('$')
+	rcall UartHexR (sUartMonURpt)
+	rcall UartSendChar (',')
+	rcall UartSendChar (' ')
+	rcall UartSendChar ('F')
+	rcall UartSendChar ('=')
+	rcall UartSendChar ('$')
+	rjmp UartHexR (sUartMonFRpt)
+}
+;
+; Get Parameter from line
+;
+proc UartGetPar() {
+	r0 = 0 			; result register
+	rmp = mem[Z++]		; read char
+	if (rmp == cCR || rmp == cLF) goto no_param
+	if (rmp != '=') goto Err
+
+	loop {
+		rmp = mem[Z++]		; read next char
+		if (rmp == cCR || rmp == cLF) break
+		rmp -= '0'
+		if (F_CARRY || rmp >= 10) goto Err
+		rir = r0
+		r0 <<= 1 ; * 2
+		if (F_CARRY) goto Err
+		r0 <<= 1 ; * 4
+		if (F_CARRY) goto Err
+		r0 += rir ; * 5
+		if (F_CARRY) goto Err
+		r0 <<= 1 ; * 10
+		if (F_CARRY) goto Err
+		r0 += rmp ; add new decimal
+		if (F_CARRY) goto Err
+	}
+
+	F_ZERO = 1
+	ret
+Err:
+	rcall UartSendTxt (txtUartErr)
+no_param:
+	F_ZERO = 0 ; No parameter set
+	ret
+}
+;
+; Hex output over Uart, for debugging
+;
+proc UartHexR (val: rmp) {
+	push	val
+	swap	val
+	rcall send_nibble
+	pop	val
+send_nibble:
+	val &= 0x0F
+	val += '0'
+	if (val >= '9'+1) {
+		val += 7
+	}
+	rjmp UartSendChar
+	ret 			; TODO extra ret !!!
+}
+;
+; Return from Uart-Routines, displays text in Z
+;
+proc UartReturn() {
+	rcall UartSendTxt ; send text in Z
+	rjmp UartSendTxt (txtUartCursor)
+}
+;
+; Send character in rmp over Uart
+;
+proc UartSendChar (char: rmp) {
+	if (!UCSRA->UDRE) goto UartSendChar		; wait for empty buffer
+	UDR = char
+	ret
+}
+;
+; Monitoring the voltage over the Uart
+;
+proc UartMonU() {
+	rmp = sUartFlag ; flag register for Uart
+	if (!rmp[bUMonU]) ret		; displays voltage over Uart
+	sUartMonUCnt = rmp = sUartMonUCnt - 1 ; read counter
+	if (!F_ZERO) goto exit
+	sUartMonUCnt = rmp = sUartMonURpt
+	Z = s_video_mem + 16
+	loop (rmp = 8) {
+		if (!UCSRA->UDRE) continue	; wait for empty buffer
+		UDR = r0 = mem[Z++]
+	}
+	rcall UartSendChar (cCR)
+	rjmp UartSendChar (cLF)
+exit:
+	ret
+}
+
+;
+; Monitor frequency over UART
+;
+proc UartMonF() {
+	rmp = sUartFlag 			; flag register for Uart
+	if (!rmp[bUMonF]) ret		; displays frequency over Uart
+	sUartMonFCnt = rmp = sUartMonFCnt - 1	; read counter
+	if (!F_ZERO) goto exit
+	sUartMonFCnt = rmp = sUartMonFRpt
+	Z = s_video_mem
+	loop (rmp = 16) {
+		if (!UCSRA->UDRE) continue	; wait for empty buffer
+		UDR = r0 = mem[Z++]
+	}
+	rcall UartSendChar (cCR)
+	rjmp UartSendChar (cLF)
+exit:
+	ret
+}
+;
+; Send text from flash to UART, null byte ends transmit
+;
+proc UartSendTxt (addr: Z) {
+	r0 = prg[Z] ; read character from flash
+	Z++	; TODO
+	if (r0 != 0) {
+wait:
+		if (!UCSRA->UDRE) goto wait
+		UDR = r0 ; send char
+		rjmp	UartSendTxt
+	}
+	ret
+}
+;
+; Uart text constants
+;
+txtUartInit:
+byte[] {
+    " ", cClrScr,
+    "************************************************* ",cCR,cLF,
+    "* Frequency- and voltmeter (C)2005 by g.schmidt * ",cCR,cLF,
+    "************************************************* ",cCR,cLF
+}
+txtUartMenue:
+	byte[] { cCR, cLF, "Commands: <h>elp", cCR, cLF }
+txtUartCursor:
+	byte[] { cCR, cLF, "i> ", cNul }
+txtUartUnknown:
+	byte[] { cCR, cLF, "Unknown command!", cNul, cNul }
+txtUartUOff:
+	byte[] { "Voltage monitoring is off.", cNul, cNul }
+txtUartUOn:
+	byte[] { "Voltage monitoring is on. ", cNul, cNul }
+txtUartFOff:
+	byte[] { "Frequency monitoring is off.", cNul, cNul }
+txtUartFOn:
+	byte[] { "Frequency monitoring is on. ", cNul, cNul }
+txtUartErr:
+	byte[] { "Error in parameter! ", cNul, cNul }
+txtUartHelp:
+byte[] {
+	cCR, cLF, "Help: ", cCR, cLF,
+	"U[=N](on) or u(Off): monitor voltage output, N=1..255,", cCR, cLF,
+	"F[=N](On) or f(Off): monitor frequency output N=1..255, ", cCR, cLF,
+	"p: display monitoring parameters, ", cCR, cLF,
+	"h or ?: this text."
+}
+txtUartNul:
+	byte[] { cNul, cNul }
+#endif
